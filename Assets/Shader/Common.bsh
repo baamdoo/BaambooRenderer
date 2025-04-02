@@ -1,0 +1,9 @@
+#ifndef _COMMON_HEADER
+#define _COMMON_HEADER
+
+#define SET_STATIC 0
+#define SET_PERFRAME 1
+#define SET_PERMATERIAL 2
+#define SET_PERDRAW 3
+
+#endif // _COMMON_HEADER

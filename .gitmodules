@@ -1,0 +1,21 @@
+[submodule "Projects/ThirdParties/glm"]
+	path = Projects/ThirdParties/glm
+	url = https://github.com/g-truc/glm.git
+[submodule "Projects/ThirdParties/glfw"]
+	path = Projects/ThirdParties/glfw
+	url = https://github.com/glfw/glfw.git
+[submodule "Projects/ThirdParties/imgui"]
+	path = Projects/ThirdParties/imgui
+	url = https://github.com/ocornut/imgui.git
+[submodule "Projects/ThirdParties/entt"]
+	path = Projects/ThirdParties/entt
+	url = https://github.com/skypjack/entt.git
+[submodule "Projects/ThirdParties/taskflow"]
+	path = Projects/ThirdParties/taskflow
+	url = https://github.com/taskflow/taskflow.git
+[submodule "Projects/VkRenderer/RenderDevice/VulkanMemoryAllocator"]
+	path = Projects/VkRenderer/RenderDevice/VulkanMemoryAllocator
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+[submodule "Projects/Dx12Renderer/RenderDevice/D3D12MemoryAllocator"]
+	path = Projects/Dx12Renderer/RenderDevice/D3D12MemoryAllocator
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator.git

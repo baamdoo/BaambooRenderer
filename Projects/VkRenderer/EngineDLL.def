@@ -1,0 +1,4 @@
+LIBRARY     VkRenderer
+
+EXPORTS
+	DllCreateInstance	PRIVATE

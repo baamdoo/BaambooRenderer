@@ -1,0 +1,4 @@
+LIBRARY     Dx12Renderer
+
+EXPORTS
+	DllCreateInstance	PRIVATE
