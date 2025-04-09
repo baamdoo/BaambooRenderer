@@ -38,12 +38,14 @@ public:
     inline glm::vec4 Forward() const { return orientation * glm::vec4(0.0f, 0.0f, 1.0f, 0.0f); };
 
     [[nodiscard]]
-    inline f32 Depth() const { return position.x; }
+    inline float Depth() const { return position.z; }
+
+    glm::vec3 position = glm::vec3(0.0f);
+    glm::vec3 rotation = glm::vec3(0.0f);
+    glm::vec3 scale = glm::vec3(1.0f);
 
 private:
-    glm::vec3 position = glm::vec3(0.0f);
     glm::quat orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-    glm::vec3 scale = glm::vec3(1.0f);
 };
 
 inline bool Transform::operator==(const Transform& other) const

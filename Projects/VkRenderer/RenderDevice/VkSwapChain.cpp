@@ -68,6 +68,7 @@ void SwapChain::Init()
 	m_vkSwapChain = swapChainBuilder.SetDesiredImageResolution(m_window.Width(), m_window.Height())
 		                            .SetDesiredImageCount(m_window.Desc().numDesiredImages)
 		                            .SetDesiredImageFormat(VK_FORMAT_R8G8B8A8_UNORM)
+		                            .SetVSync(m_window.Desc().bVSync)
 		                            .AddImageUsage(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
 		                            .Build(m_renderContext.vkDevice(), m_renderContext.GraphicsQueue().Index(), oldSwapchain);
 	m_imageCount = swapChainBuilder.imageCount;

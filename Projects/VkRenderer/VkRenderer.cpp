@@ -61,10 +61,6 @@ void Destroy(VkDevice vkDevice)
 	vkDestroyDescriptorPool(vkDevice, g_vkSrvDescPool, nullptr);
 }
 
-void Resize(vk::RenderContext& context, vk::SwapChain& swapChain)
-{
-}
-
 } // namespace ImGui
 
 namespace vk

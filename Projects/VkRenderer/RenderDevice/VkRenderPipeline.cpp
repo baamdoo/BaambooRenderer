@@ -469,14 +469,14 @@ void GraphicsPipeline::Build()
 
 	// Pipeline cache
 	std::string filename = m_name + ".cache";
-	const bool bCacheExist = FileIO::FileExist(PIPELINE_PATH + filename);
+	const bool bCacheExist = FileIO::FileExist(PIPELINE_PATH.string() + filename);
 
 	VkPipelineCache vkPipelineCache = VK_NULL_HANDLE;
 	VkPipelineCacheCreateInfo cacheInfo = {};
 	cacheInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
 	if (bCacheExist) 
 	{
-		FileIO::Data cacheData = FileIO::ReadBinary(PIPELINE_PATH + filename);
+		FileIO::Data cacheData = FileIO::ReadBinary(PIPELINE_PATH.string() + filename);
 
 		const auto cacheHeader = (VkPipelineCacheHeaderVersionOne*)cacheData.data;
 		if (cacheHeader->deviceID == m_renderContext.DeviceProps().deviceID &&
@@ -538,7 +538,7 @@ void GraphicsPipeline::Build()
 		writeData.data = _aligned_malloc(writeData.size, 64);
 		VK_CHECK(vkGetPipelineCacheData(m_renderContext.vkDevice(), vkPipelineCache, &writeData.size, writeData.data));
 
-		FileIO::WriteBinary(PIPELINE_PATH, filename, writeData);
+		FileIO::WriteBinary(PIPELINE_PATH.string(), filename, writeData);
 		writeData.Deallocate();
 	}
 	vkDestroyPipelineCache(m_renderContext.vkDevice(), vkPipelineCache, nullptr);

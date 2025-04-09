@@ -69,10 +69,13 @@ inline void ThrowIfFailed(HRESULT hr)
 //-------------------------------------------------------------------------
 // Resource Paths
 //-------------------------------------------------------------------------
+#include <filesystem>
+namespace fs = std::filesystem;
+
 #define CSO_PATH GetCsoPath()
-constexpr inline std::string GetCsoPath()
+inline fs::path GetCsoPath()
 {
-    return "./../../Output/Shader/cso/";
+    return "Output/Shader/cso/";
 }
 
 

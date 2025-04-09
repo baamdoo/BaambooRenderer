@@ -1,5 +1,6 @@
 #pragma once
 #include "Scene.h"
+#include "TransformSystem.h"
 
 namespace baamboo
 {
@@ -11,17 +12,20 @@ public:
 
 	Entity() = default;
 	Entity(Scene* pScene, entt::entity id) : m_pScene(pScene), m_id(id) {}
-	~Entity() = default;
 
 	bool operator==(const Entity& other) const { return m_id == other.m_id && m_pScene == other.m_pScene; }
 	bool operator!=(const Entity& other) const { return !(*this == other); }
+
+	operator bool() const { return m_id != entt::null; }
+	operator entt::entity() const { return m_id; }
+	operator u32() const { return (u32)m_id; }
 
 	void Reset() { m_id = entt::null; m_pScene = nullptr; }
 
 	[[nodiscard]] inline id_type id() const { return entt::to_integral(m_id); }
 	[[nodiscard]] inline entt::entity ID() const { return m_id; }
-	[[nodiscard]] inline bool IsValid() { return m_pScene->m_registry.valid(m_id) && m_pScene != nullptr; }
-	[[nodiscard]] inline bool IsValid() const { return m_pScene->m_registry.valid(m_id) && m_pScene != nullptr; }
+	[[nodiscard]] inline bool IsValid() { return m_pScene != nullptr && m_pScene->m_registry.valid(m_id); }
+	[[nodiscard]] inline bool IsValid() const { return m_pScene != nullptr && m_pScene->m_registry.valid(m_id); }
 
 	template< typename TComponent, typename ...TArgs >
 	TComponent& AttachComponent(TArgs&& ...args)
@@ -31,7 +35,7 @@ public:
 	}
 
 	template< typename TComponent >
-	TComponent& RemoveComponent()
+	size_t RemoveComponent()
 	{
 		BB_ASSERT(HasAll< TComponent >(), "No component %s in entity_%d!", typeid(TComponent).name(), m_id);
 		return m_pScene->m_registry.remove< TComponent >(m_id);
@@ -55,6 +59,48 @@ public:
 	template< typename ...TComponents > bool HasAll() const { return m_pScene->m_registry.all_of< TComponents... >(m_id); }
 	template< typename ...TComponents > bool HasAny() { return m_pScene->m_registry.any_of< TComponents... >(m_id); }
 	template< typename ...TComponents > bool HasAny() const { return m_pScene->m_registry.any_of< TComponents... >(m_id); }
+
+	void AttachChild(entt::entity id)
+	{
+		BB_ASSERT(HasAll< TransformComponent >() && m_pScene->m_registry.all_of< TransformComponent >(id), "Only entity with TransformComponent can have hierarchical traits!");
+		assert(m_pScene->GetTransformSystem());
+
+		m_pScene->GetTransformSystem()->AttachChild(m_id, id);
+	}
+	void DetachChild()
+	{
+		BB_ASSERT(HasAll< TransformComponent >(), "Only entity with TransformComponent can have hierarchical traits!");
+		assert(m_pScene->GetTransformSystem());
+
+		m_pScene->GetTransformSystem()->DetachChild(m_id);
+	}
+
+	[[nodiscard]]
+	Entity Clone()
+	{
+		assert(IsValid());
+		auto newEntity = m_pScene->CreateEntity(GetComponent< TagComponent >().tag + "_clone");
+
+		const auto& transformComponent = GetComponent< TransformComponent >();
+		auto& newTransformComponent = newEntity.GetComponent< TransformComponent >();
+		newTransformComponent = transformComponent;
+
+		if (HasAll< StaticMeshComponent >())
+		{
+			const auto& component = GetComponent< StaticMeshComponent >();
+			auto& newComponent = newEntity.AttachComponent< StaticMeshComponent >();
+			newComponent = component;
+		}
+		if (HasAll< DynamicMeshComponent >())
+		{
+			const auto& component = GetComponent< DynamicMeshComponent >();
+			auto& newComponent = newEntity.AttachComponent< DynamicMeshComponent >();
+			newComponent = component;
+		}
+		// ..
+
+		return newEntity;
+	}
 
 private:
 	Scene* m_pScene = nullptr;

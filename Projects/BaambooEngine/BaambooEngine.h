@@ -1,5 +1,9 @@
 #pragma once
 #include "BaambooCore/RendererAPI.h"
+#include "World/Scene.h"
+
+#include <filesystem>
+namespace fs = std::filesystem;
 
 namespace baamboo { class Engine; }
 namespace ImGui
@@ -13,7 +17,7 @@ namespace baamboo
 class Engine
 {
 public:
-	Engine() = default;
+	Engine();
 	virtual ~Engine();
 
 	virtual void Initialize(eRendererAPI api);
@@ -35,6 +39,7 @@ protected:
 	virtual bool InitWindow() { return false; }
 	virtual bool LoadScene() { return false; }
 	virtual void DrawUI();
+	virtual void DrawEntityNode(Entity entity);
 
 	virtual void ProcessInput();
 
@@ -52,6 +57,7 @@ private:
 	eRendererAPI m_eBackendAPI;
 	double       m_runningTime = 0.0;
 
+	fs::path m_currentDirectory;
 	friend void ImGui::DrawUI(baamboo::Engine& engine);
 };
 

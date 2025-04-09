@@ -39,6 +39,7 @@ struct WindowDescriptor
 	i32  height = 720;
 	u32  numDesiredImages = 2;
 	bool bFullscreen = false;
+	bool bVSync = false;
 };
 
 class Window
@@ -65,6 +66,7 @@ public:
 	void SetMouseButtonCallback(GLFWmousebuttonfun&& func) { glfwSetMouseButtonCallback(m_handle, std::move(func)); }
 	void SetMouseMoveCallback(GLFWcursorposfun&& func) { glfwSetCursorPosCallback(m_handle, std::move(func)); }
 	void SetResizeCallback(GLFWwindowsizefun&& func) { glfwSetWindowSizeCallback(m_handle, std::move(func)); }
+	void SetCharCallback(GLFWcharfun&& func) { glfwSetCharCallback(m_handle, std::move(func)); }
 
 	[[nodiscard]]
 	inline GLFWwindow* Handle() const noexcept { return m_handle; }

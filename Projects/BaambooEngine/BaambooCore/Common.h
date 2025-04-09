@@ -113,26 +113,29 @@ struct VertexP3U2N3T3
 //-------------------------------------------------------------------------
 // Resource Paths
 //-------------------------------------------------------------------------
+#include <filesystem>
+namespace fs = std::filesystem;
+
 #define OUTPUT_PATH GetOutputPath()
-inline std::string GetOutputPath()
+inline fs::path GetOutputPath()
 {
-    return "../../Output/";
+    return "Output";
 }
 
 #define ASSET_PATH GetAssetPath()
-inline std::string GetAssetPath()
+inline fs::path GetAssetPath()
 {
-    return "../../Assets/";
+    return "Assets";
 }
 
 #define SHADER_PATH GetShaderPath()
-inline std::string GetShaderPath()
+inline fs::path GetShaderPath()
 {
-    return "../../Assets/Shader/";
+    return "Assets/Shader/";
 }
 
 #define TEXTURE_PATH GetTexturePath()
-inline std::string GetTexturePath()
+inline fs::path GetTexturePath()
 {
-    return "../../Assets/Texture/";
+    return "Assets/Texture/";
 }

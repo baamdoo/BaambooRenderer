@@ -4,7 +4,7 @@
 int main()
 {
 	// TODO: Utilize args
-	eRendererAPI rendererAPI = eRendererAPI::Vulkan;
+	eRendererAPI rendererAPI = eRendererAPI::D3D12;
 
 	ExampleApp app = {};
 	try

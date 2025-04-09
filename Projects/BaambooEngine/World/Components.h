@@ -4,7 +4,7 @@
 #include <entt/entt.hpp>
 
 //-------------------------------------------------------------------------
-// TagComponent(Core) : Determines whether to expose in UI panel
+// TagComponent(core) : Determines whether to expose in UI panel
 //-------------------------------------------------------------------------
 struct TagComponent
 {
@@ -12,25 +12,32 @@ struct TagComponent
 };
 
 //-------------------------------------------------------------------------
-// TransformComponent : Determines whether to be allocated to scene
+// TransformComponent(core) : Determines whether to expose in the viewport
 //-------------------------------------------------------------------------
 struct TransformComponent
 {
 	Transform transform;
-
 	struct Hierarchy
 	{
-		entt::entity parent = entt::null;
-		std::vector< entt::entity > children;
+		entt::entity parent{ entt::null };
+		entt::entity firstChild{ entt::null };
+		entt::entity prevSibling{ entt::null };
+		entt::entity nextSibling{ entt::null };
+		int depth{ 0 };
 	} hierarchy;
+
+	unsigned mWorld;
+	bool     bDirtyMark;
 };
+
 
 //-------------------------------------------------------------------------
 // StaticMeshComponent : Determines whether to be rendered statically
 //-------------------------------------------------------------------------
 struct StaticMeshComponent
 {
-	
+	std::string texture;
+	std::string geometry;
 };
 
 //-------------------------------------------------------------------------
@@ -38,5 +45,6 @@ struct StaticMeshComponent
 //-------------------------------------------------------------------------
 struct DynamicMeshComponent
 {
-
+	std::string texture;
+	std::string geometry;
 };

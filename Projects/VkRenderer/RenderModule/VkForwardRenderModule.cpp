@@ -31,8 +31,8 @@ void ForwardPass::Initialize(RenderContext& renderContext)
 	_pRenderTarget = new RenderTarget(renderContext);
 	_pRenderTarget->AttachTexture(eAttachmentPoint::Color0, pAttachment0).Build();
 
-	auto hVS = rm.Create< Shader >("SimpleTriangleVS", Shader::CreationInfo{ .filepath = SPIRV_PATH + "SimpleTriangle.vert.spv" });
-	auto hFS = rm.Create< Shader >("SimpleTrianglePS", Shader::CreationInfo{ .filepath = SPIRV_PATH + "SimpleTriangle.frag.spv" });
+	auto hVS = rm.Create< Shader >("SimpleTriangleVS", Shader::CreationInfo{ .filepath = SPIRV_PATH.string() + "SimpleTriangle.vert.spv"});
+	auto hFS = rm.Create< Shader >("SimpleTrianglePS", Shader::CreationInfo{ .filepath = SPIRV_PATH.string() + "SimpleTriangle.frag.spv"});
 	_pGraphicsPipeline = new GraphicsPipeline(renderContext, "ForwardPSO");
 	_pGraphicsPipeline->SetShaders(hVS, hFS).SetRenderTarget(*_pRenderTarget).Build();
 

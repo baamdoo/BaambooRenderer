@@ -59,8 +59,8 @@ void ForwardPass::Initialize(RenderContext& renderContext)
 	// **
 	// Pipeline
 	// **
-	auto hVS = rm.Create< Shader >(L"SimpleTriangleVS", Shader::CreationInfo{ .filepath = CSO_PATH + "SimpleTriangleVS.cso" });
-	auto hFS = rm.Create< Shader >(L"SimpleTrianglePS", Shader::CreationInfo{ .filepath = CSO_PATH + "SimpleTrianglePS.cso" });
+	auto hVS = rm.Create< Shader >(L"SimpleTriangleVS", Shader::CreationInfo{ .filepath = CSO_PATH.string() + "SimpleTriangleVS.cso"});
+	auto hFS = rm.Create< Shader >(L"SimpleTrianglePS", Shader::CreationInfo{ .filepath = CSO_PATH.string() + "SimpleTrianglePS.cso"});
 	_pSimplePSO = new GraphicsPipeline(renderContext, L"ForwardPSO");
 	_pSimplePSO->SetShaderModules(hVS, hFS).SetRenderTargetFormats(_renderTarget).SetRootSignature(_pSimpleRS).Build();
 }

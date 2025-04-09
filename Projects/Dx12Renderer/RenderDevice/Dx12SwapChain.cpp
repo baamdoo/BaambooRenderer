@@ -39,7 +39,7 @@ SwapChain::SwapChain(RenderContext& context, baamboo::Window& window)
 		swapChainDesc.Scaling = DXGI_SCALING_NONE;
 		swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
 		swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
-		swapChainDesc.Flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
+		swapChainDesc.Flags |= m_window.Desc().bVSync ? 0 : DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
 
 		DXGI_SWAP_CHAIN_FULLSCREEN_DESC fsSwapChainDesc = {};
 		fsSwapChainDesc.Windowed = TRUE;
@@ -69,15 +69,7 @@ SwapChain::~SwapChain()
 
 void SwapChain::Present()
 {
-	u32 syncInterval = 0;	// VSync Off
-	u32 uiPresentFlags = 0;
-
-	if (!syncInterval)
-	{
-		uiPresentFlags = DXGI_PRESENT_ALLOW_TEARING;
-	}
-
-	HRESULT hr = m_dxgiSwapChain->Present(syncInterval, uiPresentFlags);
+	HRESULT hr = m_dxgiSwapChain->Present(m_window.Desc().bVSync, m_window.Desc().bVSync ? 0 : DXGI_PRESENT_ALLOW_TEARING);
 	if (DXGI_ERROR_DEVICE_REMOVED == hr)
 	{
 		__debugbreak();

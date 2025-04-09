@@ -5,6 +5,7 @@ project "Application"
 	language "C++"
 	cppdialect "C++20"
 	staticruntime "off"
+	debugdir (Path.Solution)
 
 	targetdir (Path.Target)
 	objdir (Path.Obj)
@@ -62,6 +63,7 @@ project "BaambooEngine"
 	language "C++"
 	cppdialect "C++20"
 	staticruntime "off"
+	debugdir (Path.Solution)
 
 	targetdir (Path.Target)
 	objdir (Path.Obj)
@@ -123,6 +125,7 @@ project "Dx12Renderer"
 	language "C++"
 	cppdialect "C++20"
 	staticruntime "off"
+	debugdir (Path.Solution)
 
 	targetdir (Path.Target)
 	objdir (Path.Obj)
@@ -246,6 +249,7 @@ project "VkRenderer"
 	language "C++"
 	cppdialect "C++20"
 	staticruntime "off"
+	debugdir (Path.Solution)
 
 	targetdir (Path.Target)
 	objdir (Path.Obj)

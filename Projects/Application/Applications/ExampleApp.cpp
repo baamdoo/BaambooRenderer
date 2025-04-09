@@ -1,6 +1,7 @@
 #include "ExampleApp.h"
 #include "BaambooCore/Window.h"
 #include "World/Entity.h"
+#include "World/Components.h"
 #include "BaambooCore/Common.h"
 
 #include <imgui/backends/imgui_impl_glfw.h>
@@ -17,7 +18,7 @@ bool ExampleApp::InitWindow()
 	// **
 	// Create window
 	// **
-	WindowDescriptor windowDesc = { .numDesiredImages = 3 };
+	WindowDescriptor windowDesc = { .numDesiredImages = 3, .bVSync = true };
 	m_pWindow = new Window(windowDesc);
 
 
@@ -68,7 +69,6 @@ bool ExampleApp::InitWindow()
 			ImGuiIO& io = ImGui::GetIO();
 			if (!io.WantCaptureMouse)
 			{
-				printf("x: %lf, y: %lf\n", xpos, ypos);
 			}
 		});
 
@@ -83,6 +83,11 @@ bool ExampleApp::InitWindow()
 			}
 		});
 
+	m_pWindow->SetCharCallback([](GLFWwindow* window, u32 c)
+		{
+			ImGui_ImplGlfw_CharCallback(window, c);
+		});
+
 	return true;
 }
 
@@ -90,7 +95,13 @@ bool ExampleApp::LoadScene()
 {
 	m_pScene = new Scene("ExampleScene");
 	auto entity0 = m_pScene->CreateEntity("Test0");
-	m_pScene->RemoveEntity(entity0);
+	auto& transformComponent = entity0.GetComponent< TransformComponent >();
+	transformComponent.transform.SetPosition(0.0f, 1.0f, 0.0f);
+
+	auto entity00 = m_pScene->CreateEntity("Test00");
+	entity0.AttachChild(entity00);
+
+	auto entity1 = m_pScene->CreateEntity("Test1");
 
 	return true;
 }
@@ -98,6 +109,4 @@ bool ExampleApp::LoadScene()
 void ExampleApp::DrawUI()
 {
 	Super::DrawUI();
-
-
 }

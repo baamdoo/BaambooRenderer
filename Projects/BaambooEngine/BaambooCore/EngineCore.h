@@ -14,9 +14,9 @@ inline bool LoadRenderer(eRendererAPI eApi, baamboo::Window* pWindow, struct ImG
 	HMODULE hEngineDLL = nullptr;
 	std::wstring enginePath;
 #ifdef _DEBUG
-	enginePath = L"../../Output/Binaries/Debug/";
+	enginePath = L"Output/Binaries/Debug/";
 #else
-	enginePath = L"../../Output/Binaries/Release/";
+	enginePath = L"Output/Binaries/Release/";
 #endif
 
 // #if defined(_M_ARM64EC) || defined(_M_ARM64)

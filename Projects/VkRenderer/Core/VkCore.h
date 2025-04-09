@@ -20,16 +20,19 @@ inline void ThrowIfFailed(VkResult result)
 //-------------------------------------------------------------------------
 // Resource Paths
 //-------------------------------------------------------------------------
+#include <filesystem>
+namespace fs = std::filesystem;
+
 #define PIPELINE_PATH GetPipelinePath()
-constexpr inline std::string GetPipelinePath()
+inline fs::path GetPipelinePath()
 {
-	return "./../../Output/Pipeline/Vulkan/";
+	return "Output/Pipeline/Vulkan/";
 }
 
 #define SPIRV_PATH GetSpirvPath()
-constexpr inline std::string GetSpirvPath()
+inline fs::path GetSpirvPath()
 {
-	return "./../../Output/Shader/spv/";
+	return "Output/Shader/spv/";
 }
 
 

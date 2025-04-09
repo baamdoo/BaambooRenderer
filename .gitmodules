@@ -4,9 +4,6 @@
 [submodule "Projects/ThirdParties/glfw"]
 	path = Projects/ThirdParties/glfw
 	url = https://github.com/glfw/glfw.git
-[submodule "Projects/ThirdParties/imgui"]
-	path = Projects/ThirdParties/imgui
-	url = https://github.com/ocornut/imgui.git
 [submodule "Projects/ThirdParties/entt"]
 	path = Projects/ThirdParties/entt
 	url = https://github.com/skypjack/entt.git
@@ -19,3 +16,6 @@
 [submodule "Projects/Dx12Renderer/RenderDevice/D3D12MemoryAllocator"]
 	path = Projects/Dx12Renderer/RenderDevice/D3D12MemoryAllocator
 	url = https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator.git
+[submodule "Projects/ThirdParties/imgui"]
+	path = Projects/ThirdParties/imgui
+	url = https://github.com/ocornut/imgui.git
