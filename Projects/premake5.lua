@@ -84,6 +84,13 @@ project "BaambooEngine"
 		"%{prj.name}/**.hpp",
 		"%{prj.name}/**.cpp",
 		"%{prj.name}/**.c",
+
+		"%{Path.Solution}Projects/ThirdParties/imgui/*.h",
+		"%{Path.Solution}Projects/ThirdParties/imgui/*.cpp",
+		"%{Path.Solution}Projects/ThirdParties/imgui/misc/cpp/imgui_stdlib.h",
+		"%{Path.Solution}Projects/ThirdParties/imgui/misc/cpp/imgui_stdlib.cpp",
+		"%{Path.Solution}Projects/ThirdParties/imgui/backends/imgui_impl_glfw.h",
+		"%{Path.Solution}Projects/ThirdParties/imgui/backends/imgui_impl_glfw.cpp",
 	}
 
 	includedirs {
@@ -98,11 +105,13 @@ project "BaambooEngine"
 
 	links {
 		"GLFW",
-		"ImGui",
 	}
 
 	debugenvs { 
-	} 
+	}
+
+	filter { "files:ThirdParties/imgui/**.cpp" }
+		flags "NoPCH"
 
 	filter 'system:windows'
 		systemversion 'latest'
@@ -148,6 +157,11 @@ project "Dx12Renderer"
 		"%{prj.name}/**.c",
 		"%{prj.name}/**.def",
 		"%{Path.ShaderSrc}/HLSL/**.hlsl",
+
+		"%{Path.Solution}Projects/ThirdParties/imgui/*.h",
+		"%{Path.Solution}Projects/ThirdParties/imgui/*.cpp",
+		"%{Path.Solution}Projects/ThirdParties/imgui/backends/imgui_impl_dx12.h",
+		"%{Path.Solution}Projects/ThirdParties/imgui/backends/imgui_impl_dx12.cpp",
 	}
 	removefiles { 
 		"%{prj.name}/RenderDevice/D3D12MemoryAllocator/src/D3D12Sample.cpp",
@@ -170,7 +184,6 @@ project "Dx12Renderer"
 	}
 
 	links {
-		"ImGui",
 	}
 
 	shadermodel ("6.0")
@@ -200,6 +213,8 @@ project "Dx12Renderer"
 		shadertype "Amplification"
 
 	filter { "files:Dx12Renderer/RenderDevice/D3D12MemoryAllocator/src/**.cpp" }
+		flags "NoPCH"
+	filter { "files:ThirdParties/imgui/**.cpp" }
 		flags "NoPCH" 
 
 	filter "system:windows"
@@ -273,6 +288,11 @@ project "VkRenderer"
 		"%{prj.name}/**.c",
 		"%{prj.name}/**.def",
 		"%{Path.ShaderSrc}/GLSL/**",
+
+		"%{Path.Solution}Projects/ThirdParties/imgui/*.h",
+		"%{Path.Solution}Projects/ThirdParties/imgui/*.cpp",
+		"%{Path.Solution}Projects/ThirdParties/imgui/backends/imgui_impl_vulkan.h",
+		"%{Path.Solution}Projects/ThirdParties/imgui/backends/imgui_impl_vulkan.cpp",
 	}
 	removefiles { 
 		"%{prj.name}/RenderDevice/VulkanMemoryAllocator/src/**",
@@ -295,9 +315,11 @@ project "VkRenderer"
 	}
 
 	links {
-		"ImGui",
 		"vulkan-1.lib",
 	}
+
+	filter { "files:ThirdParties/imgui/**.cpp" }
+		flags "NoPCH" 
 
 	filter "configurations:Debug"
 		defines "_DEBUG"

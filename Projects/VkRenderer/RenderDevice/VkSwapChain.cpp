@@ -49,11 +49,22 @@ void SwapChain::Present(VkSemaphore vkRenderCompleteSemaphore)
 	presentInfo.swapchainCount = 1;
 	presentInfo.pSwapchains = &m_vkSwapChain;
 	presentInfo.pImageIndices = &m_imageIndex;
-	VK_CHECK(vkQueuePresentKHR(m_renderContext.GraphicsQueue().vkQueue(), &presentInfo));
+	VkResult presentResult = vkQueuePresentKHR(m_renderContext.GraphicsQueue().vkQueue(), &presentInfo);
+
+	if (presentResult != VK_SUCCESS) 
+	{
+		if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR)
+			ResizeViewport();
+		else
+			VK_CHECK(presentResult);
+	}
 }
 
 void SwapChain::ResizeViewport()
 {
+	if (m_window.Width() == 0 || m_window.Height() == 0)
+		return;
+
 	Init();
 }
 

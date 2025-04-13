@@ -129,14 +129,16 @@ i32 Engine::Run()
 
 void Engine::Update(f32 dt)
 {
-	if (m_bWindowResized && m_resizeWidth > 0 && m_resizeHeight > 0)
+	if (m_bWindowResized && m_resizeWidth >= 0 && m_resizeHeight >= 0)
 	{
-		// TODO: handle negative viewport
+		if (m_resizeWidth == 0 || m_resizeHeight == 0)
+			return;
+
 		m_pWindow->OnWindowResized(m_resizeWidth, m_resizeHeight);
 		m_pRendererBackend->OnWindowResized(m_resizeWidth, m_resizeHeight);
 
 		m_bWindowResized = false;
-		m_resizeWidth = m_resizeHeight = 0;
+		m_resizeWidth = m_resizeHeight = -1;
 	}
 
 	ProcessInput();
@@ -443,6 +445,14 @@ void Engine::ProcessInput()
 		{
 			RELEASE(m_pRendererBackend);
 			m_eBackendAPI = eRendererAPI::Vulkan;
+
+			// NOTE. There is a bug which the window image is not properly updated 
+			//       i.e. the last image output by d3d12 renderer remains intact.
+			//       While the rendering-to-present process is executed normally(according to RenderDoc and PIX).
+			//       It is hard to debug. So bypassed by window recreation for now.
+			RELEASE(m_pWindow);
+			if (!InitWindow())
+				throw std::runtime_error("Failed to load window!");
 
 			if (!LoadRenderer(m_eBackendAPI, m_pWindow, ImGui::GetCurrentContext(), &m_pRendererBackend))
 				throw std::runtime_error("Failed to load backend!");

@@ -78,6 +78,8 @@ public:
 	[[nodiscard]]
 	inline i32 Height() const { return m_desc.height; }
 	[[nodiscard]]
+	inline bool Minimized() const { return m_desc.width == 0 || m_desc.height == 0; }
+	[[nodiscard]]
 	inline const WindowDescriptor& Desc() const { return m_desc; }
 
 private:

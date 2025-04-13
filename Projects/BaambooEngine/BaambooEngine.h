@@ -49,8 +49,8 @@ protected:
 
 	RendererAPI* m_pRendererBackend = nullptr;
 
-	int  m_resizeWidth = 0;
-	int  m_resizeHeight = 0;
+	int  m_resizeWidth = -1;
+	int  m_resizeHeight = -1;
 	bool m_bWindowResized = false;
 
 private:
