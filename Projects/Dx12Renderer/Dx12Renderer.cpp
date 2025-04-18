@@ -8,7 +8,8 @@
 #include "RenderDevice/Dx12CommandList.h"
 #include "RenderModule/Dx12ForwardRenderModule.h"
 
-#include <BaambooCore/Window.h>
+#include <Scene/SceneRenderView.h>
+
 #include <imgui/imgui.h>
 #include <imgui/backends/imgui_impl_dx12.h>
 
@@ -84,8 +85,29 @@ void Renderer::NewFrame()
 	ImGui_ImplDX12_NewFrame();
 }
 
-void Renderer::Render()
+float4 testColor{};
+void Renderer::Render(const baamboo::SceneRenderView& renderView)
 {
+	auto& rm = m_pRenderContext->GetResourceManager();
+	for (const auto& transform : renderView.transforms)
+	{
+		// update transform buffer
+	}
+
+	for (const auto& mesh : renderView.meshes)
+	{
+		// update vertex/index/textures
+		// rm.LoadOrGet< Buffer >(mesh.geometry);
+		// rm.LoadOrGet< Texture >(mesh.material.albedo);
+	}
+
+	for (const auto& camera : renderView.cameras)
+	{
+		// update camera buffer
+		if (camera.id == 0)
+			testColor = float4(camera.pos, 1.0f);
+	}
+
 	auto& cmdList = BeginFrame();
 	RenderFrame(cmdList);
 	EndFrame(cmdList);
@@ -125,7 +147,7 @@ CommandList& Renderer::BeginFrame()
 void Renderer::RenderFrame(CommandList& cmdList)
 {
 	{
-		ForwardPass::Apply(cmdList);
+		ForwardPass::Apply(cmdList, testColor);
 	}
 	ImGui::DrawUI(cmdList);
 }

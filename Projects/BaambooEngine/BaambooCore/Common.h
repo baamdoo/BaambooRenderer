@@ -15,6 +15,12 @@
 //-------------------------------------------------------------------------
 // Defines
 //-------------------------------------------------------------------------
+#ifdef BAAMBOO_ENGINE
+#define ENGINE_API __declspec(dllexport)
+#else
+#define ENGINE_API __declspec(dllimport)
+#endif
+
 #define UNUSED(expr) (void)(expr)
 
 #define _KB(x) (x * 1024)

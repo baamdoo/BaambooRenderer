@@ -9,7 +9,7 @@ TransformSystem::TransformSystem(entt::registry& registry)
 {
 	m_registry.on_construct< TransformComponent >().connect< &TransformSystem::OnTransformConstructed >(this);
 	m_registry.on_update< TransformComponent >().connect< &TransformSystem::OnTransformUpdated >(this);
-    m_registry.on_destroy< TransformComponent >().connect< &TransformSystem::OnTransformUpdated >(this);
+    m_registry.on_destroy< TransformComponent >().connect< &TransformSystem::OnTransformDestroyed >(this);
 
     m_mWorlds.resize(1024);
     m_indexAllocator.reserve(1024);
@@ -34,7 +34,7 @@ void TransformSystem::OnTransformUpdated(entt::registry& registry, entt::entity 
 	MarkDirty(entity);
 }
 
-void TransformSystem::OnTransformDestroy(entt::registry& registry, entt::entity entity)
+void TransformSystem::OnTransformDestroyed(entt::registry& registry, entt::entity entity)
 {
     auto& transform = registry.get< TransformComponent >(entity);
     m_indexAllocator.release(transform.mWorld);
@@ -50,8 +50,11 @@ void TransformSystem::Update()
 
     m_registry.view< TransformComponent >().each([this](auto entity, auto& transformComponent)
         {
-            UpdateWorldTransform(entity);
-            transformComponent.bDirtyMark = false;
+            if (transformComponent.bDirtyMark)
+            {
+                UpdateWorldTransform(entity);
+                transformComponent.bDirtyMark = false;
+            }
         });
 }
 

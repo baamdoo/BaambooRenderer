@@ -1,7 +1,7 @@
 #include "ExampleApp.h"
 #include "BaambooCore/Window.h"
-#include "World/Entity.h"
-#include "World/Components.h"
+#include "Scene/Entity.h"
+#include "Scene/Components.h"
 #include "BaambooCore/Common.h"
 
 #include <imgui/backends/imgui_impl_glfw.h>
@@ -96,7 +96,7 @@ bool ExampleApp::LoadScene()
 	m_pScene = new Scene("ExampleScene");
 	auto entity0 = m_pScene->CreateEntity("Test0");
 	auto& transformComponent = entity0.GetComponent< TransformComponent >();
-	transformComponent.transform.SetPosition(0.0f, 1.0f, 0.0f);
+	transformComponent.transform.position = { 0.0f, 1.0f, 0.0f };
 
 	auto entity00 = m_pScene->CreateEntity("Test00");
 	entity0.AttachChild(entity00);

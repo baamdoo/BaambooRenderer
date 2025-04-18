@@ -1,6 +1,7 @@
 #pragma once
 #include "BaambooCore/RendererAPI.h"
-#include "World/Scene.h"
+#include "Scene/Scene.h"
+#include "BaambooCore/ThreadQueue.hpp"
 
 #include <filesystem>
 namespace fs = std::filesystem;
@@ -35,6 +36,8 @@ public:
 
 protected:
 	virtual void Update(float dt);
+	virtual void GameLoop(float dt);
+	virtual void RenderLoop();
 
 	virtual bool InitWindow() { return false; }
 	virtual bool LoadScene() { return false; }
@@ -57,6 +60,11 @@ private:
 	eRendererAPI m_eBackendAPI;
 	double       m_runningTime = 0.0;
 
+	std::thread                    m_renderThread;
+	ThreadQueue< SceneRenderView > m_renderViewQueue;
+	std::atomic_bool               m_bRunning;
+
+	std::mutex m_imguiMutex; // mutex for sync between writing entity-components data in render-thread and reading(view-each) in game-thread
 	fs::path m_currentDirectory;
 	friend void ImGui::DrawUI(baamboo::Engine& engine);
 };

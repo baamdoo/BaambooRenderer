@@ -32,6 +32,32 @@ struct TransformComponent
 
 
 //-------------------------------------------------------------------------
+// CameraComponent : Camera
+//-------------------------------------------------------------------------
+struct CameraComponent
+{
+	enum class eType { Orthographic, Perspective } type;
+
+	float cNear;
+	float cFar;
+	float fov;
+
+	bool bDirtyMark;
+};
+inline std::string_view GetCameraTypeString(CameraComponent::eType type)
+{
+	switch(type)
+	{
+	case CameraComponent::eType::Orthographic:
+		return "Orthographic";
+	case CameraComponent::eType::Perspective:
+		return "Perspective";
+	}
+
+	return "";
+};
+
+//-------------------------------------------------------------------------
 // StaticMeshComponent : Determines whether to be rendered statically
 //-------------------------------------------------------------------------
 struct StaticMeshComponent

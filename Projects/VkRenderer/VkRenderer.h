@@ -17,7 +17,7 @@ public:
 	explicit Renderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext);
 	virtual ~Renderer() override;
 
-	virtual void Render() override;
+	virtual void Render(const baamboo::SceneRenderView& renderView) override;
 	virtual void NewFrame() override;
 
 	virtual void SetRendererType(eRendererType type) override;

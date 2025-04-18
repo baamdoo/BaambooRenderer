@@ -10,7 +10,7 @@ namespace ForwardPass
 {
 
 void Initialize(RenderContext& renderContext);
-void Apply(CommandList& cmdList);
+void Apply(CommandList& cmdList, float4 testColor);
 void Destroy();
 
 void Resize(u32 width, u32 height, u32 depth = 1);

@@ -1,5 +1,6 @@
 #pragma once
 #include "Components.h"
+#include "SceneRenderView.h"
 
 namespace baamboo
 {
@@ -7,6 +8,7 @@ namespace baamboo
 constexpr size_t NUM_MAX_ENTITIES = 8 * 1024 * 1024;
 
 class TransformSystem;
+class CameraSystem;
 
 class Scene
 {
@@ -21,14 +23,21 @@ public:
 	void Update(float dt);
 
 	[[nodiscard]]
+	SceneRenderView RenderView() const;
+
+	[[nodiscard]]
 	const std::string& Name() const { return m_name; }
 	[[nodiscard]]
 	bool IsLoading() const { return m_bLoading; }
 
 	[[nodiscard]]
+	entt::registry& Registry() { return m_registry; }
+	[[nodiscard]]
 	const entt::registry& Registry() const { return m_registry; }
 	[[nodiscard]]
 	TransformSystem* GetTransformSystem() const { return m_pTransformSystem; }
+	[[nodiscard]]
+	CameraSystem* GetCameraSystem() const { return m_pCameraSystem; }
 
 private:
 	friend class Entity;
@@ -38,6 +47,7 @@ private:
 	bool m_bLoading = false;
 
 	TransformSystem* m_pTransformSystem;
+	CameraSystem*    m_pCameraSystem;
 };
 
 } // namespace baamboo 

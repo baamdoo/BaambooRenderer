@@ -78,12 +78,12 @@ RenderContext::~RenderContext()
 {
 	vkDestroyDescriptorPool(m_vkDevice, m_vkStaticDescriptorPool, nullptr);
 
-	RELEASE(m_pResourceManager);
-	vmaDestroyAllocator(m_vmaAllocator);
-
 	RELEASE(m_pTransferQueue);
 	RELEASE(m_pComputeQueue);
 	RELEASE(m_pGraphicsQueue);
+
+	RELEASE(m_pResourceManager);
+	vmaDestroyAllocator(m_vmaAllocator);
 
 	vkDestroyDevice(m_vkDevice, nullptr);
 

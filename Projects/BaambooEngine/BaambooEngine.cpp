@@ -3,8 +3,9 @@
 #include "BaambooCore/Timer.h"
 #include "BaambooCore/Window.h"
 #include "BaambooCore/EngineCore.h"
-#include "World/Entity.h"
-#include "World/TransformSystem.h"
+#include "BaambooCore/ThreadQueue.hpp"
+#include "Scene/Entity.h"
+#include "Scene/TransformSystem.h"
 
 #include <filesystem>
 #include <imgui/imgui.h>
@@ -81,13 +82,18 @@ enum
 	eContentButton_Geometry,
 };
 
+constexpr u32 NUM_TOLERANCE_ASYNC_FRAME_GAME_TO_RENDER = 3;
+
 Engine::Engine()
 	: m_currentDirectory(ASSET_PATH)
+	, m_bRunning(false)
 {
 }
 
 Engine::~Engine()
 {
+	m_renderThread.join();
+
 	RELEASE(m_pScene);
 	RELEASE(m_pRendererBackend);
 	RELEASE(m_pWindow);
@@ -111,9 +117,11 @@ void Engine::Initialize(eRendererAPI eApi)
 
 i32 Engine::Run()
 {
+	m_bRunning = true;
 	m_runningTime = 0.0;
 
 	Timer timer{};
+	m_renderThread = std::thread(&Engine::RenderLoop, this);
 	while (m_pWindow->PollEvent())
 	{
 		timer.Tick();
@@ -124,6 +132,7 @@ i32 Engine::Run()
 		Update(static_cast<float>(dt));
 	}
 
+	m_bRunning = false;
 	return 0;
 }
 
@@ -141,12 +150,34 @@ void Engine::Update(f32 dt)
 		m_resizeWidth = m_resizeHeight = -1;
 	}
 
+	GameLoop(dt);
+}
+
+void Engine::GameLoop(float dt)
+{
 	ProcessInput();
+
+	std::lock_guard< std::mutex > lock(m_imguiMutex);
 
 	m_pScene->Update(dt);
 
-	ImGui::DrawUI(*this);
-	m_pRendererBackend->Render();
+	if (m_renderViewQueue.size() > NUM_TOLERANCE_ASYNC_FRAME_GAME_TO_RENDER)
+		m_renderViewQueue.replace(m_pScene->RenderView());
+	else
+		m_renderViewQueue.push(m_pScene->RenderView());
+}
+
+void Engine::RenderLoop()
+{
+	while (m_bRunning)
+	{
+		auto renderView = m_renderViewQueue.try_pop();
+		if (!renderView.has_value())
+			continue;
+
+		ImGui::DrawUI(*this);
+		m_pRendererBackend->Render(renderView.value());
+	}
 }
 
 void Engine::DrawUI()
@@ -240,18 +271,69 @@ void Engine::DrawUI()
 			
 			if (ImGui::selectedEntity.HasAll< TransformComponent >())
 			{
+				bool bMark = false;
 				if (ImGui::CollapsingHeader("Transform"))
 				{
 					auto& transformComponent = ImGui::selectedEntity.GetComponent< TransformComponent >();
 
 					ImGui::Text("Position");
-					ImGui::DragFloat3("##Position", glm::value_ptr(transformComponent.transform.position), 0.1f);
+					bMark |= ImGui::DragFloat3("##Position", glm::value_ptr(transformComponent.transform.position), 0.1f);
 
 					ImGui::Text("Rotation");
-					ImGui::DragFloat3("##Rotation", glm::value_ptr(transformComponent.transform.rotation), 0.1f);
+					bMark |= ImGui::DragFloat3("##Rotation", glm::value_ptr(transformComponent.transform.rotation), 0.1f);
 
 					ImGui::Text("Scale");
-					ImGui::DragFloat3("##Scale", glm::value_ptr(transformComponent.transform.scale), 0.1f);
+					bMark |= ImGui::DragFloat3("##Scale", glm::value_ptr(transformComponent.transform.scale), 0.1f);
+				}
+
+				if (bMark)
+				{
+					m_pScene->Registry().patch< TransformComponent >(ImGui::selectedEntity.ID(), [](auto&) {});
+				}
+			}
+
+			if (ImGui::selectedEntity.HasAll< CameraComponent >())
+			{
+				bool bMark = false;
+				if (ImGui::CollapsingHeader("Camera"))
+				{
+					auto& cameraComponent = ImGui::selectedEntity.GetComponent< CameraComponent >();
+
+					ImGui::Text("CameraType");
+					if (ImGui::BeginCombo("##CameraType", GetCameraTypeString(cameraComponent.type).data()))
+					{
+						if (ImGui::Selectable(GetCameraTypeString(CameraComponent::eType::Perspective).data(), cameraComponent.type == CameraComponent::eType::Perspective))
+						{
+							bMark = true;
+							cameraComponent.type = CameraComponent::eType::Perspective;
+						}
+
+						if (ImGui::Selectable(GetCameraTypeString(CameraComponent::eType::Orthographic).data(), cameraComponent.type == CameraComponent::eType::Orthographic))
+						{
+							bMark = true;
+							cameraComponent.type = CameraComponent::eType::Orthographic;
+						}
+
+						ImGui::EndCombo();
+					}
+
+					float width = (ImGui::GetWindowWidth() - ImGui::GetStyle().ItemSpacing.x);
+
+					ImGui::PushItemWidth(width * 0.3f);
+					ImGui::Text("ClippingRange");
+					bMark |= ImGui::InputFloat("##ClipNear", &cameraComponent.cNear, 0, 0, "%.2f");
+
+					ImGui::PushItemWidth(width * 0.7f);
+					ImGui::SameLine();
+					bMark |= ImGui::InputFloat("##ClipFar", &cameraComponent.cFar, 0, 0, "%.2f");
+
+					ImGui::Text("FoV");
+					bMark |= ImGui::DragFloat("##FoV", &cameraComponent.fov, 0.1f, 1.0f, 90.0f, "%.1f");
+				}
+
+				if (bMark)
+				{
+					m_pScene->Registry().patch< CameraComponent >(ImGui::selectedEntity.ID(), [](auto&) {});
 				}
 			}
 
@@ -286,16 +368,36 @@ void Engine::DrawUI()
 
 			if (ImGui::BeginPopup("AddComponentPopup")) 
 			{
+				if (!ImGui::selectedEntity.HasAny< CameraComponent >())
+				{
+					if (ImGui::MenuItem("Camera"))
+					{
+						m_imguiMutex.lock();
+
+						ImGui::selectedEntity.AttachComponent< CameraComponent >();
+
+						m_imguiMutex.unlock();
+					}
+				}
+
 				if (!ImGui::selectedEntity.HasAny< StaticMeshComponent, DynamicMeshComponent >())
 				{
 					if (ImGui::MenuItem("StaticMesh"))
 					{
+						m_imguiMutex.lock();
+
 						ImGui::selectedEntity.AttachComponent< StaticMeshComponent >();
+
+						m_imguiMutex.unlock();
 					}
 
 					if (ImGui::MenuItem("DynamicMesh"))
 					{
+						m_imguiMutex.lock();
+
 						ImGui::selectedEntity.AttachComponent< DynamicMeshComponent >();
+
+						m_imguiMutex.unlock();
 					}
 				}
 
@@ -443,6 +545,9 @@ void Engine::ProcessInput()
 	{
 		if (m_eBackendAPI != eRendererAPI::Vulkan)
 		{
+			m_bRunning = false;
+			m_renderThread.join();
+
 			RELEASE(m_pRendererBackend);
 			m_eBackendAPI = eRendererAPI::Vulkan;
 
@@ -456,17 +561,26 @@ void Engine::ProcessInput()
 
 			if (!LoadRenderer(m_eBackendAPI, m_pWindow, ImGui::GetCurrentContext(), &m_pRendererBackend))
 				throw std::runtime_error("Failed to load backend!");
+
+			m_bRunning = true;
+			m_renderThread = std::thread(&Engine::RenderLoop, this);
 		}
 	}
 	else if (glfwGetKey(m_pWindow->Handle(), GLFW_KEY_LEFT_SHIFT) && glfwGetKey(m_pWindow->Handle(), GLFW_KEY_D))
 	{
 		if (m_eBackendAPI != eRendererAPI::D3D12)
 		{
+			m_bRunning = false;
+			m_renderThread.join();
+
 			RELEASE(m_pRendererBackend);
 			m_eBackendAPI = eRendererAPI::D3D12;
 
 			if (!LoadRenderer(m_eBackendAPI, m_pWindow, ImGui::GetCurrentContext(), &m_pRendererBackend))
 				throw std::runtime_error("Failed to load backend!");
+
+			m_bRunning = true;
+			m_renderThread = std::thread(&Engine::RenderLoop, this);
 		}
 	}
 }

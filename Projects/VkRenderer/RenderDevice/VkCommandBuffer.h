@@ -59,7 +59,7 @@ public:
     template< typename T >
     void SetGraphicsDynamicUniformBuffer(u32 set, u32 binding, const T& data)
     {
-        SetGraphicsDynamicConstantBuffer(set, binding, sizeof(T), &data);
+        SetGraphicsDynamicUniformBuffer(set, binding, sizeof(T), &data);
     }
     void SetDescriptors(u32 set, u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType);
     void SetDescriptors(u32 set, u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType);
@@ -109,7 +109,13 @@ private:
     GraphicsPipeline* m_pGraphicsPipeline = nullptr;
     ComputePipeline* m_pComputePipeline = nullptr;
 
-    std::vector< VkWriteDescriptorSet > m_writes[eNumDescriptorSet - 1];
+    struct AllocationInfo
+    {
+        u32              binding;
+        DescriptorInfo   descriptor;
+        VkDescriptorType descriptorType;
+    };
+    std::vector< AllocationInfo > m_allocations[eNumDescriptorSet];
 
     u32                   m_numBarriersToFlush = 0;
     VkImageMemoryBarrier2 m_imageBarriers[MAX_NUM_PENDING_BARRIERS] = {};

@@ -18,7 +18,7 @@ public:
 	virtual ~Renderer() override;
 
 	virtual void NewFrame() override;
-	virtual void Render() override;
+	virtual void Render(const baamboo::SceneRenderView& renderView) override;
 
 	virtual void OnWindowResized(i32 width, i32 height) override;
 	virtual void SetRendererType(eRendererType type) override;

@@ -7,6 +7,8 @@
 #include "RenderResource/VkTexture.h"
 #include "RenderModule/VkForwardRenderModule.h"
 
+#include <Scene/SceneRenderView.h>
+
 #include <imgui/imgui.h>
 #include <imgui/backends/imgui_impl_vulkan.h>
 
@@ -96,9 +98,31 @@ Renderer::~Renderer()
 	printf("VkRenderer destructed!\n");
 }
 
-void Renderer::Render()
+void Renderer::Render(const baamboo::SceneRenderView& renderView)
 {
+	auto& rm = m_pRenderContext->GetResourceManager();
+	for (const auto& transform : renderView.transforms)
+	{
+		// update transform buffer
+	}
+
+	for (const auto& mesh : renderView.meshes)
+	{
+		// update vertex/index/textures
+		// rm.LoadOrGet< Buffer >(mesh.geometry);
+		// rm.LoadOrGet< Texture >(mesh.material.albedo);
+	}
+
+	float4 testColor{};
+	for (const auto& camera : renderView.cameras)
+	{
+		// update camera buffer
+		testColor = float4(camera.pos, 1.0f);
+	}
+
 	auto& cmdBuffer = BeginFrame();
+	cmdBuffer.SetGraphicsDynamicUniformBuffer(1, 0, testColor);
+
 	RenderFrame(cmdBuffer);
 	EndFrame(cmdBuffer);
 }

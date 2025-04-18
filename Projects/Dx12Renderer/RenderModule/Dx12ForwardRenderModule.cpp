@@ -53,6 +53,7 @@ void ForwardPass::Initialize(RenderContext& renderContext)
 	// Root signature
 	// **
 	_pSimpleRS = new RootSignature(renderContext);
+	_pSimpleRS->AddCBV(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX);
 	_pSimpleRS->Build();
 
 
@@ -65,7 +66,7 @@ void ForwardPass::Initialize(RenderContext& renderContext)
 	_pSimplePSO->SetShaderModules(hVS, hFS).SetRenderTargetFormats(_renderTarget).SetRootSignature(_pSimpleRS).Build();
 }
 
-void ForwardPass::Apply(CommandList& cmdList)
+void ForwardPass::Apply(CommandList& cmdList, float4 testColor)
 {
 	_renderTarget.ClearTexture(cmdList, eAttachmentPoint::All);
 	cmdList.SetRenderTarget(_renderTarget);
@@ -73,6 +74,9 @@ void ForwardPass::Apply(CommandList& cmdList)
 	cmdList.SetPipelineState(_pSimplePSO);
 	cmdList.SetGraphicsRootSignature(_pSimpleRS);
 	cmdList.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	cmdList.SetGraphicsDynamicConstantBuffer(0, testColor);
+
 	cmdList.Draw(3);
 }
 

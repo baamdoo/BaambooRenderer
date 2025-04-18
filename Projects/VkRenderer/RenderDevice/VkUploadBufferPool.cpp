@@ -77,6 +77,7 @@ UploadBufferPool::Page::Page(RenderContext& context, VkDeviceSize sizeInBytes)
 	VK_CHECK(vmaCreateBuffer(context.vmaAllocator(), &bufferInfo, &vmaInfo, &m_vkBuffer, &m_vmaAllocation, &vmaAllocationInfo));
 
 	m_baseCpuHandle = vmaAllocationInfo.pMappedData;
+	VK_CHECK(vmaMapMemory(context.vmaAllocator(), m_vmaAllocation, &m_baseCpuHandle));
 }
 
 UploadBufferPool::Page::~Page()

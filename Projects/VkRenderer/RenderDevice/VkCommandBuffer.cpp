@@ -75,12 +75,11 @@ void CommandBuffer::Open(VkCommandBufferUsageFlags flags)
     VK_CHECK(vkBeginCommandBuffer(m_vkCommandBuffer, &beginInfo));
 
 	m_pUploadBufferPool->Reset();
-	for (auto& writes : m_writes)
-		writes.clear();
+	for (auto& allocation : m_allocations)
+		allocation.clear();
 
 	m_pGraphicsPipeline = nullptr;
 	m_pComputePipeline = nullptr;
-	m_writes[eDescriptorSet_Push - 1].clear();
 }
 
 void CommandBuffer::Close()
@@ -332,11 +331,11 @@ void CommandBuffer::SetGraphicsDynamicUniformBuffer(u32 set, u32 binding, VkDevi
 	write.dstBinding = binding;
 	write.dstArrayElement = 0;
 	write.descriptorCount = 1;
-	write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+	write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	write.pBufferInfo = &bufferInfo;
-
+	
 	assert(set > eDescriptorSet_Static);
-	m_writes[set].push_back(write);
+	m_allocations[set].push_back({ binding, bufferInfo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER });
 }
 
 void CommandBuffer::SetDescriptors(u32 set, u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType)
@@ -351,7 +350,7 @@ void CommandBuffer::SetDescriptors(u32 set, u32 binding, const VkDescriptorImage
 	write.pImageInfo = &imageInfo;
 
 	assert(set > eDescriptorSet_Static);
-	m_writes[set].push_back(write);
+	m_allocations[set].push_back({ binding, imageInfo, descriptorType });
 }
 
 void CommandBuffer::SetDescriptors(u32 set, u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType)
@@ -366,7 +365,7 @@ void CommandBuffer::SetDescriptors(u32 set, u32 binding, const VkDescriptorBuffe
 	write.pBufferInfo = &bufferInfo;
 
 	assert(set > eDescriptorSet_Static);
-	m_writes[set].push_back(write);
+	m_allocations[set].push_back({ binding, bufferInfo, descriptorType });
 }
 
 void CommandBuffer::SetRenderPipeline(GraphicsPipeline* pRenderPipeline)
@@ -408,24 +407,50 @@ void CommandBuffer::EndRenderPass()
 
 void CommandBuffer::Draw(u32 vertexCount, u32 instanceCount, u32 firstVertex, u32 firstInstance)
 {
-	if (!m_writes[eDescriptorSet_Push - 1].empty())
-		vkCmdPushDescriptorSetKHR(
-			m_vkCommandBuffer,
-			VK_PIPELINE_BIND_POINT_GRAPHICS,
-			m_pGraphicsPipeline->vkPipelineLayout(),
-			eDescriptorSet_Push, static_cast<u32>(m_writes[eDescriptorSet_Push - 1].size()), m_writes[eDescriptorSet_Push - 1].data());
+	std::vector< VkWriteDescriptorSet > writes;
+	for (const auto& allocation : m_allocations[eDescriptorSet_Push])
+	{
+		VkWriteDescriptorSet write = {};
+		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		write.dstSet = VK_NULL_HANDLE;
+		write.dstBinding = allocation.binding;
+		write.dstArrayElement = 0;
+		write.descriptorCount = 1;
+		write.descriptorType = allocation.descriptorType;
+		write.pBufferInfo = &allocation.descriptor.bufferInfo;
+		writes.push_back(write);		
+	}
+
+	vkCmdPushDescriptorSetKHR(
+		m_vkCommandBuffer,
+		VK_PIPELINE_BIND_POINT_GRAPHICS,
+		m_pGraphicsPipeline->vkPipelineLayout(),
+		eDescriptorSet_Push, static_cast<u32>(writes.size()), writes.data());
 
 	vkCmdDraw(m_vkCommandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
 }
 
 void CommandBuffer::DrawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex, i32 vertexOffset, u32 firstInstance)
 {
-	if (!m_writes[eDescriptorSet_Push - 1].empty())
-		vkCmdPushDescriptorSetKHR(
-			m_vkCommandBuffer, 
-			VK_PIPELINE_BIND_POINT_GRAPHICS, 
-			m_pGraphicsPipeline->vkPipelineLayout(), 
-			eDescriptorSet_Push, static_cast<u32>(m_writes[eDescriptorSet_Push - 1].size()), m_writes[eDescriptorSet_Push - 1].data());
+	std::vector< VkWriteDescriptorSet > writes;
+	for (const auto& allocation : m_allocations[eDescriptorSet_Push])
+	{
+		VkWriteDescriptorSet write = {};
+		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		write.dstSet = VK_NULL_HANDLE;
+		write.dstBinding = allocation.binding;
+		write.dstArrayElement = 0;
+		write.descriptorCount = 1;
+		write.descriptorType = allocation.descriptorType;
+		write.pBufferInfo = &allocation.descriptor.bufferInfo;
+		writes.push_back(write);
+	}
+
+	vkCmdPushDescriptorSetKHR(
+		m_vkCommandBuffer,
+		VK_PIPELINE_BIND_POINT_GRAPHICS,
+		m_pGraphicsPipeline->vkPipelineLayout(),
+		eDescriptorSet_Push, static_cast<u32>(writes.size()), writes.data());
 
 	vkCmdDrawIndexed(m_vkCommandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }

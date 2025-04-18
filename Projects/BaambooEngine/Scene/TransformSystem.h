@@ -12,13 +12,16 @@ public:
 
 	void OnTransformConstructed(entt::registry& registry, entt::entity entity);
 	void OnTransformUpdated(entt::registry& registry, entt::entity entity);
-	void OnTransformDestroy(entt::registry& registry, entt::entity entity);
+	void OnTransformDestroyed(entt::registry& registry, entt::entity entity);
 
 	void Update();
 
 	void MarkDirty(entt::entity entity);
 	void AttachChild(entt::entity parent, entt::entity child);
 	void DetachChild(entt::entity child);
+
+	[[nodiscard]]
+	const mat4& WorldMatrix(u32 index) const { assert(index < m_mWorlds.size()); return m_mWorlds[index]; }
 
 private:
 	void UpdateWorldTransform(entt::entity entity);
