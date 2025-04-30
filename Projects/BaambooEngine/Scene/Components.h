@@ -1,5 +1,7 @@
 #pragma once
+#include "BaambooCore/BackendAPI.h"
 #include "BaambooCore/Transform.hpp"
+#include "BaambooCore/Boundings.h"
 
 #include <entt/entt.hpp>
 
@@ -60,10 +62,39 @@ inline std::string_view GetCameraTypeString(CameraComponent::eType type)
 //-------------------------------------------------------------------------
 // StaticMeshComponent : Determines whether to be rendered statically
 //-------------------------------------------------------------------------
+struct Geometry
+{
+	std::string path;
+
+	VertexHandle vertex;
+	IndexHandle  index;
+
+	BoundingBox aabb;
+};
+
+struct Material
+{
+	float3 tint{ 1, 1, 1 };
+
+	struct Data
+	{
+		std::string   path;
+		TextureHandle handle;
+	};
+
+	Data albedo;
+	Data normal;
+	Data specular;
+	Data ao;
+	Data roughness;
+	Data metallic;
+	Data emission;
+};
+
 struct StaticMeshComponent
 {
-	std::string texture;
-	std::string geometry;
+	Geometry geometry;
+	Material material;
 };
 
 //-------------------------------------------------------------------------

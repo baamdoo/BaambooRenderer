@@ -40,7 +40,7 @@ protected:
 	template< typename T >
 	friend class ResourcePool;
 
-	Shader(RenderContext& context, std::string_view name, CreationInfo&& info);
+	Shader(RenderContext& context, std::wstring_view name, CreationInfo&& info);
 	virtual ~Shader();
 
 private:

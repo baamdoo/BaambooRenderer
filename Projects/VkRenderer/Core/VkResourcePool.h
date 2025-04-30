@@ -13,7 +13,7 @@ class ResourcePool
 public:
     ResourcePool();
     ~ResourcePool();
-    baamboo::ResourceHandle< TResource > Create(RenderContext& context, std::string_view name, typename TResource::CreationInfo&& info)
+    baamboo::ResourceHandle< TResource > Create(RenderContext& context, std::wstring_view name, typename TResource::CreationInfo&& info)
 	{
         u32 index;
         if (m_frees.size() > 0)

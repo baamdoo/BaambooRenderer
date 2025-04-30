@@ -19,3 +19,9 @@
 [submodule "Projects/ThirdParties/imgui"]
 	path = Projects/ThirdParties/imgui
 	url = https://github.com/ocornut/imgui.git
+[submodule "Projects/ThirdParties/assimp"]
+	path = Projects/ThirdParties/assimp
+	url = https://github.com/assimp/assimp.git
+[submodule "Projects/ThirdParties/stb"]
+	path = Projects/ThirdParties/stb
+	url = https://github.com/nothings/stb.git

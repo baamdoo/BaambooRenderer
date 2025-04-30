@@ -1,5 +1,5 @@
 #pragma once
-#include "BaambooCore/RendererAPI.h"
+#include "BaambooCore/BackendAPI.h"
 
 struct ImGuiContext;
 
@@ -22,6 +22,9 @@ public:
 
 	virtual void OnWindowResized(i32 width, i32 height) override;
 	virtual void SetRendererType(eRendererType type) override;
+
+	[[nodiscard]]
+	virtual ResourceManagerAPI& GetResourceManager() override;
 
 private:
 	class CommandList& BeginFrame();

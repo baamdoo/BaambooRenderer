@@ -137,6 +137,11 @@ void Renderer::SetRendererType(eRendererType type)
 	m_type = type;
 }
 
+ResourceManagerAPI& Renderer::GetResourceManager()
+{
+	return m_pRenderContext->GetResourceManager();
+}
+
 void Renderer::OnWindowResized(i32 width, i32 height)
 {
 	if (width == 0 || height == 0)

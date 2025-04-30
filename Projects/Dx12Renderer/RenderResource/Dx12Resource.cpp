@@ -18,7 +18,7 @@ Resource::Resource(RenderContext& context, std::wstring_view name, eResourceType
 {
 }
 
-Resource::Resource(RenderContext& context, std::wstring_view name, const ResourceCreationInfo& info, eResourceType type)
+Resource::Resource(RenderContext& context, std::wstring_view name, ResourceCreationInfo&& info, eResourceType type)
 	: m_RenderContext(context)
 	, m_Name(name)
 	, m_Type(type)
@@ -28,15 +28,11 @@ Resource::Resource(RenderContext& context, std::wstring_view name, const Resourc
 
 	switch (m_Type)
 	{
-	case eResourceType::VertexBuffer:
-	case eResourceType::IndexBuffer:
-	case eResourceType::ConstantBuffer:
-	case eResourceType::StructuredBuffer:
+	case eResourceType::Buffer:
 		ThrowIfFailed(d3d12Device->CreateCommittedResource(
 			&info.heapProps, info.heapFlags,
 			&info.desc, info.initialState,
 			nullptr, IID_PPV_ARGS(&m_d3d12Resource)));
-
 		break;
 
 	case eResourceType::Texture:

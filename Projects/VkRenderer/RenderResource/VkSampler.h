@@ -41,7 +41,7 @@ protected:
     template< typename T >
     friend class ResourcePool;
 
-    Sampler(RenderContext& context, std::string_view name, const CreationInfo& info);
+    Sampler(RenderContext& context, std::wstring_view name, const CreationInfo& info);
     virtual ~Sampler();
 
 private:

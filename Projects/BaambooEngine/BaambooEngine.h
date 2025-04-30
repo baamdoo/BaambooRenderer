@@ -1,5 +1,5 @@
 #pragma once
-#include "BaambooCore/RendererAPI.h"
+#include "BaambooCore/BackendAPI.h"
 #include "Scene/Scene.h"
 #include "BaambooCore/ThreadQueue.hpp"
 
@@ -47,8 +47,8 @@ protected:
 	virtual void ProcessInput();
 
 protected:
-	class Window* m_pWindow = nullptr;
-	class Scene*  m_pScene = nullptr;
+	class Window*        m_pWindow = nullptr;
+	class Scene*         m_pScene = nullptr;
 
 	RendererAPI* m_pRendererBackend = nullptr;
 

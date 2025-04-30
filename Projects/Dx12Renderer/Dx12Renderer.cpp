@@ -138,6 +138,11 @@ void Renderer::SetRendererType(eRendererType type)
 	m_type = type;
 }
 
+ResourceManagerAPI& Renderer::GetResourceManager()
+{
+	return m_pRenderContext->GetResourceManager();
+}
+
 CommandList& Renderer::BeginFrame()
 {
 	auto& cmdList = m_pRenderContext->AllocateCommandList(D3D12_COMMAND_LIST_TYPE_DIRECT);

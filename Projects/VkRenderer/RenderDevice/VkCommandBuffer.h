@@ -35,6 +35,7 @@ public:
     void CopyBuffer(Buffer* pDstBuffer, Buffer* pSrcBuffer, VkDeviceSize dstOffset = 0, VkDeviceSize srcOffset = 0);
     void CopyBuffer(Texture* pDstTexture, Buffer* pSrcBuffer, const std::vector< VkBufferImageCopy >& regions, bool bAllSubresources = true);
     void CopyTexture(Texture* pDstTexture, Texture* pSrcTexture);
+    void GenerateMips(Texture* pTexture);
 
     // todo. unlock other types of barrier
     void TransitionImageLayout(

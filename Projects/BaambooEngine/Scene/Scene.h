@@ -1,6 +1,7 @@
 #pragma once
 #include "Components.h"
 #include "SceneRenderView.h"
+#include "BaambooUtils/ModelLoader.h"
 
 namespace baamboo
 {
@@ -19,6 +20,9 @@ public:
 	[[nodiscard]]
 	class Entity CreateEntity(const std::string& tag = "Empty");
 	void RemoveEntity(Entity entity);
+
+	[[nodiscard]]
+	class Entity ImportModel(fs::path filepath, MeshDescriptor descriptor, ResourceManagerAPI& rm);
 
 	void Update(float dt);
 

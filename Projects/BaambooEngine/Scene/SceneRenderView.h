@@ -15,16 +15,28 @@ struct StaticMeshRenderView
 {
 	u32 id;
 
-	std::string_view   geometry;
+	struct GeometryRenderView
+	{
+		u32 vb;
+		u32 vOffset;
+		u32 vCount;
+
+		u32 ib;
+		u32 iOffset;
+		u32 iCount;
+	} geometry;
+
 	struct MaterialRenderView
 	{
 		float3 tint{ 1, 1, 1 };
 
-		std::string_view albedo;
-		std::string_view normal;
-		std::string_view specular;
-		std::string_view emission;
-		std::string_view orm;
+		u32 albedo;
+		u32 normal;
+		u32 specular;
+		u32 ao;
+		u32 roughness;
+		u32 metallic;
+		u32 emission;
 	} material;
 };
 

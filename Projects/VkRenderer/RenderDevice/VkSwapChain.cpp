@@ -119,7 +119,7 @@ void SwapChain::Init()
 		};
 		VK_CHECK(vkCreateImageView(m_renderContext.vkDevice(), &imageViewInfo, nullptr, &imageViews[i]));
 
-		auto pTex = rm.CreateEmpty< Texture >("SwapChainBuffer_" + std::to_string(i));
+		auto pTex = rm.CreateEmpty< Texture >(L"SwapChainBuffer_" + std::to_wstring(i));
 		pTex->SetResource(images[i], imageViews[i], VK_NULL_HANDLE);
 
 		m_textures[i] = rm.Add(pTex);

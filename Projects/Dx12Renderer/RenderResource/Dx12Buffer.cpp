@@ -12,31 +12,31 @@ Buffer::Buffer(RenderContext& context, std::wstring_view name)
 {
 }
 
-Buffer::Buffer(RenderContext& context, std::wstring_view name, const CreationInfo& info, u32 count, u32 elementSize, eResourceType type)
-	: Super(context, name, info, type)
-	, m_Count(count)
-	, m_ElementSize(elementSize)
+Buffer::Buffer(RenderContext& context, std::wstring_view name, CreationInfo&& info)
+	: Super(context, name, std::move(info), eResourceType::Buffer)
+	, m_Count(info.count)
+	, m_ElementSize(info.elementSizeInBytes)
 {
 }
 
-VertexBuffer::VertexBuffer(RenderContext& context, std::wstring_view name, const ResourceCreationInfo& info, u32 count, u32 elementSize)
-	: Super(context, name, info, count, elementSize, eResourceType::VertexBuffer)
+VertexBuffer::VertexBuffer(RenderContext& context, std::wstring_view name, CreationInfo&& info)
+	: Super(context, name, std::move(info))
 {
 	m_d3d12BufferView.BufferLocation = m_d3d12Resource->GetGPUVirtualAddress();
-	m_d3d12BufferView.StrideInBytes = elementSize;
+	m_d3d12BufferView.StrideInBytes = info.elementSizeInBytes;
 	m_d3d12BufferView.SizeInBytes = static_cast<u32>(GetSizeInBytes());
 }
 
-IndexBuffer::IndexBuffer(RenderContext& context, std::wstring_view name, const ResourceCreationInfo& info, u32 count, u32 elementSize)
-	: Super(context, name, info, count, elementSize, eResourceType::IndexBuffer)
+IndexBuffer::IndexBuffer(RenderContext& context, std::wstring_view name, CreationInfo&& info)
+	: Super(context, name, std::move(info))
 {
 	m_d3d12BufferView.BufferLocation = m_d3d12Resource->GetGPUVirtualAddress();
 	m_d3d12BufferView.Format = DXGI_FORMAT_R16_UINT;
 	m_d3d12BufferView.SizeInBytes = static_cast<u32>(GetSizeInBytes());
 }
 
-ConstantBuffer::ConstantBuffer(RenderContext& context, std::wstring_view name, const ResourceCreationInfo& info, u32 count, u32 elementSize)
-	: Super(context, name, info, count, elementSize, eResourceType::ConstantBuffer)
+ConstantBuffer::ConstantBuffer(RenderContext& context, std::wstring_view name, CreationInfo&& info)
+	: Super(context, name, std::move(info))
 {
 	auto d3d12Device = m_RenderContext.GetD3D12Device();
 	auto& rm = m_RenderContext.GetResourceManager();
@@ -63,8 +63,8 @@ ConstantBuffer::~ConstantBuffer()
 	m_CBVAllocation.Free();
 }
 
-StructuredBuffer::StructuredBuffer(RenderContext& context, std::wstring_view name, const ResourceCreationInfo& info, u32 count, u32 elementSize)
-	: Super(context, name, info, count, elementSize, eResourceType::StructuredBuffer)
+StructuredBuffer::StructuredBuffer(RenderContext& context, std::wstring_view name, CreationInfo&& info)
+	: Super(context, name, std::move(info))
 {
 	auto d3d12Device = m_RenderContext.GetD3D12Device();
 	auto& rm = m_RenderContext.GetResourceManager();

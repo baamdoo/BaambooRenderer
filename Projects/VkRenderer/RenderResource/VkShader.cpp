@@ -157,7 +157,7 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 	return stage;
 }
 
-Shader::Shader(RenderContext& context, std::string_view name, CreationInfo&& info)
+Shader::Shader(RenderContext& context, std::wstring_view name, CreationInfo&& info)
 	: Super(context, name)
 	, m_creationInfo(info)
 {

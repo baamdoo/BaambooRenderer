@@ -12,10 +12,10 @@ public:
     struct CreationInfo
     {
         u32  count;
-        u32  elementSize;
+        u64  elementSize;
         bool bMap;
 
-        VmaMemoryUsage     memoryUsage;
+        VmaMemoryUsage     memoryUsage = VMA_MEMORY_USAGE_AUTO;
         VkBufferUsageFlags bufferUsage;
     };
 
@@ -25,19 +25,19 @@ public:
     inline void* MappedMemory() const { assert(m_vmaAllocationInfo.pMappedData); return m_vmaAllocationInfo.pMappedData; }
 
     [[nodiscard]]
-    inline u32 SizeInBytes() const { return m_count * m_elementSize; }
+    inline u64 SizeInBytes() const { return m_count * m_elementSize; }
     [[nodiscard]]
     inline u32 BufferCount() const { return m_count; }
     [[nodiscard]]
-    inline u32 ElementSize() const { return m_elementSize; }
+    inline u64 ElementSize() const { return m_elementSize; }
 
 protected:
     template< typename T >
     friend class ResourcePool;
     friend class ResourceManager;
 
-    Buffer(RenderContext& context, std::string_view name);
-    Buffer(RenderContext& context, std::string_view name, CreationInfo&& info);
+    Buffer(RenderContext& context, std::wstring_view name);
+    Buffer(RenderContext& context, std::wstring_view name, CreationInfo&& info);
     virtual ~Buffer();
 
 private:

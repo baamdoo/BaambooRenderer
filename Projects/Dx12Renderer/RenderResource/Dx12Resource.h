@@ -13,10 +13,7 @@ constexpr D3D12_RESOURCE_STATES D3D12_RESOURCE_STATE_INVALID = (D3D12_RESOURCE_S
 enum class eResourceType
 {
 	None,
-	VertexBuffer,
-	IndexBuffer,
-	ConstantBuffer,
-	StructuredBuffer,
+	Buffer,
 	Texture,
 	Sampler,
 	Shader,
@@ -78,7 +75,7 @@ protected:
 
 	Resource(RenderContext& context, std::wstring_view name);
 	Resource(RenderContext& context, std::wstring_view name, eResourceType type);
-	Resource(RenderContext& context, std::wstring_view name, const ResourceCreationInfo& info, eResourceType type);
+	Resource(RenderContext& context, std::wstring_view name, ResourceCreationInfo&& info, eResourceType type);
 	virtual ~Resource();
 
 	virtual void Release();

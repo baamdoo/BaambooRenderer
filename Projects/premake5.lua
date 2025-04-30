@@ -32,7 +32,7 @@ project "Application"
 		"%{Path.Solution}Projects/ThirdParties/glfw/include",
 		"%{Path.Solution}Projects/ThirdParties/imgui",
 		"%{Path.Solution}Projects/ThirdParties/entt/single_include",
-		"%{Path.Solution}Projects/ThirdParties/taskflow/",
+		"%{Path.Solution}Projects/ThirdParties/assimp/include",
 	}
 
 	links {
@@ -100,11 +100,16 @@ project "BaambooEngine"
 		"%{Path.Solution}Projects/ThirdParties/glfw/include",
 		"%{Path.Solution}Projects/ThirdParties/imgui",
 		"%{Path.Solution}Projects/ThirdParties/entt/single_include",
-		"%{Path.Solution}Projects/ThirdParties/taskflow/",
+		"%{Path.Solution}Projects/ThirdParties/assimp/include",
+	}
+
+	libdirs {
+		'%{Path.ThirdParty}/assimp/lib/Release/', 
 	}
 
 	links {
 		"GLFW",
+		'assimp-vc143-mt.lib', 
 	}
 
 	debugenvs { 
@@ -177,7 +182,6 @@ project "Dx12Renderer"
 		"%{Path.Solution}Projects/ThirdParties/glm",
 		"%{Path.Solution}Projects/ThirdParties/glfw/include",
 		"%{Path.Solution}Projects/ThirdParties/imgui",
-		"%{Path.Solution}Projects/ThirdParties/taskflow/",
 	}
 
 	libdirs {
@@ -306,7 +310,7 @@ project "VkRenderer"
 		"%{Path.Solution}Projects/ThirdParties/glm",
 		"%{Path.Solution}Projects/ThirdParties/glfw/include",
 		"%{Path.Solution}Projects/ThirdParties/imgui",
-		"%{Path.Solution}Projects/ThirdParties/taskflow/",
+		
 		'%{Path.Vulkan}/Include/',
 	}
 

@@ -12,6 +12,8 @@
 #include <imgui/misc/cpp/imgui_stdlib.h>
 #include <glm/gtc/type_ptr.hpp>
 
+#include "BaambooCore/AssetRegistry.h"
+
 namespace ImGui
 {
 
@@ -78,8 +80,13 @@ namespace baamboo
 enum
 {
 	eContentButton_None,
-	eContentButton_Texture,
-	eContentButton_Geometry,
+	eContentButton_Mesh,
+	eContentButton_Albedo,
+	eContentButton_Normal,
+	eContentButton_Ao,
+	eContentButton_Metallic,
+	eContentButton_Roughness,
+	eContentButton_Emission,
 };
 
 constexpr u32 NUM_TOLERANCE_ASYNC_FRAME_GAME_TO_RENDER = 3;
@@ -111,8 +118,7 @@ void Engine::Initialize(eRendererAPI eApi)
 	if (!LoadRenderer(m_eBackendAPI, m_pWindow, pImGuiContext, &m_pRendererBackend))
 		throw std::runtime_error("Failed to load backend!");
 	if (!LoadScene())
-		throw std::runtime_error("Failed to create world!");
-
+		throw std::runtime_error("Failed to create scene!");
 }
 
 i32 Engine::Run()
@@ -342,24 +348,22 @@ void Engine::DrawUI()
 				if (ImGui::CollapsingHeader("StaticMesh"))
 				{
 					auto& component = ImGui::selectedEntity.GetComponent< StaticMeshComponent >();
-					
-					if (ImGui::Button("Texture")) ImGui::contentBrowserSetup = eContentButton_Texture;
-					ImGui::SameLine(); ImGui::Text(component.texture.c_str());
-					if (ImGui::Button("Geometry")) ImGui::contentBrowserSetup = eContentButton_Geometry;
-					ImGui::SameLine(); ImGui::Text(component.geometry.c_str());
-				}
-			}
 
-			if (ImGui::selectedEntity.HasAll< DynamicMeshComponent >())
-			{
-				if (ImGui::CollapsingHeader("DynamicMesh"))
-				{
-					auto& component = ImGui::selectedEntity.GetComponent< DynamicMeshComponent >();
+					if (ImGui::Button("Mesh")) ImGui::contentBrowserSetup = eContentButton_Mesh;
+					ImGui::SameLine(); ImGui::Text(component.geometry.path.c_str());
 
-					if (ImGui::Button("Texture")) ImGui::contentBrowserSetup = eContentButton_Texture;
-					ImGui::SameLine(); ImGui::Text(component.texture.c_str());
-					if (ImGui::Button("Geometry")) ImGui::contentBrowserSetup = eContentButton_Geometry;
-					ImGui::SameLine(); ImGui::Text(component.geometry.c_str());
+					if (ImGui::Button("Albedo")) ImGui::contentBrowserSetup = eContentButton_Albedo;
+					ImGui::SameLine(); ImGui::Text(component.material.albedo.path.c_str());
+					if (ImGui::Button("Normal")) ImGui::contentBrowserSetup = eContentButton_Normal;
+					ImGui::SameLine(); ImGui::Text(component.material.normal.path.c_str());
+					if (ImGui::Button("Ao")) ImGui::contentBrowserSetup = eContentButton_Ao;
+					ImGui::SameLine(); ImGui::Text(component.material.ao.path.c_str());
+					if (ImGui::Button("Metallic")) ImGui::contentBrowserSetup = eContentButton_Metallic;
+					ImGui::SameLine(); ImGui::Text(component.material.metallic.path.c_str());
+					if (ImGui::Button("Roughness")) ImGui::contentBrowserSetup = eContentButton_Roughness;
+					ImGui::SameLine(); ImGui::Text(component.material.roughness.path.c_str());
+					if (ImGui::Button("Emission")) ImGui::contentBrowserSetup = eContentButton_Emission;
+					ImGui::SameLine(); ImGui::Text(component.material.emission.path.c_str());
 				}
 			}
 
@@ -380,22 +384,13 @@ void Engine::DrawUI()
 					}
 				}
 
-				if (!ImGui::selectedEntity.HasAny< StaticMeshComponent, DynamicMeshComponent >())
+				if (!ImGui::selectedEntity.HasAny< StaticMeshComponent >())
 				{
 					if (ImGui::MenuItem("StaticMesh"))
 					{
 						m_imguiMutex.lock();
 
 						ImGui::selectedEntity.AttachComponent< StaticMeshComponent >();
-
-						m_imguiMutex.unlock();
-					}
-
-					if (ImGui::MenuItem("DynamicMesh"))
-					{
-						m_imguiMutex.lock();
-
-						ImGui::selectedEntity.AttachComponent< DynamicMeshComponent >();
 
 						m_imguiMutex.unlock();
 					}
@@ -441,27 +436,7 @@ void Engine::DrawUI()
 
 					switch(ImGui::contentBrowserSetup)
 					{
-					case eContentButton_Texture:
-						if (extensionStr == ".png" || extensionStr == ".jpg")
-						{
-							if (ImGui::Selectable(filenameStr.c_str())) 
-							{
-								if (ImGui::selectedEntity.HasAll< StaticMeshComponent >())
-								{
-									auto& component = ImGui::selectedEntity.GetComponent< StaticMeshComponent >();
-									component.texture = path.string();
-								}
-								else if (ImGui::selectedEntity.HasAll< DynamicMeshComponent >())
-								{
-									auto& component = ImGui::selectedEntity.GetComponent< DynamicMeshComponent >();
-									component.texture = path.string();
-								}
-
-								ImGui::contentBrowserSetup = 0;
-							}
-						}
-						break;
-					case eContentButton_Geometry:
+					case eContentButton_Mesh:
 						if (extensionStr == ".fbx" || extensionStr == ".obj")
 						{
 							if (ImGui::Selectable(filenameStr.c_str()))
@@ -469,12 +444,50 @@ void Engine::DrawUI()
 								if (ImGui::selectedEntity.HasAll< StaticMeshComponent >())
 								{
 									auto& component = ImGui::selectedEntity.GetComponent< StaticMeshComponent >();
-									component.geometry = path.string();
+									component.geometry.path = path.string();
 								}
-								else if (ImGui::selectedEntity.HasAll< DynamicMeshComponent >())
+
+								ImGui::contentBrowserSetup = 0;
+							}
+						}
+						break;
+
+					case eContentButton_Albedo:
+					case eContentButton_Normal:
+					case eContentButton_Ao:
+					case eContentButton_Metallic:
+					case eContentButton_Roughness:
+					case eContentButton_Emission:
+						if (extensionStr == ".png" || extensionStr == ".jpg")
+						{
+							if (ImGui::Selectable(filenameStr.c_str())) 
+							{
+								if (ImGui::selectedEntity.HasAll< StaticMeshComponent >())
 								{
-									auto& component = ImGui::selectedEntity.GetComponent< DynamicMeshComponent >();
-									component.geometry = path.string();
+									auto& component = ImGui::selectedEntity.GetComponent< StaticMeshComponent >();
+									switch(ImGui::contentBrowserSetup)
+									{
+									case eContentButton_Albedo:
+										component.material.albedo.path = path.string();
+										break;
+									case eContentButton_Normal:
+										component.material.normal.path = path.string();
+										break;
+									case eContentButton_Ao:
+										component.material.ao.path = path.string();
+										break;
+									case eContentButton_Metallic:
+										component.material.metallic.path = path.string();
+										break;
+									case eContentButton_Roughness:
+										component.material.roughness.path = path.string();
+										break;
+									case eContentButton_Emission:
+										component.material.emission.path = path.string();
+										break;
+									default:
+										break;
+									}
 								}
 
 								ImGui::contentBrowserSetup = 0;

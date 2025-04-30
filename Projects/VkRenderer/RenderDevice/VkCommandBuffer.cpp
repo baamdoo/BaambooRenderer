@@ -103,8 +103,19 @@ void CommandBuffer::CopyBuffer(Buffer* pDstBuffer, Buffer* pSrcBuffer, VkDeviceS
     VkBufferCopy copyRegion = {};
     copyRegion.srcOffset = srcOffset;
     copyRegion.dstOffset = dstOffset;
-    copyRegion.size = pSrcBuffer->SizeInBytes();
+    copyRegion.size = pDstBuffer->SizeInBytes();
     vkCmdCopyBuffer(m_vkCommandBuffer, pDstBuffer->vkBuffer(), pSrcBuffer->vkBuffer(), 1, &copyRegion);
+
+	VkBufferMemoryBarrier copyBarrier = {};
+	copyBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+	copyBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	copyBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	copyBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	copyBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	copyBarrier.buffer = pDstBuffer->vkBuffer();
+	copyBarrier.offset = 0;
+	copyBarrier.size = pDstBuffer->SizeInBytes();
+	vkCmdPipelineBarrier(m_vkCommandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_DEPENDENCY_BY_REGION_BIT, 0, nullptr, 1, &copyBarrier, 0, nullptr);
 }
 
 void CommandBuffer::CopyBuffer(Texture* pDstTexture, Buffer* pSrcBuffer, const std::vector< VkBufferImageCopy >& regions, bool bAllSubresources)
@@ -165,6 +176,65 @@ void CommandBuffer::CopyTexture(Texture* pDstTexture, Texture* pSrcTexture)
 	copyRegion.extent = pSrcTexture->Desc().extent;
 
 	vkCmdCopyImage(m_vkCommandBuffer, pSrcTexture->vkImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, pDstTexture->vkImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+}
+
+void CommandBuffer::GenerateMips(Texture* pTexture)
+{
+	VkImageSubresourceRange subresourceRange = {};
+	subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	subresourceRange.levelCount = 1;
+	subresourceRange.baseArrayLayer = 0;
+	subresourceRange.layerCount = 1;
+
+	const auto& desc = pTexture->Desc();
+	for (u32 level = 0; level < desc.mipLevels - 1; ++level)
+	{
+		i32 w = desc.extent.width >> level;
+		i32 h = desc.extent.height >> level;
+
+		subresourceRange.baseMipLevel = level;
+		TransitionImageLayout(
+			pTexture,
+			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			VK_PIPELINE_STAGE_TRANSFER_BIT, 
+			VK_PIPELINE_STAGE_TRANSFER_BIT, 
+			subresourceRange);
+
+		VkImageBlit blit = {};
+		blit.srcOffsets[0] = { 0, 0, 0 };
+		blit.srcOffsets[1] = { w, h, 1 };
+		blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		blit.srcSubresource.mipLevel = level;
+		blit.srcSubresource.baseArrayLayer = 0;
+		blit.srcSubresource.layerCount = 1;
+		blit.dstOffsets[0] = { 0, 0, 0 };
+		blit.dstOffsets[1] = { w > 1 ? w / 2 : 1, h > 1 ? h / 2 : 1, 1 };
+		blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		blit.dstSubresource.mipLevel = level + 1;
+		blit.dstSubresource.baseArrayLayer = 0;
+		blit.dstSubresource.layerCount = 1;
+
+		vkCmdBlitImage(m_vkCommandBuffer,
+			pTexture->vkImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+			pTexture->vkImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			1, &blit,
+			VK_FILTER_LINEAR);
+
+		TransitionImageLayout(
+			pTexture,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+			subresourceRange);
+	}
+
+	subresourceRange.baseMipLevel = desc.mipLevels - 1;
+	TransitionImageLayout(
+		pTexture,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+		subresourceRange);
 }
 
 void CommandBuffer::TransitionImageLayout(

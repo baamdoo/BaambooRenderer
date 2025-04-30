@@ -5,6 +5,8 @@
 #include "TransformSystem.h"
 #include "CameraSystem.h"
 
+#include <queue>
+
 namespace baamboo
 {
 
@@ -53,6 +55,102 @@ void Scene::RemoveEntity(Entity entity)
 	m_registry.destroy(entity.ID());
 }
 
+Entity Scene::ImportModel(fs::path filepath, MeshDescriptor descriptor, ResourceManagerAPI& rm)
+{
+	auto loader = ModelLoader(filepath, descriptor);
+
+	u32 depth = 0;
+	auto rootEntity = CreateEntity(filepath.filename().string() + "_root");
+
+	std::queue< std::pair< ModelLoader::Node*, Entity > > nodeQ;
+	nodeQ.push(std::make_pair(loader.pRoot, rootEntity));
+	while (!nodeQ.empty())
+	{
+		auto [pNode, parent] = nodeQ.front(); nodeQ.pop();
+
+		auto nodeEntity = CreateEntity(filepath.filename().string() + "_child" + std::to_string(depth++));
+		parent.AttachChild(nodeEntity.ID());
+
+		if (!pNode->meshes.empty())
+		{
+			for (u32 i = 0; i < pNode->meshes.size(); ++i)
+			{
+				auto& meshData = pNode->meshes[i];
+
+				// hierarchy
+				auto entity = CreateEntity(meshData.name);
+				nodeEntity.AttachChild(entity.ID());
+
+				// mesh
+				auto& mesh = entity.AttachComponent< StaticMeshComponent >();
+				mesh.geometry.path = filepath.string();
+
+				// geometry
+				mesh.geometry.vertex =
+					rm.CreateVertexBuffer(filepath.filename().wstring(), (u32)meshData.vertices.size(), sizeof(Vertex), meshData.vertices.data());
+				mesh.geometry.index =
+					rm.CreateIndexBuffer(filepath.filename().wstring(), (u32)meshData.indices.size(), sizeof(Index), meshData.indices.data());
+				mesh.geometry.aabb = meshData.aabb;
+
+				// material
+				if (!meshData.albedoTextureFilename.empty())
+				{
+					mesh.material.albedo.path = filepath.relative_path().string() + meshData.albedoTextureFilename;
+					mesh.material.albedo.handle = rm.CreateTexture(mesh.material.albedo.path, false);
+				}
+				else mesh.material.albedo.handle = eTextureIndex_DefaultWhite;
+
+				if (!meshData.normalTextureFilename.empty())
+				{
+					mesh.material.normal.path = filepath.relative_path().string() + meshData.normalTextureFilename;
+					mesh.material.normal.handle = rm.CreateTexture(mesh.material.normal.path, false);
+				}
+				else mesh.material.normal.handle = eTextureIndex_Invalid;
+
+				if (!meshData.specularTextureFilename.empty())
+				{
+					mesh.material.specular.path = filepath.relative_path().string() + meshData.specularTextureFilename;
+					mesh.material.specular.handle = rm.CreateTexture(mesh.material.specular.path, false);
+				}
+				else mesh.material.specular.handle = eTextureIndex_DefaultWhite;
+
+				if (!meshData.emissiveTextureFilename.empty())
+				{
+					mesh.material.emission.path = filepath.relative_path().string() + meshData.emissiveTextureFilename;
+					mesh.material.emission.handle = rm.CreateTexture(mesh.material.emission.path, false);
+				}
+				else mesh.material.emission.handle = eTextureIndex_DefaultBlack;
+
+				if (!meshData.aoTextureFilename.empty())
+				{
+					mesh.material.ao.path = filepath.relative_path().string() + meshData.aoTextureFilename;
+					mesh.material.ao.handle = rm.CreateTexture(mesh.material.ao.path, false);
+				}
+				else mesh.material.ao.handle = eTextureIndex_DefaultBlack;
+
+				if (!meshData.roughnessTextureFilename.empty())
+				{
+					mesh.material.roughness.path = filepath.relative_path().string() + meshData.roughnessTextureFilename;
+					mesh.material.roughness.handle = rm.CreateTexture(mesh.material.roughness.path, false);
+				}
+				else mesh.material.roughness.handle = eTextureIndex_DefaultWhite;
+
+				if (!meshData.metallicTextureFilename.empty())
+				{
+					mesh.material.metallic.path = filepath.relative_path().string() + meshData.metallicTextureFilename;
+					mesh.material.metallic.handle = rm.CreateTexture(mesh.material.metallic.path, false);
+				}
+				else mesh.material.metallic.handle = eTextureIndex_DefaultWhite;
+			}
+		}
+
+		for (auto& pChild : pNode->pChilds)
+			nodeQ.push(std::make_pair(pChild, nodeEntity));
+	}
+
+	return rootEntity;
+}
+
 void Scene::Update(f32 dt)
 {
 	m_pTransformSystem->Update();
@@ -91,7 +189,21 @@ SceneRenderView Scene::RenderView() const
 		{
 			StaticMeshRenderView meshView = {};
 			meshView.id = entt::to_integral(id);
-			meshView.geometry = meshComponent.geometry;
+			meshView.geometry.vb = meshComponent.geometry.vertex.vb;
+			meshView.geometry.vOffset = meshComponent.geometry.vertex.vOffset;
+			meshView.geometry.vCount = meshComponent.geometry.vertex.vCount;
+			meshView.geometry.ib = meshComponent.geometry.index.ib;
+			meshView.geometry.iOffset = meshComponent.geometry.index.iOffset;
+			meshView.geometry.iCount = meshComponent.geometry.index.iCount;
+
+			meshView.material.tint = meshComponent.material.tint;
+			meshView.material.albedo = meshComponent.material.albedo.handle;
+			meshView.material.normal = meshComponent.material.normal.handle;
+			meshView.material.specular = meshComponent.material.specular.handle;
+			meshView.material.ao = meshComponent.material.ao.handle;
+			meshView.material.roughness = meshComponent.material.roughness.handle;
+			meshView.material.metallic = meshComponent.material.metallic.handle;
+			meshView.material.emission = meshComponent.material.emission.handle;
 			view.meshes.push_back(meshView);
 
 			assert(view.draws.count(meshView.id)); // all entity has transform and must be parsed first!

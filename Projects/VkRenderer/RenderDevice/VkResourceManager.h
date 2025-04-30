@@ -1,4 +1,5 @@
 #pragma once
+#include "BaambooCore/BackendAPI.h"
 #include "Core/VkResourcePool.h"
 #include "RenderResource/VkShader.h"
 #include "RenderResource/VkBuffer.h"
@@ -8,22 +9,20 @@
 namespace vk
 {
 
-class ResourceManager
+class ResourceManager : public ResourceManagerAPI
 {
 public:
     ResourceManager(RenderContext& context);
-    ~ResourceManager();
+    virtual ~ResourceManager();
 
-    // Resource creation methods
-    template< typename TVertex >
-    baamboo::ResourceHandle< Buffer > CreateVertexBuffer(const std::wstring& name, const std::vector< TVertex >& vertices);
-    template< typename TIndex >
-    baamboo::ResourceHandle< Buffer > CreateIndexBuffer(const std::wstring& name, const std::vector< TIndex >& indices);
+    virtual VertexHandle CreateVertexBuffer(std::wstring_view name, u32 numVertices, u64 elementSizeInBytes, void* data) override;
+    virtual IndexHandle CreateIndexBuffer(std::wstring_view name, u32 numIndices, u64 elementSizeInBytes, void* data) override;
+    virtual TextureHandle CreateTexture(std::string_view filepath, bool bGenerateMips) override;
 
     template< typename TResource >
-    baamboo::ResourceHandle< TResource > Create(std::string_view name, typename TResource::CreationInfo&& desc);
+    baamboo::ResourceHandle< TResource > Create(std::wstring_view name, typename TResource::CreationInfo&& desc);
     template< typename TResource >
-	TResource* CreateEmpty(std::string_view name);
+	TResource* CreateEmpty(std::wstring_view name);
 
     template< typename TResource >
     baamboo::ResourceHandle< TResource > Add(TResource* pResource);
@@ -44,7 +43,7 @@ private:
 };
 
 template< typename TResource >
-baamboo::ResourceHandle< TResource > ResourceManager::Create(std::string_view name, typename TResource::CreationInfo&& desc)
+baamboo::ResourceHandle< TResource > ResourceManager::Create(std::wstring_view name, typename TResource::CreationInfo&& desc)
 {
     static_assert(std::is_base_of_v< Resource< TResource >, TResource >);
 
@@ -60,7 +59,7 @@ baamboo::ResourceHandle< TResource > ResourceManager::Create(std::string_view na
 }
 
 template< typename TResource >
-TResource* ResourceManager::CreateEmpty(std::string_view name)
+TResource* ResourceManager::CreateEmpty(std::wstring_view name)
 {
     static_assert(std::is_base_of_v< Resource< TResource >, TResource >);
 

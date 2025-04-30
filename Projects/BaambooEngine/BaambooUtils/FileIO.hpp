@@ -19,9 +19,9 @@ struct Data
 	void Deallocate() { _aligned_free(data); data = nullptr; size = 0; }
 };
 
-static bool FileExist(std::string_view filepath)
+static bool FileExist(const std::string& filepath)
 {
-	return _access(filepath.data(), 0) != -1;
+	return _access(filepath.c_str(), 0) != -1;
 }
 
 static Data ReadBinary(std::string_view filepath)
@@ -51,17 +51,6 @@ static void WriteBinary(const std::string& filepath, const std::string& filename
 		file.write((const char*)data.data, (i64)data.size);
 		file.close();
 	}
-}
-
-static std::string GetFileNameFromPath_Extension(std::string_view filename)
-{
-	const fs::path filepath(filename);
-	return filepath.filename().string();
-}
-static std::string GetFileNameFromPath_NoExtension(std::string_view filename)
-{
-	const fs::path filepath(filename);
-	return filepath.filename().replace_extension().string();
 }
 
 } // namespace FileIO

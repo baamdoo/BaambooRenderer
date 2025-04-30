@@ -34,7 +34,7 @@ CommandQueue::~CommandQueue()
 	vkDestroyCommandPool(m_renderContext.vkDevice(), m_vkCommandPool, nullptr);
 }
 
-CommandBuffer& CommandQueue::Allocate()
+CommandBuffer& CommandQueue::Allocate(VkCommandBufferUsageFlags flags)
 {
 	CommandBuffer* pCmdBuffer = nullptr;
 	if (!m_pAvailableCmdBuffers.empty() && m_pAvailableCmdBuffers.front()->IsFenceComplete())

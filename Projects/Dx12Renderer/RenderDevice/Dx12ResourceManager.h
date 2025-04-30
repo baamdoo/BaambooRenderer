@@ -1,4 +1,5 @@
 #pragma once
+#include "BaambooCore/BackendAPI.h"
 #include "BaambooCore/ResourceHandle.h"
 #include "Core/Dx12ResourcePool.h"
 #include "RenderResource/Dx12Shader.h"
@@ -9,11 +10,15 @@
 namespace dx12
 {
 
-class ResourceManager
+class ResourceManager : public ResourceManagerAPI
 {
 public:
     ResourceManager(RenderContext& context);
-    ~ResourceManager();
+    virtual ~ResourceManager();
+
+    virtual VertexHandle CreateVertexBuffer(std::wstring_view name, u32 numVertices, u64 elementSizeInBytes, void* data) override;
+    virtual IndexHandle CreateIndexBuffer(std::wstring_view name, u32 numIndices, u64 elementSizeInBytes, void* data) override;
+    virtual TextureHandle CreateTexture(std::string_view filepath, bool bGenerateMips) override;
 
     template< typename TResource >
     baamboo::ResourceHandle< TResource > Create(std::wstring_view name, typename TResource::CreationInfo&& info);

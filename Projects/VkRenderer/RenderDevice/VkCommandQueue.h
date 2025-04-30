@@ -12,7 +12,7 @@ public:
 	~CommandQueue();
 
 	[[nodiscard]]
-	CommandBuffer& Allocate();
+	CommandBuffer& Allocate(VkCommandBufferUsageFlags flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 	void Flush();
 
 	void ExecuteCommandBuffer(CommandBuffer& cmdBuffer);

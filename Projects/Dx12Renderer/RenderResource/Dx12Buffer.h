@@ -9,7 +9,11 @@ class Buffer : public Resource
 using Super = Resource;
 
 public:
-    using CreationInfo = ResourceCreationInfo;
+    struct CreationInfo : public ResourceCreationInfo
+    {
+        u32 count;
+        u64 elementSizeInBytes;
+    };
 
     [[nodiscard]]
     inline u32 GetSizeInBytes() const { return m_Count * m_ElementSize; }
@@ -24,12 +28,12 @@ protected:
     friend class ResourceManager;
 
     Buffer(RenderContext& context, std::wstring_view name);
-    Buffer(RenderContext& context, std::wstring_view name, const CreationInfo& info, u32 count, u32 elementSize, eResourceType type);
+    Buffer(RenderContext& context, std::wstring_view name, CreationInfo&& info);
     virtual ~Buffer() = default;
 
 protected:
     u32 m_Count;
-    u32 m_ElementSize;
+    u64 m_ElementSize;
 };
 
 class VertexBuffer final : public Buffer
@@ -37,7 +41,7 @@ class VertexBuffer final : public Buffer
 using Super = Buffer;
 
 public:
-    VertexBuffer(RenderContext& context, std::wstring_view name, const ResourceCreationInfo& info, u32 count, u32 elementSize);
+    VertexBuffer(RenderContext& context, std::wstring_view name, CreationInfo&& info);
     virtual ~VertexBuffer() = default;
 
     [[nodiscard]]
@@ -52,7 +56,7 @@ class IndexBuffer final : public Buffer
 using Super = Buffer;
 
 public:
-    IndexBuffer(RenderContext& context, std::wstring_view name, const ResourceCreationInfo& info, u32 count, u32 elementSize);
+    IndexBuffer(RenderContext& context, std::wstring_view name, CreationInfo&& info);
     virtual ~IndexBuffer() = default;
 
     [[nodiscard]]
@@ -67,7 +71,7 @@ class ConstantBuffer : public Buffer
 using Super = Buffer;
 
 public:
-    ConstantBuffer(RenderContext& context, std::wstring_view name, const ResourceCreationInfo& info, u32 count, u32 elementSize);
+    ConstantBuffer(RenderContext& context, std::wstring_view name, CreationInfo&& info);
     virtual ~ConstantBuffer();
 
     [[nodiscard]]
@@ -85,7 +89,7 @@ class StructuredBuffer : public Buffer
 using Super = Buffer;
 
 public:
-    StructuredBuffer(RenderContext& context, std::wstring_view name, const ResourceCreationInfo& info, u32 count, u32 elementSize);
+    StructuredBuffer(RenderContext& context, std::wstring_view name, CreationInfo&& info);
     virtual ~StructuredBuffer();
 
     [[nodiscard]]

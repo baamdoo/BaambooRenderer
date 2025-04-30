@@ -29,8 +29,8 @@ public:
         bool bFlipY = false;
         bool bGenerateMips = false;
 
-        VmaMemoryUsage     memoryUsage;
-        VkImageUsageFlags  imageUsage;
+        VmaMemoryUsage    memoryUsage = VMA_MEMORY_USAGE_AUTO;
+        VkImageUsageFlags imageUsage;
 
 		operator VkImageCreateInfo() const;
     };
@@ -116,6 +116,8 @@ public:
 	void Resize(u32 width, u32 height, u32 depth);
 	void SetResource(VkImage vkImage, VkImageView vkImageView, VmaAllocation vmaAllocation);
 
+	[[nodiscard]]
+	inline CreationInfo Info() const { return m_creationInfo; }
     [[nodiscard]]
     inline VkImage vkImage() const { return m_vkImage; }
     [[nodiscard]]
@@ -124,6 +126,8 @@ public:
     inline const VkImageCreateInfo& Desc() const { return m_desc; }
 	[[nodiscard]]
 	inline const VkClearValue& ClearValue() const { return m_clearValue; }
+	[[nodiscard]]
+	u64 SizeInBytes() const;
 
 	[[nodiscard]]
 	inline const ResourceState& GetState() const { return m_currentState; }
@@ -136,10 +140,8 @@ protected:
 	friend class ResourcePool;
 	friend class ResourceManager;
 
-	explicit Texture(RenderContext& context, std::string_view name);
-	explicit Texture(RenderContext& context, std::string_view name, CreationInfo&& info);
-	explicit Texture(RenderContext& context, std::string_view name, CreationInfo&& info, void* data);
-	explicit Texture(RenderContext& context, std::string_view name, CreationInfo&& info, std::string_view filepath);
+	explicit Texture(RenderContext& context, std::wstring_view name);
+	explicit Texture(RenderContext& context, std::wstring_view name, CreationInfo&& info);
 	virtual ~Texture();
 
     void CreateImageAndView(const CreationInfo& info);

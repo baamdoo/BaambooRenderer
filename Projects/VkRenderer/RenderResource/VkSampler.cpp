@@ -4,7 +4,7 @@
 namespace vk
 {
 
-Sampler::Sampler(RenderContext& context, std::string_view name, const CreationInfo& info)
+Sampler::Sampler(RenderContext& context, std::wstring_view name, const CreationInfo& info)
 	: Super(context, name)
 {
 	VkSamplerCreateInfo createInfo = {};

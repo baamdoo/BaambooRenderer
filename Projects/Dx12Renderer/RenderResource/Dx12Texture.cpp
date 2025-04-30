@@ -61,48 +61,9 @@ Texture::Texture(RenderContext& context, std::wstring_view name)
 {
 }
 
-Texture::Texture(RenderContext& context, std::wstring_view name, const ResourceCreationInfo& info)
-    : Super(context, name, info, eResourceType::Texture)
+Texture::Texture(RenderContext& context, std::wstring_view name, CreationInfo&& info)
+    : Super(context, name, std::move(info), eResourceType::Texture)
 {
-    m_Width = static_cast<u32>(m_ResourceDesc.Width);
-    m_Height = static_cast<u32>(m_ResourceDesc.Height);
-    m_Format = m_ResourceDesc.Format;
-
-    CreateViews();
-}
-
-Texture::Texture(RenderContext& context, fs::path filepath)
-	: Super(context, filepath.c_str())
-{
-    auto d3d12Device = m_RenderContext.GetD3D12Device();
-
-    ID3D12Resource* d3d12TexResource = nullptr;
-
-    auto extension = filepath.extension().wstring();
-    std::unique_ptr< uint8_t[] > rawData;
-    if (extension == L".dds")
-    {
-        std::vector< D3D12_SUBRESOURCE_DATA > subresouceData;
-        ThrowIfFailed(DirectX::LoadDDSTextureFromFile(
-            d3d12Device, filepath.c_str(), &d3d12TexResource, rawData, subresouceData));
-
-        u32 subresouceSize = (u32)subresouceData.size();
-
-        Texture::SetD3D12Resource(d3d12TexResource);
-        m_RenderContext.UpdateSubresources(this, 0, subresouceSize, subresouceData.data());
-    }
-    else
-    {
-        D3D12_SUBRESOURCE_DATA subresouceData = {};
-        ThrowIfFailed(DirectX::LoadWICTextureFromFile(
-            d3d12Device, filepath.c_str(), &d3d12TexResource, rawData, subresouceData));
-
-        u32 subresouceSize = 1;
-
-        Texture::SetD3D12Resource(d3d12TexResource);
-        m_RenderContext.UpdateSubresources(this, 0, subresouceSize, &subresouceData);
-    }
-
     m_Width = static_cast<u32>(m_ResourceDesc.Width);
     m_Height = static_cast<u32>(m_ResourceDesc.Height);
     m_Format = m_ResourceDesc.Format;

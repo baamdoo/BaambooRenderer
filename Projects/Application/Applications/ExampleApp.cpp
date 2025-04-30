@@ -2,7 +2,7 @@
 #include "BaambooCore/Window.h"
 #include "Scene/Entity.h"
 #include "Scene/Components.h"
-#include "BaambooCore/Common.h"
+#include "BaambooUtils/ModelLoader.h"
 
 #include <imgui/backends/imgui_impl_glfw.h>
 
@@ -103,6 +103,10 @@ bool ExampleApp::LoadScene()
 
 	auto entity1 = m_pScene->CreateEntity("Test1");
 
+	MeshDescriptor meshDescriptor = {};
+	meshDescriptor.bOptimize = true;
+
+	auto dhEntity = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), meshDescriptor, m_pRendererBackend->GetResourceManager());
 	return true;
 }
 

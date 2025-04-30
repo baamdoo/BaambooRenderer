@@ -4,6 +4,8 @@
 #include "RenderDevice/VkCommandQueue.h"
 #include "RenderDevice/VkCommandBuffer.h"
 
+#include <BaambooUtils/Math.hpp>
+
 namespace vk
 {
 
@@ -45,11 +47,6 @@ inline VkSampleCountFlagBits GetSampleCount(u32 sampleCount)
 	}
 }
 
-inline u32 CalculateMipCount(u32 width, u32 height)
-{
-	return (u32)std::floor(std::log2(glm::min(width, height))) + 1;
-}
-
 Texture::CreationInfo::operator VkImageCreateInfo() const
 {
 	VkImageCreateInfo desc = {};
@@ -59,7 +56,7 @@ Texture::CreationInfo::operator VkImageCreateInfo() const
 	desc.format = format;
 	desc.extent = resolution;
 	desc.mipLevels = bGenerateMips ?
-		CalculateMipCount(resolution.width, resolution.height) : 1;
+		baamboo::math::CalculateMipCount(resolution.width, resolution.height) : 1;
 	desc.arrayLayers = arrayLayers;
 	desc.samples = GetSampleCount(sampleCount);
 	desc.tiling = VK_IMAGE_TILING_OPTIMAL;
@@ -79,6 +76,7 @@ void Texture::CreateImageAndView(const CreationInfo& info)
 
 	VmaAllocationCreateInfo vmaInfo = {};
 	vmaInfo.usage = info.memoryUsage;
+	vmaInfo.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
 
 	VK_CHECK(vmaCreateImage(m_renderContext.vmaAllocator(), &m_desc, &vmaInfo, &m_vkImage, &m_vmaAllocation, &m_vmaAllocationInfo));
 
@@ -174,73 +172,21 @@ VkImageViewCreateInfo Texture::GetViewDesc(const VkImageCreateInfo& imageInfo)
 	return imageViewInfo;
 }
 
-Texture::Texture(RenderContext& context, std::string_view name)
+u64 Texture::SizeInBytes() const
+{
+	return m_desc.extent.width * m_desc.extent.height * m_desc.extent.depth * GetFormatElementSizeInBytes(m_desc.format);
+}
+
+Texture::Texture(RenderContext& context, std::wstring_view name)
 	: Super(context, name)
 {
 }
 
-Texture::Texture(RenderContext& context, std::string_view name, CreationInfo&& info)
+Texture::Texture(RenderContext& context, std::wstring_view name, CreationInfo&& info)
 	: Super(context, name)
 	, m_creationInfo(info)
 {
 	CreateImageAndView(m_creationInfo);
-}
-
-Texture::Texture(RenderContext& context, std::string_view name, CreationInfo&& info, void* data)
-	: Super(context, name)
-	, m_creationInfo(info)
-{
-	CreateImageAndView(m_creationInfo);
-
-	// **
-	// Generate mips
-	// **
-	std::vector< VkBufferImageCopy > regions(m_desc.mipLevels * m_desc.arrayLayers);
-	VkDeviceSize offset = 0; // considered as 1-dimensional image buffer
-	VkDeviceSize texSize = 0;
-	for (u32 level = 0; level < m_desc.mipLevels; level++)
-	{
-		for (u32 layer = 0; layer < m_desc.arrayLayers; layer++)
-		{
-			const u32 w = info.resolution.width >> level;
-			const u32 h = info.resolution.height >> level;
-
-			VkBufferImageCopy region = {};
-			region.bufferOffset = offset;
-			region.bufferRowLength = 0;
-			region.bufferImageHeight = 0;
-			region.imageSubresource = {
-				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, // assume no depth texture uses mip-map
-				.mipLevel = level,
-				.baseArrayLayer = layer,
-				.layerCount = 1
-			};
-			region.imageExtent = { w, h, 1 };
-			regions[layer * m_desc.mipLevels + level] = region;
-
-			VkDeviceSize stride = m_renderContext.GetAlignedSize(w * h * GetFormatElementSizeInBytes(info.format));
-			offset += stride;
-			texSize += stride;
-		}
-	}
-
-
-	// **
-	// Copy data via staging buffer
-	// **
-	auto pTransferQueue = m_renderContext.TransferQueue();
-	if (pTransferQueue)
-	{
-		auto& cmdBuffer = pTransferQueue->Allocate();
-		// cmdBuffer.CopyBuffer()
-	}
-}
-
-Texture::Texture(RenderContext& context, std::string_view name, CreationInfo&& info, std::string_view filepath)
-	: Super(context, name)
-	, m_creationInfo(info)
-{
-
 }
 
 Texture::~Texture()

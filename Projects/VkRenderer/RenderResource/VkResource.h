@@ -10,12 +10,12 @@ class Resource
 protected:
 	friend class ResourceManager;
 
-	Resource(RenderContext& context, std::string_view name) : m_renderContext(context), m_name(name) {}
+	Resource(RenderContext& context, std::wstring_view name) : m_renderContext(context), m_name(name) {}
 	virtual ~Resource() {}
 
 protected:
-	RenderContext&    m_renderContext;
-	std::string_view  m_name;
+	RenderContext&     m_renderContext;
+	std::wstring_view  m_name;
 
 	VmaAllocation     m_vmaAllocation = VK_NULL_HANDLE;
 	VmaAllocationInfo m_vmaAllocationInfo = {};

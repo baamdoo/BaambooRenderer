@@ -43,8 +43,7 @@ protected:
 
     // Resource can only be created by ResourceManger;
     Texture(RenderContext& context, std::wstring_view name);
-    Texture(RenderContext& context, std::wstring_view name, const CreationInfo& info);
-    Texture(RenderContext& context, fs::path filepath);
+    Texture(RenderContext& context, std::wstring_view name, CreationInfo&& info);
     virtual ~Texture();
 
     void CreateViews();

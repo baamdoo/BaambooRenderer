@@ -15,6 +15,8 @@
 //-------------------------------------------------------------------------
 // Defines
 //-------------------------------------------------------------------------
+#define NOMINMAX
+
 #ifdef BAAMBOO_ENGINE
 #define ENGINE_API __declspec(dllexport)
 #else
@@ -115,6 +117,25 @@ struct VertexP3U2N3T3
     float3 tangent;
 };
 
+using Vertex = VertexP3U2N3T3;
+using Index = u32;
+
+enum eVertexType
+{
+	P3,
+    P3U2,
+    P3U2N3,
+    P3U2N3T3,
+};
+
+enum eIndexType
+{
+    U8,
+	U16,
+    U32,
+    U64,
+};
+
 
 //-------------------------------------------------------------------------
 // Resource Paths
@@ -144,4 +165,10 @@ inline fs::path GetShaderPath()
 inline fs::path GetTexturePath()
 {
     return "Assets/Texture/";
+}
+
+#define MODEL_PATH GetModelPath()
+inline fs::path GetModelPath()
+{
+    return "Assets/Model/";
 }

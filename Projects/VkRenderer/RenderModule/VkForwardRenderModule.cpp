@@ -23,7 +23,7 @@ void ForwardPass::Initialize(RenderContext& renderContext)
 	auto& rm = renderContext.GetResourceManager();
 	auto pAttachment0 = 
 		rm.Create< Texture >(
-			"ForwardPass::Attachment0", 
+			L"ForwardPass::Attachment0", 
 			{
 				.resolution = { renderContext.ViewportWidth(), renderContext.ViewportHeight(), 1 },
 				.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
@@ -31,8 +31,8 @@ void ForwardPass::Initialize(RenderContext& renderContext)
 	_pRenderTarget = new RenderTarget(renderContext);
 	_pRenderTarget->AttachTexture(eAttachmentPoint::Color0, pAttachment0).Build();
 
-	auto hVS = rm.Create< Shader >("SimpleTriangleVS", Shader::CreationInfo{ .filepath = SPIRV_PATH.string() + "SimpleTriangle.vert.spv"});
-	auto hFS = rm.Create< Shader >("SimpleTrianglePS", Shader::CreationInfo{ .filepath = SPIRV_PATH.string() + "SimpleTriangle.frag.spv"});
+	auto hVS = rm.Create< Shader >(L"SimpleTriangleVS", Shader::CreationInfo{ .filepath = SPIRV_PATH.string() + "SimpleTriangle.vert.spv"});
+	auto hFS = rm.Create< Shader >(L"SimpleTrianglePS", Shader::CreationInfo{ .filepath = SPIRV_PATH.string() + "SimpleTriangle.frag.spv"});
 	_pGraphicsPipeline = new GraphicsPipeline(renderContext, "ForwardPSO");
 	_pGraphicsPipeline->SetShaders(hVS, hFS).SetRenderTarget(*_pRenderTarget).Build();
 
