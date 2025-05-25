@@ -10,11 +10,12 @@ DescriptorAllocation::DescriptorAllocation()
 {
 }
 
-DescriptorAllocation::DescriptorAllocation(DescriptorPool* pool, D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle, D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle, u32 numDescriptors)
+DescriptorAllocation::DescriptorAllocation(DescriptorPool* pool, D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle, D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle, u32 numDescriptors, u32 descriptorIndex)
 	: m_pDescriptorPool(pool)
 	, m_CPUHandle(cpuHandle)
 	, m_GPUHandle(gpuHandle)
 	, m_NumDescriptors(numDescriptors)
+	, m_DescriptorBaseIndex(descriptorIndex)
 {
 }
 
@@ -23,11 +24,13 @@ DescriptorAllocation::DescriptorAllocation(DescriptorAllocation&& other) noexcep
 	, m_CPUHandle(other.m_CPUHandle)
 	, m_GPUHandle(other.m_GPUHandle)
 	, m_NumDescriptors(other.m_NumDescriptors)
+	, m_DescriptorBaseIndex(other.m_DescriptorBaseIndex)
 {
 	other.m_pDescriptorPool = nullptr;
 	other.m_CPUHandle = {};
 	other.m_GPUHandle = {};
 	other.m_NumDescriptors = 0;
+	other.m_DescriptorBaseIndex = 0;
 }
 
 DescriptorAllocation& DescriptorAllocation::operator=(DescriptorAllocation&& other) noexcept
@@ -40,11 +43,13 @@ DescriptorAllocation& DescriptorAllocation::operator=(DescriptorAllocation&& oth
 		m_CPUHandle = other.m_CPUHandle;
 		m_GPUHandle = other.m_GPUHandle;
 		m_NumDescriptors = other.m_NumDescriptors;
+		m_DescriptorBaseIndex = other.m_DescriptorBaseIndex;
 
 		other.m_pDescriptorPool = nullptr;
 		other.m_CPUHandle = {};
 		other.m_GPUHandle = {};
 		other.m_NumDescriptors = 0;
+		other.m_DescriptorBaseIndex = 0;
 	}
 
 	return *this;
@@ -65,6 +70,7 @@ void DescriptorAllocation::Free()
 		m_CPUHandle = {};
 		m_GPUHandle = {};
 		m_NumDescriptors = 0;
+		m_DescriptorBaseIndex = 0;
 	}
 }
 

@@ -16,11 +16,11 @@ public:
     };
 
     [[nodiscard]]
-    inline u32 GetSizeInBytes() const { return m_Count * m_ElementSize; }
+    inline u64 GetSizeInBytes() const { return m_Count * m_ElementSize; }
     [[nodiscard]]
     inline u32 GetBufferCount() const { return m_Count; }
     [[nodiscard]]
-    inline u32 GetElementSize() const { return m_ElementSize; }
+    inline u64 GetElementSize() const { return m_ElementSize; }
 
 protected:
     template< typename T >
@@ -102,6 +102,7 @@ public:
 private:
     DescriptorAllocation m_SRVAllocation = {};
     DescriptorAllocation m_UAVAllocation = {};
+
     u8* m_pSystemMemory = nullptr;
 };
 

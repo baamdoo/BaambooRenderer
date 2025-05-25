@@ -41,17 +41,10 @@ namespace baamboo
 
 bool DllCreateInstance(baamboo::Window* pWindow, ImGuiContext* pImGuiContext, void** ppv)
 {
-	HRESULT hr;
 	RendererAPI* pEngine = new dx12::Renderer(pWindow, pImGuiContext);
-
 	if (!pEngine)
-	{
-		hr = E_OUTOFMEMORY;
-		goto lb_return;
-	}
-	hr = S_OK;
-	*ppv = pEngine;
+		return false;
 
-lb_return:
-	return hr == S_OK;
+	*ppv = pEngine;
+	return true;
 }

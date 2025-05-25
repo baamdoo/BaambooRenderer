@@ -28,6 +28,8 @@ public:
 	[[nodiscard]]
 	bool IsValid() const { return index != INVALID_INDEX && version != INVALID_VERSION; }
 
+	void Reset() { index = INVALID_INDEX; version = INVALID_VERSION; }
+
 private:
 	u32 version : VERSION_BIT = INVALID_VERSION;
 	u32 index   : INDEX_BIT = INVALID_INDEX;

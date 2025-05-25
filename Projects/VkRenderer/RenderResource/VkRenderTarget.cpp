@@ -64,9 +64,10 @@ void RenderTarget::Build()
 			pTex->Desc().usage & VK_IMAGE_USAGE_SAMPLED_BIT ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 		attachmentDescs.push_back(attachmentDesc);
 
-		colorReferences.push_back({
-			.attachment = i,
-			.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+		colorReferences.push_back(
+			{
+				.attachment = i,
+				.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
 			});
 
 		attachments.push_back(pTex->vkView());
@@ -82,22 +83,24 @@ void RenderTarget::Build()
 	if (bUseDepth)
 	{
 		auto pTex = rm.Get(m_attachments[eAttachmentPoint::DepthStencil]);
-		if (!pTex)
+		if (pTex)
 		{
 			const bool bIsDepthOnly = IsDepthOnly();
 
 			VkAttachmentDescription attachmentDesc = {};
 			attachmentDesc.format = pTex->Desc().format;
 			attachmentDesc.samples = VK_SAMPLE_COUNT_1_BIT;
-			attachmentDesc.loadOp = bIsDepthOnly ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+			attachmentDesc.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+			//attachmentDesc.loadOp = bIsDepthOnly ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
 			attachmentDesc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 			attachmentDesc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 			attachmentDesc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-			attachmentDesc.initialLayout = bIsDepthOnly ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-			attachmentDesc.finalLayout = bIsDepthOnly ? VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			attachmentDesc.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			//attachmentDesc.initialLayout = bIsDepthOnly ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+			attachmentDesc.finalLayout = bIsDepthOnly ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 			attachmentDescs.push_back(attachmentDesc);
 
-			depthReference.attachment = static_cast<u32>(attachmentDescs.size());
+			depthReference.attachment = static_cast<u32>(attachmentDescs.size()) - 1;
 			depthReference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
 			attachments.push_back(pTex->vkView());
@@ -136,7 +139,6 @@ void RenderTarget::Build()
 	renderPassInfo.pSubpasses = subpasses.data();
 	renderPassInfo.dependencyCount = static_cast<u32>(dependencies.size());
 	renderPassInfo.pDependencies = dependencies.data();
-
 	VK_CHECK(vkCreateRenderPass(m_renderContext.vkDevice(), &renderPassInfo, nullptr, &m_vkRenderPass));
 
 
@@ -151,8 +153,31 @@ void RenderTarget::Build()
 	framebufferInfo.width = width;
 	framebufferInfo.height = height;
 	framebufferInfo.layers = depth;
-
 	VK_CHECK(vkCreateFramebuffer(m_renderContext.vkDevice(), &framebufferInfo, nullptr, &m_vkFramebuffer));
+
+
+	// **
+	// Begin info
+	// **
+	auto pColor0 = rm.Get(m_attachments[eAttachmentPoint::Color0]);
+	auto pDepthStencil = rm.Get(m_attachments[eAttachmentPoint::DepthStencil]);
+	assert(pColor0 || pDepthStencil);
+
+	for (u32 i = 0; i < eAttachmentPoint::NumAttachmentPoints; ++i)
+	{
+		auto pTex = rm.Get(m_attachments[i]);
+		if (!pTex)
+			continue;
+
+		m_clearValues.push_back(pTex->ClearValue());
+	}
+
+	m_beginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	m_beginInfo.renderPass = m_vkRenderPass;
+	m_beginInfo.framebuffer = m_vkFramebuffer;
+	m_beginInfo.renderArea = { { 0, 0 }, { width, height } };
+	m_beginInfo.clearValueCount = static_cast<u32>(m_clearValues.size());
+	m_beginInfo.pClearValues = m_clearValues.data();
 }
 
 void RenderTarget::Resize(u32 width, u32 height, u32 depth)
@@ -193,42 +218,41 @@ void RenderTarget::InvalidateImageLayout()
 		if (!pTex)
 			continue;
 
-		pTex->SetState(pTex->Desc().usage & VK_IMAGE_USAGE_SAMPLED_BIT ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+		if (i == eAttachmentPoint::DepthStencil)
+		{
+			pTex->SetState(
+				IsDepthOnly() ?
+				Texture::State
+					{
+						.access = VK_ACCESS_SHADER_READ_BIT,
+						.stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+						.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+					} :
+				Texture::State
+					{
+						.access = VK_ACCESS_SHADER_READ_BIT,
+						.stage = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+						.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
+					});
+		}
+		else
+		{
+			pTex->SetState(
+				pTex->Desc().usage & VK_IMAGE_USAGE_SAMPLED_BIT ?
+				Texture::State
+				{
+					.access = VK_ACCESS_SHADER_READ_BIT,
+					.stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+					.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+				} :
+				Texture::State
+				{
+					.access = VK_ACCESS_TRANSFER_READ_BIT,
+					.stage = VK_PIPELINE_STAGE_TRANSFER_BIT,
+					.layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
+				});
+		}
 	}
-}
-
-VkRenderPassBeginInfo RenderTarget::GetBeginInfo() const
-{
-	const auto& rm = m_renderContext.GetResourceManager();
-
-	auto pColor0 = rm.Get(m_attachments[eAttachmentPoint::Color0]);
-	auto pDepthStencil = rm.Get(m_attachments[eAttachmentPoint::DepthStencil]);
-	assert(pColor0 || pDepthStencil);
-
-	u32 width = pColor0 ?
-		pColor0->Desc().extent.width : pDepthStencil->Desc().extent.width;
-	u32 height = pColor0 ?
-		pColor0->Desc().extent.height : pDepthStencil->Desc().extent.height;
-
-	std::vector< VkClearValue > clearValues(m_numColours + (pDepthStencil ? 1 : 0));
-	for (u32 i = 0; i < eAttachmentPoint::NumColorAttachments; ++i)
-	{
-		auto pTex = rm.Get(m_attachments[i]);
-		if (!pTex)
-			continue;
-
-		clearValues[i] = pTex->ClearValue();
-	}
-
-	VkRenderPassBeginInfo passBeginInfo = {};
-	passBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	passBeginInfo.renderPass = m_vkRenderPass;
-	passBeginInfo.framebuffer = m_vkFramebuffer;
-	passBeginInfo.renderArea = { { 0, 0 }, { width, height } };
-	passBeginInfo.clearValueCount = static_cast<u32>(clearValues.size());
-	passBeginInfo.pClearValues = clearValues.data();
-
-	return passBeginInfo;
 }
 
 VkViewport RenderTarget::GetViewport(float2 scale, float2 bias, f32 minDepth, f32 maxDepth) const
@@ -281,7 +305,7 @@ bool RenderTarget::IsDepthOnly() const
     for (u32 i = 0; i < eAttachmentPoint::NumColorAttachments; ++i)
         if (m_attachments[i].IsValid()) bDepthOnly = false;
 
-    assert(bDepthOnly && m_attachments[eAttachmentPoint::DepthStencil].IsValid());
+    assert(!bDepthOnly || m_attachments[eAttachmentPoint::DepthStencil].IsValid());
     return bDepthOnly;
 }
 

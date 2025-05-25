@@ -104,10 +104,25 @@ inline void ReportLiveObjects()
 //-------------------------------------------------------------------------
 // Predefined
 //-------------------------------------------------------------------------
-constexpr u32 NUM_FRAMES = 3u;
+constexpr u32 NUM_FRAMES_IN_FLIGHT = 3u;
 constexpr u32 NUM_SAMPLING = 1u;
 constexpr u32 NUM_RESOURCE_DESCRIPTOR_TYPE = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER + 1;
 constexpr u32 MAX_NUM_DESCRIPTOR_PER_POOL[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES] = { 1024, 32, 256, 8 };
+
+
+//-------------------------------------------------------------------------
+// Shader Types
+//-------------------------------------------------------------------------
+struct IndirectDrawData
+{
+    u32 transformID;
+    u32 materialID;
+
+    D3D12_VERTEX_BUFFER_VIEW vbv;
+    D3D12_INDEX_BUFFER_VIEW  ibv;
+
+    D3D12_DRAW_INDEXED_ARGUMENTS draws;
+};
 
 
 //-------------------------------------------------------------------------

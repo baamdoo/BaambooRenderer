@@ -11,11 +11,12 @@ RenderTarget::RenderTarget()
 {
 }
 
-void RenderTarget::AttachTexture(eAttachmentPoint attachmentPoint, Texture* texture)
+RenderTarget& RenderTarget::AttachTexture(eAttachmentPoint attachmentPoint, Texture* texture)
 {
     BB_ASSERT(attachmentPoint < eAttachmentPoint::NumAttachmentPoints, "Invalid attachment point!");
-
     m_pTextures[attachmentPoint] = texture;
+
+    return *this;
 }
 
 void RenderTarget::ClearTexture(CommandList& commandList, eAttachmentPoint attachmentPoint)

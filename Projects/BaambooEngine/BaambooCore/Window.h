@@ -65,7 +65,9 @@ public:
 	void SetKeyCallback(GLFWkeyfun&& func) { glfwSetKeyCallback(m_handle, std::move(func)); }
 	void SetMouseButtonCallback(GLFWmousebuttonfun&& func) { glfwSetMouseButtonCallback(m_handle, std::move(func)); }
 	void SetMouseMoveCallback(GLFWcursorposfun&& func) { glfwSetCursorPosCallback(m_handle, std::move(func)); }
+	void SetMouseWheelCallback(GLFWcursorposfun&& func) { glfwSetScrollCallback(m_handle, std::move(func)); }
 	void SetResizeCallback(GLFWwindowsizefun&& func) { glfwSetWindowSizeCallback(m_handle, std::move(func)); }
+	void SetIconifyCallback(GLFWwindowiconifyfun&& func) { glfwSetWindowIconifyCallback(m_handle, std::move(func)); }
 	void SetCharCallback(GLFWcharfun&& func) { glfwSetCharCallback(m_handle, std::move(func)); }
 
 	[[nodiscard]]

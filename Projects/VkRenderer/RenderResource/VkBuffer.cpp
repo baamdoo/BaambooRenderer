@@ -29,9 +29,13 @@ Buffer::Buffer(RenderContext& context, std::wstring_view name, CreationInfo&& in
 
 Buffer::~Buffer()
 {
-	if (MappedMemory())
-		vmaUnmapMemory(m_renderContext.vmaAllocator(), m_vmaAllocation);
 	vmaDestroyBuffer(m_renderContext.vmaAllocator(), m_vkBuffer, m_vmaAllocation);
 }
+
+
+VertexBuffer::VertexBuffer(RenderContext& context, std::wstring_view name, CreationInfo&& info)
+	: Buffer(context, name, std::move(info)) {}
+IndexBuffer::IndexBuffer(RenderContext& context, std::wstring_view name, CreationInfo&& info)
+	: Buffer(context, name, std::move(info)) {}
 
 } // namespace vk

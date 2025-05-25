@@ -2,7 +2,9 @@
 #include "VkRenderContext.h"
 #include "VkBuildHelpers.h"
 #include "VkCommandQueue.h"
+#include "VkCommandBuffer.h"
 #include "VkResourceManager.h"
+#include "VkDescriptorPool.h"
 
 namespace vk
 {
@@ -32,6 +34,8 @@ RenderContext::RenderContext()
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_IndirectRendering)
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_DescriptorIndexing)
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_DynamicIndexing)
+		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_DeviceAddress)
+		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_SamplerAnistropy)
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_IndexTypeUint8)
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_Sync2).Build(m_vkInstance);
 	m_vkPhysicalDevice = deviceBuilder.physicalDevice;
@@ -47,7 +51,7 @@ RenderContext::RenderContext()
 	// Resource management
 	// **
 	VmaAllocatorCreateInfo allocatorInfo = {};
-	allocatorInfo.flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
+	allocatorInfo.flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT | VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
 	allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_3;
 	allocatorInfo.physicalDevice = m_vkPhysicalDevice;
 	allocatorInfo.device = m_vkDevice;
@@ -59,30 +63,36 @@ RenderContext::RenderContext()
 
 
 	// **
-	// Bindless descriptor pool
+	// Descriptor pool
 	// **
-	std::vector< VkDescriptorPoolSize > poolSizes = {
-		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, m_physicalDeviceProperties.limits.maxDescriptorSetStorageBuffers },
-		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, m_physicalDeviceProperties.limits.maxDescriptorSetSampledImages },
+	std::vector< VkDescriptorPoolSize > poolSizes = 
+	{
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 32 },
+		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 32 },
 	};
-	VkDescriptorPoolCreateInfo descriptorPoolInfo = {};
-	descriptorPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	descriptorPoolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
-	descriptorPoolInfo.maxSets = 1;
-	descriptorPoolInfo.poolSizeCount = static_cast<u32>(poolSizes.size());
-	descriptorPoolInfo.pPoolSizes = poolSizes.data();
-	VK_CHECK(vkCreateDescriptorPool(m_vkDevice, &descriptorPoolInfo, nullptr, &m_vkStaticDescriptorPool));
+	m_pGlobalDescriptorPool = new DescriptorPool(*this, std::move(poolSizes), 1024);
+
+	VkDescriptorSetLayoutCreateInfo emptyLayoutInfo = {};
+	emptyLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	emptyLayoutInfo.bindingCount = 0;
+	emptyLayoutInfo.pBindings = nullptr;
+	VK_CHECK(vkCreateDescriptorSetLayout(m_vkDevice, &emptyLayoutInfo, nullptr, &m_vkEmptySetLayout));
+
+	g_FrameData.pSceneResource = new SceneResource(*this);
 }
 
 RenderContext::~RenderContext()
 {
-	vkDestroyDescriptorPool(m_vkDevice, m_vkStaticDescriptorPool, nullptr);
+	RELEASE(g_FrameData.pSceneResource);
 
 	RELEASE(m_pTransferQueue);
 	RELEASE(m_pComputeQueue);
 	RELEASE(m_pGraphicsQueue);
 
 	RELEASE(m_pResourceManager);
+	RELEASE(m_pGlobalDescriptorPool);
+	vkDestroyDescriptorSetLayout(m_vkDevice, m_vkEmptySetLayout, nullptr);
 	vmaDestroyAllocator(m_vmaAllocator);
 
 	vkDestroyDevice(m_vkDevice, nullptr);
@@ -102,6 +112,11 @@ VkDeviceSize RenderContext::GetAlignedSize(VkDeviceSize size) const
 {
 	const VkDeviceSize alignment = m_physicalDeviceProperties.limits.minMemoryMapAlignment;
 	return (size + alignment - 1) & ~(alignment - 1);
+}
+
+DescriptorSet& RenderContext::AllocateDescriptorSet(VkDescriptorSetLayout vkSetLayout) const
+{
+	return m_pGlobalDescriptorPool->AllocateSet(vkSetLayout);
 }
 
 void RenderContext::SetVkObjectName(std::string_view name, u64 handle, VkObjectType type)

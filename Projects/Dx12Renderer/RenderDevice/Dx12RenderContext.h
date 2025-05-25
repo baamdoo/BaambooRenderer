@@ -1,4 +1,5 @@
 #pragma once
+#include <BaambooCore/ResourceHandle.h>
 
 namespace D3D12MA
 {
@@ -13,7 +14,23 @@ class CommandQueue;
 class DescriptorPool;
 class DescriptorAllocation;
 class ResourceManager;
+class SceneResource;
 class Resource;
+class Texture;
+
+struct FrameData
+{
+	// data
+	CameraData camera = {};
+
+	// scene-resource
+	SceneResource* pSceneResource = nullptr;
+
+	// render-target
+	Texture* pColor;
+	Texture* pDepth;
+};
+inline FrameData g_FrameData = {};
 
 class RenderContext
 {
@@ -26,8 +43,6 @@ public:
 
 	[[nodiscard]]
 	CommandList& AllocateCommandList(D3D12_COMMAND_LIST_TYPE type);
-	[[nodiscard]]
-	DescriptorAllocation AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE type, u32 numDescriptors);
 
 	void UpdateSubresources(Resource* pResource, u32 firstSubresource, u32 numSubresources, const D3D12_SUBRESOURCE_DATA* pSrcData);
 
@@ -38,8 +53,6 @@ public:
 	[[nodiscard]]
 	CommandQueue& GetCommandQueue(D3D12_COMMAND_LIST_TYPE type = D3D12_COMMAND_LIST_TYPE_DIRECT);
 
-	[[nodiscard]]
-	DescriptorPool* GetDescriptorPool(D3D12_DESCRIPTOR_HEAP_TYPE type);
 	[[nodiscard]]
 	inline D3D12MA::Allocator* dmaAllocator() const { return m_dmaAllocator; }
 	[[nodiscard]]
@@ -63,11 +76,11 @@ public:
 	inline u8 ContextIndex() const { return m_ContextIndex; }
 
 	[[nodiscard]]
-	u32 ViewportWidth() const { return m_ViewportWidth; }
-	void SetViewportWidth(u32 width) { m_ViewportWidth = width; }
+	u32 WindowWidth() const { return m_WindowWidth; }
+	void SetWindowWidth(u32 width) { m_WindowWidth = width; }
 	[[nodiscard]]
-	u32 ViewportHeight() const { return m_ViewportHeight; }
-	void SetViewportHeight(u32 height) { m_ViewportHeight = height; }
+	u32 WindowHeight() const { return m_WindowHeight; }
+	void SetWindowHeight(u32 height) { m_WindowHeight = height; }
 
 private:
 	void CreateDevice(bool bEnableGBV);
@@ -79,10 +92,6 @@ private:
 	CommandQueue* m_pComputeCommandQueue = nullptr;
 	CommandQueue* m_pCopyCommandQueue = nullptr;
 
-	// Gpu visible descriptor for binding shaders (i.e. HEAP_FLAG_SHADER_VISIBLE)
-	DescriptorPool* m_pResourceDescriptorPool = nullptr;
-	DescriptorPool* m_pSamplerDescriptorPool = nullptr;
-
 	ResourceManager*    m_pResourceManager = nullptr;
 	D3D12MA::Allocator* m_dmaAllocator;
 
@@ -92,8 +101,8 @@ private:
 	D3D_ROOT_SIGNATURE_VERSION m_HighestRootSignatureVersion;
 
 	u8  m_ContextIndex = 0;
-	u32 m_ViewportWidth = 0;
-	u32 m_ViewportHeight = 0;
+	u32 m_WindowWidth = 0;
+	u32 m_WindowHeight = 0;
 };
 
 }

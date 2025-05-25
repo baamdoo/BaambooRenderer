@@ -13,7 +13,7 @@
 
 
 //-------------------------------------------------------------------------
-// Defines
+// Pre-defines
 //-------------------------------------------------------------------------
 #define NOMINMAX
 
@@ -117,23 +117,79 @@ struct VertexP3U2N3T3
     float3 tangent;
 };
 
+enum class eRendererAPI
+{
+    D3D11,
+    D3D12,
+    Vulkan,
+    OpenGL,
+    Metal,
+};
+
+
+//-------------------------------------------------------------------------
+// Pre-declared
+//-------------------------------------------------------------------------
+struct SceneRenderView;
+
+enum eComponentType
+{
+    TTransform = 0,
+    TStaticMesh = 1,
+    TDynamicMesh = 2,
+    TMaterial = 3,
+    TPointLight = 4,
+
+    // ...
+    NumComponents
+};
+
+struct
+{
+    float viewportWidth = 0;
+    float viewportHeight = 0;
+} static s_Data;
+
+constexpr u32 INVALID_INDEX = 0xffffffff;
+inline bool IsValidIndex(u32 index) { return index != INVALID_INDEX; }
+
+
+//-------------------------------------------------------------------------
+// Shader Resources
+//-------------------------------------------------------------------------
 using Vertex = VertexP3U2N3T3;
 using Index = u32;
 
-enum eVertexType
+struct TransformData
 {
-	P3,
-    P3U2,
-    P3U2N3,
-    P3U2N3T3,
+    mat4 mWorld;
 };
 
-enum eIndexType
+struct MaterialData 
 {
-    U8,
-	U16,
-    U32,
-    U64,
+    float3 tint;
+    float  metallic;
+    float  roughness;
+    float3 padding0;
+
+    u32 albedoID;
+    u32 normalID;
+    u32 specularID;
+    u32 aoID;
+    u32 roughnessID;
+    u32 metallicID;
+    u32 emissionID;
+    u32 padding1;
+};
+
+struct CameraData
+{
+    mat4   mView;
+    mat4   mProj;
+    mat4   mViewProj;
+
+    float3 position;
+    float  padding0;
 };
 
 

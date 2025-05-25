@@ -82,12 +82,17 @@ void SwapChain::Init()
 		                            .SetVSync(m_window.Desc().bVSync)
 		                            .AddImageUsage(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
 		                            .Build(m_renderContext.vkDevice(), m_renderContext.GraphicsQueue().Index(), oldSwapchain);
+
 	m_imageCount = swapChainBuilder.imageCount;
 	m_imageFormat = swapChainBuilder.selectedSurface.format;
 	m_capabilities = swapChainBuilder.capabilities;
 	if (oldSwapchain)
 		Release(oldSwapchain);
 
+	if (m_vkSwapChain == VK_NULL_HANDLE)
+	{
+		return;
+	}
 
 	// **
 	// Textures
@@ -120,15 +125,15 @@ void SwapChain::Init()
 		VK_CHECK(vkCreateImageView(m_renderContext.vkDevice(), &imageViewInfo, nullptr, &imageViews[i]));
 
 		auto pTex = rm.CreateEmpty< Texture >(L"SwapChainBuffer_" + std::to_wstring(i));
-		pTex->SetResource(images[i], imageViews[i], VK_NULL_HANDLE);
+		pTex->SetResource(images[i], imageViews[i], VK_NULL_HANDLE, VK_IMAGE_ASPECT_COLOR_BIT);
 
 		m_textures[i] = rm.Add(pTex);
 	}
 
 	// update values in render-context to easily be referenced by other vk-components
 	m_renderContext.SetNumContexts(m_imageCount);
-	m_renderContext.SetViewportWidth(m_window.Width());
-	m_renderContext.SetViewportHeight(m_window.Height());
+	m_renderContext.SetWindowWidth(m_window.Width());
+	m_renderContext.SetWindowHeight(m_window.Height());
 }
 
 void SwapChain::Release(VkSwapchainKHR vkSwapChain)

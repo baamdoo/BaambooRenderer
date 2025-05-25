@@ -1,11 +1,30 @@
 #pragma once
+#include <BaambooCore/ResourceHandle.h>
 
 namespace vk
 {
 
 class CommandQueue;
 class CommandBuffer;
+class SceneResource;
 class ResourceManager;
+class DescriptorSet;
+class DescriptorPool;
+class Texture;
+
+struct FrameData
+{
+	// data
+	CameraData camera = {};
+
+	// scene-resource
+	SceneResource* pSceneResource = nullptr;
+
+	// framebuffer
+	baamboo::ResourceHandle< Texture > color;
+	baamboo::ResourceHandle< Texture > depth;
+};
+inline FrameData g_FrameData = {};
 
 class RenderContext
 {
@@ -42,8 +61,11 @@ public:
 	[[nodiscard]]
 	inline VkRenderPass vkMainRenderPass() const { return m_vkMainRenderPass; }
 	void SetMainRenderPass(VkRenderPass vkRenderPass) { m_vkMainRenderPass = vkRenderPass; }
+
 	[[nodiscard]]
-	inline VkDescriptorPool vkStaticDescriptorPool() const { return m_vkStaticDescriptorPool; }
+	DescriptorSet& AllocateDescriptorSet(VkDescriptorSetLayout vkSetLayout) const;
+	[[nodiscard]]
+	inline VkDescriptorSetLayout GetEmptyDescriptorSetLayout() const { return m_vkEmptySetLayout; }
 
 	[[nodiscard]]
 	inline u8 ContextIndex() const { return m_contextIndex; }
@@ -52,11 +74,11 @@ public:
 	void SetNumContexts(u32 num) { m_numContexts = num; }
 
 	[[nodiscard]]
-	u32 ViewportWidth() const { return m_viewportWidth; }
-	void SetViewportWidth(u32 width) { m_viewportWidth = width; }
+	u32 WindowWidth() const { return m_windowWidth; }
+	void SetWindowWidth(u32 width) { m_windowWidth = width; }
 	[[nodiscard]]
-	u32 ViewportHeight() const { return m_viewportHeight; }
-	void SetViewportHeight(u32 height) { m_viewportHeight = height; }
+	u32 WindowHeight() const { return m_windowHeight; }
+	void SetWindowHeight(u32 height) { m_windowHeight = height; }
 
 	void SetVkObjectName(std::string_view name, u64 handle, VkObjectType type);
 
@@ -75,14 +97,16 @@ private:
 	VmaAllocator     m_vmaAllocator = VK_NULL_HANDLE;
 	ResourceManager* m_pResourceManager = nullptr;
 
-	VkRenderPass     m_vkMainRenderPass = VK_NULL_HANDLE;
-	VkDescriptorPool m_vkStaticDescriptorPool = VK_NULL_HANDLE;
+	VkRenderPass m_vkMainRenderPass = VK_NULL_HANDLE;
+
+	VkDescriptorSetLayout m_vkEmptySetLayout = VK_NULL_HANDLE;
+	DescriptorPool*       m_pGlobalDescriptorPool = nullptr;
 
 	u32 m_numContexts = 0;
 	u8  m_contextIndex = 0;
 
-	u32 m_viewportWidth = 0;
-	u32 m_viewportHeight = 0;
+	u32 m_windowWidth = 0;
+	u32 m_windowHeight = 0;
 };
 
 } // namespace vk

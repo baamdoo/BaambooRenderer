@@ -33,7 +33,7 @@ SwapChain::SwapChain(RenderContext& context, baamboo::Window& window)
 		//swapChainDesc.BufferDesc.RefreshRate.Numerator = m_uiRefreshRate;
 		//swapChainDesc.BufferDesc.RefreshRate.Denominator = 1;
 		swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-		swapChainDesc.BufferCount = NUM_FRAMES;
+		swapChainDesc.BufferCount = NUM_FRAMES_IN_FLIGHT;
 		swapChainDesc.SampleDesc.Count = 1;
 		swapChainDesc.SampleDesc.Quality = 0;
 		swapChainDesc.Scaling = DXGI_SCALING_NONE;
@@ -58,8 +58,8 @@ SwapChain::SwapChain(RenderContext& context, baamboo::Window& window)
 	COM_RELEASE(dxgiFactory);
 
 	// update values in render-context to easily be referenced by other dx12-components
-	m_RenderContext.SetViewportWidth(m_window.Width());
-	m_RenderContext.SetViewportHeight(m_window.Height());
+	m_RenderContext.SetWindowWidth(m_window.Width());
+	m_RenderContext.SetWindowHeight(m_window.Height());
 }
 
 SwapChain::~SwapChain()
@@ -86,7 +86,7 @@ void SwapChain::ResizeViewport(u32 width, u32 height)
 	auto& rm = m_RenderContext.GetResourceManager();
 
 	// need to release all references before resize buffers
-	for (u32 i = 0; i < NUM_FRAMES; ++i)
+	for (u32 i = 0; i < NUM_FRAMES_IN_FLIGHT; ++i)
 	{
 		auto pTex = rm.Get(m_textures[i]);
 		assert(pTex);
@@ -95,9 +95,9 @@ void SwapChain::ResizeViewport(u32 width, u32 height)
 	}
 
 	DXGI_SWAP_CHAIN_DESC1 desc = {};
-	ThrowIfFailed(m_dxgiSwapChain->GetDesc1(&desc));
-	ThrowIfFailed(m_dxgiSwapChain->ResizeBuffers(NUM_FRAMES, width, height, desc.Format, desc.Flags));
-	for (u32 i = 0; i < NUM_FRAMES; ++i)
+	DX_CHECK(m_dxgiSwapChain->GetDesc1(&desc));
+	DX_CHECK(m_dxgiSwapChain->ResizeBuffers(NUM_FRAMES_IN_FLIGHT, width, height, desc.Format, desc.Flags));
+	for (u32 i = 0; i < NUM_FRAMES_IN_FLIGHT; ++i)
 	{
 		auto pTex = rm.Get(m_textures[i]);
 		assert(pTex);
@@ -114,7 +114,7 @@ void SwapChain::ResizeViewport(u32 width, u32 height)
 void SwapChain::CreateSwapChainResources()
 {
 	auto& rm = m_RenderContext.GetResourceManager();
-	for (u32 i = 0; i < NUM_FRAMES; ++i)
+	for (u32 i = 0; i < NUM_FRAMES_IN_FLIGHT; ++i)
 	{
 		ID3D12Resource* d3d12Resource = nullptr;
 		m_dxgiSwapChain->GetBuffer(i, IID_PPV_ARGS(&d3d12Resource));

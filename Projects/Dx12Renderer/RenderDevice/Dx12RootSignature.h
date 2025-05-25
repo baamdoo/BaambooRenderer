@@ -8,35 +8,41 @@ constexpr u32 MAX_ROOT_INDEX = D3D12_MAX_ROOT_COST;
 class DescriptorTable
 {
 public:
-	void AddCBVRange(
+	DescriptorTable& AddCBVRange(
 		u32 reg, u32 space, u32 numDescriptors,
 		D3D12_DESCRIPTOR_RANGE_FLAGS flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
 		u32 offset = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND);
-	void AddSRVRange(
+	DescriptorTable& AddSRVRange(
 		u32 reg, u32 space, u32 numDescriptors,
 		D3D12_DESCRIPTOR_RANGE_FLAGS flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
 		u32 offset = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND);
-	void AddUAVRange(
+	DescriptorTable& AddUAVRange(
 		u32 reg, u32 space, u32 numDescriptors,
 		D3D12_DESCRIPTOR_RANGE_FLAGS flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
 		u32 offset = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND);
 
-	void AddSamplerRange(
+	DescriptorTable& AddSamplerRange(
 		u32 reg, u32 space, u32 numDescriptors,
 		D3D12_DESCRIPTOR_RANGE_FLAGS flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
 		u32 offset = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND);
+
+	[[nodiscard]]
+	size_t Size() const { return m_Ranges.size(); }
+	[[nodiscard]]
+	const D3D12_DESCRIPTOR_RANGE1* Data() const { return m_Ranges.data(); }
 
 private:
 	void AddDescriptorRange(
 		u32 reg, u32 space, u32 numDescriptors,
 		D3D12_DESCRIPTOR_RANGE_TYPE type, D3D12_DESCRIPTOR_RANGE_FLAGS flags, u32 offset);
 
-public:
-	const D3D12_DESCRIPTOR_RANGE1* operator*() const { return m_Ranges.data(); }
-	size_t Size() const { return m_Ranges.size(); }
-
 private:
 	std::vector< CD3DX12_DESCRIPTOR_RANGE1 > m_Ranges;
+};
+
+class RootSignatureDesc
+{
+
 };
 
 class RootSignature
@@ -45,11 +51,19 @@ public:
 	RootSignature(RenderContext& context);
 	~RootSignature();
 
-	void AddConstants(u32 reg, u32 space, u32 numConstants, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
-	void AddCBV(u32 reg, u32 space, D3D12_ROOT_DESCRIPTOR_FLAGS flags = D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
-	void AddSRV(u32 reg, u32 space, D3D12_ROOT_DESCRIPTOR_FLAGS flags = D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
-	void AddUAV(u32 reg, u32 space, D3D12_ROOT_DESCRIPTOR_FLAGS flags = D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
-	void AddDescriptorTable(const DescriptorTable& table, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
+	u32 AddConstants(u32 reg, u32 space, u32 numConstants, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
+	u32 AddCBV(u32 reg, u32 space, D3D12_ROOT_DESCRIPTOR_FLAGS flags = D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
+	u32 AddSRV(u32 reg, u32 space, D3D12_ROOT_DESCRIPTOR_FLAGS flags = D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
+	u32 AddUAV(u32 reg, u32 space, D3D12_ROOT_DESCRIPTOR_FLAGS flags = D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
+	u32 AddSampler(
+		UINT                       shaderRegister,
+		UINT                       registerSpace,
+		D3D12_FILTER               filter,
+		D3D12_TEXTURE_ADDRESS_MODE addressUVW,
+		UINT                       maxAnisotropy,
+		D3D12_COMPARISON_FUNC      comparisonFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL,
+		D3D12_STATIC_BORDER_COLOR  borderColor = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE);
+	u32 AddDescriptorTable(const DescriptorTable& table, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
 
 	void Build();
 
@@ -63,16 +77,18 @@ public:
 	const std::vector< CD3DX12_ROOT_PARAMETER1 >& GetParameters() const { return m_RootParameters; }
 
 protected:
-	void AddParameter(const CD3DX12_ROOT_PARAMETER1& param);
-	void AddStaticParameters();
+	u32 AddParameter(const CD3DX12_ROOT_PARAMETER1& param);
 
 private:
 	RenderContext& m_RenderContext;
 
 	ID3D12RootSignature* m_d3d12RootSignature = nullptr;
 
-	std::vector< CD3DX12_ROOT_PARAMETER1 >		m_RootParameters;
-	std::vector< CD3DX12_STATIC_SAMPLER_DESC >	m_StaticSamplers;
+	std::vector< CD3DX12_ROOT_PARAMETER1 >	   m_RootParameters;
+	std::vector< CD3DX12_STATIC_SAMPLER_DESC > m_StaticSamplers;
+
+	std::vector< u32 >             m_DescriptorTableIndices;
+	std::vector< DescriptorTable > m_DescriptorTables;
 
 	u32	m_NumDescriptorsPerTable[MAX_ROOT_INDEX] = {};
 	u64	m_SamplerTableBitMask = 0;

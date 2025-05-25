@@ -2,8 +2,33 @@
 #define _COMMON_HEADER
 
 #define SET_STATIC 0
-#define SET_PERFRAME 1
-#define SET_PERMATERIAL 2
-#define SET_PERDRAW 3
+#define SET_PUSH   1
+
+#define INVALID_INDEX 0xffffffff
+
+struct Vertex
+{
+	float posX, posY, posZ;
+	float u, v;
+	float normalX, normalY, normalZ;
+	float tangentX, tangentY, tangentZ;
+};
+
+struct MaterialData 
+{
+	float tintR, tintG, tintB; 
+	float metallic; 
+	float roughness; 
+	float padding0, padding1, padding2;
+
+	uint albedoID;
+	uint normalID;
+	uint specularID;
+	uint aoID;
+	uint roughnessID;
+	uint metallicID;
+	uint emissiveID;
+	uint padding3;
+};
 
 #endif // _COMMON_HEADER

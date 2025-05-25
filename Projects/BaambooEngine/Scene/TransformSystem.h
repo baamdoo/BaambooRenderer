@@ -14,7 +14,7 @@ public:
 	void OnTransformUpdated(entt::registry& registry, entt::entity entity);
 	void OnTransformDestroyed(entt::registry& registry, entt::entity entity);
 
-	void Update();
+	std::vector< entt::entity > Update();
 
 	void MarkDirty(entt::entity entity);
 	void AttachChild(entt::entity parent, entt::entity child);

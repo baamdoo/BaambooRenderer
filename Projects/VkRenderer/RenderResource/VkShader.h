@@ -17,7 +17,6 @@ public:
 	struct DescriptorInfo
 	{
 		std::string_view name;
-		u32              set;
 		u32              binding;
 		u32              arraySize;
 		VkDescriptorType descriptorType;
@@ -26,7 +25,7 @@ public:
 	struct ShaderReflection
 	{
 		std::vector< VkPushConstantRange >        pushConstants;
-		std::unordered_map< u32, DescriptorInfo > descriptors[eNumDescriptorSet];
+		std::unordered_map< u32, DescriptorInfo > descriptors;
 	};
 
 	[[nodiscard]]

@@ -4,8 +4,8 @@
 #include "Dx12CommandList.h"
 #include "Dx12DescriptorPool.h"
 #include "Dx12DescriptorAllocation.h"
-#include "Dx12UploadBufferPool.h"
 #include "Dx12ResourceManager.h"
+#include "RenderResource/Dx12SceneResource.h"
 
 #include "D3D12MemAlloc.h"
 
@@ -19,11 +19,6 @@ RenderContext::RenderContext(bool bEnableGBV)
 	m_pGraphicsCommandQueue = new CommandQueue(*this, D3D12_COMMAND_LIST_TYPE_DIRECT);
 	m_pComputeCommandQueue = new CommandQueue(*this, D3D12_COMMAND_LIST_TYPE_COMPUTE);
 	m_pCopyCommandQueue = new CommandQueue(*this, D3D12_COMMAND_LIST_TYPE_COPY);
-
-	m_pResourceDescriptorPool =
-		new DescriptorPool(*this, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, MAX_NUM_DESCRIPTOR_PER_POOL[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]);
-	m_pSamplerDescriptorPool = 
-		new DescriptorPool(*this, D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, MAX_NUM_DESCRIPTOR_PER_POOL[D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER]);
 
 	m_pResourceManager = new ResourceManager(*this); 
 
@@ -44,14 +39,14 @@ RenderContext::RenderContext(bool bEnableGBV)
 		}
 		m_HighestRootSignatureVersion = featureData.HighestVersion;
 	}
+
+	g_FrameData.pSceneResource = new SceneResource(*this);
 }
 
 RenderContext::~RenderContext()
 {
+	RELEASE(g_FrameData.pSceneResource);
 	RELEASE(m_pResourceManager);
-
-	RELEASE(m_pResourceDescriptorPool);
-	RELEASE(m_pSamplerDescriptorPool);
 
 	RELEASE(m_pCopyCommandQueue);
 	RELEASE(m_pComputeCommandQueue);
@@ -75,7 +70,7 @@ void RenderContext::Flush()
 
 u32 RenderContext::Swap()
 {
-	u8 nextContextIndex = (m_ContextIndex + 1) % NUM_FRAMES;
+	u8 nextContextIndex = (m_ContextIndex + 1) % NUM_FRAMES_IN_FLIGHT;
 	m_ContextIndex = nextContextIndex;
 
 	return nextContextIndex;
@@ -84,16 +79,6 @@ u32 RenderContext::Swap()
 CommandList& RenderContext::AllocateCommandList(D3D12_COMMAND_LIST_TYPE type)
 {
 	return GetCommandQueue(type).Allocate();
-}
-
-DescriptorAllocation RenderContext::AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE type, u32 numDescriptors)
-{
-	if (type == D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
-		return m_pResourceDescriptorPool->Allocate(numDescriptors);
-	else if (type == D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER)
-		return m_pSamplerDescriptorPool->Allocate(numDescriptors);
-
-	return DescriptorAllocation();
 }
 
 void RenderContext::UpdateSubresources(Resource* pResource, u32 firstSubresource, u32 numSubresources, const D3D12_SUBRESOURCE_DATA* pSrcData)
@@ -159,16 +144,6 @@ CommandQueue& RenderContext::GetCommandQueue(D3D12_COMMAND_LIST_TYPE type)
 	}
 
 	return *commandQueue;
-}
-
-DescriptorPool* RenderContext::GetDescriptorPool(D3D12_DESCRIPTOR_HEAP_TYPE type)
-{
-	if (type == D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
-		return m_pResourceDescriptorPool;
-	else if (type == D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER)
-		return m_pSamplerDescriptorPool;
-
-	return nullptr;
 }
 
 DXGI_SAMPLE_DESC RenderContext::GetMultisampleQualityLevels(DXGI_FORMAT format, D3D12_MULTISAMPLE_QUALITY_LEVEL_FLAGS flags) const

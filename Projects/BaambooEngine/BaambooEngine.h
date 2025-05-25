@@ -1,10 +1,8 @@
 #pragma once
 #include "BaambooCore/BackendAPI.h"
-#include "Scene/Scene.h"
 #include "BaambooCore/ThreadQueue.hpp"
-
-#include <filesystem>
-namespace fs = std::filesystem;
+#include "Scene/Scene.h"
+#include "Scene/Camera.h"
 
 namespace baamboo { class Engine; }
 namespace ImGui
@@ -35,29 +33,33 @@ public:
 	eRendererAPI BackendAPI() const { return m_eBackendAPI; }
 
 protected:
+	void Release();
+
 	virtual void Update(float dt);
 	virtual void GameLoop(float dt);
 	virtual void RenderLoop();
 
 	virtual bool InitWindow() { return false; }
 	virtual bool LoadScene() { return false; }
+
 	virtual void DrawUI();
 	virtual void DrawEntityNode(Entity entity);
 
 	virtual void ProcessInput();
 
 protected:
-	class Window*        m_pWindow = nullptr;
-	class Scene*         m_pScene = nullptr;
-
-	RendererAPI* m_pRendererBackend = nullptr;
+	class Window* m_pWindow = nullptr;
+	class Scene*  m_pScene = nullptr;
+	RendererAPI*  m_pRendererBackend = nullptr;
+	EditorCamera* m_pCamera = nullptr;
 
 	int  m_resizeWidth = -1;
 	int  m_resizeHeight = -1;
 	bool m_bWindowResized = false;
 
-private:
 	eRendererAPI m_eBackendAPI;
+
+private:
 	double       m_runningTime = 0.0;
 
 	std::thread                    m_renderThread;

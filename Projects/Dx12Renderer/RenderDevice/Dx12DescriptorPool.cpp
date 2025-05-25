@@ -64,7 +64,8 @@ DescriptorAllocation DescriptorPool::Allocate(u32 numDescriptors)
                 this,
                 CD3DX12_CPU_DESCRIPTOR_HANDLE(m_BaseCPUHandle, offset, m_DescriptorSize),
                 CD3DX12_GPU_DESCRIPTOR_HANDLE(m_BaseGPUHandle, offset, m_DescriptorSize),
-                numDescriptors
+                numDescriptors,
+                offset
             );
         }
     }

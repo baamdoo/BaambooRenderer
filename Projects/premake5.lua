@@ -3,7 +3,7 @@ project "Application"
 	location "Application"
 	kind "ConsoleApp"
 	language "C++"
-	cppdialect "C++20"
+	cppdialect "C++23"
 	staticruntime "off"
 	debugdir (Path.Solution)
 
@@ -40,7 +40,8 @@ project "Application"
 	}
 
 	debugenvs { 
-	} 
+		"PATH=Projects/ThirdParties/assimp/bin/Release/;%PATH%"
+	}
 
 	filter 'system:windows'
 		systemversion 'latest'
@@ -61,7 +62,7 @@ project "BaambooEngine"
 	location "BaambooEngine"
 	kind "StaticLib"
 	language "C++"
-	cppdialect "C++20"
+	cppdialect "C++23"
 	staticruntime "off"
 	debugdir (Path.Solution)
 
@@ -104,7 +105,7 @@ project "BaambooEngine"
 	}
 
 	libdirs {
-		'%{Path.ThirdParty}/assimp/lib/Release/', 
+		"%{Path.ThirdParty}/assimp/lib/Release/",
 	}
 
 	links {
@@ -113,6 +114,7 @@ project "BaambooEngine"
 	}
 
 	debugenvs { 
+		"PATH=Projects/ThirdParties/assimp/bin/Release/;%PATH%"
 	}
 
 	filter { "files:ThirdParties/imgui/**.cpp" }
@@ -137,7 +139,7 @@ project "Dx12Renderer"
 	location "Dx12Renderer"
 	kind "SharedLib"
 	language "C++"
-	cppdialect "C++20"
+	cppdialect "C++23"
 	staticruntime "off"
 	debugdir (Path.Solution)
 
@@ -190,7 +192,7 @@ project "Dx12Renderer"
 	links {
 	}
 
-	shadermodel ("6.0")
+	shadermodel ("6.6")
 	shaderobjectfileoutput (path.join(Path.Cso, "%%(Filename).cso"))
 	filter { "files:**VS.hlsl" }
 		shadertype "Vertex"
@@ -266,7 +268,7 @@ project "VkRenderer"
 	location "VkRenderer"
 	kind "SharedLib"
 	language "C++"
-	cppdialect "C++20"
+	cppdialect "C++23"
 	staticruntime "off"
 	debugdir (Path.Solution)
 

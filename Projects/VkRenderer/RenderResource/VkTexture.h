@@ -22,7 +22,9 @@ public:
         eTextureType type = eTextureType::Texture2D;
         VkExtent3D   resolution = {};
         VkFormat     format = VK_FORMAT_R8G8B8A8_UNORM;
-		VkClearValue clearValue = { .color = { 0.0f, 0.0f, 0.0f, 0.0f} };
+
+		VkClearColorValue        colorClearValue = { 0, 0, 0, 0 };
+		VkClearDepthStencilValue depthClearValue = { 1.0f, 0 };
 
         u32  arrayLayers = 1;
         u32  sampleCount = 1;
@@ -57,7 +59,14 @@ public:
 	};
 	inline static const Subresource ALL_SUBRESOURCES = Subresource();
 
-	using State = VkImageLayout;
+	struct State
+	{
+		bool operator==(const State& other) const { return access == other.access && stage == other.stage && layout == other.layout; }
+
+		VkAccessFlags2        access;
+		VkPipelineStageFlags2 stage;
+		VkImageLayout         layout;
+	};
 	struct ResourceState
 	{
 		ResourceState() = default;
@@ -69,7 +78,7 @@ public:
 		auto end() const noexcept { return subresourceStates.end(); }
 
 		[[nodiscard]]
-		bool IsValid() const { return state != VK_IMAGE_LAYOUT_UNDEFINED; }
+		bool IsValid() const { return state.layout != VK_IMAGE_LAYOUT_UNDEFINED; }
 
 		// Force to set all subresource states equal
 		void FlattenResourceState()
@@ -78,7 +87,7 @@ public:
 				return;
 
 			State state_ = subresourceStates.begin()->second;
-			for (auto pair : subresourceStates)
+			for (const auto& pair : subresourceStates)
 				BB_ASSERT(state_ == pair.second, "All subresource states should be equal before flatten");
 
 			SetSubresourceState(state_, ALL_SUBRESOURCES);
@@ -114,7 +123,7 @@ public:
 	};
 
 	void Resize(u32 width, u32 height, u32 depth);
-	void SetResource(VkImage vkImage, VkImageView vkImageView, VmaAllocation vmaAllocation);
+	void SetResource(VkImage vkImage, VkImageView vkImageView, VmaAllocation vmaAllocation, VkImageAspectFlags aspectMask);
 
 	[[nodiscard]]
 	inline CreationInfo Info() const { return m_creationInfo; }
@@ -125,7 +134,13 @@ public:
     [[nodiscard]]
     inline const VkImageCreateInfo& Desc() const { return m_desc; }
 	[[nodiscard]]
-	inline const VkClearValue& ClearValue() const { return m_clearValue; }
+	inline VkImageAspectFlags AspectMask() const { return m_aspectFlags; }
+	[[nodiscard]]
+	inline VkClearValue ClearValue() const { return m_aspectFlags & VK_IMAGE_ASPECT_COLOR_BIT ? VkClearValue{ .color = m_creationInfo.colorClearValue } : VkClearValue{ .depthStencil = m_creationInfo.depthClearValue }; }
+	[[nodiscard]]
+	inline const VkClearColorValue* ClearColorValue() const { assert(m_aspectFlags & VK_IMAGE_ASPECT_COLOR_BIT); return &m_creationInfo.colorClearValue; }
+	[[nodiscard]]
+	inline const VkClearDepthStencilValue* ClearDepthValue() const { assert(m_aspectFlags & VK_IMAGE_ASPECT_DEPTH_BIT); return &m_creationInfo.depthClearValue; }
 	[[nodiscard]]
 	u64 SizeInBytes() const;
 
@@ -148,10 +163,10 @@ protected:
     VkImageViewCreateInfo GetViewDesc(const VkImageCreateInfo& imageDesc);
 
 private:
-    VkImage           m_vkImage = VK_NULL_HANDLE;
-    VkImageView       m_vkImageView = VK_NULL_HANDLE;
-    VkImageCreateInfo m_desc = {};
-	VkClearValue      m_clearValue = {};
+    VkImage            m_vkImage = VK_NULL_HANDLE;
+    VkImageView        m_vkImageView = VK_NULL_HANDLE;
+    VkImageCreateInfo  m_desc = {};
+	VkImageAspectFlags m_aspectFlags = 0;
 
 	CreationInfo  m_creationInfo = {}; // for resize
 	ResourceState m_currentState = {};

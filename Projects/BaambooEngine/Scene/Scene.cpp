@@ -2,8 +2,10 @@
 #include "Scene.h"
 #include "Entity.h"
 #include "Components.h"
+#include "Camera.h"
 #include "TransformSystem.h"
-#include "CameraSystem.h"
+#include "MeshSystem.h"
+#include "MaterialSystem.h"
 
 #include <queue>
 
@@ -14,12 +16,14 @@ Scene::Scene(const std::string& name)
 	: m_name(name)
 {
 	m_pTransformSystem = new TransformSystem(m_registry);
-	m_pCameraSystem = new CameraSystem(m_registry);
+	m_pStaticMeshSystem = new StaticMeshSystem(m_registry);
+	m_pMaterialSystem = new MaterialSystem(m_registry);
 }
 
 Scene::~Scene()
 {
-	RELEASE(m_pCameraSystem);
+	RELEASE(m_pMaterialSystem);
+	RELEASE(m_pStaticMeshSystem);
 	RELEASE(m_pTransformSystem);
 }
 
@@ -31,6 +35,7 @@ Entity Scene::CreateEntity(const std::string& tag)
 
 	printf("create entity_%d\n", newEntity.id());
 
+	m_entityDirtyMasks.emplace(std::make_pair(newEntity.ID(), 0));
 	return newEntity;
 }
 
@@ -53,14 +58,20 @@ void Scene::RemoveEntity(Entity entity)
 	}
 
 	m_registry.destroy(entity.ID());
+	m_entityDirtyMasks.erase(entity.ID());
 }
 
-Entity Scene::ImportModel(fs::path filepath, MeshDescriptor descriptor, ResourceManagerAPI& rm)
+Entity Scene::ImportModel(fs::path filepath, MeshDescriptor descriptor)
 {
-	auto loader = ModelLoader(filepath, descriptor);
-
-	u32 depth = 0;
 	auto rootEntity = CreateEntity(filepath.filename().string() + "_root");
+
+	return ImportModel(rootEntity, filepath, descriptor);
+}
+
+Entity Scene::ImportModel(Entity rootEntity, fs::path filepath, MeshDescriptor descriptor)
+{
+	u32 depth = 0;
+	auto loader = ModelLoader(filepath, descriptor);
 
 	std::queue< std::pair< ModelLoader::Node*, Entity > > nodeQ;
 	nodeQ.push(std::make_pair(loader.pRoot, rootEntity));
@@ -83,64 +94,48 @@ Entity Scene::ImportModel(fs::path filepath, MeshDescriptor descriptor, Resource
 
 				// mesh
 				auto& mesh = entity.AttachComponent< StaticMeshComponent >();
-				mesh.geometry.path = filepath.string();
+				mesh.path = filepath.string();
 
 				// geometry
-				mesh.geometry.vertex =
-					rm.CreateVertexBuffer(filepath.filename().wstring(), (u32)meshData.vertices.size(), sizeof(Vertex), meshData.vertices.data());
-				mesh.geometry.index =
-					rm.CreateIndexBuffer(filepath.filename().wstring(), (u32)meshData.indices.size(), sizeof(Index), meshData.indices.data());
-				mesh.geometry.aabb = meshData.aabb;
+				mesh.vertices = std::move(meshData.vertices);
+				mesh.indices = std::move(meshData.indices);
 
 				// material
+				auto& material = entity.AttachComponent< MaterialComponent >();
 				if (!meshData.albedoTextureFilename.empty())
 				{
-					mesh.material.albedo.path = filepath.relative_path().string() + meshData.albedoTextureFilename;
-					mesh.material.albedo.handle = rm.CreateTexture(mesh.material.albedo.path, false);
+					material.albedoTex = filepath.parent_path().string() + "/" + meshData.albedoTextureFilename;
 				}
-				else mesh.material.albedo.handle = eTextureIndex_DefaultWhite;
 
 				if (!meshData.normalTextureFilename.empty())
 				{
-					mesh.material.normal.path = filepath.relative_path().string() + meshData.normalTextureFilename;
-					mesh.material.normal.handle = rm.CreateTexture(mesh.material.normal.path, false);
+					material.normalTex = filepath.parent_path().string() + "/" + meshData.normalTextureFilename;
 				}
-				else mesh.material.normal.handle = eTextureIndex_Invalid;
 
 				if (!meshData.specularTextureFilename.empty())
 				{
-					mesh.material.specular.path = filepath.relative_path().string() + meshData.specularTextureFilename;
-					mesh.material.specular.handle = rm.CreateTexture(mesh.material.specular.path, false);
+					material.specularTex = filepath.parent_path().string() + "/" + meshData.specularTextureFilename;
 				}
-				else mesh.material.specular.handle = eTextureIndex_DefaultWhite;
 
 				if (!meshData.emissiveTextureFilename.empty())
 				{
-					mesh.material.emission.path = filepath.relative_path().string() + meshData.emissiveTextureFilename;
-					mesh.material.emission.handle = rm.CreateTexture(mesh.material.emission.path, false);
+					material.emissionTex = filepath.parent_path().string() + "/" + meshData.emissiveTextureFilename;
 				}
-				else mesh.material.emission.handle = eTextureIndex_DefaultBlack;
 
 				if (!meshData.aoTextureFilename.empty())
 				{
-					mesh.material.ao.path = filepath.relative_path().string() + meshData.aoTextureFilename;
-					mesh.material.ao.handle = rm.CreateTexture(mesh.material.ao.path, false);
+					material.aoTex = filepath.parent_path().string() + "/" + meshData.aoTextureFilename;
 				}
-				else mesh.material.ao.handle = eTextureIndex_DefaultBlack;
 
 				if (!meshData.roughnessTextureFilename.empty())
 				{
-					mesh.material.roughness.path = filepath.relative_path().string() + meshData.roughnessTextureFilename;
-					mesh.material.roughness.handle = rm.CreateTexture(mesh.material.roughness.path, false);
+					material.roughnessTex = filepath.parent_path().string() + "/" + meshData.roughnessTextureFilename;
 				}
-				else mesh.material.roughness.handle = eTextureIndex_DefaultWhite;
 
 				if (!meshData.metallicTextureFilename.empty())
 				{
-					mesh.material.metallic.path = filepath.relative_path().string() + meshData.metallicTextureFilename;
-					mesh.material.metallic.handle = rm.CreateTexture(mesh.material.metallic.path, false);
+					material.metallicTex = filepath.parent_path().string() + "/" + meshData.metallicTextureFilename;
 				}
-				else mesh.material.metallic.handle = eTextureIndex_DefaultWhite;
 			}
 		}
 
@@ -153,62 +148,86 @@ Entity Scene::ImportModel(fs::path filepath, MeshDescriptor descriptor, Resource
 
 void Scene::Update(f32 dt)
 {
-	m_pTransformSystem->Update();
+	auto markedEntities = m_pTransformSystem->Update();
+	for (auto entity : markedEntities)
+	{
+		u64& dirtyMarks = m_entityDirtyMasks[entity];
+		dirtyMarks |= (1 << eComponentType::TTransform);
+	}
+
+	markedEntities = m_pStaticMeshSystem->Update();
+	for (auto entity : markedEntities)
+	{
+		u64& dirtyMarks = m_entityDirtyMasks[entity];
+		dirtyMarks |= (1 << eComponentType::TStaticMesh);
+	}
+
+	markedEntities = m_pMaterialSystem->Update();
+	for (auto entity : markedEntities)
+	{
+		u64& dirtyMarks = m_entityDirtyMasks[entity];
+		dirtyMarks |= (1 << eComponentType::TMaterial);
+	}
 }
 
-SceneRenderView Scene::RenderView() const
+SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 {
 	SceneRenderView view{};
+	view.camera.mView = camera.GetView();
+	view.camera.mProj = camera.GetProj();
+	view.camera.pos = camera.GetPosition();
+
 	m_registry.view< TransformComponent >().each([this, &view](auto id, auto& transformComponent)
 		{
 			TransformRenderView transformView = {};
 			transformView.id = entt::to_integral(id);
-			transformView.mWorld = m_pTransformSystem->WorldMatrix(transformComponent.mWorld);
+			transformView.mWorld = m_pTransformSystem->WorldMatrix(transformComponent.world);
 			view.transforms.push_back(transformView);
 
-			DrawData draw = {};
+			DrawRenderView draw = {};
 			draw.transform = static_cast<u32>(view.transforms.size()) - 1;
 			view.draws.emplace(transformView.id, draw);
 		});
 
-	m_registry.view< TransformComponent, CameraComponent >().each([this, &view](auto id, auto& transformComponent, auto& cameraComponent)
-		{
-			CameraRenderView cameraView = {};
-			cameraView.id = entt::to_integral(id);
-			cameraView.mProj = m_pCameraSystem->ProjMatrix();
-			cameraView.mView = m_pCameraSystem->ViewMatrix();
-			cameraView.pos = transformComponent.transform.position;
-			view.cameras.push_back(cameraView);
-
-			assert(view.draws.count(cameraView.id)); // all entity has transform and must be parsed first!
-			auto& draw = view.draws.find(cameraView.id)->second;
-			draw.camera = static_cast<u32>(view.cameras.size()) - 1;
-		});
-
-	m_registry.view< StaticMeshComponent >().each([this, &view](auto id, auto& meshComponent)
+	m_registry.view< TagComponent, StaticMeshComponent, MaterialComponent >().each([this, &view](auto id, auto& tagComponent, auto& meshComponent, auto& materialComponent)
 		{
 			StaticMeshRenderView meshView = {};
 			meshView.id = entt::to_integral(id);
-			meshView.geometry.vb = meshComponent.geometry.vertex.vb;
-			meshView.geometry.vOffset = meshComponent.geometry.vertex.vOffset;
-			meshView.geometry.vCount = meshComponent.geometry.vertex.vCount;
-			meshView.geometry.ib = meshComponent.geometry.index.ib;
-			meshView.geometry.iOffset = meshComponent.geometry.index.iOffset;
-			meshView.geometry.iCount = meshComponent.geometry.index.iCount;
-
-			meshView.material.tint = meshComponent.material.tint;
-			meshView.material.albedo = meshComponent.material.albedo.handle;
-			meshView.material.normal = meshComponent.material.normal.handle;
-			meshView.material.specular = meshComponent.material.specular.handle;
-			meshView.material.ao = meshComponent.material.ao.handle;
-			meshView.material.roughness = meshComponent.material.roughness.handle;
-			meshView.material.metallic = meshComponent.material.metallic.handle;
-			meshView.material.emission = meshComponent.material.emission.handle;
+			meshView.tag = tagComponent.tag;
+			meshView.vData = meshComponent.vertices.data();
+			meshView.vCount = static_cast<u32>(meshComponent.vertices.size());
+			meshView.iData = meshComponent.indices.data();
+			meshView.iCount = static_cast<u32>(meshComponent.indices.size());
 			view.meshes.push_back(meshView);
 
-			assert(view.draws.count(meshView.id)); // all entity has transform and must be parsed first!
+			/*if (!view.draws.contains(meshView.id))
+			{
+				view.draws.emplace(meshView.id, DrawRenderView{});
+			}*/
+			assert(view.draws.contains(meshView.id));
 			auto& draw = view.draws.find(meshView.id)->second;
 			draw.mesh = static_cast<u32>(view.meshes.size()) - 1;
+
+			MaterialRenderView materialView = {};
+			materialView.id = entt::to_integral(id);
+			materialView.tint = materialComponent.tint;
+			materialView.roughness = materialComponent.roughness;
+			materialView.metallic = materialComponent.metallic;
+
+			materialView.albedoTex = materialComponent.albedoTex;
+			materialView.normalTex = materialComponent.normalTex;
+			materialView.specularTex = materialComponent.specularTex;
+			materialView.aoTex = materialComponent.aoTex;
+			materialView.roughnessTex = materialComponent.roughnessTex;
+			materialView.metallicTex = materialComponent.metallicTex;
+			materialView.emissionTex = materialComponent.emissionTex;
+			view.materials.push_back(materialView);
+
+			/*if (!view.draws.contains(materialView.id))
+			{
+				view.draws.emplace(materialView.id, DrawRenderView{});
+			}*/
+			draw.material = static_cast<u32>(view.materials.size()) - 1;
 		});
 
 	return view;

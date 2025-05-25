@@ -1,23 +1,83 @@
 #pragma once
-#include "BaambooCore/BackendAPI.h"
 #include "Core/VkResourcePool.h"
 #include "RenderResource/VkShader.h"
 #include "RenderResource/VkBuffer.h"
 #include "RenderResource/VkTexture.h"
 #include "RenderResource/VkSampler.h"
 
+#include <Scene/SceneRenderView.h>
+
 namespace vk
 {
 
-class ResourceManager : public ResourceManagerAPI
+class StaticBufferAllocator;
+
+struct BufferHandle
+{
+    VkBuffer vkBuffer;
+    
+    u32 count;
+    u32 offset;
+    u64 elementSizeInBytes;
+};
+using TextureHandle = baamboo::ResourceHandle< Texture >;
+
+struct SceneResource
+{
+    SceneResource(RenderContext& context);
+    ~SceneResource();
+
+    void UpdateSceneResources(const SceneRenderView& sceneView);
+
+    BufferHandle GetOrUpdateVertex(u32 entity, std::string_view filepath, const void* pData, u32 count);
+    BufferHandle GetOrUpdateIndex(u32 entity, std::string_view filepath, const void* pData, u32 count);
+    TextureHandle GetOrLoadTexture(u32 entity, std::string_view filepath);
+
+    [[nodiscard]]
+    VkDescriptorBufferInfo GetVertexDescriptorInfo() const;
+    [[nodiscard]]
+    VkDescriptorBufferInfo GetIndexDescriptorInfo() const;
+    [[nodiscard]]
+    VkDescriptorBufferInfo GetIndirectDrawDescriptorInfo() const;
+    [[nodiscard]]
+    VkDescriptorBufferInfo GetTransformDescriptorInfo() const;
+    [[nodiscard]]
+    VkDescriptorBufferInfo GetMaterialDescriptorInfo() const;
+
+    [[nodiscard]]
+    VkDescriptorSet GetSceneDescriptorSet() const;
+    [[nodiscard]]
+    VkDescriptorSetLayout GetSceneDescriptorSetLayout() const { return m_vkSetLayout; }
+
+private:
+    void ResetFrameBuffers();
+    void UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator* pTargetBuffer);
+
+    RenderContext& m_renderContext;
+
+    VkDescriptorSetLayout m_vkSetLayout = VK_NULL_HANDLE;
+    DescriptorPool*       m_pDescriptorPool = nullptr;
+
+    StaticBufferAllocator* m_pVertexBufferPool = nullptr;
+    StaticBufferAllocator* m_pIndexBufferPool = nullptr;
+    StaticBufferAllocator* m_pIndirectDrawBufferPool = nullptr;
+    StaticBufferAllocator* m_pTransformBufferPool = nullptr;
+    StaticBufferAllocator* m_pMaterialBufferPool = nullptr;
+
+    std::unordered_map< std::string, BufferHandle >  m_vertexCache;
+    std::unordered_map< std::string, BufferHandle >  m_indexCache;
+    std::unordered_map< std::string, TextureHandle > m_textureCache;
+
+    baamboo::ResourceHandle< Sampler > m_defaultSampler;
+};
+
+class ResourceManager
 {
 public:
     ResourceManager(RenderContext& context);
     virtual ~ResourceManager();
 
-    virtual VertexHandle CreateVertexBuffer(std::wstring_view name, u32 numVertices, u64 elementSizeInBytes, void* data) override;
-    virtual IndexHandle CreateIndexBuffer(std::wstring_view name, u32 numIndices, u64 elementSizeInBytes, void* data) override;
-    virtual TextureHandle CreateTexture(std::string_view filepath, bool bGenerateMips) override;
+    Buffer* GetStagingBuffer(u32 numElements, u64 elementSize) const;
 
     template< typename TResource >
     baamboo::ResourceHandle< TResource > Create(std::wstring_view name, typename TResource::CreationInfo&& desc);

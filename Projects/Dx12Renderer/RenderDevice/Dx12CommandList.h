@@ -12,8 +12,10 @@ class RootSignature;
 class DescriptorHeap;
 class GraphicsPipeline;
 class ComputePipeline;
-class UploadBufferPool;
+class DynamicBufferAllocator;
+class Buffer;
 class Texture;
+class SceneResource;
 
 class CommandList
 {
@@ -28,6 +30,7 @@ public:
 	void UAVBarrier(Resource* pResource, bool bFlushImmediate = false);
 	void AliasingBarrier(Resource* pResourceBefore, Resource* pResourceAfter, bool bFlushImmediate = false);
 
+	void CopyBuffer(Buffer* pDstBuffer, Buffer* pSrcBuffer, size_t sizeInBytes);
 	void CopyBuffer(ID3D12Resource* d3d12DstBuffer, ID3D12Resource* d3d12SrcBuffer, SIZE_T sizeInBytes);
 	void CopyTexture(Texture* pDstTexture, Texture* pSrcTexture);
 	void ResolveSubresource(Resource* pDstResource, Resource* pSrcResource, u32 dstSubresource = 0, u32 srcSubresource = 0);
@@ -77,6 +80,7 @@ public:
 
 	void Draw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t startVertex = 0, uint32_t startInstance = 0);
 	void DrawIndexed(uint32_t indexCount, uint32_t instanceCount = 1, uint32_t startIndex = 0, int32_t baseVertex = 0, uint32_t startInstance = 0);
+	void DrawIndexedIndirect(const SceneResource& sceneResource);
 
 	void Dispatch(uint32_t numGroupsX, uint32_t numGroupsY = 1, uint32_t numGroupsZ = 1);
 
@@ -91,10 +95,10 @@ public:
 	ID3D12GraphicsCommandList2* GetD3D12CommandList() const { return m_d3d12CommandList; }
 
 private:
-	RenderContext& m_RenderContext;
+	RenderContext&          m_RenderContext;
 	D3D12_COMMAND_LIST_TYPE m_Type = {};
 	
-	UploadBufferPool* m_pUploadBufferPool = nullptr;
+	DynamicBufferAllocator* m_pDynamicBufferAllocator = nullptr;
 
 	ID3D12GraphicsCommandList2* m_d3d12CommandList = nullptr;
 	ID3D12CommandAllocator* m_d3d12CommandAllocator = nullptr;

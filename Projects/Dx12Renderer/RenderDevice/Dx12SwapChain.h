@@ -37,7 +37,7 @@ private:
 	u32  m_imageIndex = 0;
 	bool m_vSync = true;
 
-	baamboo::ResourceHandle< Texture > m_textures[NUM_FRAMES];
+	baamboo::ResourceHandle< Texture > m_textures[NUM_FRAMES_IN_FLIGHT];
 };
 
 }

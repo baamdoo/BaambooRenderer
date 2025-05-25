@@ -23,7 +23,7 @@ VertexBuffer::VertexBuffer(RenderContext& context, std::wstring_view name, Creat
 	: Super(context, name, std::move(info))
 {
 	m_d3d12BufferView.BufferLocation = m_d3d12Resource->GetGPUVirtualAddress();
-	m_d3d12BufferView.StrideInBytes = info.elementSizeInBytes;
+	m_d3d12BufferView.StrideInBytes = static_cast<u32>(info.elementSizeInBytes);
 	m_d3d12BufferView.SizeInBytes = static_cast<u32>(GetSizeInBytes());
 }
 
@@ -44,7 +44,7 @@ ConstantBuffer::ConstantBuffer(RenderContext& context, std::wstring_view name, C
 
 	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
 	cbvDesc.BufferLocation = m_d3d12Resource->GetGPUVirtualAddress();
-	cbvDesc.SizeInBytes = static_cast<u32>(baamboo::math::AlignUp(GetSizeInBytes(), (u32)D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT));
+	cbvDesc.SizeInBytes = static_cast<u32>(baamboo::math::AlignUp(GetSizeInBytes(), (u64)D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT));
 
 	d3d12Device->CreateConstantBufferView(&cbvDesc, m_CBVAllocation.GetCPUHandle());
 
@@ -79,7 +79,7 @@ StructuredBuffer::StructuredBuffer(RenderContext& context, std::wstring_view nam
 		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
 		srvDesc.Buffer.FirstElement = 0;
 		srvDesc.Buffer.NumElements = m_Count;
-		srvDesc.Buffer.StructureByteStride = m_ElementSize;
+		srvDesc.Buffer.StructureByteStride = static_cast<u32>(m_ElementSize);
 		srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 
 		d3d12Device->CreateShaderResourceView(m_d3d12Resource, &srvDesc, m_SRVAllocation.GetCPUHandle());
@@ -95,7 +95,7 @@ StructuredBuffer::StructuredBuffer(RenderContext& context, std::wstring_view nam
 		uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
 		uavDesc.Buffer.FirstElement = 0;
 		uavDesc.Buffer.NumElements = m_Count;
-		uavDesc.Buffer.StructureByteStride = m_ElementSize;
+		uavDesc.Buffer.StructureByteStride = static_cast<u32>(m_ElementSize);
 		uavDesc.Buffer.CounterOffsetInBytes = 0;
 		uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
 

@@ -5,6 +5,7 @@
 
 #include <entt/entt.hpp>
 
+
 //-------------------------------------------------------------------------
 // TagComponent(core) : Determines whether to expose in UI panel
 //-------------------------------------------------------------------------
@@ -28,7 +29,7 @@ struct TransformComponent
 		int depth{ 0 };
 	} hierarchy;
 
-	unsigned mWorld;
+	unsigned world;
 	bool     bDirtyMark;
 };
 
@@ -44,6 +45,7 @@ struct CameraComponent
 	float cFar;
 	float fov;
 
+	bool bMain;
 	bool bDirtyMark;
 };
 inline std::string_view GetCameraTypeString(CameraComponent::eType type)
@@ -62,39 +64,14 @@ inline std::string_view GetCameraTypeString(CameraComponent::eType type)
 //-------------------------------------------------------------------------
 // StaticMeshComponent : Determines whether to be rendered statically
 //-------------------------------------------------------------------------
-struct Geometry
+struct StaticMeshComponent
 {
 	std::string path;
 
-	VertexHandle vertex;
-	IndexHandle  index;
+	std::vector< Vertex > vertices;
+	std::vector< Index >  indices;
 
-	BoundingBox aabb;
-};
-
-struct Material
-{
-	float3 tint{ 1, 1, 1 };
-
-	struct Data
-	{
-		std::string   path;
-		TextureHandle handle;
-	};
-
-	Data albedo;
-	Data normal;
-	Data specular;
-	Data ao;
-	Data roughness;
-	Data metallic;
-	Data emission;
-};
-
-struct StaticMeshComponent
-{
-	Geometry geometry;
-	Material material;
+	bool bDirtyMark;
 };
 
 //-------------------------------------------------------------------------
@@ -104,4 +81,25 @@ struct DynamicMeshComponent
 {
 	std::string texture;
 	std::string geometry;
+};
+
+
+//-------------------------------------------------------------------------
+// MaterialComponent : Determines surface of mesh (mesh-dependent)
+//-------------------------------------------------------------------------
+struct MaterialComponent
+{
+	float3 tint{ 1, 1, 1 };
+	float  roughness;
+	float  metallic;
+
+	std::string albedoTex;
+	std::string normalTex;
+	std::string specularTex;
+	std::string aoTex;
+	std::string roughnessTex;
+	std::string metallicTex;
+	std::string emissionTex;
+
+	bool bDirtyMark;
 };

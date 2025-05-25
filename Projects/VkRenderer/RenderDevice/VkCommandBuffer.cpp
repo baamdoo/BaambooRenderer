@@ -2,7 +2,9 @@
 #include "VkCommandBuffer.h"
 #include "VkCommandQueue.h"
 #include "VkRenderPipeline.h"
-#include "VkUploadBufferPool.h"
+#include "VkBufferAllocator.h"
+#include "VkResourceManager.h"
+#include "VkDescriptorSet.h"
 #include "RenderResource/VkBuffer.h"
 #include "RenderResource/VkRenderTarget.h"
 #include "RenderResource/VkTexture.h"
@@ -32,9 +34,9 @@ CommandBuffer::CommandBuffer(RenderContext& context, VkCommandPool vkCommandPool
 
 
 	// **
-	// Create dynamic buffer pool
+	// Create dynamic buffer pools
 	// **
-	m_pUploadBufferPool = new UploadBufferPool(m_renderContext);
+	m_pUniformBufferPool = new DynamicBufferAllocator(m_renderContext);
 
 
     // **
@@ -53,7 +55,7 @@ CommandBuffer::CommandBuffer(RenderContext& context, VkCommandPool vkCommandPool
 
 CommandBuffer::~CommandBuffer()
 {
-	RELEASE(m_pUploadBufferPool);
+	RELEASE(m_pUniformBufferPool);
 
     vkDestroySemaphore(m_renderContext.vkDevice(), m_vkPresentCompleteSemaphore, nullptr);
     vkDestroySemaphore(m_renderContext.vkDevice(), m_vkRenderCompleteSemaphore, nullptr);
@@ -74,9 +76,8 @@ void CommandBuffer::Open(VkCommandBufferUsageFlags flags)
     beginInfo.flags = flags;
     VK_CHECK(vkBeginCommandBuffer(m_vkCommandBuffer, &beginInfo));
 
-	m_pUploadBufferPool->Reset();
-	for (auto& allocation : m_allocations)
-		allocation.clear();
+	m_pUniformBufferPool->Reset();
+	m_pushAllocations.clear();
 
 	m_pGraphicsPipeline = nullptr;
 	m_pComputePipeline = nullptr;
@@ -95,27 +96,56 @@ bool CommandBuffer::IsFenceComplete() const
 
 void CommandBuffer::WaitForFence() const
 {
-	vkWaitForFences(m_renderContext.vkDevice(), 1, &m_vkFence, VK_TRUE, UINT64_MAX);
+	VK_CHECK(vkWaitForFences(m_renderContext.vkDevice(), 1, &m_vkFence, VK_TRUE, UINT64_MAX));
 }
 
-void CommandBuffer::CopyBuffer(Buffer* pDstBuffer, Buffer* pSrcBuffer, VkDeviceSize dstOffset, VkDeviceSize srcOffset)
+void CommandBuffer::CopyBuffer(
+	VkBuffer vkDstBuffer, 
+	VkBuffer vkSrcBuffer, 
+	VkDeviceSize sizeInBytes, 
+	VkPipelineStageFlags2 dstStageMask,
+	VkDeviceSize dstOffset, 
+	VkDeviceSize srcOffset, 
+	bool bFlushImmediate)
 {
-    VkBufferCopy copyRegion = {};
-    copyRegion.srcOffset = srcOffset;
-    copyRegion.dstOffset = dstOffset;
-    copyRegion.size = pDstBuffer->SizeInBytes();
-    vkCmdCopyBuffer(m_vkCommandBuffer, pDstBuffer->vkBuffer(), pSrcBuffer->vkBuffer(), 1, &copyRegion);
+	VkBufferCopy copyRegion = {};
+	copyRegion.srcOffset = srcOffset;
+	copyRegion.dstOffset = dstOffset;
+	copyRegion.size = sizeInBytes;
+	vkCmdCopyBuffer(m_vkCommandBuffer, vkSrcBuffer, vkDstBuffer, 1, &copyRegion);
 
-	VkBufferMemoryBarrier copyBarrier = {};
-	copyBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+	VkBufferMemoryBarrier2 copyBarrier = {};
+	copyBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+	copyBarrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
 	copyBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	copyBarrier.dstStageMask = dstStageMask;
 	copyBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 	copyBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	copyBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	copyBarrier.buffer = pDstBuffer->vkBuffer();
+	copyBarrier.buffer = vkDstBuffer;
 	copyBarrier.offset = 0;
-	copyBarrier.size = pDstBuffer->SizeInBytes();
-	vkCmdPipelineBarrier(m_vkCommandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_DEPENDENCY_BY_REGION_BIT, 0, nullptr, 1, &copyBarrier, 0, nullptr);
+	copyBarrier.size = sizeInBytes;
+	AddBarrier(copyBarrier, bFlushImmediate);
+}
+
+void CommandBuffer::CopyBuffer(
+	Buffer* pDstBuffer, 
+	Buffer* pSrcBuffer, 
+	VkDeviceSize sizeInBytes,
+	VkPipelineStageFlags2 dstStageMask, 
+	VkDeviceSize dstOffset, 
+	VkDeviceSize srcOffset, 
+	bool bFlushImmediate)
+{
+	CopyBuffer(
+		pDstBuffer->vkBuffer(), 
+		pSrcBuffer->vkBuffer(), 
+		sizeInBytes,
+		dstStageMask, 
+		dstOffset, 
+		srcOffset, 
+		bFlushImmediate
+	);
 }
 
 void CommandBuffer::CopyBuffer(Texture* pDstTexture, Buffer* pSrcBuffer, const std::vector< VkBufferImageCopy >& regions, bool bAllSubresources)
@@ -130,7 +160,7 @@ void CommandBuffer::CopyBuffer(Texture* pDstTexture, Buffer* pSrcBuffer, const s
     TransitionImageLayout(
         pDstTexture,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        VK_PIPELINE_STAGE_HOST_BIT, 
+        //VK_PIPELINE_STAGE_HOST_BIT, 
         VK_PIPELINE_STAGE_TRANSFER_BIT,
         subresourceRange);
 
@@ -140,7 +170,7 @@ void CommandBuffer::CopyBuffer(Texture* pDstTexture, Buffer* pSrcBuffer, const s
     TransitionImageLayout(
         pDstTexture, 
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        VK_PIPELINE_STAGE_TRANSFER_BIT, 
+        //VK_PIPELINE_STAGE_TRANSFER_BIT, 
         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
         subresourceRange);
 }
@@ -150,13 +180,13 @@ void CommandBuffer::CopyTexture(Texture* pDstTexture, Texture* pSrcTexture)
 	TransitionImageLayout(
 		pSrcTexture, 
 		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 
-		VK_PIPELINE_STAGE_2_HOST_BIT, 
+		//VK_PIPELINE_STAGE_2_HOST_BIT, 
 		VK_PIPELINE_STAGE_2_TRANSFER_BIT, 
 		pSrcTexture->Desc().format < VK_FORMAT_D16_UNORM ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT, true);
 	TransitionImageLayout(
 		pDstTexture,
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		VK_PIPELINE_STAGE_2_HOST_BIT,
+		//VK_PIPELINE_STAGE_2_HOST_BIT,
 		VK_PIPELINE_STAGE_2_TRANSFER_BIT,
 		pSrcTexture->Desc().format < VK_FORMAT_D16_UNORM ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT, true);
 
@@ -196,7 +226,7 @@ void CommandBuffer::GenerateMips(Texture* pTexture)
 		TransitionImageLayout(
 			pTexture,
 			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-			VK_PIPELINE_STAGE_TRANSFER_BIT, 
+			//VK_PIPELINE_STAGE_TRANSFER_BIT, 
 			VK_PIPELINE_STAGE_TRANSFER_BIT, 
 			subresourceRange);
 
@@ -223,7 +253,7 @@ void CommandBuffer::GenerateMips(Texture* pTexture)
 		TransitionImageLayout(
 			pTexture,
 			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			VK_PIPELINE_STAGE_TRANSFER_BIT,
+			//VK_PIPELINE_STAGE_TRANSFER_BIT,
 			VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
 			subresourceRange);
 	}
@@ -232,7 +262,7 @@ void CommandBuffer::GenerateMips(Texture* pTexture)
 	TransitionImageLayout(
 		pTexture,
 		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		//VK_PIPELINE_STAGE_TRANSFER_BIT,
 		VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
 		subresourceRange);
 }
@@ -240,7 +270,6 @@ void CommandBuffer::GenerateMips(Texture* pTexture)
 void CommandBuffer::TransitionImageLayout(
 	Texture* pTexture, 
 	VkImageLayout newLayout, 
-	VkPipelineStageFlags2 srcStageMask,
 	VkPipelineStageFlags2 dstStageMask,
 	VkImageAspectFlags aspectMask,
 	bool bFlushImmediate, 
@@ -249,7 +278,6 @@ void CommandBuffer::TransitionImageLayout(
 	TransitionImageLayout(
 		pTexture, 
 		newLayout, 
-		srcStageMask, 
 		dstStageMask, 
 		{ aspectMask, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS }, bFlushImmediate, bFlatten);
 }
@@ -257,72 +285,25 @@ void CommandBuffer::TransitionImageLayout(
 void CommandBuffer::TransitionImageLayout(
     Texture* pTexture, 
     VkImageLayout newLayout, 
-	VkPipelineStageFlags2 srcStageMask,
 	VkPipelineStageFlags2 dstStageMask,
     VkImageSubresourceRange subresourceRange, 
 	bool bFlushImmediate, 
 	bool bFlatten)
 {
+	Texture::State oldState = pTexture->GetState().GetSubresourceState(subresourceRange);
+
 	VkImageMemoryBarrier2 imageMemoryBarrier = {};
 	imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
 	imageMemoryBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	imageMemoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	imageMemoryBarrier.srcAccessMask = 0;
+	imageMemoryBarrier.srcAccessMask = oldState.access;
 	imageMemoryBarrier.dstAccessMask = 0;
-	imageMemoryBarrier.srcStageMask = srcStageMask;
+	imageMemoryBarrier.srcStageMask = oldState.stage;
 	imageMemoryBarrier.dstStageMask = dstStageMask;
-	imageMemoryBarrier.oldLayout = pTexture->GetState().GetSubresourceState(subresourceRange);
+	imageMemoryBarrier.oldLayout = oldState.layout;
 	imageMemoryBarrier.newLayout = newLayout;
 	imageMemoryBarrier.image = pTexture->vkImage();
 	imageMemoryBarrier.subresourceRange = subresourceRange;
-
-	switch (pTexture->GetState().GetSubresourceState(subresourceRange))
-	{
-	case VK_IMAGE_LAYOUT_UNDEFINED:
-		// Only valid as initial layout
-		// No flags required, listed only for completeness
-		imageMemoryBarrier.srcAccessMask = 0;
-		break;
-
-	case VK_IMAGE_LAYOUT_GENERAL:
-		// Assume this layout is used for write to image only
-		// Make sure writing operation by the shader needs to be completed
-		imageMemoryBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-		break;
-
-	case VK_IMAGE_LAYOUT_PREINITIALIZED:
-		// Only valid as initial layout for linear images, preserves memory contents
-		// Make sure host writes have been finished
-		imageMemoryBarrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-		break;
-
-	case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-		// Make sure any writes to the color buffer have been finished
-		imageMemoryBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-		break;
-
-	case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-		// Make sure any writes to the depth/stencil buffer have been finished
-		imageMemoryBarrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-		break;
-
-	case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-		// Make sure any reads from the image have been finished
-		imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-		break;
-
-	case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-		// Make sure any writes to the image have been finished
-		imageMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-		break;
-
-	case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-		// Make sure any shader reads from the image have been finished
-		imageMemoryBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-		break;
-	default:
-		break;
-	}
 
 	// Destination access mask controls the dependency for the new image layout
 	switch (newLayout)
@@ -362,6 +343,11 @@ void CommandBuffer::TransitionImageLayout(
 		break;
 	}
 
+	Texture::State newState = { 
+		.access = imageMemoryBarrier.dstAccessMask, 
+		.stage = dstStageMask, 
+		.layout = newLayout 
+	};
 	if (pTexture)
 	{
 		if (bFlatten)
@@ -370,12 +356,36 @@ void CommandBuffer::TransitionImageLayout(
 		}
 
 		const auto& stateBefore = pTexture->GetState();
-		if (stateBefore.GetSubresourceState(subresourceRange) != newLayout)
+		if (stateBefore.GetSubresourceState(subresourceRange) != newState)
 		{
 			AddBarrier(imageMemoryBarrier, bFlushImmediate);
 
-			pTexture->SetState(newLayout, subresourceRange);
+			pTexture->SetState(newState, subresourceRange);
 		}
+	}
+}
+
+void CommandBuffer::ClearTexture(
+	Texture* pTexture, 
+	VkImageLayout newLayout, 
+	VkPipelineStageFlags2 dstStageMask,
+	u32 baseMip, u32 numMips, u32 baseArray, u32 numArrays)
+{
+	VkImageSubresourceRange range = {};
+	range.aspectMask = pTexture->AspectMask();
+	range.baseMipLevel = baseMip;
+	range.levelCount = numMips;
+	range.baseArrayLayer = baseArray;
+	range.layerCount = numArrays;
+
+	TransitionImageLayout(pTexture, newLayout, dstStageMask, range);
+	if (pTexture->AspectMask() & VK_IMAGE_ASPECT_COLOR_BIT)
+	{
+		vkCmdClearColorImage(m_vkCommandBuffer, pTexture->vkImage(), pTexture->GetState().GetSubresourceState().layout, pTexture->ClearColorValue(), 1, &range);
+	}
+	else
+	{
+		vkCmdClearDepthStencilImage(m_vkCommandBuffer, pTexture->vkImage(), pTexture->GetState().GetSubresourceState().layout, pTexture->ClearDepthValue(), 1, &range);
 	}
 }
 
@@ -385,9 +395,9 @@ void CommandBuffer::SetGraphicsPushConstants(u32 sizeInBytes, void* data, VkShad
 	vkCmdPushConstants(m_vkCommandBuffer, m_pGraphicsPipeline->vkPipelineLayout(), stages, offsetInBytes, sizeInBytes, data);
 }
 
-void CommandBuffer::SetGraphicsDynamicUniformBuffer(u32 set, u32 binding, VkDeviceSize sizeInBytes, const void* bufferData)
+void CommandBuffer::SetGraphicsDynamicUniformBuffer(u32 binding, VkDeviceSize sizeInBytes, const void* bufferData)
 {
-	auto allocation = m_pUploadBufferPool->Allocate(sizeInBytes);
+	auto allocation = m_pUniformBufferPool->Allocate(sizeInBytes);
 	memcpy(allocation.cpuHandle, bufferData, sizeInBytes);
 
 	VkDescriptorBufferInfo bufferInfo = {};
@@ -404,11 +414,10 @@ void CommandBuffer::SetGraphicsDynamicUniformBuffer(u32 set, u32 binding, VkDevi
 	write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	write.pBufferInfo = &bufferInfo;
 	
-	assert(set > eDescriptorSet_Static);
-	m_allocations[set].push_back({ binding, bufferInfo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER });
+	m_pushAllocations.push_back({ binding, bufferInfo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER });
 }
 
-void CommandBuffer::SetDescriptors(u32 set, u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType)
+void CommandBuffer::PushDescriptors(u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType)
 {
 	VkWriteDescriptorSet write = {};
 	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -419,11 +428,10 @@ void CommandBuffer::SetDescriptors(u32 set, u32 binding, const VkDescriptorImage
 	write.descriptorType = descriptorType;
 	write.pImageInfo = &imageInfo;
 
-	assert(set > eDescriptorSet_Static);
-	m_allocations[set].push_back({ binding, imageInfo, descriptorType });
+	m_pushAllocations.push_back({ binding, imageInfo, descriptorType });
 }
 
-void CommandBuffer::SetDescriptors(u32 set, u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType)
+void CommandBuffer::PushDescriptors(u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType)
 {
 	VkWriteDescriptorSet write = {};
 	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -434,8 +442,7 @@ void CommandBuffer::SetDescriptors(u32 set, u32 binding, const VkDescriptorBuffe
 	write.descriptorType = descriptorType;
 	write.pBufferInfo = &bufferInfo;
 
-	assert(set > eDescriptorSet_Static);
-	m_allocations[set].push_back({ binding, bufferInfo, descriptorType });
+	m_pushAllocations.push_back({ binding, bufferInfo, descriptorType });
 }
 
 void CommandBuffer::SetRenderPipeline(GraphicsPipeline* pRenderPipeline)
@@ -466,7 +473,7 @@ void CommandBuffer::BeginRenderPass(const RenderTarget& renderTarget)
 	auto scissor = renderTarget.GetScissorRect();
 	vkCmdSetScissor(m_vkCommandBuffer, 0, 1, &scissor);
 
-	auto beginInfo = renderTarget.GetBeginInfo();
+	const auto& beginInfo = renderTarget.GetBeginInfo();
 	vkCmdBeginRenderPass(m_vkCommandBuffer, &beginInfo, VK_SUBPASS_CONTENTS_INLINE);
 }
 
@@ -478,7 +485,7 @@ void CommandBuffer::EndRenderPass()
 void CommandBuffer::Draw(u32 vertexCount, u32 instanceCount, u32 firstVertex, u32 firstInstance)
 {
 	std::vector< VkWriteDescriptorSet > writes;
-	for (const auto& allocation : m_allocations[eDescriptorSet_Push])
+	for (const auto& allocation : m_pushAllocations)
 	{
 		VkWriteDescriptorSet write = {};
 		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -503,7 +510,7 @@ void CommandBuffer::Draw(u32 vertexCount, u32 instanceCount, u32 firstVertex, u3
 void CommandBuffer::DrawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex, i32 vertexOffset, u32 firstInstance)
 {
 	std::vector< VkWriteDescriptorSet > writes;
-	for (const auto& allocation : m_allocations[eDescriptorSet_Push])
+	for (const auto& allocation : m_pushAllocations)
 	{
 		VkWriteDescriptorSet write = {};
 		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -525,11 +532,55 @@ void CommandBuffer::DrawIndexed(u32 indexCount, u32 instanceCount, u32 firstInde
 	vkCmdDrawIndexed(m_vkCommandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
+void CommandBuffer::DrawIndexedIndirect()
+{
+	auto vkDescriptorSet = g_FrameData.pSceneResource->GetSceneDescriptorSet();
+	vkCmdBindDescriptorSets(
+		m_vkCommandBuffer,
+		VK_PIPELINE_BIND_POINT_GRAPHICS,
+		m_pGraphicsPipeline->vkPipelineLayout(),
+		eDescriptorSet_Static, 1, &vkDescriptorSet, 0, nullptr);
+
+	std::vector< VkWriteDescriptorSet > writes;
+	for (const auto& allocation : m_pushAllocations)
+	{
+		VkWriteDescriptorSet write = {};
+		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		write.dstSet = VK_NULL_HANDLE;
+		write.dstBinding = allocation.binding;
+		write.dstArrayElement = 0;
+		write.descriptorCount = 1;
+		write.descriptorType = allocation.descriptorType;
+		write.pBufferInfo = &allocation.descriptor.bufferInfo;
+		writes.push_back(write);
+	}
+
+	vkCmdPushDescriptorSetKHR(
+		m_vkCommandBuffer,
+		VK_PIPELINE_BIND_POINT_GRAPHICS,
+		m_pGraphicsPipeline->vkPipelineLayout(),
+		eDescriptorSet_Push, static_cast<u32>(writes.size()), writes.data());
+
+	const auto& indirectInfo = g_FrameData.pSceneResource->GetIndirectDrawDescriptorInfo();
+	vkCmdBindIndexBuffer(m_vkCommandBuffer, g_FrameData.pSceneResource->GetIndexDescriptorInfo().buffer, 0, VK_INDEX_TYPE_UINT32);
+	vkCmdDrawIndexedIndirect(m_vkCommandBuffer, indirectInfo.buffer, indirectInfo.offset, u32(indirectInfo.range / sizeof(IndirectDrawData)), sizeof(IndirectDrawData));
+}
+
+void CommandBuffer::AddBarrier(const VkBufferMemoryBarrier2& barrier, bool bFlushImmediate)
+{
+	m_bufferBarriers[m_numBufferBarriersToFlush++] = barrier;
+
+	if (bFlushImmediate || m_numBufferBarriersToFlush == MAX_NUM_PENDING_BARRIERS)
+	{
+		FlushBarriers();
+	}
+}
+
 void CommandBuffer::AddBarrier(const VkImageMemoryBarrier2& barrier, bool bFlushImmediate)
 {
-	m_imageBarriers[m_numBarriersToFlush++] = barrier;
+	m_imageBarriers[m_numImageBarriersToFlush++] = barrier;
 
-	if (bFlushImmediate || m_numBarriersToFlush == MAX_NUM_PENDING_BARRIERS)
+	if (bFlushImmediate || m_numImageBarriersToFlush == MAX_NUM_PENDING_BARRIERS)
 	{
 		FlushBarriers();
 	}
@@ -537,15 +588,26 @@ void CommandBuffer::AddBarrier(const VkImageMemoryBarrier2& barrier, bool bFlush
 
 void CommandBuffer::FlushBarriers()
 {
-	if (m_numBarriersToFlush > 0)
+	if (m_numBufferBarriersToFlush > 0)
 	{
 		VkDependencyInfo dependency = {};
 		dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-		dependency.imageMemoryBarrierCount = m_numBarriersToFlush;
+		dependency.bufferMemoryBarrierCount = m_numBufferBarriersToFlush;
+		dependency.pBufferMemoryBarriers = m_bufferBarriers;
+		vkCmdPipelineBarrier2(m_vkCommandBuffer, &dependency);
+
+		m_numBufferBarriersToFlush = 0;
+	}
+
+	if (m_numImageBarriersToFlush > 0)
+	{
+		VkDependencyInfo dependency = {};
+		dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		dependency.imageMemoryBarrierCount = m_numImageBarriersToFlush;
 		dependency.pImageMemoryBarriers = m_imageBarriers;
 		vkCmdPipelineBarrier2(m_vkCommandBuffer, &dependency);
 
-		m_numBarriersToFlush = 0;
+		m_numImageBarriersToFlush = 0;
 	}
 }
 

@@ -49,6 +49,13 @@ public:
         return value;
     }
 
+    void clear()
+    {
+        std::lock_guard< std::mutex > lock(m_mutex);
+
+        m_queue = std::queue< T >();
+    }
+
     bool empty() const
 	{
         std::lock_guard< std::mutex > lock(m_mutex);

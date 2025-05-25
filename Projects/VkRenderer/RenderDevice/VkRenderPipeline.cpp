@@ -2,7 +2,9 @@
 #include "VkRenderPipeline.h"
 #include "VkResourceManager.h"
 #include "RenderResource/VkRenderTarget.h"
-#include "BaambooUtils/FileIO.hpp"
+
+#include <BaambooUtils/FileIO.hpp>
+#include <unordered_set>
 
 namespace vk
 {
@@ -59,8 +61,13 @@ GraphicsPipeline::~GraphicsPipeline()
 {
 	vkDestroyPipeline(m_renderContext.vkDevice(), m_vkPipeline, nullptr);
 	vkDestroyPipelineLayout(m_renderContext.vkDevice(), m_vkPipelineLayout, nullptr);
-	for (u32 i = 0; i < eNumDescriptorSet; ++i)
+	for (u32 i = 1; i < m_vkSetLayouts.size(); ++i)
+	{
+		if (m_vkSetLayouts[i] == m_renderContext.GetEmptyDescriptorSetLayout())
+			continue;
+
 		vkDestroyDescriptorSetLayout(m_renderContext.vkDevice(), m_vkSetLayouts[i], nullptr);
+	}
 }
 
 GraphicsPipeline& GraphicsPipeline::SetShaders(
@@ -128,141 +135,160 @@ GraphicsPipeline& GraphicsPipeline::SetShaders(
 	// **
 	// Construct descriptor-set layout
 	// **
-	std::unordered_map< u32, VkDescriptorSetLayoutBinding > descriptorSetLayoutBindingMap[eNumDescriptorSet];
-	for (u32 set = 0; set < eNumDescriptorSet; ++set)
+	i32 maxSet = -1;
+	std::unordered_map< u32, std::unordered_map< u32, VkDescriptorSetLayoutBinding > > descriptorSetLayoutBindingMap;
+
+	// vs
+	const auto& vsReflection = pVS->Reflection();
+	for (const auto& [set, info] : vsReflection.descriptors)
 	{
-		// vs
-		const auto& vsReflection = pVS->Reflection();
-		for (auto& [binding, info] : vsReflection.descriptors[set])
-		{
-			VkDescriptorSetLayoutBinding layoutBinding = {};
-			layoutBinding.binding = binding;
-			layoutBinding.descriptorCount = set == eDescriptorSet_Static ? MAX_BINDLESS_DESCRIPTOR_RESOURCE_SIZE : 1;
-			layoutBinding.descriptorType = info.descriptorType;
-			layoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-			descriptorSetLayoutBindingMap[set].emplace(binding, layoutBinding);
-		}
+		VkDescriptorSetLayoutBinding layoutBinding = {};
+		layoutBinding.binding = info.binding;
+		layoutBinding.descriptorCount = 1;
+		layoutBinding.descriptorType = info.descriptorType;
+		layoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+		descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
 
-		// fs
-		if (pFS)
-		{
-			const auto& fsReflection = pFS->Reflection();
-			for (auto& [binding, info] : fsReflection.descriptors[set])
-			{
-				if (descriptorSetLayoutBindingMap[set].contains(binding))
-				{
-					descriptorSetLayoutBindingMap[set][binding].stageFlags |= VK_SHADER_STAGE_FRAGMENT_BIT;
-				}
-				else
-				{
-					VkDescriptorSetLayoutBinding layoutBinding = {};
-					layoutBinding.binding = binding;
-					layoutBinding.descriptorCount = set == eDescriptorSet_Static ? MAX_BINDLESS_DESCRIPTOR_RESOURCE_SIZE : 1;
-					layoutBinding.descriptorType = info.descriptorType;
-					layoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-					descriptorSetLayoutBindingMap[set].emplace(binding, layoutBinding);
-				}
-			}
-		}
+		maxSet = maxSet < (i32)set ? (i32)set : maxSet;
+	}
 
-		// gs
-		if (pGS)
+	// fs
+	if (pFS)
+	{
+		const auto& fsReflection = pFS->Reflection();
+		for (const auto& [set, info] : fsReflection.descriptors)
 		{
-			const auto& gsReflection = pGS->Reflection();
-			for (auto& [binding, info] : gsReflection.descriptors[set])
+			if (descriptorSetLayoutBindingMap[set].contains(info.binding))
 			{
-				if (descriptorSetLayoutBindingMap[set].contains(binding))
-				{
-					descriptorSetLayoutBindingMap[set][binding].stageFlags |= VK_SHADER_STAGE_GEOMETRY_BIT;
-				}
-				else
-				{
-					VkDescriptorSetLayoutBinding layoutBinding = {};
-					layoutBinding.binding = binding;
-					layoutBinding.descriptorCount = set == eDescriptorSet_Static ? MAX_BINDLESS_DESCRIPTOR_RESOURCE_SIZE : 1;
-					layoutBinding.descriptorType = info.descriptorType;
-					layoutBinding.stageFlags = VK_SHADER_STAGE_GEOMETRY_BIT;
-					descriptorSetLayoutBindingMap[set].emplace(binding, layoutBinding);
-				}
+				descriptorSetLayoutBindingMap[set][info.binding].stageFlags |= VK_SHADER_STAGE_FRAGMENT_BIT;
 			}
-		}
+			else
+			{
+				VkDescriptorSetLayoutBinding layoutBinding = {};
+				layoutBinding.binding = info.binding;
+				layoutBinding.descriptorCount = 1;
+				layoutBinding.descriptorType = info.descriptorType;
+				layoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+				descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
+			}
 
-		// hs
-		if (pHS)
-		{
-			const auto& hsReflection = pHS->Reflection();
-			for (auto& [binding, info] : hsReflection.descriptors[set])
-			{
-				if (descriptorSetLayoutBindingMap[set].contains(binding))
-				{
-					descriptorSetLayoutBindingMap[set][binding].stageFlags |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-				}
-				else
-				{
-					VkDescriptorSetLayoutBinding layoutBinding = {};
-					layoutBinding.binding = binding;
-					layoutBinding.descriptorCount = set == eDescriptorSet_Static ? MAX_BINDLESS_DESCRIPTOR_RESOURCE_SIZE : 1;
-					layoutBinding.descriptorType = info.descriptorType;
-					layoutBinding.stageFlags = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-					descriptorSetLayoutBindingMap[set].emplace(binding, layoutBinding);
-				}
-			}
-		}
-
-		// ds
-		if (pDS)
-		{
-			const auto& dsReflection = pDS->Reflection();
-			for (auto& [binding, info] : dsReflection.descriptors[set])
-			{
-				if (descriptorSetLayoutBindingMap[set].contains(binding))
-				{
-					descriptorSetLayoutBindingMap[set][binding].stageFlags |= VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-				}
-				else
-				{
-					VkDescriptorSetLayoutBinding layoutBinding = {};
-					layoutBinding.binding = binding;
-					layoutBinding.descriptorCount = 1;
-					layoutBinding.descriptorType = info.descriptorType;
-					layoutBinding.stageFlags = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-					descriptorSetLayoutBindingMap[set].emplace(binding, layoutBinding);
-				}
-			}
+			maxSet = maxSet < (i32)set ? (i32)set : maxSet;
 		}
 	}
 
-	for (u32 set = 0; set < eNumDescriptorSet; ++set)
+	// gs
+	if (pGS)
 	{
+		const auto& gsReflection = pGS->Reflection();
+		for (const auto& [set, info] : gsReflection.descriptors)
+		{
+			if (descriptorSetLayoutBindingMap[set].contains(info.binding))
+			{
+				descriptorSetLayoutBindingMap[set][info.binding].stageFlags |= VK_SHADER_STAGE_GEOMETRY_BIT;
+			}
+			else
+			{
+				VkDescriptorSetLayoutBinding layoutBinding = {};
+				layoutBinding.binding = info.binding;
+				layoutBinding.descriptorCount = 1;
+				layoutBinding.descriptorType = info.descriptorType;
+				layoutBinding.stageFlags = VK_SHADER_STAGE_GEOMETRY_BIT;
+				descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
+			}
+
+			maxSet = maxSet < (i32)set ? (i32)set : maxSet;
+		}
+	}
+
+	// hs
+	if (pHS)
+	{
+		const auto& hsReflection = pHS->Reflection();
+		for (const auto& [set, info] : hsReflection.descriptors)
+		{
+			if (descriptorSetLayoutBindingMap[set].contains(info.binding))
+			{
+				descriptorSetLayoutBindingMap[set][info.binding].stageFlags |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+			}
+			else
+			{
+				VkDescriptorSetLayoutBinding layoutBinding = {};
+				layoutBinding.binding = info.binding;
+				layoutBinding.descriptorCount = 1;
+				layoutBinding.descriptorType = info.descriptorType;
+				layoutBinding.stageFlags = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+				descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
+			}
+
+			maxSet = maxSet < (i32)set ? (i32)set : maxSet;
+		}
+	}
+
+	// ds
+	if (pDS)
+	{
+		const auto& dsReflection = pDS->Reflection();
+		for (const auto& [set, info] : dsReflection.descriptors)
+		{
+			if (descriptorSetLayoutBindingMap[set].contains(info.binding))
+			{
+				descriptorSetLayoutBindingMap[set][info.binding].stageFlags |= VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+			}
+			else
+			{
+				VkDescriptorSetLayoutBinding layoutBinding = {};
+				layoutBinding.binding = info.binding;
+				layoutBinding.descriptorCount = 1;
+				layoutBinding.descriptorType = info.descriptorType;
+				layoutBinding.stageFlags = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+				descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
+			}
+
+			maxSet = maxSet < (i32)set ? (i32)set : maxSet;
+		}
+	}
+
+	m_vkSetLayouts.clear();
+	m_vkSetLayouts.resize(maxSet + 1);
+	for (const auto&[set, binding] : descriptorSetLayoutBindingMap)
+	{
+		if (set == eDescriptorSet_Static)
+		{
+			m_vkSetLayouts[eDescriptorSet_Static] = g_FrameData.pSceneResource->GetSceneDescriptorSetLayout();
+			continue;
+		}
+
 		std::vector< VkDescriptorSetLayoutBinding > bindings;
-		for (auto& [binding, info] : descriptorSetLayoutBindingMap[set])
+		for (auto& [_, info] : descriptorSetLayoutBindingMap[set])
+		{
+			assert((info.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER && set == eDescriptorSet_Push) 
+				&& "All uniform-buffers should be placed in push descriptor set!");
 			bindings.push_back(info);
+		}
 
 		/** Descriptor set layout **/
 		VkDescriptorSetLayoutCreateInfo layoutInfo = {};
 		layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 		layoutInfo.bindingCount = static_cast<u32>(bindings.size());
 		layoutInfo.pBindings = bindings.data();
-		if (set == eDescriptorSet_Static)
-		{
-			VkDescriptorBindingFlags flags = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT_EXT;
-		
-			VkDescriptorSetLayoutBindingFlagsCreateInfoEXT bindingFlagsInfo = {};
-			bindingFlagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT;
-			bindingFlagsInfo.bindingCount = static_cast<u32>(bindings.size());
-			bindingFlagsInfo.pBindingFlags = &flags;
-		
-			layoutInfo.pNext = &bindingFlagsInfo;
-			layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT_EXT;
-		}
-		else if (set == eDescriptorSet_Push)
+		if (set == eDescriptorSet_Push)
 		{
 			layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
 		}
-		
 		VK_CHECK(vkCreateDescriptorSetLayout(m_renderContext.vkDevice(), &layoutInfo, nullptr, &m_vkSetLayouts[set]));
+
+		if (set > eDescriptorSet_Push)
+		{
+			auto& descriptorSet = m_renderContext.AllocateDescriptorSet(m_vkSetLayouts[set]);
+			m_descriptorTable.emplace(set, descriptorSet);
+		}
 	}
 
+	for (auto& vkSetLayout : m_vkSetLayouts)
+	{
+		if (vkSetLayout == VK_NULL_HANDLE)
+			vkSetLayout = m_renderContext.GetEmptyDescriptorSetLayout();
+	}
 
 	// **
 	// Push constants
@@ -297,8 +323,8 @@ GraphicsPipeline& GraphicsPipeline::SetShaders(
 	// **
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutInfo.setLayoutCount = eNumDescriptorSet;
-	pipelineLayoutInfo.pSetLayouts = m_vkSetLayouts;
+	pipelineLayoutInfo.setLayoutCount = static_cast<u32>(m_vkSetLayouts.size());
+	pipelineLayoutInfo.pSetLayouts = m_vkSetLayouts.data();
 	pipelineLayoutInfo.pushConstantRangeCount = static_cast<u32>(pushConstants.size());
 	pipelineLayoutInfo.pPushConstantRanges = pushConstants.data();
 	VK_CHECK(vkCreatePipelineLayout(m_renderContext.vkDevice(), &pipelineLayoutInfo, nullptr, &m_vkPipelineLayout));

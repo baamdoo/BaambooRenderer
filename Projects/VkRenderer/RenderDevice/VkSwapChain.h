@@ -32,6 +32,8 @@ public:
 
 	[[nodiscard]]
 	inline u32 ImageCount() const { return m_imageCount; }
+	[[nodiscard]]
+	inline bool IsRenderable() const { return m_vkSwapChain != VK_NULL_HANDLE; }
 
 private:
 	void Init();

@@ -1,69 +1,29 @@
 #include "RendererPch.h"
 #include "Dx12Renderer.h"
-#include "RenderDevice/Dx12RenderContext.h"
-#include "RenderDevice/Dx12ResourceManager.h"
 #include "RenderDevice/Dx12SwapChain.h"
 #include "RenderDevice/Dx12DescriptorPool.h"
 #include "RenderDevice/Dx12CommandQueue.h"
 #include "RenderDevice/Dx12CommandList.h"
-#include "RenderModule/Dx12ForwardRenderModule.h"
-
-#include <Scene/SceneRenderView.h>
+#include "RenderModule/Dx12ForwardModule.h"
+#include "RenderModule/Dx12ImGuiModule.h"
+#include "RenderResource/Dx12SceneResource.h"
 
 #include <imgui/imgui.h>
 #include <imgui/backends/imgui_impl_dx12.h>
-
-namespace ImGui
-{
-
-ID3D12DescriptorHeap* g_d3d12SrvDescHeap = nullptr;
-
-void InitUI(dx12::RenderContext& context, ImGuiContext* pImGuiContext)
-{
-	assert(pImGuiContext);
-	ImGui::SetCurrentContext(pImGuiContext);
-
-	D3D12_DESCRIPTOR_HEAP_DESC desc = {};
-	desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	desc.NumDescriptors = 64;
-	desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	DX_CHECK(context.GetD3D12Device()->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&g_d3d12SrvDescHeap)) != S_OK);
-
-	ImGui_ImplDX12_InitInfo info = {};
-	info.Device = context.GetD3D12Device();
-	info.CommandQueue = context.GetCommandQueue().GetD3D12CommandQueue();
-	info.RTVFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
-	info.NumFramesInFlight = NUM_FRAMES;
-	info.SrvDescriptorHeap = g_d3d12SrvDescHeap;
-	info.LegacySingleSrvCpuDescriptor = g_d3d12SrvDescHeap->GetCPUDescriptorHandleForHeapStart();
-	info.LegacySingleSrvGpuDescriptor = g_d3d12SrvDescHeap->GetGPUDescriptorHandleForHeapStart();
-	ImGui_ImplDX12_Init(&info);
-}
-
-void DrawUI(dx12::CommandList& cmdList)
-{
-	cmdList.SetDescriptorHeaps({ g_d3d12SrvDescHeap });
-	ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmdList.GetD3D12CommandList());
-}
-
-void Destroy()
-{
-	ImGui_ImplDX12_Shutdown();
-	g_d3d12SrvDescHeap->Release();
-}
-
-} // namespace ImGui
+#include <Scene/SceneRenderView.h>
 
 namespace dx12
 {
 
 Renderer::Renderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext)
 {
+	DX_CHECK(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
+
 	m_pRenderContext = new RenderContext();
 	m_pSwapChain = new SwapChain(*m_pRenderContext, *pWindow);
 
-	ImGui::InitUI(*m_pRenderContext, pImGuiContext);
-	ForwardPass::Initialize(*m_pRenderContext);
+	m_pRenderModules.push_back(new ForwardModule(*m_pRenderContext));
+	m_pRenderModules.push_back(new ImGuiModule(*m_pRenderContext, pImGuiContext));
 
 	printf("D3D12Renderer constructed!\n");
 }
@@ -72,11 +32,13 @@ Renderer::~Renderer()
 {
 	m_pRenderContext->Flush();
 
-	ForwardPass::Destroy();
-	ImGui::Destroy();
+	for (auto pModule : m_pRenderModules)
+		RELEASE(pModule);
 
 	RELEASE(m_pSwapChain);
 	RELEASE(m_pRenderContext);
+
+	CoUninitialize();
 	printf("D3D12Renderer destructed!\n");
 }
 
@@ -85,31 +47,23 @@ void Renderer::NewFrame()
 	ImGui_ImplDX12_NewFrame();
 }
 
-float4 testColor{};
-void Renderer::Render(const baamboo::SceneRenderView& renderView)
+void Renderer::Render(SceneRenderView&& renderView)
 {
-	auto& rm = m_pRenderContext->GetResourceManager();
-	for (const auto& transform : renderView.transforms)
-	{
-		// update transform buffer
-	}
-
-	for (const auto& mesh : renderView.meshes)
-	{
-		// update vertex/index/textures
-		// rm.LoadOrGet< Buffer >(mesh.geometry);
-		// rm.LoadOrGet< Texture >(mesh.material.albedo);
-	}
-
-	for (const auto& camera : renderView.cameras)
-	{
-		// update camera buffer
-		if (camera.id == 0)
-			testColor = float4(camera.pos, 1.0f);
-	}
+	assert(g_FrameData.pSceneResource);
+	g_FrameData.pSceneResource->UpdateSceneResources(renderView);
 
 	auto& cmdList = BeginFrame();
-	RenderFrame(cmdList);
+	{
+		CameraData camera = {};
+		camera.mView = renderView.camera.mView;
+		camera.mProj = renderView.camera.mProj;
+		camera.mViewProj = camera.mProj * camera.mView;
+		camera.position = renderView.camera.pos;
+		g_FrameData.camera = std::move(camera);
+
+		for (auto pModule : m_pRenderModules)
+			pModule->Apply(cmdList);
+	}
 	EndFrame(cmdList);
 }
 
@@ -121,16 +75,17 @@ void Renderer::OnWindowResized(i32 width, i32 height)
 	if (!m_pSwapChain)
 		return;
 
-	if (m_pRenderContext->ViewportWidth() == static_cast<u32>(width) && m_pRenderContext->ViewportHeight() == static_cast<u32>(height))
+	if (m_pRenderContext->WindowWidth() == static_cast<u32>(width) && m_pRenderContext->WindowHeight() == static_cast<u32>(height))
 		return;
 
 	m_pRenderContext->Flush();
-	m_pRenderContext->SetViewportWidth(width);
-	m_pRenderContext->SetViewportHeight(height);
+	m_pRenderContext->SetWindowWidth(width);
+	m_pRenderContext->SetWindowHeight(height);
 
 	m_pSwapChain->ResizeViewport(width, height);
 
-	ForwardPass::Resize(width, height);
+	for (auto pModule : m_pRenderModules)
+		pModule->Resize(width, height);
 }
 
 void Renderer::SetRendererType(eRendererType type)
@@ -138,23 +93,10 @@ void Renderer::SetRendererType(eRendererType type)
 	m_type = type;
 }
 
-ResourceManagerAPI& Renderer::GetResourceManager()
-{
-	return m_pRenderContext->GetResourceManager();
-}
-
 CommandList& Renderer::BeginFrame()
 {
 	auto& cmdList = m_pRenderContext->AllocateCommandList(D3D12_COMMAND_LIST_TYPE_DIRECT);
 	return cmdList;
-}
-
-void Renderer::RenderFrame(CommandList& cmdList)
-{
-	{
-		ForwardPass::Apply(cmdList, testColor);
-	}
-	ImGui::DrawUI(cmdList);
 }
 
 void Renderer::EndFrame(CommandList& cmdList)
@@ -164,15 +106,14 @@ void Renderer::EndFrame(CommandList& cmdList)
 	auto contextIndex = m_pRenderContext->ContextIndex();
 	auto& commandQueue = m_pRenderContext->GetCommandQueue();
 
-	auto pMainTarget = ForwardPass::GetRenderedTexture(eAttachmentPoint::Color0);
 	auto backBuffer = m_pSwapChain->GetImageToPresent();
 	if constexpr (NUM_SAMPLING > 1)
 	{
-		cmdList.ResolveSubresource(rm.Get(backBuffer), pMainTarget);
+		cmdList.ResolveSubresource(rm.Get(backBuffer), g_FrameData.pColor);
 	}
 	else
 	{
-		cmdList.CopyTexture(rm.Get(backBuffer), pMainTarget);
+		cmdList.CopyTexture(rm.Get(backBuffer), g_FrameData.pColor);
 	}
 	cmdList.TransitionBarrier(rm.Get(backBuffer), D3D12_RESOURCE_STATE_PRESENT);
 	cmdList.Close();

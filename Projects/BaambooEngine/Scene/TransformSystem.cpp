@@ -21,7 +21,7 @@ void TransformSystem::OnTransformConstructed(entt::registry& registry, entt::ent
 
     auto index = m_indexAllocator.allocate();
     auto& transform = registry.get< TransformComponent >(entity);
-    transform.mWorld = index;
+    transform.world = index;
 
     if (index > m_mWorlds.size())
         m_mWorlds.resize(index * 2);
@@ -37,10 +37,10 @@ void TransformSystem::OnTransformUpdated(entt::registry& registry, entt::entity 
 void TransformSystem::OnTransformDestroyed(entt::registry& registry, entt::entity entity)
 {
     auto& transform = registry.get< TransformComponent >(entity);
-    m_indexAllocator.release(transform.mWorld);
+    m_indexAllocator.release(transform.world);
 }
 
-void TransformSystem::Update()
+std::vector< entt::entity > TransformSystem::Update()
 {
     // Sort by depth to ensure parents are processed before children
     m_registry.sort< TransformComponent >([](const auto& lhs, const auto& rhs)
@@ -48,14 +48,20 @@ void TransformSystem::Update()
             return lhs.hierarchy.depth < rhs.hierarchy.depth;
         });
 
-    m_registry.view< TransformComponent >().each([this](auto entity, auto& transformComponent)
+    std::vector< entt::entity > markedEntities;
+    m_registry.view< TransformComponent >().each([&](auto entity, auto& transformComponent)
         {
             if (transformComponent.bDirtyMark)
             {
+                transformComponent.transform.Update();
                 UpdateWorldTransform(entity);
+
+                markedEntities.push_back(entity);
                 transformComponent.bDirtyMark = false;
             }
         });
+
+    return markedEntities;
 }
 
 void TransformSystem::MarkDirty(entt::entity entity)
@@ -160,12 +166,12 @@ void TransformSystem::UpdateWorldTransform(entt::entity entity)
     auto& transformComponent = m_registry.get< TransformComponent >(entity);
     auto localMatrix = transformComponent.transform.Matrix();
 
-    assert(transformComponent.mWorld < m_mWorlds.size());
-    auto& worldTransform = m_mWorlds[transformComponent.mWorld];
+    assert(transformComponent.world < m_mWorlds.size());
+    auto& worldTransform = m_mWorlds[transformComponent.world];
     if (transformComponent.hierarchy.parent != entt::null && m_registry.valid(transformComponent.hierarchy.parent)) 
     {
         auto& parentTransform = m_registry.get< TransformComponent >(transformComponent.hierarchy.parent);
-        worldTransform = m_mWorlds[parentTransform.mWorld] * localMatrix;
+        worldTransform = m_mWorlds[parentTransform.world] * localMatrix;
     }
     else 
     {

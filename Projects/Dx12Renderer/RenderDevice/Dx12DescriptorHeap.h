@@ -16,7 +16,7 @@ public:
 	void Reset();
 	void ParseRootSignature(const RootSignature* pRootsignature);
 
-	void StageDescriptors(u32 rootIndex, u32 numDescriptors, u32 offset, D3D12_CPU_DESCRIPTOR_HANDLE srcHandle);
+	u32 StageDescriptors(u32 rootIndex, u32 numDescriptors, u32 offset, D3D12_CPU_DESCRIPTOR_HANDLE srcHandle);
 
 	void CommitDescriptorsForDraw(CommandList& commandList);
 	void CommitDescriptorsForDispatch(CommandList& commandList);

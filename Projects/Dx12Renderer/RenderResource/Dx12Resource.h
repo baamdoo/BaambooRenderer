@@ -94,7 +94,7 @@ public:
 	void SetCurrentState(D3D12_RESOURCE_STATES state, u32 subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES) { m_CurrentState.SetSubresourceState(state, subresource); }
 
 private:
-	void IsFormatSupported();
+	void SetFormatSupported();
 
 protected:
 	RenderContext&    m_RenderContext;

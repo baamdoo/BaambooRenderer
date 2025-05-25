@@ -1,24 +1,20 @@
 #pragma once
-#include "BaambooCore/BackendAPI.h"
-#include "BaambooCore/ResourceHandle.h"
 #include "Core/Dx12ResourcePool.h"
 #include "RenderResource/Dx12Shader.h"
 #include "RenderResource/Dx12Buffer.h"
 #include "RenderResource/Dx12Texture.h"
 #include "RenderResource/Dx12Sampler.h"
 
+#include <BaambooCore/ResourceHandle.h>
+
 namespace dx12
 {
 
-class ResourceManager : public ResourceManagerAPI
+class ResourceManager
 {
 public:
     ResourceManager(RenderContext& context);
     virtual ~ResourceManager();
-
-    virtual VertexHandle CreateVertexBuffer(std::wstring_view name, u32 numVertices, u64 elementSizeInBytes, void* data) override;
-    virtual IndexHandle CreateIndexBuffer(std::wstring_view name, u32 numIndices, u64 elementSizeInBytes, void* data) override;
-    virtual TextureHandle CreateTexture(std::string_view filepath, bool bGenerateMips) override;
 
     template< typename TResource >
     baamboo::ResourceHandle< TResource > Create(std::wstring_view name, typename TResource::CreationInfo&& info);
@@ -40,7 +36,11 @@ public:
 private:
     RenderContext& m_RenderContext;
 
-    ResourcePool< Buffer >  m_BufferPool;
+    ResourcePool< VertexBuffer >     m_VertexBufferPool;
+    ResourcePool< IndexBuffer >      m_IndexBufferPool;
+    ResourcePool< ConstantBuffer >   m_ConstantBufferPool;
+    ResourcePool< StructuredBuffer > m_StructuredBufferPool;
+
     ResourcePool< Texture > m_TexturePool;
     ResourcePool< Sampler > m_SamplerPool;
     ResourcePool< Shader >  m_ShaderPool;
@@ -53,8 +53,15 @@ baamboo::ResourceHandle< TResource > ResourceManager::Create(std::wstring_view n
 {
     static_assert(std::is_base_of_v< Resource, TResource >);
 
-    if constexpr (std::is_same_v< TResource, Buffer >)
-        return m_BufferPool.Create(m_RenderContext, name, std::move(info));
+    if constexpr (std::is_same_v< TResource, VertexBuffer > )
+        return m_VertexBufferPool.Create(m_RenderContext, name, std::move(info));
+    if constexpr (std::is_same_v< TResource, IndexBuffer >)
+        return m_IndexBufferPool.Create(m_RenderContext, name, std::move(info));
+    if constexpr (std::is_same_v< TResource, ConstantBuffer >)
+        return m_ConstantBufferPool.Create(m_RenderContext, name, std::move(info));
+    if constexpr (std::is_same_v< TResource, StructuredBuffer >)
+        return m_StructuredBufferPool.Create(m_RenderContext, name, std::move(info));
+
     if constexpr (std::is_same_v< TResource, Texture >)
         return m_TexturePool.Create(m_RenderContext, name, std::move(info));
     if constexpr (std::is_same_v< TResource, Sampler >)
@@ -81,8 +88,15 @@ baamboo::ResourceHandle< TResource > ResourceManager::Add(TResource* pResource)
 {
     static_assert(std::is_base_of_v< Resource, TResource >);
 
-    if constexpr (std::is_same_v< TResource, Buffer >)
-        return m_BufferPool.Add(pResource);
+    if constexpr (std::is_same_v< TResource, VertexBuffer >)
+        return m_VertexBufferPool.Add(pResource);
+    if constexpr (std::is_same_v< TResource, IndexBuffer >)
+        return m_IndexBufferPool.Add(pResource);
+    if constexpr (std::is_same_v< TResource, ConstantBuffer >)
+        return m_ConstantBufferPool.Add(pResource);
+    if constexpr (std::is_same_v< TResource, StructuredBuffer >)
+        return m_StructuredBufferPool.Add(pResource);
+
     if constexpr (std::is_same_v< TResource, Texture >)
         return m_TexturePool.Add(pResource);
     if constexpr (std::is_same_v< TResource, Sampler >)
@@ -97,8 +111,15 @@ inline TResource* ResourceManager::Get(baamboo::ResourceHandle< TResource > hand
 {
     static_assert(std::is_base_of_v< Resource, TResource >);
 
-    if constexpr (std::is_same_v< TResource, Buffer >)
-        return m_BufferPool.Get(handle);
+    if constexpr (std::is_same_v< TResource, VertexBuffer >)
+        return m_VertexBufferPool.Get(handle);
+    if constexpr (std::is_same_v< TResource, IndexBuffer >)
+        return m_IndexBufferPool.Get(handle);
+    if constexpr (std::is_same_v< TResource, ConstantBuffer >)
+        return m_ConstantBufferPool.Get(handle);
+    if constexpr (std::is_same_v< TResource, StructuredBuffer >)
+        return m_StructuredBufferPool.Get(handle);
+
     if constexpr (std::is_same_v< TResource, Texture >)
         return m_TexturePool.Get(handle);
     if constexpr (std::is_same_v< TResource, Sampler >)
@@ -113,8 +134,15 @@ inline void ResourceManager::Remove(baamboo::ResourceHandle< TResource > handle)
 {
     static_assert(std::is_base_of_v< Resource, TResource >);
 
-    if constexpr (std::is_same_v< TResource, Buffer >)
-        m_BufferPool.Remove(handle);
+    if constexpr (std::is_same_v< TResource, VertexBuffer >)
+        m_VertexBufferPool.Remove(handle);
+    if constexpr (std::is_same_v< TResource, IndexBuffer >)
+        m_IndexBufferPool.Remove(handle);
+    if constexpr (std::is_same_v< TResource, ConstantBuffer >)
+        m_ConstantBufferPool.Remove(handle);
+    if constexpr (std::is_same_v< TResource, StructuredBuffer >)
+        m_StructuredBufferPool.Remove(handle);
+
     if constexpr (std::is_same_v< TResource, Texture >)
         m_TexturePool.Remove(handle);
     if constexpr (std::is_same_v< TResource, Sampler >)

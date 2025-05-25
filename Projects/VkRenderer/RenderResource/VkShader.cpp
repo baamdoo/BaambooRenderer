@@ -78,8 +78,7 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 			// u32 size = (u32)compiler.get_declared_struct_size(type);
 			u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_DYNAMIC_ARRAY_SIZE : type.array[0]; // assume utilize only 1d-array for now
 
-			Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set][binding];
-			descriptorInfo.set = set;
+			Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set];
 			descriptorInfo.binding = binding;
 			descriptorInfo.name = name;
 			descriptorInfo.arraySize = arraySize;
@@ -98,8 +97,7 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 			u32 binding = compiler.get_decoration(resource.id, spv::DecorationBinding);
 			u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_DYNAMIC_ARRAY_SIZE : type.array[0]; // assume utilize only 1d-array for now
 
-			Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set][binding];
-			descriptorInfo.set = set;
+			Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set];
 			descriptorInfo.binding = binding;
 			descriptorInfo.name = name;
 			descriptorInfo.arraySize = arraySize;
@@ -115,8 +113,7 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 		u32 binding = compiler.get_decoration(resource.id, spv::DecorationBinding);
 		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_DYNAMIC_ARRAY_SIZE : type.array[0]; // assume utilize only 1d-array for now
 
-		Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set][binding];
-		descriptorInfo.set = set;
+		Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set];
 		descriptorInfo.binding = binding;
 		descriptorInfo.name = name;
 		descriptorInfo.arraySize = arraySize;
@@ -131,8 +128,7 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 		u32 binding = compiler.get_decoration(resource.id, spv::DecorationBinding);
 		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_DYNAMIC_ARRAY_SIZE : type.array[0]; // assume utilize only 1d-array for now
 
-		Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set][binding];
-		descriptorInfo.set = set;
+		Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set];
 		descriptorInfo.binding = binding;
 		descriptorInfo.name = name;
 		descriptorInfo.arraySize = arraySize;

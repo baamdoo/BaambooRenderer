@@ -34,22 +34,30 @@ CommandQueue::~CommandQueue()
 	vkDestroyCommandPool(m_renderContext.vkDevice(), m_vkCommandPool, nullptr);
 }
 
-CommandBuffer& CommandQueue::Allocate(VkCommandBufferUsageFlags flags)
+CommandBuffer& CommandQueue::Allocate(VkCommandBufferUsageFlags flags, bool bTransient)
 {
 	CommandBuffer* pCmdBuffer = nullptr;
-	if (!m_pAvailableCmdBuffers.empty() && m_pAvailableCmdBuffers.front()->IsFenceComplete())
+	if (bTransient)
 	{
-		pCmdBuffer = m_pAvailableCmdBuffers.front();
-		m_pAvailableCmdBuffers.pop();
+		pCmdBuffer = new CommandBuffer(m_renderContext, m_vkCommandPool);
 	}
 	else
 	{
-		pCmdBuffer = new CommandBuffer(m_renderContext, m_vkCommandPool);
-		m_pCmdBuffers.push_back(pCmdBuffer);
+		if (!m_pAvailableCmdBuffers.empty() && m_pAvailableCmdBuffers.front()->IsFenceComplete())
+		{
+			pCmdBuffer = m_pAvailableCmdBuffers.front();
+			m_pAvailableCmdBuffers.pop();
+		}
+		else
+		{
+			pCmdBuffer = new CommandBuffer(m_renderContext, m_vkCommandPool);
+			m_pCmdBuffers.push_back(pCmdBuffer);
+		}
 	}
 	assert(pCmdBuffer);
 
-	pCmdBuffer->Open();
+	pCmdBuffer->Open(flags);
+	pCmdBuffer->SetTransient(bTransient);
 	return *pCmdBuffer;
 }
 
@@ -64,20 +72,36 @@ void CommandQueue::ExecuteCommandBuffer(CommandBuffer& cmdBuffer)
 	// **
 	// Submit queue
 	// **
-	VkPipelineStageFlags waitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	if (!cmdBuffer.IsTransient())
+	{
+		VkPipelineStageFlags waitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
-	VkSubmitInfo submitInfo = {};
-	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submitInfo.waitSemaphoreCount = 1;
-	submitInfo.pWaitSemaphores = &cmdBuffer.m_vkPresentCompleteSemaphore;
-	submitInfo.pWaitDstStageMask = &waitStages;
-	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &cmdBuffer.m_vkCommandBuffer;
-	submitInfo.signalSemaphoreCount = 1;
-	submitInfo.pSignalSemaphores = &cmdBuffer.m_vkRenderCompleteSemaphore;
-	VK_CHECK(vkQueueSubmit(m_vkQueue, 1, &submitInfo, cmdBuffer.m_vkFence));
+		VkSubmitInfo submitInfo = {};
+		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submitInfo.waitSemaphoreCount = 1;
+		submitInfo.pWaitSemaphores = &cmdBuffer.m_vkPresentCompleteSemaphore;
+		submitInfo.pWaitDstStageMask = &waitStages;
+		submitInfo.commandBufferCount = 1;
+		submitInfo.pCommandBuffers = &cmdBuffer.m_vkCommandBuffer;
+		submitInfo.signalSemaphoreCount = 1;
+		submitInfo.pSignalSemaphores = &cmdBuffer.m_vkRenderCompleteSemaphore;
+		VK_CHECK(vkQueueSubmit(m_vkQueue, 1, &submitInfo, cmdBuffer.m_vkFence));
 
-	m_pAvailableCmdBuffers.push(&cmdBuffer);
+		m_pAvailableCmdBuffers.push(&cmdBuffer);
+	}
+	else
+	{
+		VkSubmitInfo submitInfo = {};
+		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submitInfo.commandBufferCount = 1;
+		submitInfo.pCommandBuffers = &cmdBuffer.m_vkCommandBuffer;
+		VK_CHECK(vkQueueSubmit(m_vkQueue, 1, &submitInfo, cmdBuffer.m_vkFence));
+		cmdBuffer.WaitForFence();
+		//VK_CHECK(vkQueueWaitIdle(m_vkQueue));
+
+		auto pCmdBuffer = &cmdBuffer;
+		RELEASE(pCmdBuffer);
+	}
 }
 
 CommandBuffer* CommandQueue::RequestList(VkCommandPool vkCommandPool)

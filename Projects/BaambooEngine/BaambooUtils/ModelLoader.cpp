@@ -13,7 +13,6 @@ ModelLoader::ModelLoader(fs::path filepath_, MeshDescriptor descriptor)
 {
 	i32 importFlags = aiProcess_CalcTangentSpace |
 		aiProcess_Triangulate |
-		aiProcess_FlipUVs |
 		aiProcess_SortByPType |
 		aiProcess_PreTransformVertices |
 		aiProcess_GenNormals |
@@ -21,9 +20,11 @@ ModelLoader::ModelLoader(fs::path filepath_, MeshDescriptor descriptor)
 		aiProcess_RemoveRedundantMaterials |
 		aiProcess_FindDegenerates |
 		aiProcess_GenBoundingBoxes |
-		aiProcess_ValidateDataStructure;
+		aiProcess_ValidateDataStructure |
+		aiProcess_ConvertToLeftHanded;
 	importFlags |= (descriptor.bOptimize ? aiProcess_OptimizeMeshes | aiProcess_ImproveCacheLocality : 0);
 	importFlags |= (descriptor.bWindingCW ? aiProcess_FlipWindingOrder : 0);
+	//importFlags |= ((descriptor.rendererAPI == eRendererAPI::D3D11 || descriptor.rendererAPI == eRendererAPI::D3D12) ? aiProcess_ConvertToLeftHanded : 0);
 
 	Assimp::Importer importer;
 	const auto aiScene = importer.ReadFile(filepath.string(), importFlags);
@@ -87,12 +88,8 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, Node* currentN
 		vertex.normal.y = mesh->mNormals[i].y;
 		vertex.normal.z = mesh->mNormals[i].z;
 
-		if (descriptor.bFlipY) {
-			vertex.position.y *= -1.f;
-			vertex.normal.y *= -1.f;
-		}
-
-		if (mesh->HasTextureCoords(0)) {
+		if (mesh->HasTextureCoords(0)) 
+		{
 			vertex.uv.x = mesh->mTextureCoords[0][i].x - 1.f;
 			vertex.uv.y = mesh->mTextureCoords[0][i].y - 1.f;
 		}

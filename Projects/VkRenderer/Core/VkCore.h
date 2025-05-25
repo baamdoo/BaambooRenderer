@@ -39,13 +39,38 @@ inline fs::path GetSpirvPath()
 //-------------------------------------------------------------------------
 // Pre-defined Values
 //-------------------------------------------------------------------------
-constexpr u32 MAX_BINDLESS_DESCRIPTOR_RESOURCE_SIZE = 1024;
-enum : u8
+constexpr u32 NUM_FRAMES_IN_FLIGHT = 3;
+constexpr u32 DEFAULT_DESCRIPTOR_POOL_SIZE = 1024;
+constexpr u32 MAX_BINDLESS_DESCRIPTOR_RESOURCE_COUNT = 1024;
+enum eDescriptorSetIndexType : u8
 {
 	eDescriptorSet_Static = 0,
 	eDescriptorSet_Push = 1,
+	eNumPreallocatedSetIndex,
 
-	eNumDescriptorSet
+	eStaticSetBindingIndex_CombinedImage2D = 0,
+	eStaticSetBindingIndex_Vertex = 1,
+	eStaticSetBindingIndex_Index = 2,
+	eStaticSetBindingIndex_IndirectDraw = 3,
+	eStaticSetBindingIndex_Transform = 4,
+	eStaticSetBindingIndex_Material = 5,
+};
+
+
+//-------------------------------------------------------------------------
+// Shader Types
+//-------------------------------------------------------------------------
+struct IndirectDrawData
+{
+	u32 indexCount;
+	u32 instanceCount;
+	u32 firstIndex;
+	i32 vertexOffset;
+	u32 firstInstance;
+
+	u32	materialIndex;
+	u32 transformID;
+	u32 transformCount;
 };
 
 

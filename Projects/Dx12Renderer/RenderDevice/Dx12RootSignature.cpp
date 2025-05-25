@@ -1,6 +1,5 @@
 #include "RendererPch.h"
 #include "Dx12RootSignature.h"
-#include "Dx12RenderContext.h"
 
 namespace dx12
 {
@@ -8,7 +7,6 @@ namespace dx12
 RootSignature::RootSignature(RenderContext& context)
 	: m_RenderContext(context)
 {
-	AddStaticParameters();
 }
 
 RootSignature::~RootSignature()
@@ -19,44 +17,73 @@ RootSignature::~RootSignature()
 	m_DescriptorTableBitMask = 0;
 }
 
-void RootSignature::AddConstants(u32 reg, u32 space, u32 numConstants, D3D12_SHADER_VISIBILITY visibility)
+u32 RootSignature::AddConstants(u32 reg, u32 space, u32 numConstants, D3D12_SHADER_VISIBILITY visibility)
 {
 	CD3DX12_ROOT_PARAMETER1 param = {};
 	param.InitAsConstants(numConstants, reg, space, visibility);
-	AddParameter(param);
+	return AddParameter(param);
 }
 
-void RootSignature::AddCBV(u32 reg, u32 space, D3D12_ROOT_DESCRIPTOR_FLAGS flags, D3D12_SHADER_VISIBILITY visibility)
+u32 RootSignature::AddCBV(u32 reg, u32 space, D3D12_ROOT_DESCRIPTOR_FLAGS flags, D3D12_SHADER_VISIBILITY visibility)
 {
 	CD3DX12_ROOT_PARAMETER1 param = {};
 	param.InitAsConstantBufferView(reg, space, flags, visibility);
-	AddParameter(param);
+	return AddParameter(param);
 }
 
-void RootSignature::AddSRV(u32 reg, u32 space, D3D12_ROOT_DESCRIPTOR_FLAGS flags, D3D12_SHADER_VISIBILITY visibility)
+u32 RootSignature::AddSRV(u32 reg, u32 space, D3D12_ROOT_DESCRIPTOR_FLAGS flags, D3D12_SHADER_VISIBILITY visibility)
 {
 	CD3DX12_ROOT_PARAMETER1 param = {};
 	param.InitAsShaderResourceView(reg, space, flags, visibility);
-	AddParameter(param);
+	return AddParameter(param);
 }
 
-void RootSignature::AddUAV(u32 reg, u32 space, D3D12_ROOT_DESCRIPTOR_FLAGS flags, D3D12_SHADER_VISIBILITY visibility)
+u32 RootSignature::AddUAV(u32 reg, u32 space, D3D12_ROOT_DESCRIPTOR_FLAGS flags, D3D12_SHADER_VISIBILITY visibility)
 {
 	CD3DX12_ROOT_PARAMETER1 param = {};
 	param.InitAsUnorderedAccessView(reg, space, flags, visibility);
-	AddParameter(param);
+	return AddParameter(param);
 }
 
-void RootSignature::AddDescriptorTable(const DescriptorTable& table, D3D12_SHADER_VISIBILITY visibility)
+u32 RootSignature::AddSampler(
+	UINT                       shaderRegister, 
+	UINT                       registerSpace, 
+	D3D12_FILTER               filter, 
+	D3D12_TEXTURE_ADDRESS_MODE addressUVW, 
+	UINT                       maxAnisotropy, 
+	D3D12_COMPARISON_FUNC      comparisonFunc, 
+	D3D12_STATIC_BORDER_COLOR  borderColor)
+{
+	CD3DX12_STATIC_SAMPLER_DESC& desc = m_StaticSamplers.emplace_back();
+	desc.Init(shaderRegister, filter, addressUVW, addressUVW, addressUVW, 0.0f, maxAnisotropy, comparisonFunc, borderColor);
+	desc.RegisterSpace = registerSpace;
+
+	return static_cast<u32>(m_StaticSamplers.size()) - 1;
+}
+
+u32 RootSignature::AddDescriptorTable(const DescriptorTable& table, D3D12_SHADER_VISIBILITY visibility)
 {
 	CD3DX12_ROOT_PARAMETER1 param = {};
-	param.InitAsDescriptorTable(static_cast<u32>(table.Size()), *table, visibility);
-	AddParameter(param);
+	param.InitAsDescriptorTable(static_cast<u32>(table.Size()), nullptr, visibility);
+	m_DescriptorTableIndices.push_back(static_cast<u32>(m_DescriptorTables.size()));
+	m_DescriptorTables.push_back(table);
+	return AddParameter(param);
 }
 
 void RootSignature::Build()
 {
 	auto d3d12Device = m_RenderContext.GetD3D12Device();
+
+	u32 t = 0;
+	for (size_t i = 0; i < m_RootParameters.size(); ++i)
+	{
+		if (m_RootParameters[i].ParameterType == D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE)
+		{
+			m_RootParameters[i].DescriptorTable.NumDescriptorRanges = (u32)m_DescriptorTables[m_DescriptorTableIndices[t]].Size();
+			m_RootParameters[i].DescriptorTable.pDescriptorRanges = m_DescriptorTables[m_DescriptorTableIndices[t]].Data();
+			t++;
+		}
+	}
 
 	u32 numParameters = static_cast<u32>(m_RootParameters.size());
 	for (u32 i = 0; i < numParameters; ++i)
@@ -92,7 +119,7 @@ void RootSignature::Build()
 		m_RootParameters.data(), 
 		static_cast<u32>(m_StaticSamplers.size()), 
 		m_StaticSamplers.data(), 
-		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT | D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED
 	);
 
 	D3D_ROOT_SIGNATURE_VERSION highestVersion = m_RenderContext.GetHighestRootSignatureVersion();
@@ -132,37 +159,34 @@ u64 RootSignature::GetDescriptorTableBitMask(D3D12_DESCRIPTOR_HEAP_TYPE type) co
 	return mask;
 }
 
-void RootSignature::AddParameter(const CD3DX12_ROOT_PARAMETER1& param)
+u32 RootSignature::AddParameter(const CD3DX12_ROOT_PARAMETER1& param)
 {
 	m_RootParameters.emplace_back(param);
+	return static_cast<u32>(m_RootParameters.size()) - 1;
 }
 
-void RootSignature::AddStaticParameters()
-{
-	m_StaticSamplers.clear();
-	m_StaticSamplers = {
-		// CD3DX12_STATIC_SAMPLER_DESC(0),
-	};
-}
-
-void DescriptorTable::AddCBVRange(u32 reg, u32 space, u32 numDescriptors, D3D12_DESCRIPTOR_RANGE_FLAGS flags, u32 offset)
+DescriptorTable& DescriptorTable::AddCBVRange(u32 reg, u32 space, u32 numDescriptors, D3D12_DESCRIPTOR_RANGE_FLAGS flags, u32 offset)
 {
 	AddDescriptorRange(reg, space, numDescriptors, D3D12_DESCRIPTOR_RANGE_TYPE_CBV, flags, offset);
+	return *this;
 }
 
-void DescriptorTable::AddSRVRange(u32 reg, u32 space, u32 numDescriptors, D3D12_DESCRIPTOR_RANGE_FLAGS flags, u32 offset)
+DescriptorTable& DescriptorTable::AddSRVRange(u32 reg, u32 space, u32 numDescriptors, D3D12_DESCRIPTOR_RANGE_FLAGS flags, u32 offset)
 {
 	AddDescriptorRange(reg, space, numDescriptors, D3D12_DESCRIPTOR_RANGE_TYPE_SRV, flags, offset);
+	return *this;
 }
 
-void DescriptorTable::AddUAVRange(u32 reg, u32 space, u32 numDescriptors, D3D12_DESCRIPTOR_RANGE_FLAGS flags, u32 offset)
+DescriptorTable& DescriptorTable::AddUAVRange(u32 reg, u32 space, u32 numDescriptors, D3D12_DESCRIPTOR_RANGE_FLAGS flags, u32 offset)
 {
 	AddDescriptorRange(reg, space, numDescriptors, D3D12_DESCRIPTOR_RANGE_TYPE_UAV, flags, offset);
+	return *this;
 }
 
-void DescriptorTable::AddSamplerRange(u32 reg, u32 space, u32 numDescriptors, D3D12_DESCRIPTOR_RANGE_FLAGS flags, u32 offset)
+DescriptorTable& DescriptorTable::AddSamplerRange(u32 reg, u32 space, u32 numDescriptors, D3D12_DESCRIPTOR_RANGE_FLAGS flags, u32 offset)
 {
 	AddDescriptorRange(reg, space, numDescriptors, D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, flags, offset);
+	return *this;
 }
 
 void DescriptorTable::AddDescriptorRange(u32 reg, u32 space, u32 numDescriptors, D3D12_DESCRIPTOR_RANGE_TYPE type, D3D12_DESCRIPTOR_RANGE_FLAGS flags, u32 offset)

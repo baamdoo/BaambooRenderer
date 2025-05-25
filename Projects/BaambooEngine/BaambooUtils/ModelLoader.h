@@ -8,7 +8,7 @@ struct aiNode;
 struct aiMesh;
 struct aiMaterial;
 struct aiString;
-enum aiTextureType : u32;
+enum aiTextureType : i32;
 
 struct MeshData
 {
@@ -27,23 +27,11 @@ struct MeshData
 	std::string emissiveTextureFilename;
 };
 
-struct DrawData
-{
-	u32 indexCount;
-	u32 instanceCount;
-	u32 firstIndex;
-	u32 vertexOffset;
-	u32 firstInstance;
-
-	u32	materialIndex;
-	u32 transformIndex;
-	u32 transformCount;
-};
-
 struct MeshDescriptor
 {
-	bool bFlipY = false;
-	bool bOptimize = false;
+	eRendererAPI rendererAPI;
+
+	bool bOptimize = true;
 	bool bWindingCW = false;
 };
 
@@ -64,10 +52,9 @@ public:
 		Node* pParent;
 		std::vector< Node* > pChilds;
 
-		std::vector< MeshData >  meshes;
-		std::vector< u32 >       materialIndices;
-		std::vector< DrawData >  draws;
-		BoundingBox              aabb;
+		std::vector< MeshData > meshes;
+		std::vector< u32 >      materialIndices;
+		BoundingBox             aabb;
 	};
 
 public:

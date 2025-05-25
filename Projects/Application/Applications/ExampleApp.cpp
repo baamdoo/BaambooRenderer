@@ -1,16 +1,28 @@
 #include "ExampleApp.h"
-#include "BaambooCore/Window.h"
 #include "Scene/Entity.h"
 #include "Scene/Components.h"
+#include "BaambooCore/Window.h"
+#include "BaambooCore/Input.hpp"
 #include "BaambooUtils/ModelLoader.h"
 
+#include <glm/gtc/type_ptr.hpp>
 #include <imgui/backends/imgui_impl_glfw.h>
 
 using namespace baamboo;
 
-void ExampleApp::Update(float dt)
+void ExampleApp::Initialize(eRendererAPI api)
+{
+	Super::Initialize(api);
+
+	m_cameraController.SetLookAt(float3(0.0f, 0.0f, -5.0f), float3(0.0f));
+	m_pCamera = new EditorCamera(m_cameraController, m_pWindow->Width(), m_pWindow->Height());
+}
+
+void ExampleApp::Update(f32 dt)
 {
 	Super::Update(dt);
+
+	m_cameraController.Update(dt);
 }
 
 bool ExampleApp::InitWindow()
@@ -31,18 +43,24 @@ bool ExampleApp::InitWindow()
 			ImGui_ImplGlfw_KeyCallback(window, key, scancode, action, mods);
 
 			ImGuiIO& io = ImGui::GetIO();
-
 			if (!io.WantCaptureKeyboard)
 			{
-				switch (key)
+				auto app = reinterpret_cast<ExampleApp*>(glfwGetWindowUserPointer(window));
+				if (app)
 				{
-				case GLFW_KEY_ESCAPE:
-					if (action == GLFW_PRESS)
-						glfwSetWindowShouldClose(window, GLFW_TRUE);
-					break;
+					bool bPressed = action != GLFW_RELEASE;
+					Input::Inst()->UpdateKey(key, bPressed);
 
-				default:
-					break;
+					switch (key)
+					{
+					case GLFW_KEY_ESCAPE:
+						if (bPressed)
+							glfwSetWindowShouldClose(window, GLFW_TRUE);
+						break;
+
+					default:
+						break;
+					}
 				}
 			}
 		});
@@ -55,6 +73,9 @@ bool ExampleApp::InitWindow()
 			if (!io.WantCaptureMouse)
 			{
 				printf("MouseClicked on scene!\n");
+
+				bool bPressed = action != GLFW_RELEASE;
+				Input::Inst()->UpdateMouse(button, bPressed);
 			}
 			else
 			{
@@ -69,6 +90,18 @@ bool ExampleApp::InitWindow()
 			ImGuiIO& io = ImGui::GetIO();
 			if (!io.WantCaptureMouse)
 			{
+				Input::Inst()->UpdateMousePosition(static_cast<float>(xpos), static_cast<float>(ypos));
+			}
+		});
+
+	m_pWindow->SetMouseWheelCallback([](GLFWwindow* window, double xoffset, double yoffset)
+		{
+			ImGui_ImplGlfw_ScrollCallback(window, xoffset, yoffset);
+
+			ImGuiIO& io = ImGui::GetIO();
+			if (!io.WantCaptureMouse)
+			{
+				Input::Inst()->UpdateMouseWheel(static_cast<float>(yoffset));
 			}
 		});
 
@@ -80,6 +113,17 @@ bool ExampleApp::InitWindow()
 				app->m_bWindowResized = true;
 				app->m_resizeWidth = width;
 				app->m_resizeHeight = height;
+			}
+		});
+
+	m_pWindow->SetIconifyCallback([](GLFWwindow* window, i32 iconified)
+		{
+			auto app = reinterpret_cast<ExampleApp*>(glfwGetWindowUserPointer(window));
+			if (app)
+			{
+				app->m_bWindowResized = true;
+				app->m_resizeWidth = iconified ? 0 : app->m_pWindow->Width();
+				app->m_resizeHeight = iconified ? 0 : app->m_pWindow->Height();
 			}
 		});
 
@@ -95,8 +139,8 @@ bool ExampleApp::LoadScene()
 {
 	m_pScene = new Scene("ExampleScene");
 	auto entity0 = m_pScene->CreateEntity("Test0");
-	auto& transformComponent = entity0.GetComponent< TransformComponent >();
-	transformComponent.transform.position = { 0.0f, 1.0f, 0.0f };
+	auto& tc0 = entity0.GetComponent< TransformComponent >();
+	tc0.transform.position = { 0.0f, 1.0f, 0.0f };
 
 	auto entity00 = m_pScene->CreateEntity("Test00");
 	entity0.AttachChild(entity00);
@@ -105,12 +149,86 @@ bool ExampleApp::LoadScene()
 
 	MeshDescriptor meshDescriptor = {};
 	meshDescriptor.bOptimize = true;
+	meshDescriptor.rendererAPI = m_eBackendAPI;
 
-	auto dhEntity = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), meshDescriptor, m_pRendererBackend->GetResourceManager());
+	auto dhEntity = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), meshDescriptor);
+	auto& tcdh = dhEntity.GetComponent< TransformComponent >();
+	tcdh.transform.position = { -1.0f, 0.0f, 0.0f };
+
+	auto dhEntity2 = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), meshDescriptor);
 	return true;
 }
 
 void ExampleApp::DrawUI()
-{
+{ 
 	Super::DrawUI();
+
+	ImGui::Begin("Editor Camera");
+	{
+		if (ImGui::CollapsingHeader("Transform"))
+		{
+			auto& transform = m_cameraController.GetTransform();
+
+			ImGui::Text("Position");
+			ImGui::DragFloat3("##Position", glm::value_ptr(transform.position), 0.1f, 0.0f, 0.0f, "%.1f");
+
+			ImGui::Text("Rotation");
+			ImGui::DragFloat3("##Rotation", glm::value_ptr(transform.rotation), 0.1f, 0.0f, 0.0f, "%.1f");
+		}
+
+		if (ImGui::CollapsingHeader("Camera"))
+		{
+			float width = (ImGui::GetWindowWidth() - ImGui::GetStyle().ItemSpacing.x);
+
+			ImGui::PushItemWidth(width * 0.3f);
+			ImGui::Text("ClippingRange");
+			ImGui::InputFloat("##ClipNear", &m_pCamera->cNear, 0, 0, "%.2f");
+
+			ImGui::PushItemWidth(width * 0.7f);
+			ImGui::SameLine();
+			ImGui::InputFloat("##ClipFar", &m_pCamera->cFar, 0, 0, "%.2f");
+
+			ImGui::Text("FoV");
+			ImGui::DragFloat("##FoV", &m_pCamera->fov, 0.1f, 1.0f, 90.0f, "%.1f");
+		}
+
+		if (ImGui::CollapsingHeader("Controller"))
+		{
+			auto& cameraConfig = m_cameraController.config;
+
+			ImGui::Text("Rotation Acceleration");
+			ImGui::DragFloat("##RAcceleration", &cameraConfig.rotationAcceleration, 10.0f, 10.0f, 300.0f, "%.1f");
+
+			ImGui::Text("Rotation Damping");
+			ImGui::DragFloat("##RDamping", &cameraConfig.rotationDamping, 0.1f, 1.0f, 10.0f, "%.1f");
+
+			ImGui::Text("Move Acceleration");
+			ImGui::DragFloat("##MAcceleration", &cameraConfig.moveAcceleration, 1.0f, 10.0f, 100.0f, "%.1f");
+
+			ImGui::Text("Move Damping");
+			ImGui::DragFloat("##MDamping", &cameraConfig.moveDamping, 0.1f, 1.0f, 10.0f, "%.1f");
+
+			ImGui::Text("Boosting Speed");
+			ImGui::DragFloat("##Boosting", &cameraConfig.boostingSpeed, 1.0f, 1.0f, 100.0f, "%.1f");
+			
+			if (ImGui::BeginCombo("##Scale", "Movement Scale"))
+			{
+				if (ImGui::Selectable("cm", cameraConfig.movementScale == 1.0f))
+				{
+					cameraConfig.movementScale = 1.0f;
+				}
+				if (ImGui::Selectable("m", cameraConfig.movementScale == 100.0f))
+				{
+					cameraConfig.movementScale = 100.0f;
+				}
+				if (ImGui::Selectable("km", cameraConfig.movementScale == 100'000.0f))
+				{
+					cameraConfig.movementScale = 100'000.0f;
+				}
+
+				ImGui::EndCombo();
+			}
+		}
+	}
+	ImGui::End();
 }

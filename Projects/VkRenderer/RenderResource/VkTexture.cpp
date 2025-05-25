@@ -85,6 +85,7 @@ void Texture::CreateImageAndView(const CreationInfo& info)
 	// Create image view
 	// **
 	auto viewInfo = GetViewDesc(m_desc);
+	m_aspectFlags = viewInfo.subresourceRange.aspectMask;
 	VK_CHECK(vkCreateImageView(m_renderContext.vkDevice(), &viewInfo, nullptr, &m_vkImageView));
 }
 
@@ -208,13 +209,14 @@ void Texture::Resize(u32 width, u32 height, u32 depth)
 	CreateImageAndView(m_creationInfo);
 }
 
-void Texture::SetResource(VkImage vkImage, VkImageView vkImageView, VmaAllocation vmaAllocation)
+void Texture::SetResource(VkImage vkImage, VkImageView vkImageView, VmaAllocation vmaAllocation, VkImageAspectFlags aspectMask)
 {
 	assert(!m_vkImage && !m_vkImageView);
 
 	m_vkImage = vkImage;
 	m_vkImageView = vkImageView;
 	m_vmaAllocation = vmaAllocation;
+	m_aspectFlags = aspectMask;
 	m_bOwnedBySwapChain = vmaAllocation == VK_NULL_HANDLE;
 }
 

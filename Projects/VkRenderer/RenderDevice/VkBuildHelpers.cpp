@@ -265,19 +265,30 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 			physicalDevice12Features.runtimeDescriptorArray = VK_TRUE;
 			physicalDeviceFeatures.multiDrawIndirect = VK_TRUE;
 			physicalDeviceFeatures.drawIndirectFirstInstance = VK_TRUE;
+			physicalDevice12Features.descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE;
+			physicalDevice12Features.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+			physicalDevice12Features.descriptorBindingPartiallyBound = VK_TRUE;
 		}
 
 		if (m_physicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_DescriptorIndexing))
 		{
 			physicalDevice12Features.descriptorIndexing = VK_TRUE;
-			physicalDevice12Features.descriptorBindingPartiallyBound = VK_TRUE;
-			physicalDevice12Features.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
 		}
 
 		if (m_physicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_DynamicIndexing))
 		{
 			physicalDevice12Features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
 			physicalDevice12Features.shaderStorageImageArrayNonUniformIndexing = VK_TRUE;
+		}
+
+		if (m_physicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_SamplerAnistropy))
+		{
+			physicalDeviceFeatures.samplerAnisotropy = VK_TRUE;
+		}
+
+		if (m_physicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_DeviceAddress))
+		{
+			physicalDevice12Features.bufferDeviceAddress = VK_TRUE;
 		}
 
 		if (m_physicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_Sync2))
@@ -506,6 +517,8 @@ SwapChainBuilder& SwapChainBuilder::SetVSync(bool vSync)
 VkSwapchainKHR SwapChainBuilder::Build(VkDevice device, u32 queueFamilyIndex, VkSwapchainKHR oldSwapChain)
 {
 	VkSwapchainKHR vkSwapChain = VK_NULL_HANDLE;
+	if (m_extent.width == 0 || m_extent.height == 0)
+		return vkSwapChain;
 
 	VkSwapchainCreateInfoKHR swapChainInfo{};
 	swapChainInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;

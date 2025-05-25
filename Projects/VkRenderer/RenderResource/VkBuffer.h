@@ -31,6 +31,8 @@ public:
     [[nodiscard]]
     inline u64 ElementSize() const { return m_elementSize; }
 
+    virtual ~Buffer();
+
 protected:
     template< typename T >
     friend class ResourcePool;
@@ -38,13 +40,24 @@ protected:
 
     Buffer(RenderContext& context, std::wstring_view name);
     Buffer(RenderContext& context, std::wstring_view name, CreationInfo&& info);
-    virtual ~Buffer();
 
 private:
     u32 m_count;
-    u32 m_elementSize;
+    u64 m_elementSize;
 
     VkBuffer m_vkBuffer = VK_NULL_HANDLE;
+};
+
+class VertexBuffer : public Buffer
+{
+public:
+    VertexBuffer(RenderContext& context, std::wstring_view name, CreationInfo&& info);
+};
+
+class IndexBuffer : public Buffer
+{
+public:
+    IndexBuffer(RenderContext& context, std::wstring_view name, CreationInfo&& info);
 };
 
 }

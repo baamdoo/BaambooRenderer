@@ -86,6 +86,8 @@ enum : u8
 	ePhysicalDeviceFeature_DynamicIndexing,
 	ePhysicalDeviceFeature_IndirectRendering,
 	ePhysicalDeviceFeature_DescriptorIndexing,
+	ePhysicalDeviceFeature_DeviceAddress,
+	ePhysicalDeviceFeature_SamplerAnistropy,
 	ePhysicalDeviceFeature_IndexTypeUint8,
 	ePhysicalDeviceFeature_Sync2,
 

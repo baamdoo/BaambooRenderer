@@ -33,7 +33,7 @@ public:
     RenderTarget& operator=(const RenderTarget& other) = default;
     RenderTarget& operator=(RenderTarget&& other) = default;
 
-    void AttachTexture(eAttachmentPoint attachmentPoint, Texture* texture);
+    RenderTarget& AttachTexture(eAttachmentPoint attachmentPoint, Texture* texture);
     void ClearTexture(CommandList& commandList, eAttachmentPoint attachmentPoint);
 
     void Resize(u32 width, u32 height);

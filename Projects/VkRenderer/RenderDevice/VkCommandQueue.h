@@ -10,9 +10,9 @@ class CommandQueue
 public:
 	CommandQueue(RenderContext& context, u32 queueIndex);
 	~CommandQueue();
-
+	
 	[[nodiscard]]
-	CommandBuffer& Allocate(VkCommandBufferUsageFlags flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
+	CommandBuffer& Allocate(VkCommandBufferUsageFlags flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, bool bTransient = false);
 	void Flush();
 
 	void ExecuteCommandBuffer(CommandBuffer& cmdBuffer);

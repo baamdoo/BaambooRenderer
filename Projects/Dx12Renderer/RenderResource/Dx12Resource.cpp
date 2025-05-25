@@ -57,7 +57,7 @@ Resource::Resource(RenderContext& context, std::wstring_view name, ResourceCreat
 	m_d3d12Resource->SetName(m_Name.data());
 	m_ResourceDesc = m_d3d12Resource->GetDesc();
 
-	IsFormatSupported();
+	SetFormatSupported();
 }
 
 Resource::~Resource()
@@ -92,10 +92,11 @@ void Resource::SetD3D12Resource(ID3D12Resource* d3d12Resource, D3D12_RESOURCE_ST
 	m_ResourceDesc = m_d3d12Resource->GetDesc();
 	ThrowIfFailed(m_d3d12Resource->SetName(m_Name.data()));
 
+	SetFormatSupported();
 	m_CurrentState.SetSubresourceState(states, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 }
 
-void Resource::IsFormatSupported()
+void Resource::SetFormatSupported()
 {
 	auto d3d12Device = m_RenderContext.GetD3D12Device();
 

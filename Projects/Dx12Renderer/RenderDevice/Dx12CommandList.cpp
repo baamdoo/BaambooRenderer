@@ -2,13 +2,14 @@
 #include "Dx12CommandList.h"
 #include "Dx12RenderContext.h"
 #include "Dx12CommandQueue.h"
-#include "Dx12UploadBufferPool.h"
+#include "Dx12BufferAllocator.h"
 #include "Dx12RootSignature.h"
 #include "Dx12RenderPipeline.h"
 #include "Dx12DescriptorHeap.h"
 #include "RenderResource/Dx12Buffer.h"
 #include "RenderResource/Dx12Texture.h"
 #include "RenderResource/Dx12RenderTarget.h"
+#include "RenderResource/Dx12SceneResource.h"
 
 namespace dx12
 {
@@ -23,7 +24,7 @@ CommandList::CommandList(RenderContext& context, D3D12_COMMAND_LIST_TYPE type)
 	ThrowIfFailed(d3d12Device->CreateCommandList1(
 		0, m_Type, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&m_d3d12CommandList)));
 
-	m_pUploadBufferPool = new UploadBufferPool(m_RenderContext);
+	m_pDynamicBufferAllocator = new DynamicBufferAllocator(m_RenderContext);
 	
 	for (u32 i = 0; i < NUM_RESOURCE_DESCRIPTOR_TYPE; ++i)
 	{
@@ -38,7 +39,7 @@ CommandList::~CommandList()
 	{
 		RELEASE(m_pDescriptorHeaps[i]);
 	}
-	RELEASE(m_pUploadBufferPool);
+	RELEASE(m_pDynamicBufferAllocator);
 
 	COM_RELEASE(m_d3d12CommandList);
 	COM_RELEASE(m_d3d12CommandAllocator);
@@ -56,13 +57,16 @@ void CommandList::Open()
 	ThrowIfFailed(m_d3d12CommandAllocator->Reset());
 	ThrowIfFailed(m_d3d12CommandList->Reset(m_d3d12CommandAllocator, nullptr));
 
-	m_pUploadBufferPool->Reset();
-	for (u32 i = 0; i < NUM_RESOURCE_DESCRIPTOR_TYPE; ++i)
+	if (m_Type != D3D12_COMMAND_LIST_TYPE_COPY)
 	{
-		m_pDescriptorHeaps[i]->Reset();
-	}
+		m_pDynamicBufferAllocator->Reset();
+		for (u32 i = 0; i < NUM_RESOURCE_DESCRIPTOR_TYPE; ++i)
+		{
+			m_pDescriptorHeaps[i]->Reset();
+		}
 
-	BindDescriptorHeaps();
+		BindDescriptorHeaps();
+	}
 }
 
 void CommandList::Close()
@@ -111,6 +115,11 @@ void CommandList::AliasingBarrier(Resource* pResourceBefore, Resource* pResource
 			), bFlushImmediate
 		);
 	}
+}
+
+void CommandList::CopyBuffer(Buffer* pDstBuffer, Buffer* pSrcBuffer, size_t sizeInBytes)
+{
+	CopyBuffer(pDstBuffer->GetD3D12Resource(), pSrcBuffer->GetD3D12Resource(), sizeInBytes);
 }
 
 void CommandList::CopyBuffer(ID3D12Resource* d3d12DstBuffer, ID3D12Resource* d3d12SrcBuffer, SIZE_T sizeInBytes)
@@ -309,7 +318,7 @@ void CommandList::SetGraphics32BitConstants(u32 rootIndex, u32 srcSizeInBytes, v
 
 void CommandList::SetGraphicsDynamicConstantBuffer(u32 rootIndex, size_t sizeInBytes, const void* bufferData)
 {
-	auto allocation = m_pUploadBufferPool->Allocate(sizeInBytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
+	auto allocation = m_pDynamicBufferAllocator->Allocate(sizeInBytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
 	memcpy(allocation.CPUHandle, bufferData, sizeInBytes);
 	
 	m_d3d12CommandList->SetGraphicsRootConstantBufferView(rootIndex, allocation.GPUHandle);
@@ -380,6 +389,25 @@ void CommandList::DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint3
 	}
 
 	m_d3d12CommandList->DrawIndexedInstanced(indexCount, instanceCount, startIndex, baseVertex, startInstance);
+}
+
+void CommandList::DrawIndexedIndirect(const SceneResource& sceneResource)
+{
+	FlushResourceBarriers();
+
+	for (u32 i = 0; i < NUM_RESOURCE_DESCRIPTOR_TYPE; ++i)
+	{
+		m_pDescriptorHeaps[i]->CommitDescriptorsForDraw(*this);
+	}
+
+	auto pIDB = sceneResource.GetIndirectBuffer();
+	m_d3d12CommandList->ExecuteIndirect(
+		sceneResource.GetSceneD3D12CommandSignature(),
+		sceneResource.NumMeshes(),
+		pIDB->GetD3D12Resource(),
+		0,
+		nullptr,
+		0);
 }
 
 void CommandList::Dispatch(uint32_t numGroupsX, uint32_t numGroupsY, uint32_t numGroupsZ)

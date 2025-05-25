@@ -52,7 +52,7 @@ void DescriptorHeap::ParseRootSignature(const RootSignature* pRootsignature)
     }
 }
 
-void DescriptorHeap::StageDescriptors(u32 rootIndex, u32 numDescriptors, u32 offset, D3D12_CPU_DESCRIPTOR_HANDLE srcHandle)
+u32 DescriptorHeap::StageDescriptors(u32 rootIndex, u32 numDescriptors, u32 offset, D3D12_CPU_DESCRIPTOR_HANDLE srcHandle)
 {
     assert(rootIndex < MAX_ROOT_INDEX && numDescriptors < m_NumDescriptors && offset + numDescriptors < m_NumDescriptors);
 
@@ -63,6 +63,8 @@ void DescriptorHeap::StageDescriptors(u32 rootIndex, u32 numDescriptors, u32 off
     d3d12Device->CopyDescriptorsSimple(numDescriptors, dstHandle, srcHandle, m_Type);
 
     m_DescriptorTableDirtyFlags |= (1LL << rootIndex);
+
+    return allocation.Index(offset);
 }
 
 void DescriptorHeap::CommitDescriptorsForDraw(CommandList& commandList)

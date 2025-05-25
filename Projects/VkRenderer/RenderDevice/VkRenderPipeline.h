@@ -5,6 +5,7 @@ namespace vk
 {
 
 class RenderTarget;
+class DescriptorSet;
 
 struct DescriptorInfo
 {
@@ -77,16 +78,14 @@ public:
 	inline VkPipelineLayout vkPipelineLayout() const { return m_vkPipelineLayout; }
 	[[nodiscard]]
 	inline VkDescriptorSetLayout vkSetLayout(u8 set) const { return m_vkSetLayouts[set]; }
-	[[nodiscard]]
-	inline VkDescriptorSetLayout* vkSetLayouts(u32 offset = 0) { return m_vkSetLayouts + offset; }
 
 private:
 	RenderContext& m_renderContext;
 	std::string    m_name;
 
-	VkPipeline		           m_vkPipeline = VK_NULL_HANDLE;
-	VkPipelineLayout           m_vkPipelineLayout = VK_NULL_HANDLE;
-	VkDescriptorSetLayout      m_vkSetLayouts[eNumDescriptorSet] = { VK_NULL_HANDLE };
+	VkPipeline		                     m_vkPipeline = VK_NULL_HANDLE;
+	VkPipelineLayout                     m_vkPipelineLayout = VK_NULL_HANDLE;
+	std::vector< VkDescriptorSetLayout > m_vkSetLayouts;
 
 	baamboo::ResourceHandle< Shader > m_vs;
 	baamboo::ResourceHandle< Shader > m_fs;
@@ -114,6 +113,8 @@ private:
 		VkPipelineDepthStencilStateCreateInfo	depthStencilInfo;
 		VkPipelineMultisampleStateCreateInfo	multisamplingInfo;
 	} m_createInfos;
+
+	std::unordered_map< u32, DescriptorSet& > m_descriptorTable;
 };
 
 

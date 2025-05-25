@@ -8,6 +8,7 @@ Sampler::Sampler(RenderContext& context, std::wstring_view name, const CreationI
 	: Super(context, name)
 {
 	VkSamplerCreateInfo createInfo = {};
+	createInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 	createInfo.minFilter = info.interpolation == eSamplerInterpolation::Cubic ? 
 		VK_FILTER_CUBIC_EXT : info.interpolation == eSamplerInterpolation::Nearest ? 
 		VK_FILTER_NEAREST : VK_FILTER_LINEAR;

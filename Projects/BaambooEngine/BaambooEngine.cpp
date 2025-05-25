@@ -3,6 +3,7 @@
 #include "BaambooCore/Timer.h"
 #include "BaambooCore/Window.h"
 #include "BaambooCore/EngineCore.h"
+#include "BaambooCore/Input.hpp"
 #include "BaambooCore/ThreadQueue.hpp"
 #include "Scene/Entity.h"
 #include "Scene/TransformSystem.h"
@@ -12,10 +13,14 @@
 #include <imgui/misc/cpp/imgui_stdlib.h>
 #include <glm/gtc/type_ptr.hpp>
 
-#include "BaambooCore/AssetRegistry.h"
-
 namespace ImGui
 {
+
+baamboo::Entity SelectedEntity;
+baamboo::Entity EntityToCopy;
+u32 ContentBrowserSetup = 0;
+
+baamboo::ThreadQueue< baamboo::Entity > EntityDeletionQueue;
 
 ImGuiContext* InitUI()
 {
@@ -64,13 +69,13 @@ void DrawUI(baamboo::Engine& engine)
 
 void Destroy()
 {
+	EntityToCopy.Reset();
+	SelectedEntity.Reset();
+	ContentBrowserSetup = 0;
+
 	if (ImGui::GetCurrentContext())
 		ImGui::DestroyContext();
 }
-
-baamboo::Entity selectedEntity;
-baamboo::Entity entityToCopy;
-u32 contentBrowserSetup = 0;
 
 } // namespace ImGui
 
@@ -99,13 +104,7 @@ Engine::Engine()
 
 Engine::~Engine()
 {
-	m_renderThread.join();
-
-	RELEASE(m_pScene);
-	RELEASE(m_pRendererBackend);
-	RELEASE(m_pWindow);
-
-	ImGui::Destroy();
+	Release();
 }
 
 void Engine::Initialize(eRendererAPI eApi)
@@ -136,6 +135,8 @@ i32 Engine::Run()
 		m_runningTime += dt;
 
 		Update(static_cast<float>(dt));
+
+		Input::Inst()->EndFrame();
 	}
 
 	m_bRunning = false;
@@ -156,7 +157,25 @@ void Engine::Update(f32 dt)
 		m_resizeWidth = m_resizeHeight = -1;
 	}
 
+	s_Data.viewportWidth = (float)m_pWindow->Desc().width;
+	s_Data.viewportHeight = (float)m_pWindow->Desc().height;
+
 	GameLoop(dt);
+}
+
+void Engine::Release()
+{
+	if (m_renderThread.joinable())
+	{
+		m_renderThread.join();
+	}
+
+	RELEASE(m_pCamera);
+	RELEASE(m_pScene);
+	RELEASE(m_pRendererBackend);
+	RELEASE(m_pWindow);
+
+	ImGui::Destroy();
 }
 
 void Engine::GameLoop(float dt)
@@ -167,22 +186,32 @@ void Engine::GameLoop(float dt)
 
 	m_pScene->Update(dt);
 
-	if (m_renderViewQueue.size() > NUM_TOLERANCE_ASYNC_FRAME_GAME_TO_RENDER)
-		m_renderViewQueue.replace(m_pScene->RenderView());
+	if (m_renderViewQueue.size() >= NUM_TOLERANCE_ASYNC_FRAME_GAME_TO_RENDER)
+		m_renderViewQueue.replace(m_pScene->RenderView(*m_pCamera));
 	else
-		m_renderViewQueue.push(m_pScene->RenderView());
+		m_renderViewQueue.push(m_pScene->RenderView(*m_pCamera));
 }
 
 void Engine::RenderLoop()
 {
 	while (m_bRunning)
 	{
+		if (!ImGui::EntityDeletionQueue.empty())
+		{
+			std::lock_guard< std::mutex > lock(m_imguiMutex);
+
+			auto entity = ImGui::EntityDeletionQueue.try_pop();
+			m_pScene->RemoveEntity(entity.value());
+
+			m_renderViewQueue.clear();
+		}
+
 		auto renderView = m_renderViewQueue.try_pop();
 		if (!renderView.has_value())
 			continue;
 
 		ImGui::DrawUI(*this);
-		m_pRendererBackend->Render(renderView.value());
+		m_pRendererBackend->Render(std::move(renderView.value()));
 	}
 }
 
@@ -210,28 +239,28 @@ void Engine::DrawUI()
 		{
 			if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_N))
 			{
-				ImGui::selectedEntity = m_pScene->CreateEntity("Empty");
+				ImGui::SelectedEntity = m_pScene->CreateEntity("Empty");
 			}
 
 			if (ImGui::Shortcut(ImGuiKey_Delete))
 			{
-				if (ImGui::selectedEntity.IsValid())
+				if (ImGui::SelectedEntity.IsValid())
 				{
-					m_pScene->RemoveEntity(ImGui::selectedEntity);
-					ImGui::selectedEntity.Reset();
+					// execute next frame to avoid data hazard
+					ImGui::EntityDeletionQueue.push(std::move(ImGui::SelectedEntity));
 				}
 			}
 
 			if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_C))
 			{
-				ImGui::entityToCopy = ImGui::selectedEntity;
+				ImGui::EntityToCopy = ImGui::SelectedEntity;
 			}
 
 			if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_V))
 			{
-				if (ImGui::entityToCopy.IsValid())
+				if (ImGui::EntityToCopy.IsValid())
 				{
-					ImGui::selectedEntity = ImGui::entityToCopy.Clone();
+					ImGui::SelectedEntity = ImGui::EntityToCopy.Clone();
 				}
 			}
 		}
@@ -265,22 +294,22 @@ void Engine::DrawUI()
 	// **
 	// component panel
 	// **
-	if (ImGui::selectedEntity.IsValid())
+	if (ImGui::SelectedEntity.IsValid())
 	{
 		ImGui::Begin("Components");
 		{
 			if (ImGui::CollapsingHeader("Tag"))
 			{
-				auto& tag = ImGui::selectedEntity.GetComponent< TagComponent >().tag;
+				auto& tag = ImGui::SelectedEntity.GetComponent< TagComponent >().tag;
 				ImGui::InputText("Name", &tag);
 			}
 			
-			if (ImGui::selectedEntity.HasAll< TransformComponent >())
+			if (ImGui::SelectedEntity.HasAll< TransformComponent >())
 			{
 				bool bMark = false;
 				if (ImGui::CollapsingHeader("Transform"))
 				{
-					auto& transformComponent = ImGui::selectedEntity.GetComponent< TransformComponent >();
+					auto& transformComponent = ImGui::SelectedEntity.GetComponent< TransformComponent >();
 
 					ImGui::Text("Position");
 					bMark |= ImGui::DragFloat3("##Position", glm::value_ptr(transformComponent.transform.position), 0.1f);
@@ -294,16 +323,16 @@ void Engine::DrawUI()
 
 				if (bMark)
 				{
-					m_pScene->Registry().patch< TransformComponent >(ImGui::selectedEntity.ID(), [](auto&) {});
+					m_pScene->Registry().patch< TransformComponent >(ImGui::SelectedEntity.ID(), [](auto&) {});
 				}
 			}
 
-			if (ImGui::selectedEntity.HasAll< CameraComponent >())
+			if (ImGui::SelectedEntity.HasAll< CameraComponent >())
 			{
 				bool bMark = false;
 				if (ImGui::CollapsingHeader("Camera"))
 				{
-					auto& cameraComponent = ImGui::selectedEntity.GetComponent< CameraComponent >();
+					auto& cameraComponent = ImGui::SelectedEntity.GetComponent< CameraComponent >();
 
 					ImGui::Text("CameraType");
 					if (ImGui::BeginCombo("##CameraType", GetCameraTypeString(cameraComponent.type).data()))
@@ -335,35 +364,59 @@ void Engine::DrawUI()
 
 					ImGui::Text("FoV");
 					bMark |= ImGui::DragFloat("##FoV", &cameraComponent.fov, 0.1f, 1.0f, 90.0f, "%.1f");
+
+					bool bMain = cameraComponent.bMain;
+					ImGui::Checkbox("MainCam", &bMain);
 				}
 
 				if (bMark)
 				{
-					m_pScene->Registry().patch< CameraComponent >(ImGui::selectedEntity.ID(), [](auto&) {});
+					m_pScene->Registry().patch< CameraComponent >(ImGui::SelectedEntity.ID(), [](auto&) {});
 				}
 			}
 
-			if (ImGui::selectedEntity.HasAll< StaticMeshComponent >())
+			if (ImGui::SelectedEntity.HasAll< StaticMeshComponent >())
 			{
 				if (ImGui::CollapsingHeader("StaticMesh"))
 				{
-					auto& component = ImGui::selectedEntity.GetComponent< StaticMeshComponent >();
+					auto& component = ImGui::SelectedEntity.GetComponent< StaticMeshComponent >();
 
-					if (ImGui::Button("Mesh")) ImGui::contentBrowserSetup = eContentButton_Mesh;
-					ImGui::SameLine(); ImGui::Text(component.geometry.path.c_str());
+					if (ImGui::Button("Mesh")) ImGui::ContentBrowserSetup = eContentButton_Mesh;
+					ImGui::SameLine(); ImGui::Text(component.path.c_str());
+				}
 
-					if (ImGui::Button("Albedo")) ImGui::contentBrowserSetup = eContentButton_Albedo;
-					ImGui::SameLine(); ImGui::Text(component.material.albedo.path.c_str());
-					if (ImGui::Button("Normal")) ImGui::contentBrowserSetup = eContentButton_Normal;
-					ImGui::SameLine(); ImGui::Text(component.material.normal.path.c_str());
-					if (ImGui::Button("Ao")) ImGui::contentBrowserSetup = eContentButton_Ao;
-					ImGui::SameLine(); ImGui::Text(component.material.ao.path.c_str());
-					if (ImGui::Button("Metallic")) ImGui::contentBrowserSetup = eContentButton_Metallic;
-					ImGui::SameLine(); ImGui::Text(component.material.metallic.path.c_str());
-					if (ImGui::Button("Roughness")) ImGui::contentBrowserSetup = eContentButton_Roughness;
-					ImGui::SameLine(); ImGui::Text(component.material.roughness.path.c_str());
-					if (ImGui::Button("Emission")) ImGui::contentBrowserSetup = eContentButton_Emission;
-					ImGui::SameLine(); ImGui::Text(component.material.emission.path.c_str());
+				if (ImGui::SelectedEntity.HasAll< MaterialComponent >())
+				{
+					bool bMark = false;
+					if (ImGui::CollapsingHeader("Material"))
+					{
+						auto& component = ImGui::SelectedEntity.GetComponent< MaterialComponent >();
+
+						ImGui::Text("Tint");
+						bMark |= ImGui::DragFloat3("##Tint", glm::value_ptr(component.tint), 0.01f, 0.0f, 1.0f, "%.2f");
+						ImGui::Text("Roughess");
+						bMark |= ImGui::DragFloat("##Roughness", &component.roughness, 0.01f, 0.0f, 1.0f, "%.2f");
+						ImGui::Text("Metallic");
+						bMark |= ImGui::DragFloat("##Metallic", &component.metallic, 0.01f, 0.0f, 1.0f, "%.2f");
+
+						if (ImGui::Button("AlbedoTex")) ImGui::ContentBrowserSetup = eContentButton_Albedo;
+						ImGui::SameLine(); ImGui::Text(component.albedoTex.c_str());
+						if (ImGui::Button("NormalTex")) ImGui::ContentBrowserSetup = eContentButton_Normal;
+						ImGui::SameLine(); ImGui::Text(component.normalTex.c_str());
+						if (ImGui::Button("AoTex")) ImGui::ContentBrowserSetup = eContentButton_Ao;
+						ImGui::SameLine(); ImGui::Text(component.aoTex.c_str());
+						if (ImGui::Button("RoughnessTex")) ImGui::ContentBrowserSetup = eContentButton_Roughness;
+						ImGui::SameLine(); ImGui::Text(component.roughnessTex.c_str());
+						if (ImGui::Button("MetallicTex")) ImGui::ContentBrowserSetup = eContentButton_Metallic;
+						ImGui::SameLine(); ImGui::Text(component.metallicTex.c_str());
+						if (ImGui::Button("EmissionTex")) ImGui::ContentBrowserSetup = eContentButton_Emission;
+						ImGui::SameLine(); ImGui::Text(component.emissionTex.c_str());
+					}
+
+					if (bMark)
+					{
+						m_pScene->Registry().patch< MaterialComponent >(ImGui::SelectedEntity.ID(), [](auto&) {});
+					}
 				}
 			}
 
@@ -372,25 +425,36 @@ void Engine::DrawUI()
 
 			if (ImGui::BeginPopup("AddComponentPopup")) 
 			{
-				if (!ImGui::selectedEntity.HasAny< CameraComponent >())
+				/*if (!ImGui::SelectedEntity.HasAny< CameraComponent >())
 				{
 					if (ImGui::MenuItem("Camera"))
 					{
 						m_imguiMutex.lock();
 
-						ImGui::selectedEntity.AttachComponent< CameraComponent >();
+						ImGui::SelectedEntity.AttachComponent< CameraComponent >();
 
 						m_imguiMutex.unlock();
 					}
-				}
+				}*/
 
-				if (!ImGui::selectedEntity.HasAny< StaticMeshComponent >())
+				if (!ImGui::SelectedEntity.HasAny< StaticMeshComponent >())
 				{
 					if (ImGui::MenuItem("StaticMesh"))
 					{
 						m_imguiMutex.lock();
 
-						ImGui::selectedEntity.AttachComponent< StaticMeshComponent >();
+						ImGui::SelectedEntity.AttachComponent< StaticMeshComponent >();
+
+						m_imguiMutex.unlock();
+					}
+				}
+				else if (!ImGui::SelectedEntity.HasAny< MaterialComponent >())
+				{
+					if (ImGui::MenuItem("Material"))
+					{
+						m_imguiMutex.lock();
+
+						ImGui::SelectedEntity.AttachComponent< MaterialComponent >();
 
 						m_imguiMutex.unlock();
 					}
@@ -406,7 +470,7 @@ void Engine::DrawUI()
 	// **
 	// content browser
 	// **
-	if (ImGui::contentBrowserSetup)
+	if (ImGui::ContentBrowserSetup)
 	{
 		ImGui::Begin("Content Browser");
 		{
@@ -434,20 +498,32 @@ void Engine::DrawUI()
 				{
 					std::string extensionStr = path.extension().string();
 
-					switch(ImGui::contentBrowserSetup)
+					switch(ImGui::ContentBrowserSetup)
 					{
 					case eContentButton_Mesh:
-						if (extensionStr == ".fbx" || extensionStr == ".obj")
+						if (extensionStr == ".fbx" || extensionStr == ".obj" || extensionStr == ".gltf")
 						{
+							bool bMark = false;
 							if (ImGui::Selectable(filenameStr.c_str()))
 							{
-								if (ImGui::selectedEntity.HasAll< StaticMeshComponent >())
+								if (ImGui::SelectedEntity.HasAll< StaticMeshComponent >())
 								{
-									auto& component = ImGui::selectedEntity.GetComponent< StaticMeshComponent >();
-									component.geometry.path = path.string();
+									auto& component = ImGui::SelectedEntity.GetComponent< StaticMeshComponent >();
+									if (component.path != path.string())
+									{
+										m_pScene->ImportModel(ImGui::SelectedEntity, path, {});
+
+										component.path = path.string();
+										bMark = true;
+									}
 								}
 
-								ImGui::contentBrowserSetup = 0;
+								ImGui::ContentBrowserSetup = 0;
+							}
+
+							if (bMark)
+							{
+								m_pScene->Registry().patch< StaticMeshComponent >(ImGui::SelectedEntity.ID(), [](auto&) {});
 							}
 						}
 						break;
@@ -460,37 +536,67 @@ void Engine::DrawUI()
 					case eContentButton_Emission:
 						if (extensionStr == ".png" || extensionStr == ".jpg")
 						{
+							bool bMark = false;
 							if (ImGui::Selectable(filenameStr.c_str())) 
 							{
-								if (ImGui::selectedEntity.HasAll< StaticMeshComponent >())
+								if (ImGui::SelectedEntity.HasAll< StaticMeshComponent, MaterialComponent >())
 								{
-									auto& component = ImGui::selectedEntity.GetComponent< StaticMeshComponent >();
-									switch(ImGui::contentBrowserSetup)
+									auto& component = ImGui::SelectedEntity.GetComponent< MaterialComponent >();
+									switch(ImGui::ContentBrowserSetup)
 									{
 									case eContentButton_Albedo:
-										component.material.albedo.path = path.string();
+										if (component.albedoTex != path.string())
+										{
+											component.albedoTex = path.string();
+											bMark = true;
+										}
 										break;
 									case eContentButton_Normal:
-										component.material.normal.path = path.string();
+										if (component.normalTex != path.string())
+										{
+											component.normalTex = path.string();
+											bMark = true;
+										}
 										break;
 									case eContentButton_Ao:
-										component.material.ao.path = path.string();
+										if (component.aoTex != path.string())
+										{
+											component.aoTex = path.string();
+											bMark = true;
+										};
 										break;
 									case eContentButton_Metallic:
-										component.material.metallic.path = path.string();
+										if (component.metallicTex != path.string())
+										{
+											component.metallicTex = path.string();
+											bMark = true;
+										}
 										break;
 									case eContentButton_Roughness:
-										component.material.roughness.path = path.string();
+										if (component.roughnessTex != path.string())
+										{
+											component.roughnessTex = path.string();
+											bMark = true;
+										}
 										break;
 									case eContentButton_Emission:
-										component.material.emission.path = path.string();
+										if (component.emissionTex != path.string())
+										{
+											component.emissionTex = path.string();
+											bMark = true;
+										}
 										break;
 									default:
 										break;
 									}
 								}
 
-								ImGui::contentBrowserSetup = 0;
+								ImGui::ContentBrowserSetup = 0;
+							}
+
+							if (bMark)
+							{
+								m_pScene->Registry().patch< MaterialComponent >(ImGui::SelectedEntity.ID(), [](auto&) {});
 							}
 						}
 						break;
@@ -512,7 +618,7 @@ void Engine::DrawEntityNode(Entity entity)
 	auto& hierarchy = registry.get< TransformComponent >(entity).hierarchy;
 
 	ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow;
-	if (ImGui::selectedEntity == entity) 
+	if (ImGui::SelectedEntity == entity) 
 		flags |= ImGuiTreeNodeFlags_Selected;
 	if (hierarchy.firstChild == entt::null) 
 		flags |= ImGuiTreeNodeFlags_Leaf;
@@ -538,7 +644,7 @@ void Engine::DrawEntityNode(Entity entity)
 	}
 
 	if (ImGui::IsItemClicked())
-		ImGui::selectedEntity = entity;
+		ImGui::SelectedEntity = entity;
 
 	if (bOpen)
 	{
@@ -559,21 +665,12 @@ void Engine::ProcessInput()
 		if (m_eBackendAPI != eRendererAPI::Vulkan)
 		{
 			m_bRunning = false;
-			m_renderThread.join();
-
-			RELEASE(m_pRendererBackend);
-			m_eBackendAPI = eRendererAPI::Vulkan;
-
 			// NOTE. There is a bug which the window image is not properly updated 
 			//       i.e. the last image output by d3d12 renderer remains intact.
 			//       While the rendering-to-present process is executed normally(according to RenderDoc and PIX).
 			//       It is hard to debug. So bypassed by window recreation for now.
-			RELEASE(m_pWindow);
-			if (!InitWindow())
-				throw std::runtime_error("Failed to load window!");
-
-			if (!LoadRenderer(m_eBackendAPI, m_pWindow, ImGui::GetCurrentContext(), &m_pRendererBackend))
-				throw std::runtime_error("Failed to load backend!");
+			Release();
+			Initialize(eRendererAPI::Vulkan);
 
 			m_bRunning = true;
 			m_renderThread = std::thread(&Engine::RenderLoop, this);
@@ -584,13 +681,9 @@ void Engine::ProcessInput()
 		if (m_eBackendAPI != eRendererAPI::D3D12)
 		{
 			m_bRunning = false;
-			m_renderThread.join();
 
-			RELEASE(m_pRendererBackend);
-			m_eBackendAPI = eRendererAPI::D3D12;
-
-			if (!LoadRenderer(m_eBackendAPI, m_pWindow, ImGui::GetCurrentContext(), &m_pRendererBackend))
-				throw std::runtime_error("Failed to load backend!");
+			Release();
+			Initialize(eRendererAPI::D3D12);
 
 			m_bRunning = true;
 			m_renderThread = std::thread(&Engine::RenderLoop, this);

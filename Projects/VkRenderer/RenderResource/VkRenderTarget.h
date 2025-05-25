@@ -39,7 +39,7 @@ public:
     void InvalidateImageLayout();
     
     [[nodiscard]]
-    VkRenderPassBeginInfo GetBeginInfo() const;
+    const VkRenderPassBeginInfo& GetBeginInfo() const { return m_beginInfo; }
     [[nodiscard]]
     VkViewport GetViewport(float2 scale = { 1.0f, 1.0f }, float2 bias = { 0.0f, 0.0f }, f32 minDepth = 0.0f, f32 maxDepth = 1.0f) const;
     [[nodiscard]]
@@ -62,10 +62,13 @@ private:
 private:
     RenderContext& m_renderContext;
 
-    VkRenderPass  m_vkRenderPass = VK_NULL_HANDLE;
-    VkFramebuffer m_vkFramebuffer = VK_NULL_HANDLE;
+    VkRenderPass          m_vkRenderPass = VK_NULL_HANDLE;
+    VkFramebuffer         m_vkFramebuffer = VK_NULL_HANDLE;
+    VkRenderPassBeginInfo m_beginInfo = {};
 
     std::vector< baamboo::ResourceHandle< Texture > > m_attachments;
+    std::vector< VkClearValue >                       m_clearValues;
+    VkAttachmentDescription                           m_attachmentDesc;
 
     u32 m_numColours = 0;
     u32 m_bLoadAttachmentBits = 0;

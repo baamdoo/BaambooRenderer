@@ -1,9 +1,6 @@
 #pragma once
 #include "BaambooCore/Common.h"
 
-namespace baamboo
-{
-
 struct TransformRenderView
 {
 	u32 id;
@@ -11,49 +8,47 @@ struct TransformRenderView
 	mat4 mWorld;
 };
 
-struct StaticMeshRenderView
-{
-	u32 id;
-
-	struct GeometryRenderView
-	{
-		u32 vb;
-		u32 vOffset;
-		u32 vCount;
-
-		u32 ib;
-		u32 iOffset;
-		u32 iCount;
-	} geometry;
-
-	struct MaterialRenderView
-	{
-		float3 tint{ 1, 1, 1 };
-
-		u32 albedo;
-		u32 normal;
-		u32 specular;
-		u32 ao;
-		u32 roughness;
-		u32 metallic;
-		u32 emission;
-	} material;
-};
-
 struct CameraRenderView
 {
-	u32 id;
-
 	mat4 mView;
 	mat4 mProj;
 	float3 pos;
 };
 
-struct DrawData
+struct StaticMeshRenderView
 {
-	u32 transform;
-	u32 camera;
-	u32 mesh;
+	u32              id;
+	std::string_view tag;
+
+	const void* vData;
+	u32         vCount;
+
+	const void* iData;
+	u32         iCount;
+};
+
+struct MaterialRenderView
+{
+	u32 id;
+
+	float3 tint;
+	float  roughness;
+	float  metallic;
+
+	std::string_view albedoTex;
+	std::string_view normalTex;
+	std::string_view specularTex;
+	std::string_view aoTex;
+	std::string_view roughnessTex;
+	std::string_view metallicTex;
+	std::string_view emissionTex;
+};
+
+struct DrawRenderView
+{
+	u32 transform = INVALID_INDEX;
+	u32 mesh = INVALID_INDEX;
+	u32 material = INVALID_INDEX;
 };
 
 //-------------------------------------------------------------------------
@@ -62,11 +57,10 @@ struct DrawData
 //-------------------------------------------------------------------------
 struct SceneRenderView
 {
+	CameraRenderView                    camera;
 	std::vector< TransformRenderView >  transforms;
-	std::vector< CameraRenderView >     cameras;
 	std::vector< StaticMeshRenderView > meshes;
+	std::vector< MaterialRenderView >   materials;
 
-	std::unordered_map< u32, DrawData > draws;
+	std::unordered_map< u32, DrawRenderView > draws;
 };
-
-} // namespace baamboo
