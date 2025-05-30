@@ -62,33 +62,33 @@ public:
 	// 	m_callbacks.insert(std::make_pair(eventName, std::move(pCallback)));
 	// }
 
-	void SetKeyCallback(GLFWkeyfun&& func) { glfwSetKeyCallback(m_handle, std::move(func)); }
-	void SetMouseButtonCallback(GLFWmousebuttonfun&& func) { glfwSetMouseButtonCallback(m_handle, std::move(func)); }
-	void SetMouseMoveCallback(GLFWcursorposfun&& func) { glfwSetCursorPosCallback(m_handle, std::move(func)); }
-	void SetMouseWheelCallback(GLFWcursorposfun&& func) { glfwSetScrollCallback(m_handle, std::move(func)); }
-	void SetResizeCallback(GLFWwindowsizefun&& func) { glfwSetWindowSizeCallback(m_handle, std::move(func)); }
-	void SetIconifyCallback(GLFWwindowiconifyfun&& func) { glfwSetWindowIconifyCallback(m_handle, std::move(func)); }
-	void SetCharCallback(GLFWcharfun&& func) { glfwSetCharCallback(m_handle, std::move(func)); }
+	void SetKeyCallback(GLFWkeyfun&& func) { glfwSetKeyCallback(m_Handle, std::move(func)); }
+	void SetMouseButtonCallback(GLFWmousebuttonfun&& func) { glfwSetMouseButtonCallback(m_Handle, std::move(func)); }
+	void SetMouseMoveCallback(GLFWcursorposfun&& func) { glfwSetCursorPosCallback(m_Handle, std::move(func)); }
+	void SetMouseWheelCallback(GLFWcursorposfun&& func) { glfwSetScrollCallback(m_Handle, std::move(func)); }
+	void SetResizeCallback(GLFWwindowsizefun&& func) { glfwSetWindowSizeCallback(m_Handle, std::move(func)); }
+	void SetIconifyCallback(GLFWwindowiconifyfun&& func) { glfwSetWindowIconifyCallback(m_Handle, std::move(func)); }
+	void SetCharCallback(GLFWcharfun&& func) { glfwSetCharCallback(m_Handle, std::move(func)); }
 
 	[[nodiscard]]
-	inline GLFWwindow* Handle() const noexcept { return m_handle; }
+	inline GLFWwindow* Handle() const noexcept { return m_Handle; }
 	[[nodiscard]]
-	inline HWND WinHandle() const noexcept { return m_winHandle; }
+	inline HWND WinHandle() const noexcept { return m_WinHandle; }
 
 	[[nodiscard]]
-	inline i32 Width() const { return m_desc.width; }
+	inline i32 Width() const { return m_Desc.width; }
 	[[nodiscard]]
-	inline i32 Height() const { return m_desc.height; }
+	inline i32 Height() const { return m_Desc.height; }
 	[[nodiscard]]
-	inline bool Minimized() const { return m_desc.width == 0 || m_desc.height == 0; }
+	inline bool Minimized() const { return m_Desc.width == 0 || m_Desc.height == 0; }
 	[[nodiscard]]
-	inline const WindowDescriptor& Desc() const { return m_desc; }
+	inline const WindowDescriptor& Desc() const { return m_Desc; }
 
 private:
-	WindowDescriptor m_desc;
+	WindowDescriptor m_Desc;
 
-	GLFWwindow* m_handle = nullptr;
-	HWND        m_winHandle = nullptr;
+	GLFWwindow* m_Handle = nullptr;
+	HWND        m_WinHandle = nullptr;
 
 	// std::unordered_map< std::wstring, IEventCallback* > m_callbacks;
 };

@@ -28,8 +28,8 @@ InstanceBuilder::InstanceBuilder()
 	// **
 	// Set default values
 	// **
-	m_validationLayers = { "VK_LAYER_KHRONOS_validation" };
-	m_extensionLayers = 
+	m_ValidationLayers = { "VK_LAYER_KHRONOS_validation" };
+	m_ExtensionLayers = 
 	{
 		VK_KHR_SURFACE_EXTENSION_NAME,
 		VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
@@ -52,29 +52,29 @@ InstanceBuilder::InstanceBuilder()
 #endif
 	};
 
-	m_appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-	m_appInfo.pApplicationName = "VkRenderer";
-	m_appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-	m_appInfo.pEngineName = "VkRenderer";
-	m_appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-	m_appInfo.apiVersion = VK_API_VERSION_1_3;
+	m_AppInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+	m_AppInfo.pApplicationName = "VkRenderer";
+	m_AppInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+	m_AppInfo.pEngineName = "VkRenderer";
+	m_AppInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+	m_AppInfo.apiVersion = VK_API_VERSION_1_3;
 }
 
 InstanceBuilder& InstanceBuilder::AddValidationLayer(const char* layerString)
 {
-	m_validationLayers.push_back(layerString);
+	m_ValidationLayers.push_back(layerString);
 	return *this;
 }
 
 InstanceBuilder& InstanceBuilder::AddExtensionLayer(const char* layerString)
 {
-	m_extensionLayers.push_back(layerString);
+	m_ExtensionLayers.push_back(layerString);
 	return *this;
 }
 
 InstanceBuilder& InstanceBuilder::SetApiVersion(u32 version)
 {
-	m_appInfo.apiVersion = version;
+	m_AppInfo.apiVersion = version;
 	return *this;
 }
 
@@ -87,7 +87,7 @@ InstanceBuilder& InstanceBuilder::SetValidationFeatureEnable(const std::vector< 
 	validationFeatures.disabledValidationFeatureCount = 0;
 	validationFeatures.pDisabledValidationFeatures = nullptr;
 
-	m_validationFeatures = validationFeatures;
+	m_ValidationFeatures = validationFeatures;
 	return *this;
 }
 
@@ -97,14 +97,14 @@ VkInstance InstanceBuilder::Build()
 
 	VkInstanceCreateInfo instanceInfo = {};
 	instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-	instanceInfo.pNext = m_validationFeatures.enabledValidationFeatureCount > 0 ? &m_validationFeatures.enabledValidationFeatureCount : nullptr;
+	instanceInfo.pNext = m_ValidationFeatures.enabledValidationFeatureCount > 0 ? &m_ValidationFeatures.enabledValidationFeatureCount : nullptr;
 	instanceInfo.flags = 0; //VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
-	instanceInfo.pApplicationInfo = &m_appInfo;
-	instanceInfo.enabledExtensionCount = static_cast<u32>(m_extensionLayers.size());
-	instanceInfo.ppEnabledExtensionNames = m_extensionLayers.data();
+	instanceInfo.pApplicationInfo = &m_AppInfo;
+	instanceInfo.enabledExtensionCount = static_cast<u32>(m_ExtensionLayers.size());
+	instanceInfo.ppEnabledExtensionNames = m_ExtensionLayers.data();
 #ifdef _DEBUG
-	instanceInfo.enabledLayerCount = static_cast<u32>(m_validationLayers.size());
-	instanceInfo.ppEnabledLayerNames = m_validationLayers.data();
+	instanceInfo.enabledLayerCount = static_cast<u32>(m_ValidationLayers.size());
+	instanceInfo.ppEnabledLayerNames = m_ValidationLayers.data();
 #endif
 
 	VK_CHECK(vkCreateInstance(&instanceInfo, nullptr, &instance));
@@ -120,7 +120,7 @@ DebugMessengerBuilder::DebugMessengerBuilder()
 	// **
 	// Set default values
 	// **
-	m_debugMessengerInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+	m_DebugMessengerInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
 }
 
 DebugMessengerBuilder& DebugMessengerBuilder::SetDebugMessageCallback(std::function<
@@ -134,15 +134,15 @@ DebugMessengerBuilder& DebugMessengerBuilder::SetDebugMessageCallback(std::funct
 		const VkDebugUtilsMessengerCallbackDataEXT*, 
 		void*);
 
-	m_debugMessengerInfo.messageSeverity =
+	m_DebugMessengerInfo.messageSeverity =
 		VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
 		VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT |
 		VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT;
-	m_debugMessengerInfo.messageType =
+	m_DebugMessengerInfo.messageType =
 		VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
 		VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
 		VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-	m_debugMessengerInfo.pfnUserCallback = *callback.target< TCallback >();
+	m_DebugMessengerInfo.pfnUserCallback = *callback.target< TCallback >();
 
 	return *this;
 }
@@ -152,7 +152,7 @@ VkDebugUtilsMessengerEXT DebugMessengerBuilder::Build(VkInstance instance)
 	VkDebugUtilsMessengerEXT outDebugMessenger = VK_NULL_HANDLE;
 
 	auto vkCreateDebugUtilsMessengerEXT = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
-	VK_CHECK(vkCreateDebugUtilsMessengerEXT(instance, &m_debugMessengerInfo, nullptr, &outDebugMessenger));
+	VK_CHECK(vkCreateDebugUtilsMessengerEXT(instance, &m_DebugMessengerInfo, nullptr, &outDebugMessenger));
 	return outDebugMessenger;
 }
 
@@ -170,23 +170,23 @@ DeviceBuilder::DeviceBuilder()
 	physicalDevice12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
 	physicalDeviceSync2Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES;
 
-	m_physicalRequirements.apiVersion = VK_API_VERSION_1_2;
-	m_physicalRequirements.deviceType = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
-	m_physicalRequirements.featureBits = 0LL;
+	m_PhysicalRequirements.apiVersion = VK_API_VERSION_1_2;
+	m_PhysicalRequirements.deviceType = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+	m_PhysicalRequirements.featureBits = 0LL;
 
-	m_logicalDeviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
-	m_logicalDeviceExtensions.push_back(VK_KHR_MAINTENANCE3_EXTENSION_NAME);
+	m_LogicalDeviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+	m_LogicalDeviceExtensions.push_back(VK_KHR_MAINTENANCE3_EXTENSION_NAME);
 }
 
 DeviceBuilder& DeviceBuilder::SetMinimumApiVersion(u32 version)
 {
-	m_physicalRequirements.apiVersion = version;
+	m_PhysicalRequirements.apiVersion = version;
 	return *this;
 }
 
 DeviceBuilder& DeviceBuilder::SetPhysicalDeviceType(VkPhysicalDeviceType type)
 {
-	m_physicalRequirements.deviceType = type;
+	m_PhysicalRequirements.deviceType = type;
 	return *this;
 }
 
@@ -194,13 +194,13 @@ DeviceBuilder& DeviceBuilder::AddPhysicalDeviceFeature(u8 featureBit)
 {
 	assert(featureBit != ePhysicalDeviceFeature_Core_1_X && featureBit != ePhysicalDeviceFeature_Extension);
 
-	m_physicalRequirements.featureBits |= 1LL << featureBit;
+	m_PhysicalRequirements.featureBits |= 1LL << featureBit;
 	return *this;
 }
 
 DeviceBuilder& DeviceBuilder::AddDeviceExtension(const char* extension)
 {
-	m_logicalDeviceExtensions.push_back(extension);
+	m_LogicalDeviceExtensions.push_back(extension);
 	return *this;
 }
 
@@ -256,9 +256,9 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 	// Core features
 	// **
 	FeatureChain< 32 > featureChain = {};
-	if (m_physicalRequirements.featureBits << (ePhysicalDeviceFeature_Extension - 1) != 0)
+	if (m_PhysicalRequirements.featureBits << (ePhysicalDeviceFeature_Extension - 1) != 0)
 	{
-		if (m_physicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_IndirectRendering))
+		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_IndirectRendering))
 		{
 			physicalDevice11Features.shaderDrawParameters = VK_TRUE;
 			physicalDevice12Features.drawIndirectCount = VK_TRUE;
@@ -270,28 +270,28 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 			physicalDevice12Features.descriptorBindingPartiallyBound = VK_TRUE;
 		}
 
-		if (m_physicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_DescriptorIndexing))
+		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_DescriptorIndexing))
 		{
 			physicalDevice12Features.descriptorIndexing = VK_TRUE;
 		}
 
-		if (m_physicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_DynamicIndexing))
+		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_DynamicIndexing))
 		{
 			physicalDevice12Features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
 			physicalDevice12Features.shaderStorageImageArrayNonUniformIndexing = VK_TRUE;
 		}
 
-		if (m_physicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_SamplerAnistropy))
+		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_SamplerAnistropy))
 		{
 			physicalDeviceFeatures.samplerAnisotropy = VK_TRUE;
 		}
 
-		if (m_physicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_DeviceAddress))
+		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_DeviceAddress))
 		{
 			physicalDevice12Features.bufferDeviceAddress = VK_TRUE;
 		}
 
-		if (m_physicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_Sync2))
+		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_Sync2))
 		{
 			physicalDeviceSync2Features.synchronization2 = VK_TRUE;
 		}
@@ -308,12 +308,12 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 	// **
 	// Extension features
 	// **
-	if (m_physicalRequirements.featureBits >> ePhysicalDeviceFeature_Extension)
+	if (m_PhysicalRequirements.featureBits >> ePhysicalDeviceFeature_Extension)
 	{
 		if (featureChain.head == nullptr)
 			featureChain.bind(physicalDeviceFeatures2);
 
-		if (m_physicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_IndexTypeUint8))
+		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_IndexTypeUint8))
 		{
 			VkPhysicalDeviceFeatures2 features2 = {};
 			features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
@@ -340,8 +340,8 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 	deviceInfo.pNext = featureChain.head;
 	deviceInfo.queueCreateInfoCount = static_cast<u32>(queueInfos.size());
 	deviceInfo.pQueueCreateInfos = queueInfos.data();
-	deviceInfo.enabledExtensionCount = static_cast<u32>(m_logicalDeviceExtensions.size());
-	deviceInfo.ppEnabledExtensionNames = m_logicalDeviceExtensions.data();
+	deviceInfo.enabledExtensionCount = static_cast<u32>(m_LogicalDeviceExtensions.size());
+	deviceInfo.ppEnabledExtensionNames = m_LogicalDeviceExtensions.data();
 	VK_CHECK(vkCreateDevice(physicalDevice, &deviceInfo, nullptr, &outDevice));
 
 	return outDevice;
@@ -356,9 +356,9 @@ VkResult DeviceBuilder::queryPhysicalDevice(VkInstance instance)
 	std::vector< VkPhysicalDevice > gpuCandidates(gpuCount);
 	VK_CHECK(vkEnumeratePhysicalDevices(instance, &gpuCount, gpuCandidates.data()));
 
-	const bool bAdditionalShader = m_physicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_AdditionalShader);
-	const bool bMultiViewport = m_physicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_MultiViewport);
-	const bool bDynamicIndexing = m_physicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_DynamicIndexing);
+	const bool bAdditionalShader = m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_AdditionalShader);
+	const bool bMultiViewport = m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_MultiViewport);
+	const bool bDynamicIndexing = m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_DynamicIndexing);
 
 	for (const auto& gpu : gpuCandidates)
 	{
@@ -368,7 +368,7 @@ VkResult DeviceBuilder::queryPhysicalDevice(VkInstance instance)
 		VkPhysicalDeviceFeatures gpuFeatures;
 		vkGetPhysicalDeviceFeatures(gpu, &gpuFeatures);
 
-		if (gpuProperties.apiVersion < m_physicalRequirements.apiVersion)
+		if (gpuProperties.apiVersion < m_PhysicalRequirements.apiVersion)
 			continue;
 
 		if (bAdditionalShader && !(gpuFeatures.geometryShader || gpuFeatures.tessellationShader))
@@ -383,7 +383,7 @@ VkResult DeviceBuilder::queryPhysicalDevice(VkInstance instance)
 			gpuFeatures.shaderStorageImageArrayDynamicIndexing))
 			continue;
 
-		if (gpuProperties.deviceType == m_physicalRequirements.deviceType) 
+		if (gpuProperties.deviceType == m_PhysicalRequirements.deviceType) 
 		{
 			physicalDevice = gpu;
 			physicalDeviceProperties = gpuProperties;
@@ -455,33 +455,33 @@ DeviceBuilder::QueueFamilyIndex DeviceBuilder::getQueueFamilyIndex() const
 // Swap chain
 //-------------------------------------------------------------------------
 SwapChainBuilder::SwapChainBuilder(VkSurfaceKHR surface, VkPhysicalDevice physicalDevice)
-	:m_surface(surface), m_physicalDevice(physicalDevice)
+	:m_vkSurface(surface), m_vkPhysicalDevice(physicalDevice)
 {
 	// **
 	// Set default values
 	// **
-	VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface, &capabilities));
+	VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_vkPhysicalDevice, m_vkSurface, &capabilities));
 
 	u32 formatCount;
-	VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, NULL));
+	VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(m_vkPhysicalDevice, m_vkSurface, &formatCount, NULL));
 	assert(formatCount > 0);
 
-	m_surfaceFormats.resize(formatCount);
-	VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(m_physicalDevice, m_surface, &formatCount, m_surfaceFormats.data()));
+	m_SurfaceFormats.resize(formatCount);
+	VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(m_vkPhysicalDevice, m_vkSurface, &formatCount, m_SurfaceFormats.data()));
 
-	selectedSurface = m_surfaceFormats.front();
-	m_imageUsageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-	m_extent = { capabilities.currentExtent.width, capabilities.currentExtent.height };
+	selectedSurface = m_SurfaceFormats.front();
+	m_ImageUsageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	m_Extent = { capabilities.currentExtent.width, capabilities.currentExtent.height };
 }
 
 SwapChainBuilder& SwapChainBuilder::SetDesiredImageFormat(VkFormat format)
 {
-	const auto it = std::ranges::find_if(m_surfaceFormats.begin(), m_surfaceFormats.end(), [format](const VkSurfaceFormatKHR& surfaceFormat)
+	const auto it = std::ranges::find_if(m_SurfaceFormats.begin(), m_SurfaceFormats.end(), [format](const VkSurfaceFormatKHR& surfaceFormat)
 		{
 			return surfaceFormat.format == format;
 		});
 
-	if (it != m_surfaceFormats.end())
+	if (it != m_SurfaceFormats.end())
 		selectedSurface = *it;
 
 	return *this;
@@ -490,8 +490,8 @@ SwapChainBuilder& SwapChainBuilder::SetDesiredImageFormat(VkFormat format)
 SwapChainBuilder& SwapChainBuilder::SetDesiredImageResolution(u32 width, u32 height)
 {
 	assert(width > 0 && height > 0);
-	m_extent.width = std::min(capabilities.maxImageExtent.width, width);
-	m_extent.height = std::min(capabilities.maxImageExtent.height, height);
+	m_Extent.width = std::min(capabilities.maxImageExtent.width, width);
+	m_Extent.height = std::min(capabilities.maxImageExtent.height, height);
 
 	return *this;
 }
@@ -504,7 +504,7 @@ SwapChainBuilder& SwapChainBuilder::SetDesiredImageCount(u32 count)
 
 SwapChainBuilder& SwapChainBuilder::AddImageUsage(VkImageUsageFlagBits usageBit)
 {
-	m_imageUsageFlags |= usageBit;
+	m_ImageUsageFlags |= usageBit;
 	return *this;
 }
 
@@ -517,18 +517,18 @@ SwapChainBuilder& SwapChainBuilder::SetVSync(bool vSync)
 VkSwapchainKHR SwapChainBuilder::Build(VkDevice device, u32 queueFamilyIndex, VkSwapchainKHR oldSwapChain)
 {
 	VkSwapchainKHR vkSwapChain = VK_NULL_HANDLE;
-	if (m_extent.width == 0 || m_extent.height == 0)
+	if (m_Extent.width == 0 || m_Extent.height == 0)
 		return vkSwapChain;
 
 	VkSwapchainCreateInfoKHR swapChainInfo{};
 	swapChainInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-	swapChainInfo.surface = m_surface;
+	swapChainInfo.surface = m_vkSurface;
 	swapChainInfo.minImageCount = imageCount;
 	swapChainInfo.imageFormat = selectedSurface.format;
 	swapChainInfo.imageColorSpace = selectedSurface.colorSpace;
-	swapChainInfo.imageExtent = m_extent;
+	swapChainInfo.imageExtent = m_Extent;
 	swapChainInfo.imageArrayLayers = 1;
-	swapChainInfo.imageUsage = m_imageUsageFlags;
+	swapChainInfo.imageUsage = m_ImageUsageFlags;
 	swapChainInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	swapChainInfo.queueFamilyIndexCount = 1;
 	swapChainInfo.pQueueFamilyIndices = &queueFamilyIndex;

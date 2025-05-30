@@ -56,21 +56,21 @@ namespace baamboo
 {
 
 Window::Window(const WindowDescriptor& desc)
-	: m_desc(desc)
+	: m_Desc(desc)
 {
-	if ((m_handle = InitWindow(m_desc)) == nullptr)
+	if ((m_Handle = InitWindow(m_Desc)) == nullptr)
 		throw std::runtime_error("Failed to create window!");
 
-	m_winHandle = glfwGetWin32Window(m_handle);
+	m_WinHandle = glfwGetWin32Window(m_Handle);
 
-	ImGui_ImplGlfw_InitForOther(m_handle, false);
+	ImGui_ImplGlfw_InitForOther(m_Handle, false);
 }
 
 Window::~Window()
 {
 	ImGui_ImplGlfw_Shutdown();
 
-	glfwDestroyWindow(m_handle);
+	glfwDestroyWindow(m_Handle);
 	glfwTerminate();
 }
 
@@ -80,7 +80,7 @@ bool Window::PollEvent()
 		glfwPollEvents();
 	}
 
-	return !glfwWindowShouldClose(m_handle);
+	return !glfwWindowShouldClose(m_Handle);
 }
 
 void Window::NewFrame()
@@ -90,8 +90,8 @@ void Window::NewFrame()
 
 void Window::OnWindowResized(i32 width, i32 height)
 {
-	m_desc.width = width;
-	m_desc.height = height;
+	m_Desc.width = width;
+	m_Desc.height = height;
 }
 
 } // namespace baamboo

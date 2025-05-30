@@ -40,7 +40,7 @@ private:
 
 	std::vector< RenderModule* > m_pRenderModules;
 
-	eRendererType m_type = eRendererType::Deferred;
+	eRendererType m_Type = eRendererType::Deferred;
 };
 
 } // namespace vk

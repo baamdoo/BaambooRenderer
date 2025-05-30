@@ -48,7 +48,7 @@ ImGuiModule::ImGuiModule(RenderContext& context, vk::SwapChain& swapChain, ImGui
 ImGuiModule::~ImGuiModule()
 {
 	ImGui_ImplVulkan_Shutdown();
-	vkDestroyDescriptorPool(m_renderContext.vkDevice(), m_vkImGuiPool, nullptr);
+	vkDestroyDescriptorPool(m_RenderContext.vkDevice(), m_vkImGuiPool, nullptr);
 }
 
 void ImGuiModule::Apply(CommandBuffer& cmdBuffer)

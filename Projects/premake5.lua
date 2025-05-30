@@ -226,7 +226,6 @@ project "Dx12Renderer"
 	filter "system:windows"
 		systemversion "latest"
 		defines { 
-			"RENDERER_API_D3D12", "UNICODE", "_UNICODE",
 		}
 
 		nuget { 

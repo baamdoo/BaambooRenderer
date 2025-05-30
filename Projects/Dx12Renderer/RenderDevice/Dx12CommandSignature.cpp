@@ -55,13 +55,13 @@ CommandSignatureDesc& CommandSignatureDesc::AddIndexBufferView()
 	return *this;
 }
 
-CommandSignatureDesc& CommandSignatureDesc::AddConstant(UINT rootIndex, UINT dstOffsetIn32BitValues, UINT num32BitValuesToSet)
+CommandSignatureDesc& CommandSignatureDesc::AddConstant(UINT rootIndex, UINT dstOffsetIn32BitValues, UINT num32BitValues)
 {
 	D3D12_INDIRECT_ARGUMENT_DESC& desc = m_Parameters.emplace_back();
 	desc.Type = D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT;
 	desc.Constant.RootParameterIndex = rootIndex;
 	desc.Constant.DestOffsetIn32BitValues = dstOffsetIn32BitValues;
-	desc.Constant.Num32BitValuesToSet = num32BitValuesToSet;
+	desc.Constant.Num32BitValuesToSet = num32BitValues;
 
 	return *this;
 }
@@ -114,8 +114,6 @@ CommandSignature::CommandSignature(RenderContext& context, CommandSignatureDesc&
 	auto d3d12Device = context.GetD3D12Device();
 
 	D3D12_COMMAND_SIGNATURE_DESC desc = signatureDesc.Build();
-	desc.NodeMask = (1 << d3d12Device->GetNodeCount()) - 1;
-
 	DX_CHECK(d3d12Device->CreateCommandSignature(
 		&desc, 
 		d3d12RootSignature, 

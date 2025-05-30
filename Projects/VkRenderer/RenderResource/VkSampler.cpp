@@ -28,12 +28,12 @@ Sampler::Sampler(RenderContext& context, std::wstring_view name, const CreationI
 	createInfo.minLod = 0;
 	createInfo.maxLod = info.lod;
 	createInfo.borderColor = info.borderColor;
-	VK_CHECK(vkCreateSampler(m_renderContext.vkDevice(), &createInfo, nullptr, &m_vkSampler));
+	VK_CHECK(vkCreateSampler(m_RenderContext.vkDevice(), &createInfo, nullptr, &m_vkSampler));
 }
 
 Sampler::~Sampler()
 {
-	vkDestroySampler(m_renderContext.vkDevice(), m_vkSampler, nullptr);
+	vkDestroySampler(m_RenderContext.vkDevice(), m_vkSampler, nullptr);
 }
 
 } // namespace vk

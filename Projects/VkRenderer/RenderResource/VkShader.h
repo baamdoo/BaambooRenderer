@@ -31,9 +31,9 @@ public:
 	[[nodiscard]]
 	inline VkShaderModule vkModule() const { return m_vkModule; }
 	[[nodiscard]]
-	inline VkShaderStageFlagBits Stage() const { assert(m_stage != VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM); return m_stage; }
+	inline VkShaderStageFlagBits Stage() const { assert(m_Stage != VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM); return m_Stage; }
 	[[nodiscard]]
-	inline const ShaderReflection& Reflection() const { return m_reflection; }
+	inline const ShaderReflection& Reflection() const { return m_Reflection; }
 
 protected:
 	template< typename T >
@@ -44,10 +44,10 @@ protected:
 
 private:
     VkShaderModule        m_vkModule = VK_NULL_HANDLE;
-	VkShaderStageFlagBits m_stage = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
+	VkShaderStageFlagBits m_Stage = VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM;
 
-	CreationInfo     m_creationInfo;
-	ShaderReflection m_reflection;
+	CreationInfo     m_CreationInfo;
+	ShaderReflection m_Reflection;
 };
 
 } // namespace vk

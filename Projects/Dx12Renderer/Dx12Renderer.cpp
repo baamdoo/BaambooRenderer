@@ -19,7 +19,7 @@ Renderer::Renderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext)
 {
 	DX_CHECK(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
 
-	m_pRenderContext = new RenderContext();
+	m_pRenderContext = new RenderContext(true);
 	m_pSwapChain = new SwapChain(*m_pRenderContext, *pWindow);
 
 	m_pRenderModules.push_back(new ForwardModule(*m_pRenderContext));

@@ -53,21 +53,23 @@ protected:
 	RendererAPI*  m_pRendererBackend = nullptr;
 	EditorCamera* m_pCamera = nullptr;
 
-	int  m_resizeWidth = -1;
-	int  m_resizeHeight = -1;
+	int  m_ResizeWidth = -1;
+	int  m_ResizeHeight = -1;
 	bool m_bWindowResized = false;
 
 	eRendererAPI m_eBackendAPI;
 
 private:
-	double       m_runningTime = 0.0;
+	double m_RunningTime = 0.0;
 
-	std::thread                    m_renderThread;
-	ThreadQueue< SceneRenderView > m_renderViewQueue;
+	std::thread                    m_RenderThread;
+	ThreadQueue< SceneRenderView > m_RenderViewQueue;
 	std::atomic_bool               m_bRunning;
 
-	std::mutex m_imguiMutex; // mutex for sync between writing entity-components data in render-thread and reading(view-each) in game-thread
-	fs::path m_currentDirectory;
+
+	// mutex for sync between writing entity-components data in render-thread and reading(view-each) in game-thread
+	std::mutex m_ImGuiMutex;
+	fs::path   m_CurrentDirectory;
 	friend void ImGui::DrawUI(baamboo::Engine& engine);
 };
 

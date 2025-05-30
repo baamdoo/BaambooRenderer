@@ -6,7 +6,7 @@ namespace vk
 {
 
 DescriptorSet::DescriptorSet(RenderContext& context)
-	: m_renderContext(context)
+	: m_RenderContext(context)
 {
 }
 
@@ -21,14 +21,14 @@ DescriptorSet& DescriptorSet::Allocate(VkDescriptorSetLayout vkSetLayout, VkDesc
     allocateInfo.descriptorPool = vkPool;
     allocateInfo.descriptorSetCount = 1;
     allocateInfo.pSetLayouts = &vkSetLayout;
-    VK_CHECK(vkAllocateDescriptorSets(m_renderContext.vkDevice(), &allocateInfo, &m_vkDescriptorSet));
+    VK_CHECK(vkAllocateDescriptorSets(m_RenderContext.vkDevice(), &allocateInfo, &m_vkDescriptorSet));
 
     return *this;
 }
 
 void DescriptorSet::Reset()
 {
-    m_indexAllocator.clear();
+    m_IndexAllocator.clear();
 }
 
 DescriptorHandle DescriptorSet::StageDescriptor(const VkDescriptorImageInfo& imageInfo, u32 binding, VkDescriptorType descriptorType)
@@ -41,7 +41,7 @@ DescriptorHandle DescriptorSet::StageDescriptors(const std::vector< VkDescriptor
     if (imageInfos.empty())
         return { INVALID_INDEX, 0 };
 
-    auto index = m_indexAllocator.allocate();
+    auto index = m_IndexAllocator.allocate();
 
     VkWriteDescriptorSet descriptorWrite{};
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -51,7 +51,7 @@ DescriptorHandle DescriptorSet::StageDescriptors(const std::vector< VkDescriptor
     descriptorWrite.descriptorType = descriptorType;
     descriptorWrite.descriptorCount = static_cast<u32>(imageInfos.size());
     descriptorWrite.pImageInfo = imageInfos.data();
-    vkUpdateDescriptorSets(m_renderContext.vkDevice(), 1, &descriptorWrite, 0, nullptr);
+    vkUpdateDescriptorSets(m_RenderContext.vkDevice(), 1, &descriptorWrite, 0, nullptr);
 
     return { index, u32(imageInfos.size()) };
 }
@@ -71,7 +71,7 @@ DescriptorHandle DescriptorSet::StageDescriptors(const std::vector< VkDescriptor
     if (bufferInfos.empty())
         return { INVALID_INDEX, 0 };
 
-    auto index = m_indexAllocator.allocate();
+    auto index = m_IndexAllocator.allocate();
 
     VkWriteDescriptorSet descriptorWrite{};
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -81,7 +81,7 @@ DescriptorHandle DescriptorSet::StageDescriptors(const std::vector< VkDescriptor
     descriptorWrite.descriptorType = descriptorType;
     descriptorWrite.descriptorCount = static_cast<u32>(bufferInfos.size());
     descriptorWrite.pBufferInfo = bufferInfos.data();
-    vkUpdateDescriptorSets(m_renderContext.vkDevice(), 1, &descriptorWrite, 0, nullptr);
+    vkUpdateDescriptorSets(m_RenderContext.vkDevice(), 1, &descriptorWrite, 0, nullptr);
 
     return { index, u32(bufferInfos.size()) };
 }

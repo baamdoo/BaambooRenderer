@@ -6,13 +6,13 @@ namespace vk
 {
 
 CommandQueue::CommandQueue(RenderContext& context, u32 queueIndex)
-	: m_renderContext(context)
-	, m_queueIndex(queueIndex)
+	: m_RenderContext(context)
+	, m_QueueIndex(queueIndex)
 {
 	// **
 	// Get queue
 	// **
-	vkGetDeviceQueue(m_renderContext.vkDevice(), m_queueIndex, 0, &m_vkQueue);
+	vkGetDeviceQueue(m_RenderContext.vkDevice(), m_QueueIndex, 0, &m_vkQueue);
 	assert(m_vkQueue);
 
 
@@ -22,8 +22,8 @@ CommandQueue::CommandQueue(RenderContext& context, u32 queueIndex)
 	VkCommandPoolCreateInfo commandPoolInfo = {};
 	commandPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; /* reset command buffers individually */
-	commandPoolInfo.queueFamilyIndex = m_queueIndex;
-	VK_CHECK(vkCreateCommandPool(m_renderContext.vkDevice(), &commandPoolInfo, nullptr, &m_vkCommandPool));
+	commandPoolInfo.queueFamilyIndex = m_QueueIndex;
+	VK_CHECK(vkCreateCommandPool(m_RenderContext.vkDevice(), &commandPoolInfo, nullptr, &m_vkCommandPool));
 }
 
 CommandQueue::~CommandQueue()
@@ -31,7 +31,7 @@ CommandQueue::~CommandQueue()
 	for (auto pCmdBuffer : m_pCmdBuffers)
 		RELEASE(pCmdBuffer);
 
-	vkDestroyCommandPool(m_renderContext.vkDevice(), m_vkCommandPool, nullptr);
+	vkDestroyCommandPool(m_RenderContext.vkDevice(), m_vkCommandPool, nullptr);
 }
 
 CommandBuffer& CommandQueue::Allocate(VkCommandBufferUsageFlags flags, bool bTransient)
@@ -39,7 +39,7 @@ CommandBuffer& CommandQueue::Allocate(VkCommandBufferUsageFlags flags, bool bTra
 	CommandBuffer* pCmdBuffer = nullptr;
 	if (bTransient)
 	{
-		pCmdBuffer = new CommandBuffer(m_renderContext, m_vkCommandPool);
+		pCmdBuffer = new CommandBuffer(m_RenderContext, m_vkCommandPool);
 	}
 	else
 	{
@@ -50,7 +50,7 @@ CommandBuffer& CommandQueue::Allocate(VkCommandBufferUsageFlags flags, bool bTra
 		}
 		else
 		{
-			pCmdBuffer = new CommandBuffer(m_renderContext, m_vkCommandPool);
+			pCmdBuffer = new CommandBuffer(m_RenderContext, m_vkCommandPool);
 			m_pCmdBuffers.push_back(pCmdBuffer);
 		}
 	}
@@ -106,7 +106,7 @@ void CommandQueue::ExecuteCommandBuffer(CommandBuffer& cmdBuffer)
 
 CommandBuffer* CommandQueue::RequestList(VkCommandPool vkCommandPool)
 {
-	auto pCommandBuffer = new CommandBuffer(m_renderContext, vkCommandPool);
+	auto pCommandBuffer = new CommandBuffer(m_RenderContext, vkCommandPool);
 	return pCommandBuffer;
 }
 

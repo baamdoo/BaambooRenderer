@@ -14,15 +14,15 @@ void ExampleApp::Initialize(eRendererAPI api)
 {
 	Super::Initialize(api);
 
-	m_cameraController.SetLookAt(float3(0.0f, 0.0f, -5.0f), float3(0.0f));
-	m_pCamera = new EditorCamera(m_cameraController, m_pWindow->Width(), m_pWindow->Height());
+	m_CameraController.SetLookAt(float3(0.0f, 0.0f, -5.0f), float3(0.0f));
+	m_pCamera = new EditorCamera(m_CameraController, m_pWindow->Width(), m_pWindow->Height());
 }
 
 void ExampleApp::Update(f32 dt)
 {
 	Super::Update(dt);
 
-	m_cameraController.Update(dt);
+	m_CameraController.Update(dt);
 }
 
 bool ExampleApp::InitWindow()
@@ -30,7 +30,7 @@ bool ExampleApp::InitWindow()
 	// **
 	// Create window
 	// **
-	WindowDescriptor windowDesc = { .numDesiredImages = 3, .bVSync = true };
+	WindowDescriptor windowDesc = { .numDesiredImages = 3, .bVSync = false };
 	m_pWindow = new Window(windowDesc);
 
 
@@ -111,8 +111,8 @@ bool ExampleApp::InitWindow()
 			if (app)
 			{
 				app->m_bWindowResized = true;
-				app->m_resizeWidth = width;
-				app->m_resizeHeight = height;
+				app->m_ResizeWidth = width;
+				app->m_ResizeHeight = height;
 			}
 		});
 
@@ -122,8 +122,8 @@ bool ExampleApp::InitWindow()
 			if (app)
 			{
 				app->m_bWindowResized = true;
-				app->m_resizeWidth = iconified ? 0 : app->m_pWindow->Width();
-				app->m_resizeHeight = iconified ? 0 : app->m_pWindow->Height();
+				app->m_ResizeWidth = iconified ? 0 : app->m_pWindow->Width();
+				app->m_ResizeHeight = iconified ? 0 : app->m_pWindow->Height();
 			}
 		});
 
@@ -167,7 +167,7 @@ void ExampleApp::DrawUI()
 	{
 		if (ImGui::CollapsingHeader("Transform"))
 		{
-			auto& transform = m_cameraController.GetTransform();
+			auto& transform = m_CameraController.GetTransform();
 
 			ImGui::Text("Position");
 			ImGui::DragFloat3("##Position", glm::value_ptr(transform.position), 0.1f, 0.0f, 0.0f, "%.1f");
@@ -194,7 +194,7 @@ void ExampleApp::DrawUI()
 
 		if (ImGui::CollapsingHeader("Controller"))
 		{
-			auto& cameraConfig = m_cameraController.config;
+			auto& cameraConfig = m_CameraController.config;
 
 			ImGui::Text("Rotation Acceleration");
 			ImGui::DragFloat("##RAcceleration", &cameraConfig.rotationAcceleration, 10.0f, 10.0f, 300.0f, "%.1f");

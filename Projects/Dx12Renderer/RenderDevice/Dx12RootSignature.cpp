@@ -119,7 +119,7 @@ void RootSignature::Build()
 		m_RootParameters.data(), 
 		static_cast<u32>(m_StaticSamplers.size()), 
 		m_StaticSamplers.data(), 
-		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT | D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
 	);
 
 	D3D_ROOT_SIGNATURE_VERSION highestVersion = m_RenderContext.GetHighestRootSignatureVersion();

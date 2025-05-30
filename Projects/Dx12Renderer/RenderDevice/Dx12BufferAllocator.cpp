@@ -142,8 +142,9 @@ void DynamicBufferAllocator::Page::Reset()
 //-------------------------------------------------------------------------
 // Static-Buffer Allocator
 //-------------------------------------------------------------------------
-StaticBufferAllocator::StaticBufferAllocator(RenderContext& context, size_t bufferSize)
+StaticBufferAllocator::StaticBufferAllocator(RenderContext& context, const std::wstring& name, size_t bufferSize)
 	: m_RenderContext(context)
+	, m_Name(name)
 {
 	Resize(bufferSize);
 }
@@ -197,7 +198,7 @@ void StaticBufferAllocator::Resize(size_t sizeInBytes)
 	creationInfo.desc = CD3DX12_RESOURCE_DESC::Buffer(sizeInBytes);
 	creationInfo.count = 1;
 	creationInfo.elementSizeInBytes = sizeInBytes;
-	auto buffer = rm.Create< StructuredBuffer >(L"StaticBufferHeap", std::move(creationInfo));
+	auto buffer = rm.Create< StructuredBuffer >(m_Name, std::move(creationInfo));
 
 	if (m_Offset > 0 && m_Buffer.IsValid())
 	{

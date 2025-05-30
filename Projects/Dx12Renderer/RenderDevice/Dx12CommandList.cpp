@@ -320,8 +320,13 @@ void CommandList::SetGraphicsDynamicConstantBuffer(u32 rootIndex, size_t sizeInB
 {
 	auto allocation = m_pDynamicBufferAllocator->Allocate(sizeInBytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
 	memcpy(allocation.CPUHandle, bufferData, sizeInBytes);
-	
+
 	m_d3d12CommandList->SetGraphicsRootConstantBufferView(rootIndex, allocation.GPUHandle);
+}
+
+void CommandList::SetGraphicsShaderResourceView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle)
+{
+	m_d3d12CommandList->SetGraphicsRootShaderResourceView(rootIndex, gpuHandle);
 }
 
 void CommandList::StageDescriptors(
@@ -393,6 +398,9 @@ void CommandList::DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint3
 
 void CommandList::DrawIndexedIndirect(const SceneResource& sceneResource)
 {
+	auto pIDB = sceneResource.GetIndirectBuffer();
+	TransitionBarrier(pIDB, D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
+
 	FlushResourceBarriers();
 
 	for (u32 i = 0; i < NUM_RESOURCE_DESCRIPTOR_TYPE; ++i)
@@ -400,7 +408,6 @@ void CommandList::DrawIndexedIndirect(const SceneResource& sceneResource)
 		m_pDescriptorHeaps[i]->CommitDescriptorsForDraw(*this);
 	}
 
-	auto pIDB = sceneResource.GetIndirectBuffer();
 	m_d3d12CommandList->ExecuteIndirect(
 		sceneResource.GetSceneD3D12CommandSignature(),
 		sceneResource.NumMeshes(),

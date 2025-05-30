@@ -5,21 +5,21 @@ namespace baamboo
 {
 
 TransformSystem::TransformSystem(entt::registry& registry)
-	: m_registry(registry)
+	: m_Registry(registry)
 {
-	m_registry.on_construct< TransformComponent >().connect< &TransformSystem::OnTransformConstructed >(this);
-	m_registry.on_update< TransformComponent >().connect< &TransformSystem::OnTransformUpdated >(this);
-    m_registry.on_destroy< TransformComponent >().connect< &TransformSystem::OnTransformDestroyed >(this);
+	m_Registry.on_construct< TransformComponent >().connect< &TransformSystem::OnTransformConstructed >(this);
+	m_Registry.on_update< TransformComponent >().connect< &TransformSystem::OnTransformUpdated >(this);
+    m_Registry.on_destroy< TransformComponent >().connect< &TransformSystem::OnTransformDestroyed >(this);
 
     m_mWorlds.resize(1024);
-    m_indexAllocator.reserve(1024);
+    m_IndexAllocator.reserve(1024);
 }
 
 void TransformSystem::OnTransformConstructed(entt::registry& registry, entt::entity entity)
 {
 	MarkDirty(entity);
 
-    auto index = m_indexAllocator.allocate();
+    auto index = m_IndexAllocator.allocate();
     auto& transform = registry.get< TransformComponent >(entity);
     transform.world = index;
 
@@ -37,19 +37,19 @@ void TransformSystem::OnTransformUpdated(entt::registry& registry, entt::entity 
 void TransformSystem::OnTransformDestroyed(entt::registry& registry, entt::entity entity)
 {
     auto& transform = registry.get< TransformComponent >(entity);
-    m_indexAllocator.release(transform.world);
+    m_IndexAllocator.release(transform.world);
 }
 
 std::vector< entt::entity > TransformSystem::Update()
 {
     // Sort by depth to ensure parents are processed before children
-    m_registry.sort< TransformComponent >([](const auto& lhs, const auto& rhs)
+    m_Registry.sort< TransformComponent >([](const auto& lhs, const auto& rhs)
         {
             return lhs.hierarchy.depth < rhs.hierarchy.depth;
         });
 
     std::vector< entt::entity > markedEntities;
-    m_registry.view< TransformComponent >().each([&](auto entity, auto& transformComponent)
+    m_Registry.view< TransformComponent >().each([&](auto entity, auto& transformComponent)
         {
             if (transformComponent.bDirtyMark)
             {
@@ -66,28 +66,28 @@ std::vector< entt::entity > TransformSystem::Update()
 
 void TransformSystem::MarkDirty(entt::entity entity)
 {
-    auto& transform = m_registry.get< TransformComponent >(entity);
+    auto& transform = m_Registry.get< TransformComponent >(entity);
     transform.bDirtyMark = true;
 
     auto child = transform.hierarchy.firstChild;
     while (child != entt::null) 
     {
         MarkDirty(child);
-        auto& childTransform = m_registry.get< TransformComponent >(child);
+        auto& childTransform = m_Registry.get< TransformComponent >(child);
         child = childTransform.hierarchy.nextSibling;
     }
 }
 
 void TransformSystem::AttachChild(entt::entity parent, entt::entity child)
 {
-    auto& childTransform = m_registry.get< TransformComponent >(child);
+    auto& childTransform = m_Registry.get< TransformComponent >(child);
     if (childTransform.hierarchy.parent != entt::null)
         DetachChild(child);
 
     childTransform.hierarchy.parent = parent;
     if (parent != entt::null) 
     {
-        auto& parentTransform = m_registry.get< TransformComponent >(parent);
+        auto& parentTransform = m_Registry.get< TransformComponent >(parent);
         childTransform.hierarchy.depth = parentTransform.hierarchy.depth + 1;
 
         if (parentTransform.hierarchy.firstChild == entt::null) 
@@ -97,9 +97,9 @@ void TransformSystem::AttachChild(entt::entity parent, entt::entity child)
         else 
         {
             auto lastChild = parentTransform.hierarchy.firstChild;
-            while (m_registry.valid(lastChild)) 
+            while (m_Registry.valid(lastChild)) 
             {
-                auto& lastChildTransform = m_registry.get< TransformComponent >(lastChild);
+                auto& lastChildTransform = m_Registry.get< TransformComponent >(lastChild);
                 if (lastChildTransform.hierarchy.nextSibling == entt::null) 
                 {
                     lastChildTransform.hierarchy.nextSibling = child;
@@ -124,19 +124,19 @@ void TransformSystem::AttachChild(entt::entity parent, entt::entity child)
 
 void TransformSystem::DetachChild(entt::entity child)
 {
-    auto& childTransform = m_registry.get< TransformComponent >(child);
+    auto& childTransform = m_Registry.get< TransformComponent >(child);
     auto parent = childTransform.hierarchy.parent;
 
-    if (parent != entt::null && m_registry.valid(parent)) 
+    if (parent != entt::null && m_Registry.valid(parent)) 
     {
-        auto& parentTransform = m_registry.get< TransformComponent >(parent);
+        auto& parentTransform = m_Registry.get< TransformComponent >(parent);
         if (parentTransform.hierarchy.firstChild == child) 
         {
             parentTransform.hierarchy.firstChild = childTransform.hierarchy.nextSibling;
 
             if (childTransform.hierarchy.nextSibling != entt::null) 
             {
-                auto& nextSiblingTransform = m_registry.get< TransformComponent >(childTransform.hierarchy.nextSibling);
+                auto& nextSiblingTransform = m_Registry.get< TransformComponent >(childTransform.hierarchy.nextSibling);
                 nextSiblingTransform.hierarchy.prevSibling = entt::null;
             }
         }
@@ -144,12 +144,12 @@ void TransformSystem::DetachChild(entt::entity child)
         {
             if (childTransform.hierarchy.prevSibling != entt::null) 
             {
-                auto& prevSiblingTransform = m_registry.get< TransformComponent >(childTransform.hierarchy.prevSibling);
+                auto& prevSiblingTransform = m_Registry.get< TransformComponent >(childTransform.hierarchy.prevSibling);
                 prevSiblingTransform.hierarchy.nextSibling = childTransform.hierarchy.nextSibling;
 
                 if (childTransform.hierarchy.nextSibling != entt::null) 
                 {
-                    auto& nextSiblingTransform = m_registry.get< TransformComponent >(childTransform.hierarchy.nextSibling);
+                    auto& nextSiblingTransform = m_Registry.get< TransformComponent >(childTransform.hierarchy.nextSibling);
                     nextSiblingTransform.hierarchy.prevSibling = childTransform.hierarchy.prevSibling;
                 }
             }
@@ -163,14 +163,14 @@ void TransformSystem::DetachChild(entt::entity child)
 
 void TransformSystem::UpdateWorldTransform(entt::entity entity)
 {
-    auto& transformComponent = m_registry.get< TransformComponent >(entity);
+    auto& transformComponent = m_Registry.get< TransformComponent >(entity);
     auto localMatrix = transformComponent.transform.Matrix();
 
     assert(transformComponent.world < m_mWorlds.size());
     auto& worldTransform = m_mWorlds[transformComponent.world];
-    if (transformComponent.hierarchy.parent != entt::null && m_registry.valid(transformComponent.hierarchy.parent)) 
+    if (transformComponent.hierarchy.parent != entt::null && m_Registry.valid(transformComponent.hierarchy.parent)) 
     {
-        auto& parentTransform = m_registry.get< TransformComponent >(transformComponent.hierarchy.parent);
+        auto& parentTransform = m_Registry.get< TransformComponent >(transformComponent.hierarchy.parent);
         worldTransform = m_mWorlds[parentTransform.world] * localMatrix;
     }
     else 

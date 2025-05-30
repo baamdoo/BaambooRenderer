@@ -25,11 +25,11 @@ public:
     inline void* MappedMemory() const { assert(m_vmaAllocationInfo.pMappedData); return m_vmaAllocationInfo.pMappedData; }
 
     [[nodiscard]]
-    inline u64 SizeInBytes() const { return m_count * m_elementSize; }
+    inline u64 SizeInBytes() const { return m_Count * m_ElementSizeInBytes; }
     [[nodiscard]]
-    inline u32 BufferCount() const { return m_count; }
+    inline u32 BufferCount() const { return m_Count; }
     [[nodiscard]]
-    inline u64 ElementSize() const { return m_elementSize; }
+    inline u64 ElementSize() const { return m_ElementSizeInBytes; }
 
     virtual ~Buffer();
 
@@ -42,8 +42,8 @@ protected:
     Buffer(RenderContext& context, std::wstring_view name, CreationInfo&& info);
 
 private:
-    u32 m_count;
-    u64 m_elementSize;
+    u32 m_Count;
+    u64 m_ElementSizeInBytes;
 
     VkBuffer m_vkBuffer = VK_NULL_HANDLE;
 };

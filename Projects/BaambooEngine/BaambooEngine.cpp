@@ -97,7 +97,7 @@ enum
 constexpr u32 NUM_TOLERANCE_ASYNC_FRAME_GAME_TO_RENDER = 3;
 
 Engine::Engine()
-	: m_currentDirectory(ASSET_PATH)
+	: m_CurrentDirectory(ASSET_PATH)
 	, m_bRunning(false)
 {
 }
@@ -123,16 +123,16 @@ void Engine::Initialize(eRendererAPI eApi)
 i32 Engine::Run()
 {
 	m_bRunning = true;
-	m_runningTime = 0.0;
+	m_RunningTime = 0.0;
 
 	Timer timer{};
-	m_renderThread = std::thread(&Engine::RenderLoop, this);
+	m_RenderThread = std::thread(&Engine::RenderLoop, this);
 	while (m_pWindow->PollEvent())
 	{
 		timer.Tick();
 
 		auto dt = timer.GetDeltaSeconds();
-		m_runningTime += dt;
+		m_RunningTime += dt;
 
 		Update(static_cast<float>(dt));
 
@@ -145,16 +145,16 @@ i32 Engine::Run()
 
 void Engine::Update(f32 dt)
 {
-	if (m_bWindowResized && m_resizeWidth >= 0 && m_resizeHeight >= 0)
+	if (m_bWindowResized && m_ResizeWidth >= 0 && m_ResizeHeight >= 0)
 	{
-		if (m_resizeWidth == 0 || m_resizeHeight == 0)
+		if (m_ResizeWidth == 0 || m_ResizeHeight == 0)
 			return;
 
-		m_pWindow->OnWindowResized(m_resizeWidth, m_resizeHeight);
-		m_pRendererBackend->OnWindowResized(m_resizeWidth, m_resizeHeight);
+		m_pWindow->OnWindowResized(m_ResizeWidth, m_ResizeHeight);
+		m_pRendererBackend->OnWindowResized(m_ResizeWidth, m_ResizeHeight);
 
 		m_bWindowResized = false;
-		m_resizeWidth = m_resizeHeight = -1;
+		m_ResizeWidth = m_ResizeHeight = -1;
 	}
 
 	s_Data.viewportWidth = (float)m_pWindow->Desc().width;
@@ -165,9 +165,10 @@ void Engine::Update(f32 dt)
 
 void Engine::Release()
 {
-	if (m_renderThread.joinable())
+	m_RenderViewQueue.clear();
+	if (m_RenderThread.joinable())
 	{
-		m_renderThread.join();
+		m_RenderThread.join();
 	}
 
 	RELEASE(m_pCamera);
@@ -182,14 +183,14 @@ void Engine::GameLoop(float dt)
 {
 	ProcessInput();
 
-	std::lock_guard< std::mutex > lock(m_imguiMutex);
+	std::lock_guard< std::mutex > lock(m_ImGuiMutex);
 
 	m_pScene->Update(dt);
 
-	if (m_renderViewQueue.size() >= NUM_TOLERANCE_ASYNC_FRAME_GAME_TO_RENDER)
-		m_renderViewQueue.replace(m_pScene->RenderView(*m_pCamera));
+	if (m_RenderViewQueue.size() >= NUM_TOLERANCE_ASYNC_FRAME_GAME_TO_RENDER)
+		m_RenderViewQueue.replace(m_pScene->RenderView(*m_pCamera));
 	else
-		m_renderViewQueue.push(m_pScene->RenderView(*m_pCamera));
+		m_RenderViewQueue.push(m_pScene->RenderView(*m_pCamera));
 }
 
 void Engine::RenderLoop()
@@ -198,15 +199,15 @@ void Engine::RenderLoop()
 	{
 		if (!ImGui::EntityDeletionQueue.empty())
 		{
-			std::lock_guard< std::mutex > lock(m_imguiMutex);
+			std::lock_guard< std::mutex > lock(m_ImGuiMutex);
 
 			auto entity = ImGui::EntityDeletionQueue.try_pop();
 			m_pScene->RemoveEntity(entity.value());
 
-			m_renderViewQueue.clear();
+			m_RenderViewQueue.clear();
 		}
 
-		auto renderView = m_renderViewQueue.try_pop();
+		auto renderView = m_RenderViewQueue.try_pop();
 		if (!renderView.has_value())
 			continue;
 
@@ -429,11 +430,11 @@ void Engine::DrawUI()
 				{
 					if (ImGui::MenuItem("Camera"))
 					{
-						m_imguiMutex.lock();
+						m_ImGuiMutex.lock();
 
 						ImGui::SelectedEntity.AttachComponent< CameraComponent >();
 
-						m_imguiMutex.unlock();
+						m_ImGuiMutex.unlock();
 					}
 				}*/
 
@@ -441,22 +442,22 @@ void Engine::DrawUI()
 				{
 					if (ImGui::MenuItem("StaticMesh"))
 					{
-						m_imguiMutex.lock();
+						m_ImGuiMutex.lock();
 
 						ImGui::SelectedEntity.AttachComponent< StaticMeshComponent >();
 
-						m_imguiMutex.unlock();
+						m_ImGuiMutex.unlock();
 					}
 				}
 				else if (!ImGui::SelectedEntity.HasAny< MaterialComponent >())
 				{
 					if (ImGui::MenuItem("Material"))
 					{
-						m_imguiMutex.lock();
+						m_ImGuiMutex.lock();
 
 						ImGui::SelectedEntity.AttachComponent< MaterialComponent >();
 
-						m_imguiMutex.unlock();
+						m_ImGuiMutex.unlock();
 					}
 				}
 
@@ -474,15 +475,15 @@ void Engine::DrawUI()
 	{
 		ImGui::Begin("Content Browser");
 		{
-			if (m_currentDirectory != fs::path(ASSET_PATH))
+			if (m_CurrentDirectory != fs::path(ASSET_PATH))
 			{
 				if (ImGui::Button("<"))
 				{
-					m_currentDirectory = m_currentDirectory.parent_path();
+					m_CurrentDirectory = m_CurrentDirectory.parent_path();
 				}
 			}
 
-			for (auto& entry : std::filesystem::directory_iterator(m_currentDirectory))
+			for (auto& entry : std::filesystem::directory_iterator(m_CurrentDirectory))
 			{
 				const auto& path = entry.path();
 				auto relativePath = fs::relative(entry.path(), ASSET_PATH);
@@ -491,7 +492,7 @@ void Engine::DrawUI()
 				{
 					if (ImGui::Button(filenameStr.c_str()))
 					{
-						m_currentDirectory /= path.filename();
+						m_CurrentDirectory /= path.filename();
 					}
 				}
 				else
@@ -673,7 +674,7 @@ void Engine::ProcessInput()
 			Initialize(eRendererAPI::Vulkan);
 
 			m_bRunning = true;
-			m_renderThread = std::thread(&Engine::RenderLoop, this);
+			m_RenderThread = std::thread(&Engine::RenderLoop, this);
 		}
 	}
 	else if (glfwGetKey(m_pWindow->Handle(), GLFW_KEY_LEFT_SHIFT) && glfwGetKey(m_pWindow->Handle(), GLFW_KEY_D))
@@ -686,7 +687,7 @@ void Engine::ProcessInput()
 			Initialize(eRendererAPI::D3D12);
 
 			m_bRunning = true;
-			m_renderThread = std::thread(&Engine::RenderLoop, this);
+			m_RenderThread = std::thread(&Engine::RenderLoop, this);
 		}
 	}
 }

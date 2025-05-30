@@ -80,21 +80,21 @@ public:
 	inline VkDescriptorSetLayout vkSetLayout(u8 set) const { return m_vkSetLayouts[set]; }
 
 private:
-	RenderContext& m_renderContext;
-	std::string    m_name;
+	RenderContext& m_RenderContext;
+	std::string    m_Name;
 
 	VkPipeline		                     m_vkPipeline = VK_NULL_HANDLE;
 	VkPipelineLayout                     m_vkPipelineLayout = VK_NULL_HANDLE;
 	std::vector< VkDescriptorSetLayout > m_vkSetLayouts;
 
-	baamboo::ResourceHandle< Shader > m_vs;
-	baamboo::ResourceHandle< Shader > m_fs;
-	baamboo::ResourceHandle< Shader > m_gs;
-	baamboo::ResourceHandle< Shader > m_ds;
-	baamboo::ResourceHandle< Shader > m_hs;
+	baamboo::ResourceHandle< Shader > m_VS;
+	baamboo::ResourceHandle< Shader > m_FS;
+	baamboo::ResourceHandle< Shader > m_GS;
+	baamboo::ResourceHandle< Shader > m_DS;
+	baamboo::ResourceHandle< Shader > m_HS;
 
-	baamboo::ResourceHandle< Shader > m_ts;
-	baamboo::ResourceHandle< Shader > m_ms;
+	baamboo::ResourceHandle< Shader > m_TS;
+	baamboo::ResourceHandle< Shader > m_MS;
 
 	bool m_bMeshShader = false;
 
@@ -112,9 +112,9 @@ private:
 		VkPipelineRasterizationStateCreateInfo	rasterizerInfo;
 		VkPipelineDepthStencilStateCreateInfo	depthStencilInfo;
 		VkPipelineMultisampleStateCreateInfo	multisamplingInfo;
-	} m_createInfos;
+	} m_CreateInfos;
 
-	std::unordered_map< u32, DescriptorSet& > m_descriptorTable;
+	std::unordered_map< u32, DescriptorSet& > m_DescriptorTable;
 };
 
 
@@ -131,12 +131,12 @@ public:
 	inline VkPipeline vkPipeline() const { return m_vkPipeline; }
 
 private:
-	RenderContext& m_renderContext;
+	RenderContext& m_RenderContext;
 
 	VkPipeline		 m_vkPipeline = VK_NULL_HANDLE;
 	VkPipelineLayout m_vkPipelineLayout = VK_NULL_HANDLE;
 
-	baamboo::ResourceHandle< Shader > m_cs;
+	baamboo::ResourceHandle< Shader > m_CS;
 };
 
 } // namespace vk

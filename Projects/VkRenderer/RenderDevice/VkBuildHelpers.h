@@ -44,11 +44,11 @@ public:
 	VkInstance Build();
 
 private:
-	std::vector< const char* > m_validationLayers;
-	std::vector< const char* > m_extensionLayers;
+	std::vector< const char* > m_ValidationLayers;
+	std::vector< const char* > m_ExtensionLayers;
 
-	VkApplicationInfo       m_appInfo = VkApplicationInfo();
-	VkValidationFeaturesEXT m_validationFeatures = VkValidationFeaturesEXT();
+	VkApplicationInfo       m_AppInfo = VkApplicationInfo();
+	VkValidationFeaturesEXT m_ValidationFeatures = VkValidationFeaturesEXT();
 };
 
 
@@ -68,7 +68,7 @@ public:
 	VkDebugUtilsMessengerEXT Build(VkInstance instance);
 
 private:
-	VkDebugUtilsMessengerCreateInfoEXT	m_debugMessengerInfo = VkDebugUtilsMessengerCreateInfoEXT();
+	VkDebugUtilsMessengerCreateInfoEXT	m_DebugMessengerInfo = VkDebugUtilsMessengerCreateInfoEXT();
 };
 
 
@@ -141,9 +141,9 @@ private:
 		u32 apiVersion;
 		i64 featureBits;
 		VkPhysicalDeviceType deviceType;
-	} m_physicalRequirements;
+	} m_PhysicalRequirements;
 
-	std::vector< const char* > m_logicalDeviceExtensions;
+	std::vector< const char* > m_LogicalDeviceExtensions;
 };
 
 
@@ -169,19 +169,15 @@ public:
 	u32							imageCount = 2;
 
 private:
-	VkSurfaceKHR		m_surface = VK_NULL_HANDLE;
-	VkPhysicalDevice	m_physicalDevice = VK_NULL_HANDLE;
+	VkSurfaceKHR	 m_vkSurface = VK_NULL_HANDLE;
+	VkPhysicalDevice m_vkPhysicalDevice = VK_NULL_HANDLE;
 
-	std::vector< VkSurfaceFormatKHR > m_surfaceFormats;
+	std::vector< VkSurfaceFormatKHR > m_SurfaceFormats;
 
-	VkImageUsageFlags m_imageUsageFlags;
+	VkImageUsageFlags m_ImageUsageFlags;
 
-	VkExtent2D m_extent;
+	VkExtent2D m_Extent;
 	bool m_vSync = true;
 };
-
-
-
-
 
 } // namespace vk

@@ -69,11 +69,11 @@ private:
 	std::bitset< GLFW_MOUSE_BUTTON_LAST > m_TransientMouseStates = {};
 	std::bitset< GLFW_MOUSE_BUTTON_LAST > m_PersistentMouseStates = {};
 
-	float m_MouseDeltaX;
-	float m_MouseDeltaY;
-	float m_MousePositionX;
-	float m_MousePositionY;
-	float m_MouseWheel = 0;
+	float m_MouseDeltaX = 0.0f;
+	float m_MouseDeltaY = 0.0f;
+	float m_MousePositionX = 0.0f;
+	float m_MousePositionY = 0.0f;
+	float m_MouseWheel = 0.0f;
 };
 
 } // namespace baamboo

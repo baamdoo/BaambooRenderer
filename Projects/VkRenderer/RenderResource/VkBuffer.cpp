@@ -11,8 +11,8 @@ Buffer::Buffer(RenderContext& context, std::wstring_view name)
 
 Buffer::Buffer(RenderContext& context, std::wstring_view name, CreationInfo&& info)
 	: Super(context, name)
-	, m_count(info.count)
-	, m_elementSize(info.elementSize)
+	, m_Count(info.count)
+	, m_ElementSizeInBytes(info.elementSize)
 {
 	VkBufferCreateInfo bufferInfo = {};
 	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -29,7 +29,7 @@ Buffer::Buffer(RenderContext& context, std::wstring_view name, CreationInfo&& in
 
 Buffer::~Buffer()
 {
-	vmaDestroyBuffer(m_renderContext.vmaAllocator(), m_vkBuffer, m_vmaAllocation);
+	vmaDestroyBuffer(m_RenderContext.vmaAllocator(), m_vkBuffer, m_vmaAllocation);
 }
 
 

@@ -30,26 +30,26 @@ public:
 	SceneRenderView RenderView(const EditorCamera& camera) const;
 
 	[[nodiscard]]
-	const std::string& Name() const { return m_name; }
+	const std::string& Name() const { return m_Name; }
 	[[nodiscard]]
 	bool IsLoading() const { return m_bLoading; }
 
 	[[nodiscard]]
-	entt::registry& Registry() { return m_registry; }
+	entt::registry& Registry() { return m_Registry; }
 	[[nodiscard]]
-	const entt::registry& Registry() const { return m_registry; }
+	const entt::registry& Registry() const { return m_Registry; }
 	[[nodiscard]]
 	TransformSystem* GetTransformSystem() const { return m_pTransformSystem; }
 
 private:
 	friend class Entity;
-	entt::registry m_registry;
+	entt::registry m_Registry;
 
-	std::string m_name;
+	std::string m_Name;
 	bool m_bLoading = false;
 
 	// [entity, dirty-components]
-	std::unordered_map< entt::entity, u64 > m_entityDirtyMasks;
+	std::unordered_map< entt::entity, u64 > m_EntityDirtyMasks;
 
 	TransformSystem*  m_pTransformSystem = nullptr;
 	StaticMeshSystem* m_pStaticMeshSystem = nullptr;

@@ -66,6 +66,8 @@ public:
 		SetGraphicsDynamicConstantBuffer(rootIndex, sizeof(T), &data);
 	}
 
+	void SetGraphicsShaderResourceView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle);
+
 	void StageDescriptors(
 		u32 rootIndex,
 		u32 numDescriptors,

@@ -4,7 +4,7 @@
 #include "../Common.bsh"
 
 layout(set = SET_STATIC, binding = 0) uniform sampler2D g_SceneTextures[];
-layout(set = SET_STATIC, binding = 5) readonly buffer   MaterialBuffer 
+layout(set = SET_STATIC, binding = 4) readonly buffer   MaterialBuffer 
 {
 	MaterialData materials[];
 } g_MaterialBuffer;

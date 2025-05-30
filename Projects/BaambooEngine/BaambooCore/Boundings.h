@@ -6,8 +6,8 @@
 class BoundingSphere
 {
 public:
-	BoundingSphere() : m_center(0.f, 0.f, 0.f), m_radius(1.f) {}
-	BoundingSphere(float3 center, f32 radius) : m_center(center), m_radius(radius) {}
+	BoundingSphere() : m_Center(0.f, 0.f, 0.f), m_Radius(1.f) {}
+	BoundingSphere(float3 center, f32 radius) : m_Center(center), m_Radius(radius) {}
 	BoundingSphere(const BoundingSphere&) = default;
 	BoundingSphere(BoundingSphere&&) = default;
 	BoundingSphere(const class BoundingBox& aabb);
@@ -31,9 +31,9 @@ public:
 
 public:
 	[[nodiscard]]
-	float3 Center() const { return m_center; }
+	float3 Center() const { return m_Center; }
 	[[nodiscard]]
-	f32 Radius() const { return m_radius; }
+	f32 Radius() const { return m_Radius; }
 
 	[[nodiscard]]
 	static const BoundingSphere Union(const BoundingSphere& sphere, const float3& point);
@@ -41,8 +41,8 @@ public:
 	static const BoundingSphere Union(const BoundingSphere& sphere1, const BoundingSphere& sphere2);
 
 private:
-	float3 m_center;
-	f32    m_radius;
+	float3 m_Center;
+	f32    m_Radius;
 };
 
 
@@ -53,8 +53,8 @@ class BoundingBox
 {
 public:
 	BoundingBox() = default;
-	BoundingBox(float3 point) : m_min(point), m_max(point) {}
-	BoundingBox(float3 min, float3 max) : m_min(min), m_max(max) {}
+	BoundingBox(float3 point) : m_Min(point), m_Max(point) {}
+	BoundingBox(float3 min, float3 max) : m_Min(min), m_Max(max) {}
 	BoundingBox(const BoundingBox&) = default;
 	BoundingBox(BoundingBox&&) = default;
 	explicit BoundingBox(const BoundingSphere& sphere);
@@ -77,9 +77,9 @@ public:
 
 public:
 	[[nodiscard]]
-	float3 Min() const { return m_min; }
+	float3 Min() const { return m_Min; }
 	[[nodiscard]]
-	float3 Max() const { return m_max; }
+	float3 Max() const { return m_Max; }
 
 	[[nodiscard]]
 	static const BoundingBox Union(const BoundingBox& aabb, const float3& point);
@@ -87,8 +87,8 @@ public:
 	static const BoundingBox Union(const BoundingBox& aabb1, const BoundingBox& aabb2);
 
 private:
-	float3 m_min;
+	float3 m_Min;
 	int    padding0;
-	float3 m_max;
+	float3 m_Max;
 	int    padding1;
 };

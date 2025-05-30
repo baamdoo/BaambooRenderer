@@ -6,6 +6,7 @@
 #include "RenderDevice/VkCommandBuffer.h"
 #include "RenderDevice/VkDescriptorSet.h"
 #include "RenderResource/VkTexture.h"
+#include "RenderResource/VkSceneResource.h"
 #include "RenderModule/VkForwardModule.h"
 #include "RenderModule/VkImGuiModule.h"
 
@@ -90,7 +91,7 @@ void Renderer::NewFrame()
 
 void Renderer::SetRendererType(eRendererType type)
 {
-	m_type = type;
+	m_Type = type;
 }
 
 void Renderer::OnWindowResized(i32 width, i32 height)

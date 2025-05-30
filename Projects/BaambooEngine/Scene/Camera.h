@@ -11,19 +11,19 @@ public:
 	virtual mat4 GetView() const = 0;
 	virtual float3 GetPosition() const = 0;
 
-	virtual Transform& GetTransform() { return m_transform; }
+	virtual Transform& GetTransform() { return m_Transform; }
 
 protected:
-	Transform m_transform = {};
+	Transform m_Transform = {};
 };
 
 class EditorCamera final
 {
 public:
 	explicit EditorCamera(CameraController& controller, u32 width, u32 height)
-		: m_controller(controller)
-		, m_viewportWidth(width)
-		, m_viewportHeight(height)
+		: m_Controller(controller)
+		, m_ViewportWidth(width)
+		, m_ViewportHeight(height)
 	{
 	}
 
@@ -31,28 +31,28 @@ public:
 	EditorCamera& operator=(const EditorCamera&) = default;
 
 	[[nodiscard]]
-	mat4 GetView() const { return m_controller.GetView(); }
+	mat4 GetView() const { return m_Controller.GetView(); }
 	[[nodiscard]]
 	mat4 GetProj() const 
 	{ 
 		return m_type == eType::Perspective ? 
-			glm::perspectiveFovLH_ZO(glm::radians(fov), (float)m_viewportWidth, (float)m_viewportHeight, cNear, cFar) :
-			glm::orthoLH_ZO(0.0f, (float)m_viewportWidth, 0.0f, (float)m_viewportHeight, cNear, cFar);
+			glm::perspectiveFovLH_ZO(glm::radians(fov), (float)m_ViewportWidth, (float)m_ViewportHeight, cNear, cFar) :
+			glm::orthoLH_ZO(0.0f, (float)m_ViewportWidth, 0.0f, (float)m_ViewportHeight, cNear, cFar);
 	}
 	[[nodiscard]]
-	float3 GetPosition() const { return m_controller.GetPosition(); }
+	float3 GetPosition() const { return m_Controller.GetPosition(); }
 
 	float cNear = 0.1f;
 	float cFar = 1000.0f;
 	float fov = 45.0f;
 
 private:
-	CameraController& m_controller;
+	CameraController& m_Controller;
 
 	enum class eType { Orthographic, Perspective } m_type = eType::Perspective;
 
-	u32 m_viewportWidth;
-	u32 m_viewportHeight;
+	u32 m_ViewportWidth;
+	u32 m_ViewportHeight;
 };
 
 class CameraController_FirstPerson final : public CameraController
@@ -67,14 +67,14 @@ public:
 	void Update(f32 dt);
 
 	[[nodiscard]]
-	virtual mat4 GetView() const override { return glm::inverse(m_transform.Matrix()); }
+	virtual mat4 GetView() const override { return glm::inverse(m_Transform.Matrix()); }
 	[[nodiscard]]
-	virtual float3 GetPosition() const override { return m_transform.position; }
+	virtual float3 GetPosition() const override { return m_Transform.position; }
 
 	void SetLookAt(const float3& pos, const float3& target) 
 	{
-		m_transform.position = pos;
-		m_transform.SetOrientation(glm::lookAtLH(pos, target, float3(0, 1, 0)));
+		m_Transform.position = pos;
+		m_Transform.SetOrientation(glm::lookAtLH(pos, target, float3(0, 1, 0)));
 	}
 
 	struct
@@ -91,8 +91,8 @@ public:
 	} config;
 
 private:
-	float3 m_moveVelocity = float3(0.0f);
-	float3 m_rotationVelocity = float3(0.0f);
+	float3 m_MoveVelocity = float3(0.0f);
+	float3 m_RotationVelocity = float3(0.0f);
 };
 
 } // namespace baamboo

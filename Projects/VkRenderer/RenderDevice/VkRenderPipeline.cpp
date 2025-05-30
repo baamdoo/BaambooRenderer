@@ -2,6 +2,7 @@
 #include "VkRenderPipeline.h"
 #include "VkResourceManager.h"
 #include "RenderResource/VkRenderTarget.h"
+#include "RenderResource/VkSceneResource.h"
 
 #include <BaambooUtils/FileIO.hpp>
 #include <unordered_set>
@@ -13,60 +14,60 @@ namespace vk
 // Graphics Pipeline
 //-------------------------------------------------------------------------
 GraphicsPipeline::GraphicsPipeline(RenderContext& context, std::string name)
-	: m_renderContext(context)
-	, m_name(std::move(name))
+	: m_RenderContext(context)
+	, m_Name(std::move(name))
 {
 	// **
 	// Set default values
 	// **
 
 	// input
-	m_createInfos.vertexInputInfo = {};
-	m_createInfos.vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-	m_createInfos.inputAssemblyInfo = {};
-	m_createInfos.inputAssemblyInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-	m_createInfos.inputAssemblyInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	m_CreateInfos.vertexInputInfo = {};
+	m_CreateInfos.vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+	m_CreateInfos.inputAssemblyInfo = {};
+	m_CreateInfos.inputAssemblyInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+	m_CreateInfos.inputAssemblyInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
 	// viewport
-	m_createInfos.viewportStateInfo = {};
-	m_createInfos.viewportStateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-	m_createInfos.viewportStateInfo.viewportCount = 1;
-	m_createInfos.viewportStateInfo.scissorCount = 1;
+	m_CreateInfos.viewportStateInfo = {};
+	m_CreateInfos.viewportStateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+	m_CreateInfos.viewportStateInfo.viewportCount = 1;
+	m_CreateInfos.viewportStateInfo.scissorCount = 1;
 
 	// rasterizer
-	m_createInfos.rasterizerInfo = {};
-	m_createInfos.rasterizerInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-	m_createInfos.rasterizerInfo.polygonMode = VK_POLYGON_MODE_FILL;
-	m_createInfos.rasterizerInfo.cullMode = VK_CULL_MODE_BACK_BIT;
-	m_createInfos.rasterizerInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
-	m_createInfos.rasterizerInfo.lineWidth = 1.f;
+	m_CreateInfos.rasterizerInfo = {};
+	m_CreateInfos.rasterizerInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+	m_CreateInfos.rasterizerInfo.polygonMode = VK_POLYGON_MODE_FILL;
+	m_CreateInfos.rasterizerInfo.cullMode = VK_CULL_MODE_BACK_BIT;
+	m_CreateInfos.rasterizerInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
+	m_CreateInfos.rasterizerInfo.lineWidth = 1.f;
 
 	// depth-stencil
-	m_createInfos.depthStencilInfo = {};
-	m_createInfos.depthStencilInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-	m_createInfos.depthStencilInfo.depthTestEnable = VK_TRUE;
-	m_createInfos.depthStencilInfo.depthWriteEnable = VK_FALSE; // False as default. Since depth is mainly writable by depth pre-pass only.
-	m_createInfos.depthStencilInfo.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
-	m_createInfos.depthStencilInfo.minDepthBounds = 0.f;
-	m_createInfos.depthStencilInfo.maxDepthBounds = 1.f;
+	m_CreateInfos.depthStencilInfo = {};
+	m_CreateInfos.depthStencilInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+	m_CreateInfos.depthStencilInfo.depthTestEnable = VK_TRUE;
+	m_CreateInfos.depthStencilInfo.depthWriteEnable = VK_FALSE; // False as default. Since depth is mainly writable by depth pre-pass only.
+	m_CreateInfos.depthStencilInfo.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+	m_CreateInfos.depthStencilInfo.minDepthBounds = 0.f;
+	m_CreateInfos.depthStencilInfo.maxDepthBounds = 1.f;
 
 	// multi-sampling
-	m_createInfos.multisamplingInfo = {};
-	m_createInfos.multisamplingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-	m_createInfos.multisamplingInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-	m_createInfos.multisamplingInfo.minSampleShading = 1.f;
+	m_CreateInfos.multisamplingInfo = {};
+	m_CreateInfos.multisamplingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+	m_CreateInfos.multisamplingInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+	m_CreateInfos.multisamplingInfo.minSampleShading = 1.f;
 }
 
 GraphicsPipeline::~GraphicsPipeline()
 {
-	vkDestroyPipeline(m_renderContext.vkDevice(), m_vkPipeline, nullptr);
-	vkDestroyPipelineLayout(m_renderContext.vkDevice(), m_vkPipelineLayout, nullptr);
+	vkDestroyPipeline(m_RenderContext.vkDevice(), m_vkPipeline, nullptr);
+	vkDestroyPipelineLayout(m_RenderContext.vkDevice(), m_vkPipelineLayout, nullptr);
 	for (u32 i = 1; i < m_vkSetLayouts.size(); ++i)
 	{
-		if (m_vkSetLayouts[i] == m_renderContext.GetEmptyDescriptorSetLayout())
+		if (m_vkSetLayouts[i] == m_RenderContext.GetEmptyDescriptorSetLayout())
 			continue;
 
-		vkDestroyDescriptorSetLayout(m_renderContext.vkDevice(), m_vkSetLayouts[i], nullptr);
+		vkDestroyDescriptorSetLayout(m_RenderContext.vkDevice(), m_vkSetLayouts[i], nullptr);
 	}
 }
 
@@ -77,7 +78,7 @@ GraphicsPipeline& GraphicsPipeline::SetShaders(
 	baamboo::ResourceHandle< Shader > hs, 
 	baamboo::ResourceHandle< Shader > ds)
 {
-	auto& rm = m_renderContext.GetResourceManager();
+	auto& rm = m_RenderContext.GetResourceManager();
 	auto pVS = rm.Get(vs); assert(pVS);
 	auto pFS = rm.Get(fs);
 	auto pGS = rm.Get(gs);
@@ -87,21 +88,21 @@ GraphicsPipeline& GraphicsPipeline::SetShaders(
 	// **
 	// Create shader stages
 	// **
-	m_createInfos.shaderStages.clear();
+	m_CreateInfos.shaderStages.clear();
 
 	VkPipelineShaderStageCreateInfo vsStageCreateInfo = {};
 	vsStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	vsStageCreateInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
 	vsStageCreateInfo.module = pVS->vkModule();
 	vsStageCreateInfo.pName = "main";
-	m_createInfos.shaderStages.push_back(vsStageCreateInfo);
+	m_CreateInfos.shaderStages.push_back(vsStageCreateInfo);
 
 	VkPipelineShaderStageCreateInfo fsStageCreateInfo = {};
 	fsStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	fsStageCreateInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
 	fsStageCreateInfo.module = pFS ? pFS->vkModule() : VK_NULL_HANDLE;
 	fsStageCreateInfo.pName = "main";
-	m_createInfos.shaderStages.push_back(fsStageCreateInfo);
+	m_CreateInfos.shaderStages.push_back(fsStageCreateInfo);
 
 	if (pGS)
 	{
@@ -110,7 +111,7 @@ GraphicsPipeline& GraphicsPipeline::SetShaders(
 		gsStageCreateInfo.stage = VK_SHADER_STAGE_GEOMETRY_BIT;
 		gsStageCreateInfo.module = pGS->vkModule();
 		gsStageCreateInfo.pName = "main";
-		m_createInfos.shaderStages.push_back(gsStageCreateInfo);
+		m_CreateInfos.shaderStages.push_back(gsStageCreateInfo);
 	}
 	if (pHS)
 	{
@@ -119,7 +120,7 @@ GraphicsPipeline& GraphicsPipeline::SetShaders(
 		hsStageCreateInfo.stage = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
 		hsStageCreateInfo.module = pHS->vkModule();
 		hsStageCreateInfo.pName = "main";
-		m_createInfos.shaderStages.push_back(hsStageCreateInfo);
+		m_CreateInfos.shaderStages.push_back(hsStageCreateInfo);
 	}
 	if (pDS)
 	{
@@ -128,7 +129,7 @@ GraphicsPipeline& GraphicsPipeline::SetShaders(
 		dsStageCreateInfo.stage = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
 		dsStageCreateInfo.module = pDS->vkModule();
 		dsStageCreateInfo.pName = "main";
-		m_createInfos.shaderStages.push_back(dsStageCreateInfo);
+		m_CreateInfos.shaderStages.push_back(dsStageCreateInfo);
 	}
 
 
@@ -275,19 +276,19 @@ GraphicsPipeline& GraphicsPipeline::SetShaders(
 		{
 			layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
 		}
-		VK_CHECK(vkCreateDescriptorSetLayout(m_renderContext.vkDevice(), &layoutInfo, nullptr, &m_vkSetLayouts[set]));
+		VK_CHECK(vkCreateDescriptorSetLayout(m_RenderContext.vkDevice(), &layoutInfo, nullptr, &m_vkSetLayouts[set]));
 
 		if (set > eDescriptorSet_Push)
 		{
-			auto& descriptorSet = m_renderContext.AllocateDescriptorSet(m_vkSetLayouts[set]);
-			m_descriptorTable.emplace(set, descriptorSet);
+			auto& descriptorSet = m_RenderContext.AllocateDescriptorSet(m_vkSetLayouts[set]);
+			m_DescriptorTable.emplace(set, descriptorSet);
 		}
 	}
 
 	for (auto& vkSetLayout : m_vkSetLayouts)
 	{
 		if (vkSetLayout == VK_NULL_HANDLE)
-			vkSetLayout = m_renderContext.GetEmptyDescriptorSetLayout();
+			vkSetLayout = m_RenderContext.GetEmptyDescriptorSetLayout();
 	}
 
 	// **
@@ -327,7 +328,7 @@ GraphicsPipeline& GraphicsPipeline::SetShaders(
 	pipelineLayoutInfo.pSetLayouts = m_vkSetLayouts.data();
 	pipelineLayoutInfo.pushConstantRangeCount = static_cast<u32>(pushConstants.size());
 	pipelineLayoutInfo.pPushConstantRanges = pushConstants.data();
-	VK_CHECK(vkCreatePipelineLayout(m_renderContext.vkDevice(), &pipelineLayoutInfo, nullptr, &m_vkPipelineLayout));
+	VK_CHECK(vkCreatePipelineLayout(m_RenderContext.vkDevice(), &pipelineLayoutInfo, nullptr, &m_vkPipelineLayout));
 
 
 	// **
@@ -365,7 +366,7 @@ GraphicsPipeline& GraphicsPipeline::SetShaders(
 	//	templateCreateInfo.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 	//	templateCreateInfo.pipelineLayout = m_vkPipelineLayout;
 	//	templateCreateInfo.set = set;
-	//	VK_CHECK(vkCreateDescriptorUpdateTemplate(m_renderContext.vkDevice(), &templateCreateInfo, nullptr, &m_vkDescriptorTemplate));
+	//	VK_CHECK(vkCreateDescriptorUpdateTemplate(m_RenderContext.vkDevice(), &templateCreateInfo, nullptr, &m_vkDescriptorTemplate));
 	//}
 
 	return *this;
@@ -375,21 +376,21 @@ GraphicsPipeline& GraphicsPipeline::SetMeshShaders(
 	baamboo::ResourceHandle<Shader> ms,
 	baamboo::ResourceHandle<Shader> ts)
 {
-	auto& rm = m_renderContext.GetResourceManager();
+	auto& rm = m_RenderContext.GetResourceManager();
 	auto pMS = rm.Get(ms); assert(pMS);
 	auto pTS = rm.Get(ts);
 
 	// **
 	// Create shader stages
 	// **
-	m_createInfos.shaderStages.clear();
+	m_CreateInfos.shaderStages.clear();
 
 	VkPipelineShaderStageCreateInfo msStageCreateInfo = {};
 	msStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	msStageCreateInfo.stage = VK_SHADER_STAGE_MESH_BIT_EXT;
 	msStageCreateInfo.module = pMS->vkModule();
 	msStageCreateInfo.pName = "main";
-	m_createInfos.shaderStages.push_back(msStageCreateInfo);
+	m_CreateInfos.shaderStages.push_back(msStageCreateInfo);
 
 	if (pTS)
 	{
@@ -398,7 +399,7 @@ GraphicsPipeline& GraphicsPipeline::SetMeshShaders(
 		tsStageCreateInfo.stage = VK_SHADER_STAGE_TASK_BIT_EXT;
 		tsStageCreateInfo.module = pTS->vkModule();
 		tsStageCreateInfo.pName = "main";
-		m_createInfos.shaderStages.push_back(tsStageCreateInfo);
+		m_CreateInfos.shaderStages.push_back(tsStageCreateInfo);
 	}
 
 	return *this;
@@ -406,19 +407,19 @@ GraphicsPipeline& GraphicsPipeline::SetMeshShaders(
 
 GraphicsPipeline& GraphicsPipeline::SetVertexInputs(std::vector< VkVertexInputBindingDescription >&& streams, std::vector< VkVertexInputAttributeDescription >&& attributes)
 {
-	m_createInfos.vertexInputInfo.vertexBindingDescriptionCount = static_cast<u32>(streams.size());
-	m_createInfos.vertexInputInfo.pVertexBindingDescriptions = streams.data();
-	m_createInfos.vertexInputInfo.vertexAttributeDescriptionCount = static_cast<u32>(attributes.size());
-	m_createInfos.vertexInputInfo.pVertexAttributeDescriptions = attributes.data();
+	m_CreateInfos.vertexInputInfo.vertexBindingDescriptionCount = static_cast<u32>(streams.size());
+	m_CreateInfos.vertexInputInfo.pVertexBindingDescriptions = streams.data();
+	m_CreateInfos.vertexInputInfo.vertexAttributeDescriptionCount = static_cast<u32>(attributes.size());
+	m_CreateInfos.vertexInputInfo.pVertexAttributeDescriptions = attributes.data();
 
 	return *this;
 }
 
 GraphicsPipeline& GraphicsPipeline::SetRenderTarget(const RenderTarget& renderTarget)
 {
-	m_createInfos.renderPass = renderTarget.vkRenderPass();
-	m_createInfos.blendStates.resize(renderTarget.GetNumColours());
-	for (auto& blendStates : m_createInfos.blendStates)
+	m_CreateInfos.renderPass = renderTarget.vkRenderPass();
+	m_CreateInfos.blendStates.resize(renderTarget.GetNumColors());
+	for (auto& blendStates : m_CreateInfos.blendStates)
 	{
 		blendStates.blendEnable = VK_FALSE;
 		blendStates.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
@@ -435,55 +436,55 @@ GraphicsPipeline& GraphicsPipeline::SetRenderTarget(const RenderTarget& renderTa
 
 GraphicsPipeline& GraphicsPipeline::SetTopology(VkPrimitiveTopology topology)
 {
-	m_createInfos.inputAssemblyInfo.topology = topology;
+	m_CreateInfos.inputAssemblyInfo.topology = topology;
 	return *this;
 }
 
 GraphicsPipeline& GraphicsPipeline::SetDepthTestEnable(bool bEnable)
 {
-	m_createInfos.depthStencilInfo.depthTestEnable = bEnable;
+	m_CreateInfos.depthStencilInfo.depthTestEnable = bEnable;
 	return *this;
 }
 
 GraphicsPipeline& GraphicsPipeline::SetDepthWriteEnable(bool bEnable)
 {
-	m_createInfos.depthStencilInfo.depthWriteEnable = bEnable;
+	m_CreateInfos.depthStencilInfo.depthWriteEnable = bEnable;
 	return *this;
 }
 
 GraphicsPipeline& GraphicsPipeline::SetBlendEnable(u32 renderTargetIndex, bool bEnable)
 {
-	assert(m_createInfos.blendStates.size() > renderTargetIndex);
-	m_createInfos.blendStates[renderTargetIndex].blendEnable = bEnable ? VK_TRUE : VK_FALSE;
+	assert(m_CreateInfos.blendStates.size() > renderTargetIndex);
+	m_CreateInfos.blendStates[renderTargetIndex].blendEnable = bEnable ? VK_TRUE : VK_FALSE;
 
 	return *this;
 }
 
 GraphicsPipeline& GraphicsPipeline::SetColorBlending(u32 renderTargetIndex, VkBlendFactor srcBlend, VkBlendFactor dstBlend, VkBlendOp blendOp)
 {
-	assert(m_createInfos.blendStates.size() > renderTargetIndex);
-	m_createInfos.blendStates[renderTargetIndex].blendEnable = VK_TRUE;
-	m_createInfos.blendStates[renderTargetIndex].srcColorBlendFactor = srcBlend;
-	m_createInfos.blendStates[renderTargetIndex].srcColorBlendFactor = dstBlend;
-	m_createInfos.blendStates[renderTargetIndex].colorBlendOp = blendOp;
+	assert(m_CreateInfos.blendStates.size() > renderTargetIndex);
+	m_CreateInfos.blendStates[renderTargetIndex].blendEnable = VK_TRUE;
+	m_CreateInfos.blendStates[renderTargetIndex].srcColorBlendFactor = srcBlend;
+	m_CreateInfos.blendStates[renderTargetIndex].srcColorBlendFactor = dstBlend;
+	m_CreateInfos.blendStates[renderTargetIndex].colorBlendOp = blendOp;
 
 	return *this;
 }
 
 GraphicsPipeline& GraphicsPipeline::SetAlphaBlending(u32 renderTargetIndex, VkBlendFactor srcBlend, VkBlendFactor dstBlend, VkBlendOp blendOp)
 {
-	assert(m_createInfos.blendStates.size() > renderTargetIndex);
-	m_createInfos.blendStates[renderTargetIndex].blendEnable = VK_TRUE;
-	m_createInfos.blendStates[renderTargetIndex].srcAlphaBlendFactor = srcBlend;
-	m_createInfos.blendStates[renderTargetIndex].srcAlphaBlendFactor = dstBlend;
-	m_createInfos.blendStates[renderTargetIndex].alphaBlendOp = blendOp;
+	assert(m_CreateInfos.blendStates.size() > renderTargetIndex);
+	m_CreateInfos.blendStates[renderTargetIndex].blendEnable = VK_TRUE;
+	m_CreateInfos.blendStates[renderTargetIndex].srcAlphaBlendFactor = srcBlend;
+	m_CreateInfos.blendStates[renderTargetIndex].srcAlphaBlendFactor = dstBlend;
+	m_CreateInfos.blendStates[renderTargetIndex].alphaBlendOp = blendOp;
 
 	return *this;
 }
 
 GraphicsPipeline& GraphicsPipeline::SetLogicOp(VkLogicOp logicOp)
 {
-	m_createInfos.blendLogicOp = logicOp;
+	m_CreateInfos.blendLogicOp = logicOp;
 	return *this;
 }
 
@@ -494,7 +495,7 @@ void GraphicsPipeline::Build()
 	// **
 
 	// Pipeline cache
-	std::string filename = m_name + ".cache";
+	std::string filename = m_Name + ".cache";
 	const bool bCacheExist = FileIO::FileExist(PIPELINE_PATH.string() + filename);
 
 	VkPipelineCache vkPipelineCache = VK_NULL_HANDLE;
@@ -505,9 +506,9 @@ void GraphicsPipeline::Build()
 		FileIO::Data cacheData = FileIO::ReadBinary(PIPELINE_PATH.string() + filename);
 
 		const auto cacheHeader = (VkPipelineCacheHeaderVersionOne*)cacheData.data;
-		if (cacheHeader->deviceID == m_renderContext.DeviceProps().deviceID &&
-			cacheHeader->vendorID == m_renderContext.DeviceProps().vendorID &&
-			memcmp(cacheHeader->pipelineCacheUUID, m_renderContext.DeviceProps().pipelineCacheUUID, VK_UUID_SIZE) == 0)
+		if (cacheHeader->deviceID == m_RenderContext.DeviceProps().deviceID &&
+			cacheHeader->vendorID == m_RenderContext.DeviceProps().vendorID &&
+			memcmp(cacheHeader->pipelineCacheUUID, m_RenderContext.DeviceProps().pipelineCacheUUID, VK_UUID_SIZE) == 0)
 		{
 			cacheInfo.initialDataSize = cacheData.size;
 			cacheInfo.pInitialData = cacheData.data;
@@ -515,7 +516,7 @@ void GraphicsPipeline::Build()
 		
 		delete cacheHeader;
 	}
-	VK_CHECK(vkCreatePipelineCache(m_renderContext.vkDevice(), &cacheInfo, nullptr, &vkPipelineCache));
+	VK_CHECK(vkCreatePipelineCache(m_RenderContext.vkDevice(), &cacheInfo, nullptr, &vkPipelineCache));
 
 	// dynamic state
 	std::vector< VkDynamicState > dynamicStates = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
@@ -527,30 +528,30 @@ void GraphicsPipeline::Build()
 	VkPipelineColorBlendStateCreateInfo colorBlendingInfo = 
 	{
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-		.logicOp = m_createInfos.blendLogicOp,
-		.attachmentCount = static_cast<u32>(m_createInfos.blendStates.size()),
-		.pAttachments = m_createInfos.blendStates.data(),
+		.logicOp = m_CreateInfos.blendLogicOp,
+		.attachmentCount = static_cast<u32>(m_CreateInfos.blendStates.size()),
+		.pAttachments = m_CreateInfos.blendStates.data(),
 		.blendConstants = { 0.f, 0.f, 0.f, 0.f }
 	};
 
 	// Pipeline
 	VkGraphicsPipelineCreateInfo pipelineInfo = {};
 	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-	pipelineInfo.stageCount = static_cast<u32>(m_createInfos.shaderStages.size());
-	pipelineInfo.pStages = m_createInfos.shaderStages.data();
-	pipelineInfo.pVertexInputState = &m_createInfos.vertexInputInfo;
-	pipelineInfo.pInputAssemblyState = &m_createInfos.inputAssemblyInfo;
-	pipelineInfo.pViewportState = &m_createInfos.viewportStateInfo;
-	pipelineInfo.pRasterizationState = &m_createInfos.rasterizerInfo;
-	pipelineInfo.pMultisampleState = &m_createInfos.multisamplingInfo;
-	pipelineInfo.pDepthStencilState = &m_createInfos.depthStencilInfo;
+	pipelineInfo.stageCount = static_cast<u32>(m_CreateInfos.shaderStages.size());
+	pipelineInfo.pStages = m_CreateInfos.shaderStages.data();
+	pipelineInfo.pVertexInputState = &m_CreateInfos.vertexInputInfo;
+	pipelineInfo.pInputAssemblyState = &m_CreateInfos.inputAssemblyInfo;
+	pipelineInfo.pViewportState = &m_CreateInfos.viewportStateInfo;
+	pipelineInfo.pRasterizationState = &m_CreateInfos.rasterizerInfo;
+	pipelineInfo.pMultisampleState = &m_CreateInfos.multisamplingInfo;
+	pipelineInfo.pDepthStencilState = &m_CreateInfos.depthStencilInfo;
 	pipelineInfo.pColorBlendState = &colorBlendingInfo;
 	pipelineInfo.pDynamicState = &dynamicStateInfo;
 	pipelineInfo.layout = m_vkPipelineLayout;
-	pipelineInfo.renderPass = m_createInfos.renderPass;
+	pipelineInfo.renderPass = m_CreateInfos.renderPass;
 	pipelineInfo.subpass = 0;
 	pipelineInfo.basePipelineIndex = -1;
-	VK_CHECK(vkCreateGraphicsPipelines(m_renderContext.vkDevice(), vkPipelineCache, 1, &pipelineInfo, nullptr, &m_vkPipeline));
+	VK_CHECK(vkCreateGraphicsPipelines(m_RenderContext.vkDevice(), vkPipelineCache, 1, &pipelineInfo, nullptr, &m_vkPipeline));
 
 
 	// **
@@ -559,15 +560,15 @@ void GraphicsPipeline::Build()
 	if (!bCacheExist && vkPipelineCache)
 	{
 		FileIO::Data writeData = {};
-		VK_CHECK(vkGetPipelineCacheData(m_renderContext.vkDevice(), vkPipelineCache, &writeData.size, nullptr));
+		VK_CHECK(vkGetPipelineCacheData(m_RenderContext.vkDevice(), vkPipelineCache, &writeData.size, nullptr));
 
 		writeData.data = _aligned_malloc(writeData.size, 64);
-		VK_CHECK(vkGetPipelineCacheData(m_renderContext.vkDevice(), vkPipelineCache, &writeData.size, writeData.data));
+		VK_CHECK(vkGetPipelineCacheData(m_RenderContext.vkDevice(), vkPipelineCache, &writeData.size, writeData.data));
 
 		FileIO::WriteBinary(PIPELINE_PATH.string(), filename, writeData);
 		writeData.Deallocate();
 	}
-	vkDestroyPipelineCache(m_renderContext.vkDevice(), vkPipelineCache, nullptr);
+	vkDestroyPipelineCache(m_RenderContext.vkDevice(), vkPipelineCache, nullptr);
 }
 
 
@@ -575,14 +576,14 @@ void GraphicsPipeline::Build()
 // Compute Pipeline
 //-------------------------------------------------------------------------
 ComputePipeline::ComputePipeline(RenderContext& context)
-	: m_renderContext(context)
+	: m_RenderContext(context)
 {
 }
 
 ComputePipeline::~ComputePipeline()
 {
-	vkDestroyPipeline(m_renderContext.vkDevice(), m_vkPipeline, nullptr);
-	vkDestroyPipelineLayout(m_renderContext.vkDevice(), m_vkPipelineLayout, nullptr);
+	vkDestroyPipeline(m_RenderContext.vkDevice(), m_vkPipeline, nullptr);
+	vkDestroyPipelineLayout(m_RenderContext.vkDevice(), m_vkPipelineLayout, nullptr);
 }
 
 } // namespace vk

@@ -172,7 +172,7 @@ DXGI_SAMPLE_DESC RenderContext::GetMultisampleQualityLevels(DXGI_FORMAT format, 
 void RenderContext::CreateDevice(bool bEnableGBV)
 {
 	ID3D12Debug* d3d12DebugController = nullptr;
-	IDXGIFactory4* dxgiFactory = nullptr;
+	IDXGIFactory6* dxgiFactory = nullptr;
 	IDXGIAdapter1* dxgiAdapter = nullptr;
 	DXGI_ADAPTER_DESC1 AdapterDesc = {};
 
@@ -207,12 +207,11 @@ void RenderContext::CreateDevice(bool bEnableGBV)
 		D3D_FEATURE_LEVEL_11_0
 	};
 
-	DWORD	FeatureLevelNum = _countof(featureLevels);
-
+	DWORD FeatureLevelNum = _countof(featureLevels);
 	for (DWORD featerLevelIndex = 0; featerLevelIndex < FeatureLevelNum; featerLevelIndex++)
 	{
 		u32 adapterIndex = 0;
-		while (DXGI_ERROR_NOT_FOUND != dxgiFactory->EnumAdapters1(adapterIndex, &dxgiAdapter))
+		while (DXGI_ERROR_NOT_FOUND != dxgiFactory->EnumAdapterByGpuPreference(adapterIndex, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&dxgiAdapter)))
 		{
 			dxgiAdapter->GetDesc1(&AdapterDesc);
 			if (SUCCEEDED(D3D12CreateDevice(dxgiAdapter, featureLevels[featerLevelIndex], IID_PPV_ARGS(&m_d3d12Device))))

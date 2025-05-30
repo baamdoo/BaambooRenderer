@@ -6,6 +6,7 @@
 #include <shlwapi.h>
 #include <corecrt_wstdio.h>
 #include <string>
+#include <filesystem>
 
 bool typedef (__stdcall* CreateInstance)(baamboo::Window* pWindow, struct ImGuiContext* pImGuiContext, void* ppv);
 
@@ -45,6 +46,8 @@ inline bool LoadRenderer(eRendererAPI eApi, baamboo::Window* pWindow, struct ImG
 		MessageBox(pWindow->WinHandle(), wchErrTxt, L"Error", MB_OK);
 		__debugbreak();
 	}
+
+	//system("PAUSE");
 
 	CreateInstance fnCreateInstance = (CreateInstance)GetProcAddress(hEngineDLL, "DllCreateInstance");
 	return fnCreateInstance(pWindow, pImGuiContext, ppRenderer);

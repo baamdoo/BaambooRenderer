@@ -2,8 +2,8 @@
 
 struct TransformData
 {
-    float4x4 mWorld;
-    float4x4 mWorldInv;
+    float4x4 mWorldToView;
+    float4x4 mViewToWorld;
 };
 
 StructuredBuffer< TransformData > g_Transforms : register(t0, space0);
@@ -17,9 +17,9 @@ struct CameraData
     float    padding;
 }; ConstantBuffer< CameraData > g_Camera : register(b1);
 
-cbuffer DrawConstants : register(b0)
+cbuffer RootConstants : register(b0, space0)
 {
-    uint transformID;
+    uint TransformIndex;
 };
 
 struct VSInput 
@@ -32,25 +32,25 @@ struct VSInput
 
 struct VSOutput
 {
-    float4 position   : SV_Position;
-    float2 uv         : TEXCOORD0;
-    float3 normal     : NORMAL;
-    float3 tangent    : TANGENT;
+    float4 posCLIP      : SV_Position;
+    float2 uv           : TEXCOORD0;
+    float3 normalWORLD  : TEXCOORD1;
+    float3 tangentWORLD : TEXCOORD2;
 };
 
-VSOutput main(VSInput IN)
+VSOutput main(VSInput IN, uint vid : SV_VertexID)
 {
     VSOutput output = (VSOutput)0;
 
-    TransformData transform = g_Transforms[transformID];
+    TransformData transform = g_Transforms[TransformIndex];
 
-    float4 posWORLD = mul(transform.mWorld, float4(IN.position, 1.0));
-    float4 normalWORLD = mul(transpose(transform.mWorldInv), float4(IN.normal, 1.0));
-    float4 tangentWORLD = mul(transform.mWorld, float4(IN.tangent, 0.0));
+    float4 posWORLD = mul(transform.mWorldToView, float4(IN.position, 1.0));
+    float4 normalWORLD = mul(transpose(transform.mViewToWorld), float4(IN.normal, 1.0));
+    float4 tangentWORLD = mul(transform.mWorldToView, float4(IN.tangent, 0.0));
 
     output.uv = IN.uv;
-    output.normal = normalize(normalWORLD.xyz);
-    output.tangent = tangentWORLD.xyz;
-    output.position = mul(g_Camera.mViewProj, posWORLD);
+    output.normalWORLD = normalize(normalWORLD.xyz);
+    output.tangentWORLD = tangentWORLD.xyz;
+    output.posCLIP = mul(g_Camera.mViewProj, posWORLD);
     return output;
 }

@@ -6,8 +6,9 @@
 #include "VkResourceManager.h"
 #include "VkDescriptorSet.h"
 #include "RenderResource/VkBuffer.h"
-#include "RenderResource/VkRenderTarget.h"
 #include "RenderResource/VkTexture.h"
+#include "RenderResource/VkRenderTarget.h"
+#include "RenderResource/VkSceneResource.h"
 
 namespace vk
 {
@@ -15,12 +16,12 @@ namespace vk
 static PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR;
 
 CommandBuffer::CommandBuffer(RenderContext& context, VkCommandPool vkCommandPool, VkCommandBufferLevel level)
-	: m_renderContext(context)
+	: m_RenderContext(context)
     , m_vkBelongedPool(vkCommandPool)
-    , m_level(level)
+    , m_Level(level)
 {
-    VkDevice device = m_renderContext.vkDevice();
-	vkCmdPushDescriptorSetKHR = (PFN_vkCmdPushDescriptorSetKHR)vkGetInstanceProcAddr(m_renderContext.vkInstance(), "vkCmdPushDescriptorSetKHR");
+    VkDevice device = m_RenderContext.vkDevice();
+	vkCmdPushDescriptorSetKHR = (PFN_vkCmdPushDescriptorSetKHR)vkGetInstanceProcAddr(m_RenderContext.vkInstance(), "vkCmdPushDescriptorSetKHR");
 
     // **
     // Allocate command buffer
@@ -28,7 +29,7 @@ CommandBuffer::CommandBuffer(RenderContext& context, VkCommandPool vkCommandPool
     VkCommandBufferAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.commandPool = m_vkBelongedPool;
-    allocInfo.level = m_level;
+    allocInfo.level = m_Level;
     allocInfo.commandBufferCount = 1;
     VK_CHECK(vkAllocateCommandBuffers(device, &allocInfo, &m_vkCommandBuffer));
 
@@ -36,7 +37,7 @@ CommandBuffer::CommandBuffer(RenderContext& context, VkCommandPool vkCommandPool
 	// **
 	// Create dynamic buffer pools
 	// **
-	m_pUniformBufferPool = new DynamicBufferAllocator(m_renderContext);
+	m_pUniformBufferPool = new DynamicBufferAllocator(m_RenderContext);
 
 
     // **
@@ -45,31 +46,31 @@ CommandBuffer::CommandBuffer(RenderContext& context, VkCommandPool vkCommandPool
     VkFenceCreateInfo fenceInfo = {};
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-    vkCreateFence(m_renderContext.vkDevice(), &fenceInfo, nullptr, &m_vkFence);
+    vkCreateFence(m_RenderContext.vkDevice(), &fenceInfo, nullptr, &m_vkFence);
 
     VkSemaphoreCreateInfo semaphoreInfo = {};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    VK_CHECK(vkCreateSemaphore(m_renderContext.vkDevice(), &semaphoreInfo, nullptr, &m_vkRenderCompleteSemaphore));
-    VK_CHECK(vkCreateSemaphore(m_renderContext.vkDevice(), &semaphoreInfo, nullptr, &m_vkPresentCompleteSemaphore));
+    VK_CHECK(vkCreateSemaphore(m_RenderContext.vkDevice(), &semaphoreInfo, nullptr, &m_vkRenderCompleteSemaphore));
+    VK_CHECK(vkCreateSemaphore(m_RenderContext.vkDevice(), &semaphoreInfo, nullptr, &m_vkPresentCompleteSemaphore));
 }
 
 CommandBuffer::~CommandBuffer()
 {
 	RELEASE(m_pUniformBufferPool);
 
-    vkDestroySemaphore(m_renderContext.vkDevice(), m_vkPresentCompleteSemaphore, nullptr);
-    vkDestroySemaphore(m_renderContext.vkDevice(), m_vkRenderCompleteSemaphore, nullptr);
-    vkDestroyFence(m_renderContext.vkDevice(), m_vkFence, nullptr);
+    vkDestroySemaphore(m_RenderContext.vkDevice(), m_vkPresentCompleteSemaphore, nullptr);
+    vkDestroySemaphore(m_RenderContext.vkDevice(), m_vkRenderCompleteSemaphore, nullptr);
+    vkDestroyFence(m_RenderContext.vkDevice(), m_vkFence, nullptr);
 
-    vkFreeCommandBuffers(m_renderContext.vkDevice(), m_vkBelongedPool, 1, &m_vkCommandBuffer);
+    vkFreeCommandBuffers(m_RenderContext.vkDevice(), m_vkBelongedPool, 1, &m_vkCommandBuffer);
 }
 
 void CommandBuffer::Open(VkCommandBufferUsageFlags flags)
 {
-    m_currentContextIndex = m_renderContext.ContextIndex();
+    m_CurrentContextIndex = m_RenderContext.ContextIndex();
 
     VK_CHECK(vkResetCommandBuffer(m_vkCommandBuffer, 0));
-    VK_CHECK(vkResetFences(m_renderContext.vkDevice(), 1, &m_vkFence));
+    VK_CHECK(vkResetFences(m_RenderContext.vkDevice(), 1, &m_vkFence));
 
     VkCommandBufferBeginInfo beginInfo = {};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -77,7 +78,7 @@ void CommandBuffer::Open(VkCommandBufferUsageFlags flags)
     VK_CHECK(vkBeginCommandBuffer(m_vkCommandBuffer, &beginInfo));
 
 	m_pUniformBufferPool->Reset();
-	m_pushAllocations.clear();
+	m_PushAllocations.clear();
 
 	m_pGraphicsPipeline = nullptr;
 	m_pComputePipeline = nullptr;
@@ -91,12 +92,12 @@ void CommandBuffer::Close()
 
 bool CommandBuffer::IsFenceComplete() const
 {
-    return vkGetFenceStatus(m_renderContext.vkDevice(), m_vkFence) == VK_SUCCESS;
+    return vkGetFenceStatus(m_RenderContext.vkDevice(), m_vkFence) == VK_SUCCESS;
 }
 
 void CommandBuffer::WaitForFence() const
 {
-	VK_CHECK(vkWaitForFences(m_renderContext.vkDevice(), 1, &m_vkFence, VK_TRUE, UINT64_MAX));
+	VK_CHECK(vkWaitForFences(m_RenderContext.vkDevice(), 1, &m_vkFence, VK_TRUE, UINT64_MAX));
 }
 
 void CommandBuffer::CopyBuffer(
@@ -414,7 +415,7 @@ void CommandBuffer::SetGraphicsDynamicUniformBuffer(u32 binding, VkDeviceSize si
 	write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	write.pBufferInfo = &bufferInfo;
 	
-	m_pushAllocations.push_back({ binding, bufferInfo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER });
+	m_PushAllocations.push_back({ binding, bufferInfo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER });
 }
 
 void CommandBuffer::PushDescriptors(u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType)
@@ -428,7 +429,7 @@ void CommandBuffer::PushDescriptors(u32 binding, const VkDescriptorImageInfo& im
 	write.descriptorType = descriptorType;
 	write.pImageInfo = &imageInfo;
 
-	m_pushAllocations.push_back({ binding, imageInfo, descriptorType });
+	m_PushAllocations.push_back({ binding, imageInfo, descriptorType });
 }
 
 void CommandBuffer::PushDescriptors(u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType)
@@ -442,7 +443,7 @@ void CommandBuffer::PushDescriptors(u32 binding, const VkDescriptorBufferInfo& b
 	write.descriptorType = descriptorType;
 	write.pBufferInfo = &bufferInfo;
 
-	m_pushAllocations.push_back({ binding, bufferInfo, descriptorType });
+	m_PushAllocations.push_back({ binding, bufferInfo, descriptorType });
 }
 
 void CommandBuffer::SetRenderPipeline(GraphicsPipeline* pRenderPipeline)
@@ -485,7 +486,7 @@ void CommandBuffer::EndRenderPass()
 void CommandBuffer::Draw(u32 vertexCount, u32 instanceCount, u32 firstVertex, u32 firstInstance)
 {
 	std::vector< VkWriteDescriptorSet > writes;
-	for (const auto& allocation : m_pushAllocations)
+	for (const auto& allocation : m_PushAllocations)
 	{
 		VkWriteDescriptorSet write = {};
 		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -510,7 +511,7 @@ void CommandBuffer::Draw(u32 vertexCount, u32 instanceCount, u32 firstVertex, u3
 void CommandBuffer::DrawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex, i32 vertexOffset, u32 firstInstance)
 {
 	std::vector< VkWriteDescriptorSet > writes;
-	for (const auto& allocation : m_pushAllocations)
+	for (const auto& allocation : m_PushAllocations)
 	{
 		VkWriteDescriptorSet write = {};
 		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -532,9 +533,9 @@ void CommandBuffer::DrawIndexed(u32 indexCount, u32 instanceCount, u32 firstInde
 	vkCmdDrawIndexed(m_vkCommandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
-void CommandBuffer::DrawIndexedIndirect()
+void CommandBuffer::DrawIndexedIndirect(const SceneResource& sceneResource)
 {
-	auto vkDescriptorSet = g_FrameData.pSceneResource->GetSceneDescriptorSet();
+	auto vkDescriptorSet = sceneResource.GetSceneDescriptorSet();
 	vkCmdBindDescriptorSets(
 		m_vkCommandBuffer,
 		VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -542,7 +543,7 @@ void CommandBuffer::DrawIndexedIndirect()
 		eDescriptorSet_Static, 1, &vkDescriptorSet, 0, nullptr);
 
 	std::vector< VkWriteDescriptorSet > writes;
-	for (const auto& allocation : m_pushAllocations)
+	for (const auto& allocation : m_PushAllocations)
 	{
 		VkWriteDescriptorSet write = {};
 		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -561,16 +562,16 @@ void CommandBuffer::DrawIndexedIndirect()
 		m_pGraphicsPipeline->vkPipelineLayout(),
 		eDescriptorSet_Push, static_cast<u32>(writes.size()), writes.data());
 
-	const auto& indirectInfo = g_FrameData.pSceneResource->GetIndirectDrawDescriptorInfo();
-	vkCmdBindIndexBuffer(m_vkCommandBuffer, g_FrameData.pSceneResource->GetIndexDescriptorInfo().buffer, 0, VK_INDEX_TYPE_UINT32);
+	const auto& indirectInfo = sceneResource.GetIndirectDrawDescriptorInfo();
+	vkCmdBindIndexBuffer(m_vkCommandBuffer, sceneResource.GetIndexDescriptorInfo().buffer, 0, VK_INDEX_TYPE_UINT32);
 	vkCmdDrawIndexedIndirect(m_vkCommandBuffer, indirectInfo.buffer, indirectInfo.offset, u32(indirectInfo.range / sizeof(IndirectDrawData)), sizeof(IndirectDrawData));
 }
 
 void CommandBuffer::AddBarrier(const VkBufferMemoryBarrier2& barrier, bool bFlushImmediate)
 {
-	m_bufferBarriers[m_numBufferBarriersToFlush++] = barrier;
+	m_BufferBarriers[m_NumBufferBarriersToFlush++] = barrier;
 
-	if (bFlushImmediate || m_numBufferBarriersToFlush == MAX_NUM_PENDING_BARRIERS)
+	if (bFlushImmediate || m_NumBufferBarriersToFlush == MAX_NUM_PENDING_BARRIERS)
 	{
 		FlushBarriers();
 	}
@@ -578,9 +579,9 @@ void CommandBuffer::AddBarrier(const VkBufferMemoryBarrier2& barrier, bool bFlus
 
 void CommandBuffer::AddBarrier(const VkImageMemoryBarrier2& barrier, bool bFlushImmediate)
 {
-	m_imageBarriers[m_numImageBarriersToFlush++] = barrier;
+	m_ImageBarriers[m_NumImageBarriersToFlush++] = barrier;
 
-	if (bFlushImmediate || m_numImageBarriersToFlush == MAX_NUM_PENDING_BARRIERS)
+	if (bFlushImmediate || m_NumImageBarriersToFlush == MAX_NUM_PENDING_BARRIERS)
 	{
 		FlushBarriers();
 	}
@@ -588,26 +589,26 @@ void CommandBuffer::AddBarrier(const VkImageMemoryBarrier2& barrier, bool bFlush
 
 void CommandBuffer::FlushBarriers()
 {
-	if (m_numBufferBarriersToFlush > 0)
+	if (m_NumBufferBarriersToFlush > 0)
 	{
 		VkDependencyInfo dependency = {};
 		dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-		dependency.bufferMemoryBarrierCount = m_numBufferBarriersToFlush;
-		dependency.pBufferMemoryBarriers = m_bufferBarriers;
+		dependency.bufferMemoryBarrierCount = m_NumBufferBarriersToFlush;
+		dependency.pBufferMemoryBarriers = m_BufferBarriers;
 		vkCmdPipelineBarrier2(m_vkCommandBuffer, &dependency);
 
-		m_numBufferBarriersToFlush = 0;
+		m_NumBufferBarriersToFlush = 0;
 	}
 
-	if (m_numImageBarriersToFlush > 0)
+	if (m_NumImageBarriersToFlush > 0)
 	{
 		VkDependencyInfo dependency = {};
 		dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-		dependency.imageMemoryBarrierCount = m_numImageBarriersToFlush;
-		dependency.pImageMemoryBarriers = m_imageBarriers;
+		dependency.imageMemoryBarrierCount = m_NumImageBarriersToFlush;
+		dependency.pImageMemoryBarriers = m_ImageBarriers;
 		vkCmdPipelineBarrier2(m_vkCommandBuffer, &dependency);
 
-		m_numImageBarriersToFlush = 0;
+		m_NumImageBarriersToFlush = 0;
 	}
 }
 

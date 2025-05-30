@@ -5,6 +5,7 @@
 #include "VkCommandBuffer.h"
 #include "VkResourceManager.h"
 #include "VkDescriptorPool.h"
+#include "RenderResource/VkSceneResource.h"
 
 namespace vk
 {
@@ -39,7 +40,7 @@ RenderContext::RenderContext()
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_IndexTypeUint8)
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_Sync2).Build(m_vkInstance);
 	m_vkPhysicalDevice = deviceBuilder.physicalDevice;
-	m_physicalDeviceProperties = deviceBuilder.physicalDeviceProperties;
+	m_PhysicalDeviceProperties = deviceBuilder.physicalDeviceProperties;
 
 	m_pGraphicsQueue = new CommandQueue(*this, deviceBuilder.queueFamilyIndices.graphicsQueueIndex);
 	m_pComputeQueue = new CommandQueue(*this, deviceBuilder.queueFamilyIndices.computeQueueIndex);
@@ -104,13 +105,13 @@ RenderContext::~RenderContext()
 
 u8 RenderContext::NextFrame()
 {
-	m_contextIndex = (m_contextIndex + 1) % m_numContexts;
-	return m_contextIndex;
+	m_ContextIndex = (m_ContextIndex + 1) % m_NumContexts;
+	return m_ContextIndex;
 }
 
 VkDeviceSize RenderContext::GetAlignedSize(VkDeviceSize size) const
 {
-	const VkDeviceSize alignment = m_physicalDeviceProperties.limits.minMemoryMapAlignment;
+	const VkDeviceSize alignment = m_PhysicalDeviceProperties.limits.minMemoryMapAlignment;
 	return (size + alignment - 1) & ~(alignment - 1);
 }
 

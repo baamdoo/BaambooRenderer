@@ -22,7 +22,7 @@ public:
 	CommandSignatureDesc& AddVertexBufferView(UINT slot);
 	CommandSignatureDesc& AddIndexBufferView();
 
-	CommandSignatureDesc& AddConstant(UINT rootIndex, UINT dstOffsetIn32BitValues, UINT num32BitValuesToSet);
+	CommandSignatureDesc& AddConstant(UINT rootIndex, UINT dstOffsetIn32BitValues, UINT num32BitValues);
 	CommandSignatureDesc& AddConstantBufferView(UINT rootIndex);
 	CommandSignatureDesc& AddShaderResourceView(UINT rootIndex);
 	CommandSignatureDesc& AddUnorderedAccessView(UINT rootIndex);

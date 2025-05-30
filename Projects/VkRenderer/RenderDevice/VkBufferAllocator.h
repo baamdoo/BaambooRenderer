@@ -44,30 +44,30 @@ private:
         void Activate(bool bActive) { m_bActivated = bActive; }
 
     private:
-        RenderContext& m_renderContext;
+        RenderContext& m_RenderContext;
 
         VkBuffer      m_vkBuffer = nullptr;
         VmaAllocation m_vmaAllocation = VK_NULL_HANDLE;
 
-        void* m_baseCpuHandle = nullptr;
+        void* m_BaseCpuHandle = nullptr;
 
-        u64  m_offset = 0;
-        u64  m_pageSize = 0;
+        u64  m_Offset = 0;
+        u64  m_PageSize = 0;
         bool m_bActivated = false;
     };
 
     Page* RequestPage();
 
 private:
-    RenderContext& m_renderContext;
+    RenderContext& m_RenderContext;
 
     std::vector< Page* > m_pPages;
     std::deque< Page* >  m_pAvailablePages;
 
     Page* m_pCurrentPage = nullptr;
 
-    u64 m_alignment = 0;
-    u64 m_maxPageSize = 0;
+    u64 m_Alignment = 0;
+    u64 m_MaxPageSize = 0;
 };
 
 
@@ -96,25 +96,25 @@ public:
     [[nodiscard]]
     VkBuffer vkBuffer() const { return m_vkBuffer; }
     [[nodiscard]]
-    u64 GetAllocatedSize() const { return m_offset; }
+    u64 GetAllocatedSize() const { return m_Offset; }
 
 private:
     void Resize(VkDeviceSize sizeInBytes);
 
 private:
-    RenderContext& m_renderContext;
+    RenderContext& m_RenderContext;
 
     VkBuffer          m_vkBuffer = nullptr;
     VmaAllocation     m_vmaAllocation = VK_NULL_HANDLE;
-    VmaAllocationInfo m_allocationInfo;
+    VmaAllocationInfo m_AllocationInfo;
 
-    VkDeviceAddress m_baseGpuHandle;
+    VkDeviceAddress m_BaseGpuHandle;
 
-    u64 m_size = 0;
-    u64 m_offset = 0;
-    u64 m_alignment = 0;
+    u64 m_Size = 0;
+    u64 m_Offset = 0;
+    u64 m_Alignment = 0;
 
-    VkBufferUsageFlags m_usageFlags = 0;
+    VkBufferUsageFlags m_UsageFlags = 0;
 };
 
 } // namespace vk

@@ -16,7 +16,7 @@ public:
 	std::vector< entt::entity > Update();
 
 private:
-	entt::registry& m_registry;
+	entt::registry& m_Registry;
 };
 
 } // namespace baamboo

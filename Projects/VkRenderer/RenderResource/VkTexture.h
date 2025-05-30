@@ -126,29 +126,29 @@ public:
 	void SetResource(VkImage vkImage, VkImageView vkImageView, VmaAllocation vmaAllocation, VkImageAspectFlags aspectMask);
 
 	[[nodiscard]]
-	inline CreationInfo Info() const { return m_creationInfo; }
+	inline CreationInfo Info() const { return m_CreationInfo; }
     [[nodiscard]]
     inline VkImage vkImage() const { return m_vkImage; }
     [[nodiscard]]
     inline VkImageView vkView() const { return m_vkImageView; }
     [[nodiscard]]
-    inline const VkImageCreateInfo& Desc() const { return m_desc; }
+    inline const VkImageCreateInfo& Desc() const { return m_Desc; }
 	[[nodiscard]]
-	inline VkImageAspectFlags AspectMask() const { return m_aspectFlags; }
+	inline VkImageAspectFlags AspectMask() const { return m_AspectFlags; }
 	[[nodiscard]]
-	inline VkClearValue ClearValue() const { return m_aspectFlags & VK_IMAGE_ASPECT_COLOR_BIT ? VkClearValue{ .color = m_creationInfo.colorClearValue } : VkClearValue{ .depthStencil = m_creationInfo.depthClearValue }; }
+	inline VkClearValue ClearValue() const { return m_AspectFlags & VK_IMAGE_ASPECT_COLOR_BIT ? VkClearValue{ .color = m_CreationInfo.colorClearValue } : VkClearValue{ .depthStencil = m_CreationInfo.depthClearValue }; }
 	[[nodiscard]]
-	inline const VkClearColorValue* ClearColorValue() const { assert(m_aspectFlags & VK_IMAGE_ASPECT_COLOR_BIT); return &m_creationInfo.colorClearValue; }
+	inline const VkClearColorValue* ClearColorValue() const { assert(m_AspectFlags & VK_IMAGE_ASPECT_COLOR_BIT); return &m_CreationInfo.colorClearValue; }
 	[[nodiscard]]
-	inline const VkClearDepthStencilValue* ClearDepthValue() const { assert(m_aspectFlags & VK_IMAGE_ASPECT_DEPTH_BIT); return &m_creationInfo.depthClearValue; }
+	inline const VkClearDepthStencilValue* ClearDepthValue() const { assert(m_AspectFlags & VK_IMAGE_ASPECT_DEPTH_BIT); return &m_CreationInfo.depthClearValue; }
 	[[nodiscard]]
 	u64 SizeInBytes() const;
 
 	[[nodiscard]]
-	inline const ResourceState& GetState() const { return m_currentState; }
-	void SetState(State state, Subresource subresource = ALL_SUBRESOURCES) { m_currentState.SetSubresourceState(state, subresource); }
+	inline const ResourceState& GetState() const { return m_CurrentState; }
+	void SetState(State state, Subresource subresource = ALL_SUBRESOURCES) { m_CurrentState.SetSubresourceState(state, subresource); }
 
-	void FlattenSubresourceStates() { m_currentState.FlattenResourceState(); }
+	void FlattenSubresourceStates() { m_CurrentState.FlattenResourceState(); }
 
 protected:
 	template< typename T >
@@ -165,11 +165,11 @@ protected:
 private:
     VkImage            m_vkImage = VK_NULL_HANDLE;
     VkImageView        m_vkImageView = VK_NULL_HANDLE;
-    VkImageCreateInfo  m_desc = {};
-	VkImageAspectFlags m_aspectFlags = 0;
+    VkImageCreateInfo  m_Desc = {};
+	VkImageAspectFlags m_AspectFlags = 0;
 
-	CreationInfo  m_creationInfo = {}; // for resize
-	ResourceState m_currentState = {};
+	CreationInfo  m_CreationInfo = {}; // for resize
+	ResourceState m_CurrentState = {};
 
 	bool m_bOwnedBySwapChain = false;
 };

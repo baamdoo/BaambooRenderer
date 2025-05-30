@@ -19,7 +19,7 @@ public:
 
 
 	[[nodiscard]]
-	inline u32 Index() const { return m_queueIndex; }
+	inline u32 Index() const { return m_QueueIndex; }
 	[[nodiscard]]
 	inline VkQueue vkQueue() const { return m_vkQueue; }
 	[[nodiscard]]
@@ -29,7 +29,7 @@ private:
 	CommandBuffer* RequestList(VkCommandPool vkCommandPool);
 
 private:
-	RenderContext& m_renderContext;
+	RenderContext& m_RenderContext;
 
 	VkQueue       m_vkQueue = VK_NULL_HANDLE;
 	VkCommandPool m_vkCommandPool = VK_NULL_HANDLE;
@@ -37,7 +37,7 @@ private:
 	std::vector< CommandBuffer* > m_pCmdBuffers;
 	std::queue< CommandBuffer* >  m_pAvailableCmdBuffers;
 
-	u32 m_queueIndex = UINT_MAX;
+	u32 m_QueueIndex = UINT_MAX;
 };
 
 } // namespace vk

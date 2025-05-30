@@ -50,10 +50,9 @@ enum eDescriptorSetIndexType : u8
 
 	eStaticSetBindingIndex_CombinedImage2D = 0,
 	eStaticSetBindingIndex_Vertex = 1,
-	eStaticSetBindingIndex_Index = 2,
-	eStaticSetBindingIndex_IndirectDraw = 3,
-	eStaticSetBindingIndex_Transform = 4,
-	eStaticSetBindingIndex_Material = 5,
+	eStaticSetBindingIndex_IndirectDraw = 2,
+	eStaticSetBindingIndex_Transform = 3,
+	eStaticSetBindingIndex_Material = 4,
 };
 
 

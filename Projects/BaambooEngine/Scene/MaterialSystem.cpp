@@ -5,11 +5,11 @@ namespace baamboo
 {
 
 MaterialSystem::MaterialSystem(entt::registry& registry)
-	: m_registry(registry)
+	: m_Registry(registry)
 {
-	m_registry.on_construct< MaterialComponent >().connect< &MaterialSystem::OnMaterialConstructed >(this);
-	m_registry.on_update< MaterialComponent >().connect< &MaterialSystem::OnMaterialUpdated >(this);
-	m_registry.on_destroy< MaterialComponent >().connect< &MaterialSystem::OnMaterialDestroyed >(this);
+	m_Registry.on_construct< MaterialComponent >().connect< &MaterialSystem::OnMaterialConstructed >(this);
+	m_Registry.on_update< MaterialComponent >().connect< &MaterialSystem::OnMaterialUpdated >(this);
+	m_Registry.on_destroy< MaterialComponent >().connect< &MaterialSystem::OnMaterialDestroyed >(this);
 }
 
 void MaterialSystem::OnMaterialConstructed(entt::registry& registry, entt::entity entity)
@@ -36,7 +36,7 @@ void MaterialSystem::OnMaterialDestroyed(entt::registry& registry, entt::entity 
 std::vector<entt::entity> MaterialSystem::Update()
 {
 	std::vector< entt::entity > markedEntities;
-	m_registry.view< MaterialComponent >().each([&](auto entity, auto& materialComponent)
+	m_Registry.view< MaterialComponent >().each([&](auto entity, auto& materialComponent)
 		{
 			if (materialComponent.bDirtyMark)
 			{

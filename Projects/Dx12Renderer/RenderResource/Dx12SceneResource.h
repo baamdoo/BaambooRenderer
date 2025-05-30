@@ -43,7 +43,7 @@ struct SceneResource
     StructuredBuffer* GetMaterialBuffer() const;
 
     [[nodiscard]]
-    inline u32 NumMeshes() const { return m_numMeshes; }
+    inline u32 NumMeshes() const { return m_NumMeshes; }
 
     // TEMP
     std::vector< D3D12_CPU_DESCRIPTOR_HANDLE > srvs;
@@ -61,11 +61,11 @@ private:
     StaticBufferAllocator* m_pTransformBufferPool = nullptr;
     StaticBufferAllocator* m_pMaterialBufferPool = nullptr;
 
-    std::unordered_map< std::string, VertexBuffer* > m_vertexCache;
-    std::unordered_map< std::string, IndexBuffer*  > m_indexCache;
-    std::unordered_map< std::string, Texture* >      m_textureCache;
+    std::unordered_map< std::string, VertexBuffer* > m_VertexCache;
+    std::unordered_map< std::string, IndexBuffer*  > m_IndexCache;
+    std::unordered_map< std::string, Texture* >      m_TextureCache;
 
-    u32 m_numMeshes = 0;
+    u32 m_NumMeshes = 0;
 };
 
 } // namespace dx12

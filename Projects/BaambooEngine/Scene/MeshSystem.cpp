@@ -5,11 +5,11 @@ namespace baamboo
 {
 
 StaticMeshSystem::StaticMeshSystem(entt::registry& registry)
-	: m_registry(registry)
+	: m_Registry(registry)
 {
-	m_registry.on_construct< StaticMeshComponent >().connect< &StaticMeshSystem::OnMeshConstructed >(this);
-	m_registry.on_update< StaticMeshComponent >().connect< &StaticMeshSystem::OnMeshUpdated >(this);
-	m_registry.on_destroy< StaticMeshComponent >().connect< &StaticMeshSystem::OnMeshDestroyed >(this);
+	m_Registry.on_construct< StaticMeshComponent >().connect< &StaticMeshSystem::OnMeshConstructed >(this);
+	m_Registry.on_update< StaticMeshComponent >().connect< &StaticMeshSystem::OnMeshUpdated >(this);
+	m_Registry.on_destroy< StaticMeshComponent >().connect< &StaticMeshSystem::OnMeshDestroyed >(this);
 }
 
 void StaticMeshSystem::OnMeshConstructed(entt::registry& registry, entt::entity entity)
@@ -34,7 +34,7 @@ void StaticMeshSystem::OnMeshDestroyed(entt::registry& registry, entt::entity en
 std::vector<entt::entity> StaticMeshSystem::Update()
 {
 	std::vector< entt::entity > markedEntities;
-	m_registry.view< StaticMeshComponent >().each([&](auto entity, auto& meshComponent)
+	m_Registry.view< StaticMeshComponent >().each([&](auto entity, auto& meshComponent)
 		{
 			if (meshComponent.bDirtyMark)
 			{

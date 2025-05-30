@@ -10,67 +10,6 @@
 namespace vk
 {
 
-class StaticBufferAllocator;
-
-struct BufferHandle
-{
-    VkBuffer vkBuffer;
-    
-    u32 count;
-    u32 offset;
-    u64 elementSizeInBytes;
-};
-using TextureHandle = baamboo::ResourceHandle< Texture >;
-
-struct SceneResource
-{
-    SceneResource(RenderContext& context);
-    ~SceneResource();
-
-    void UpdateSceneResources(const SceneRenderView& sceneView);
-
-    BufferHandle GetOrUpdateVertex(u32 entity, std::string_view filepath, const void* pData, u32 count);
-    BufferHandle GetOrUpdateIndex(u32 entity, std::string_view filepath, const void* pData, u32 count);
-    TextureHandle GetOrLoadTexture(u32 entity, std::string_view filepath);
-
-    [[nodiscard]]
-    VkDescriptorBufferInfo GetVertexDescriptorInfo() const;
-    [[nodiscard]]
-    VkDescriptorBufferInfo GetIndexDescriptorInfo() const;
-    [[nodiscard]]
-    VkDescriptorBufferInfo GetIndirectDrawDescriptorInfo() const;
-    [[nodiscard]]
-    VkDescriptorBufferInfo GetTransformDescriptorInfo() const;
-    [[nodiscard]]
-    VkDescriptorBufferInfo GetMaterialDescriptorInfo() const;
-
-    [[nodiscard]]
-    VkDescriptorSet GetSceneDescriptorSet() const;
-    [[nodiscard]]
-    VkDescriptorSetLayout GetSceneDescriptorSetLayout() const { return m_vkSetLayout; }
-
-private:
-    void ResetFrameBuffers();
-    void UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator* pTargetBuffer);
-
-    RenderContext& m_renderContext;
-
-    VkDescriptorSetLayout m_vkSetLayout = VK_NULL_HANDLE;
-    DescriptorPool*       m_pDescriptorPool = nullptr;
-
-    StaticBufferAllocator* m_pVertexBufferPool = nullptr;
-    StaticBufferAllocator* m_pIndexBufferPool = nullptr;
-    StaticBufferAllocator* m_pIndirectDrawBufferPool = nullptr;
-    StaticBufferAllocator* m_pTransformBufferPool = nullptr;
-    StaticBufferAllocator* m_pMaterialBufferPool = nullptr;
-
-    std::unordered_map< std::string, BufferHandle >  m_vertexCache;
-    std::unordered_map< std::string, BufferHandle >  m_indexCache;
-    std::unordered_map< std::string, TextureHandle > m_textureCache;
-
-    baamboo::ResourceHandle< Sampler > m_defaultSampler;
-};
-
 class ResourceManager
 {
 public:
@@ -94,12 +33,12 @@ public:
     void Remove(baamboo::ResourceHandle< TResource > handle);
 
 private:
-    RenderContext& m_renderContext;
+    RenderContext& m_RenderContext;
 
-    ResourcePool< Buffer >  m_buffers;
-    ResourcePool< Texture > m_textures;
-    ResourcePool< Sampler > m_samplers;
-    ResourcePool< Shader >  m_shaders;
+    ResourcePool< Buffer >  m_Buffers;
+    ResourcePool< Texture > m_Textures;
+    ResourcePool< Sampler > m_Samplers;
+    ResourcePool< Shader >  m_Shaders;
 };
 
 template< typename TResource >
@@ -108,13 +47,13 @@ baamboo::ResourceHandle< TResource > ResourceManager::Create(std::wstring_view n
     static_assert(std::is_base_of_v< Resource< TResource >, TResource >);
 
     if constexpr (std::is_same_v< TResource, Buffer >)
-        return m_buffers.Create(m_renderContext, name, std::move(desc));
+        return m_Buffers.Create(m_RenderContext, name, std::move(desc));
     if constexpr (std::is_same_v< TResource, Texture >)
-        return m_textures.Create(m_renderContext, name, std::move(desc));
+        return m_Textures.Create(m_RenderContext, name, std::move(desc));
     if constexpr (std::is_same_v< TResource, Sampler >)
-        return m_samplers.Create(m_renderContext, name, std::move(desc));
+        return m_Samplers.Create(m_RenderContext, name, std::move(desc));
     if constexpr (std::is_same_v< TResource, Shader >)
-        return m_shaders.Create(m_renderContext, name, std::move(desc));
+        return m_Shaders.Create(m_RenderContext, name, std::move(desc));
     return baamboo::ResourceHandle< TResource >();
 }
 
@@ -124,9 +63,9 @@ TResource* ResourceManager::CreateEmpty(std::wstring_view name)
     static_assert(std::is_base_of_v< Resource< TResource >, TResource >);
 
     if constexpr (std::is_same_v< TResource, Buffer >)
-        return new Buffer(m_renderContext, name);
+        return new Buffer(m_RenderContext, name);
     if constexpr (std::is_same_v< TResource, Texture >)
-        return new Texture(m_renderContext, name);
+        return new Texture(m_RenderContext, name);
     return nullptr;
 }
 
@@ -136,13 +75,13 @@ baamboo::ResourceHandle< TResource > ResourceManager::Add(TResource* pResource)
     static_assert(std::is_base_of_v< Resource< TResource >, TResource >);
 
     if constexpr (std::is_same_v< TResource, Buffer >)
-        return m_buffers.Add(pResource);
+        return m_Buffers.Add(pResource);
     if constexpr (std::is_same_v< TResource, Texture >)
-        return m_textures.Add(pResource);
+        return m_Textures.Add(pResource);
     if constexpr (std::is_same_v< TResource, Sampler >)
-        return m_samplers.Add(pResource);
+        return m_Samplers.Add(pResource);
     if constexpr (std::is_same_v< TResource, Shader >)
-        return m_shaders.Add(pResource);
+        return m_Shaders.Add(pResource);
     return baamboo::ResourceHandle< TResource >();
 }
 
@@ -152,13 +91,13 @@ inline TResource* ResourceManager::Get(baamboo::ResourceHandle< TResource > hand
     static_assert(std::is_base_of_v< Resource< TResource >, TResource >);
 
     if constexpr (std::is_same_v< TResource, Buffer >)
-        return m_buffers.Get(handle);
+        return m_Buffers.Get(handle);
     if constexpr (std::is_same_v< TResource, Texture >)
-        return m_textures.Get(handle);
+        return m_Textures.Get(handle);
     if constexpr (std::is_same_v< TResource, Sampler >)
-        return m_samplers.Get(handle);
+        return m_Samplers.Get(handle);
     if constexpr (std::is_same_v< TResource, Shader >)
-        return m_shaders.Get(handle);
+        return m_Shaders.Get(handle);
     return nullptr;
 }
 
@@ -168,13 +107,13 @@ inline void ResourceManager::Remove(baamboo::ResourceHandle< TResource > handle)
     static_assert(std::is_base_of_v< Resource< TResource >, TResource >);
 
     if constexpr (std::is_same_v< TResource, Buffer >)
-        m_buffers.Remove(handle);
+        m_Buffers.Remove(handle);
     if constexpr (std::is_same_v< TResource, Texture >)
-        m_textures.Remove(handle);
+        m_Textures.Remove(handle);
     if constexpr (std::is_same_v< TResource, Sampler >)
-        m_samplers.Remove(handle);
+        m_Samplers.Remove(handle);
     if constexpr (std::is_same_v< TResource, Shader >)
-        m_shaders.Remove(handle);
+        m_Shaders.Remove(handle);
 }
 
 } // namespace vk

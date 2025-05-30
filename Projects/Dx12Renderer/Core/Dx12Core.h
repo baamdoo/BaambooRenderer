@@ -11,7 +11,7 @@
 // Header
 //-------------------------------------------------------------------------
 #include <d3d12.h>
-#include <dxgi1_4.h>
+#include <dxgi1_6.h>
 #include <d3d11on12.h>
 #include <d3dcompiler.h>
 #include <dwrite.h>
@@ -113,6 +113,7 @@ constexpr u32 MAX_NUM_DESCRIPTOR_PER_POOL[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES] 
 //-------------------------------------------------------------------------
 // Shader Types
 //-------------------------------------------------------------------------
+//#pragma pack(push, 4)
 struct IndirectDrawData
 {
     u32 transformID;
@@ -123,6 +124,7 @@ struct IndirectDrawData
 
     D3D12_DRAW_INDEXED_ARGUMENTS draws;
 };
+//#pragma pack(pop)
 
 
 //-------------------------------------------------------------------------

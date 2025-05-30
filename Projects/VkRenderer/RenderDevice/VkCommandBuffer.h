@@ -95,7 +95,7 @@ public:
 
     void Draw(u32 vertexCount, u32 instanceCount = 1, u32 firstVertex = 0, u32 firstInstance = 0);
     void DrawIndexed(u32 indexCount, u32 instanceCount = 1, u32 firstIndex = 0, i32 vertexOffset = 0, u32 firstInstance = 0);
-    void DrawIndexedIndirect();
+    void DrawIndexedIndirect(const SceneResource& sceneResource);
 
     [[nodiscard]]
     bool IsFenceComplete() const;
@@ -123,11 +123,11 @@ private:
 
 private:
     friend class CommandQueue;
-    RenderContext& m_renderContext;
+    RenderContext& m_RenderContext;
 
     VkCommandBuffer      m_vkCommandBuffer = VK_NULL_HANDLE;
     VkCommandPool        m_vkBelongedPool = VK_NULL_HANDLE;
-    VkCommandBufferLevel m_level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    VkCommandBufferLevel m_Level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
     DynamicBufferAllocator* m_pUniformBufferPool = nullptr;
 
@@ -136,7 +136,7 @@ private:
     VkFence     m_vkFence = VK_NULL_HANDLE;
 
     GraphicsPipeline* m_pGraphicsPipeline = nullptr;
-    ComputePipeline* m_pComputePipeline = nullptr;
+    ComputePipeline*  m_pComputePipeline = nullptr;
 
     struct AllocationInfo
     {
@@ -144,14 +144,14 @@ private:
         DescriptorInfo   descriptor;
         VkDescriptorType descriptorType;
     };
-    std::vector< AllocationInfo > m_pushAllocations;
+    std::vector< AllocationInfo > m_PushAllocations;
 
-    u32                    m_numBufferBarriersToFlush = 0;
-    VkBufferMemoryBarrier2 m_bufferBarriers[MAX_NUM_PENDING_BARRIERS] = {};
-    u32                    m_numImageBarriersToFlush = 0;
-    VkImageMemoryBarrier2  m_imageBarriers[MAX_NUM_PENDING_BARRIERS] = {};
+    u32                    m_NumBufferBarriersToFlush = 0;
+    VkBufferMemoryBarrier2 m_BufferBarriers[MAX_NUM_PENDING_BARRIERS] = {};
+    u32                    m_NumImageBarriersToFlush = 0;
+    VkImageMemoryBarrier2  m_ImageBarriers[MAX_NUM_PENDING_BARRIERS] = {};
 
-    u32 m_currentContextIndex = 0;
+    u32 m_CurrentContextIndex = 0;
 
     bool m_bTransient = false;
 };

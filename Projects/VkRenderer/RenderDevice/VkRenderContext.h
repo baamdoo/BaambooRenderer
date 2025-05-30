@@ -44,7 +44,7 @@ public:
 	[[nodiscard]]
 	inline VkPhysicalDevice vkPhysicalDevice() const { return m_vkPhysicalDevice; }
 	[[nodiscard]]
-	inline const VkPhysicalDeviceProperties& DeviceProps() const { return m_physicalDeviceProperties; }
+	inline const VkPhysicalDeviceProperties& DeviceProps() const { return m_PhysicalDeviceProperties; }
 
 	[[nodiscard]]
 	inline CommandQueue& GraphicsQueue() const { return *m_pGraphicsQueue; }
@@ -68,17 +68,17 @@ public:
 	inline VkDescriptorSetLayout GetEmptyDescriptorSetLayout() const { return m_vkEmptySetLayout; }
 
 	[[nodiscard]]
-	inline u8 ContextIndex() const { return m_contextIndex; }
+	inline u8 ContextIndex() const { return m_ContextIndex; }
 	[[nodiscard]]
-	inline u32 NumContexts() const { return m_numContexts; }
-	void SetNumContexts(u32 num) { m_numContexts = num; }
+	inline u32 NumContexts() const { return m_NumContexts; }
+	void SetNumContexts(u32 num) { m_NumContexts = num; }
 
 	[[nodiscard]]
-	u32 WindowWidth() const { return m_windowWidth; }
-	void SetWindowWidth(u32 width) { m_windowWidth = width; }
+	u32 WindowWidth() const { return m_WindowWidth; }
+	void SetWindowWidth(u32 width) { m_WindowWidth = width; }
 	[[nodiscard]]
-	u32 WindowHeight() const { return m_windowHeight; }
-	void SetWindowHeight(u32 height) { m_windowHeight = height; }
+	u32 WindowHeight() const { return m_WindowHeight; }
+	void SetWindowHeight(u32 height) { m_WindowHeight = height; }
 
 	void SetVkObjectName(std::string_view name, u64 handle, VkObjectType type);
 
@@ -87,7 +87,7 @@ private:
 	VkDebugUtilsMessengerEXT	m_vkDebugMessenger = VK_NULL_HANDLE;
 								
 	VkPhysicalDevice			m_vkPhysicalDevice = VK_NULL_HANDLE;
-	VkPhysicalDeviceProperties	m_physicalDeviceProperties;
+	VkPhysicalDeviceProperties	m_PhysicalDeviceProperties;
 	VkDevice					m_vkDevice = VK_NULL_HANDLE;
 
 	CommandQueue* m_pGraphicsQueue = nullptr;
@@ -102,11 +102,11 @@ private:
 	VkDescriptorSetLayout m_vkEmptySetLayout = VK_NULL_HANDLE;
 	DescriptorPool*       m_pGlobalDescriptorPool = nullptr;
 
-	u32 m_numContexts = 0;
-	u8  m_contextIndex = 0;
+	u32 m_NumContexts = 0;
+	u8  m_ContextIndex = 0;
 
-	u32 m_windowWidth = 0;
-	u32 m_windowHeight = 0;
+	u32 m_WindowWidth = 0;
+	u32 m_WindowHeight = 0;
 };
 
 } // namespace vk

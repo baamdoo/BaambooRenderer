@@ -72,21 +72,21 @@ void Texture::CreateImageAndView(const CreationInfo& info)
 	// **
 	// Create image
 	// **
-	m_desc = info;
+	m_Desc = info;
 
 	VmaAllocationCreateInfo vmaInfo = {};
 	vmaInfo.usage = info.memoryUsage;
 	vmaInfo.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
 
-	VK_CHECK(vmaCreateImage(m_renderContext.vmaAllocator(), &m_desc, &vmaInfo, &m_vkImage, &m_vmaAllocation, &m_vmaAllocationInfo));
+	VK_CHECK(vmaCreateImage(m_RenderContext.vmaAllocator(), &m_Desc, &vmaInfo, &m_vkImage, &m_vmaAllocation, &m_vmaAllocationInfo));
 
 
 	// **
 	// Create image view
 	// **
-	auto viewInfo = GetViewDesc(m_desc);
-	m_aspectFlags = viewInfo.subresourceRange.aspectMask;
-	VK_CHECK(vkCreateImageView(m_renderContext.vkDevice(), &viewInfo, nullptr, &m_vkImageView));
+	auto viewInfo = GetViewDesc(m_Desc);
+	m_AspectFlags = viewInfo.subresourceRange.aspectMask;
+	VK_CHECK(vkCreateImageView(m_RenderContext.vkDevice(), &viewInfo, nullptr, &m_vkImageView));
 }
 
 VkImageViewCreateInfo Texture::GetViewDesc(const VkImageCreateInfo& imageInfo)
@@ -130,7 +130,7 @@ VkImageViewCreateInfo Texture::GetViewDesc(const VkImageCreateInfo& imageInfo)
 	{
 		if (imageInfo.arrayLayers > 1)
 		{
-			if (m_creationInfo.type == eTextureType::TextureCube)
+			if (m_CreationInfo.type == eTextureType::TextureCube)
 			{
 				imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
 				imageViewInfo.subresourceRange.layerCount = imageInfo.arrayLayers * 6;
@@ -143,7 +143,7 @@ VkImageViewCreateInfo Texture::GetViewDesc(const VkImageCreateInfo& imageInfo)
 		}
 		else
 		{
-			if (m_creationInfo.type == eTextureType::TextureCube)
+			if (m_CreationInfo.type == eTextureType::TextureCube)
 			{
 				imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
 				imageViewInfo.subresourceRange.layerCount = 6;
@@ -175,7 +175,7 @@ VkImageViewCreateInfo Texture::GetViewDesc(const VkImageCreateInfo& imageInfo)
 
 u64 Texture::SizeInBytes() const
 {
-	return m_desc.extent.width * m_desc.extent.height * m_desc.extent.depth * GetFormatElementSizeInBytes(m_desc.format);
+	return m_Desc.extent.width * m_Desc.extent.height * m_Desc.extent.depth * GetFormatElementSizeInBytes(m_Desc.format);
 }
 
 Texture::Texture(RenderContext& context, std::wstring_view name)
@@ -185,28 +185,28 @@ Texture::Texture(RenderContext& context, std::wstring_view name)
 
 Texture::Texture(RenderContext& context, std::wstring_view name, CreationInfo&& info)
 	: Super(context, name)
-	, m_creationInfo(info)
+	, m_CreationInfo(info)
 {
-	CreateImageAndView(m_creationInfo);
+	CreateImageAndView(m_CreationInfo);
 }
 
 Texture::~Texture()
 {
-	vkDestroyImageView(m_renderContext.vkDevice(), m_vkImageView, nullptr);
+	vkDestroyImageView(m_RenderContext.vkDevice(), m_vkImageView, nullptr);
 	if (!m_bOwnedBySwapChain)
-		vmaDestroyImage(m_renderContext.vmaAllocator(), m_vkImage, m_vmaAllocation);
+		vmaDestroyImage(m_RenderContext.vmaAllocator(), m_vkImage, m_vmaAllocation);
 }
 
 void Texture::Resize(u32 width, u32 height, u32 depth)
 {
 	assert(m_vkImage && m_vkImageView);
 
-	vkDestroyImageView(m_renderContext.vkDevice(), m_vkImageView, nullptr);
+	vkDestroyImageView(m_RenderContext.vkDevice(), m_vkImageView, nullptr);
 	if (!m_bOwnedBySwapChain)
-		vmaDestroyImage(m_renderContext.vmaAllocator(), m_vkImage, m_vmaAllocation);
+		vmaDestroyImage(m_RenderContext.vmaAllocator(), m_vkImage, m_vmaAllocation);
 
-	m_creationInfo.resolution = { width, height, depth };
-	CreateImageAndView(m_creationInfo);
+	m_CreationInfo.resolution = { width, height, depth };
+	CreateImageAndView(m_CreationInfo);
 }
 
 void Texture::SetResource(VkImage vkImage, VkImageView vkImageView, VmaAllocation vmaAllocation, VkImageAspectFlags aspectMask)
@@ -216,7 +216,7 @@ void Texture::SetResource(VkImage vkImage, VkImageView vkImageView, VmaAllocatio
 	m_vkImage = vkImage;
 	m_vkImageView = vkImageView;
 	m_vmaAllocation = vmaAllocation;
-	m_aspectFlags = aspectMask;
+	m_AspectFlags = aspectMask;
 	m_bOwnedBySwapChain = vmaAllocation == VK_NULL_HANDLE;
 }
 

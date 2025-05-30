@@ -13,11 +13,11 @@ namespace baamboo
 {
 
 Scene::Scene(const std::string& name)
-	: m_name(name)
+	: m_Name(name)
 {
-	m_pTransformSystem = new TransformSystem(m_registry);
-	m_pStaticMeshSystem = new StaticMeshSystem(m_registry);
-	m_pMaterialSystem = new MaterialSystem(m_registry);
+	m_pTransformSystem = new TransformSystem(m_Registry);
+	m_pStaticMeshSystem = new StaticMeshSystem(m_Registry);
+	m_pMaterialSystem = new MaterialSystem(m_Registry);
 }
 
 Scene::~Scene()
@@ -29,13 +29,13 @@ Scene::~Scene()
 
 Entity Scene::CreateEntity(const std::string& tag)
 {
-	Entity newEntity = Entity(this, m_registry.create());
+	Entity newEntity = Entity(this, m_Registry.create());
 	newEntity.AttachComponent< TagComponent >(tag);
 	newEntity.AttachComponent< TransformComponent >();
 
 	printf("create entity_%d\n", newEntity.id());
 
-	m_entityDirtyMasks.emplace(std::make_pair(newEntity.ID(), 0));
+	m_EntityDirtyMasks.emplace(std::make_pair(newEntity.ID(), 0));
 	return newEntity;
 }
 
@@ -57,8 +57,8 @@ void Scene::RemoveEntity(Entity entity)
 		child = transformComponent.hierarchy.nextSibling;
 	}
 
-	m_registry.destroy(entity.ID());
-	m_entityDirtyMasks.erase(entity.ID());
+	m_Registry.destroy(entity.ID());
+	m_EntityDirtyMasks.erase(entity.ID());
 }
 
 Entity Scene::ImportModel(fs::path filepath, MeshDescriptor descriptor)
@@ -151,22 +151,22 @@ void Scene::Update(f32 dt)
 	auto markedEntities = m_pTransformSystem->Update();
 	for (auto entity : markedEntities)
 	{
-		u64& dirtyMarks = m_entityDirtyMasks[entity];
-		dirtyMarks |= (1 << eComponentType::TTransform);
+		u64& dirtyMarks = m_EntityDirtyMasks[entity];
+		dirtyMarks |= (1 << eComponentType::CTransform);
 	}
 
 	markedEntities = m_pStaticMeshSystem->Update();
 	for (auto entity : markedEntities)
 	{
-		u64& dirtyMarks = m_entityDirtyMasks[entity];
-		dirtyMarks |= (1 << eComponentType::TStaticMesh);
+		u64& dirtyMarks = m_EntityDirtyMasks[entity];
+		dirtyMarks |= (1 << eComponentType::CStaticMesh);
 	}
 
 	markedEntities = m_pMaterialSystem->Update();
 	for (auto entity : markedEntities)
 	{
-		u64& dirtyMarks = m_entityDirtyMasks[entity];
-		dirtyMarks |= (1 << eComponentType::TMaterial);
+		u64& dirtyMarks = m_EntityDirtyMasks[entity];
+		dirtyMarks |= (1 << eComponentType::CMaterial);
 	}
 }
 
@@ -177,7 +177,7 @@ SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 	view.camera.mProj = camera.GetProj();
 	view.camera.pos = camera.GetPosition();
 
-	m_registry.view< TransformComponent >().each([this, &view](auto id, auto& transformComponent)
+	m_Registry.view< TransformComponent >().each([this, &view](auto id, auto& transformComponent)
 		{
 			TransformRenderView transformView = {};
 			transformView.id = entt::to_integral(id);
@@ -189,7 +189,7 @@ SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 			view.draws.emplace(transformView.id, draw);
 		});
 
-	m_registry.view< TagComponent, StaticMeshComponent, MaterialComponent >().each([this, &view](auto id, auto& tagComponent, auto& meshComponent, auto& materialComponent)
+	m_Registry.view< TagComponent, StaticMeshComponent, MaterialComponent >().each([this, &view](auto id, auto& tagComponent, auto& meshComponent, auto& materialComponent)
 		{
 			StaticMeshRenderView meshView = {};
 			meshView.id = entt::to_integral(id);

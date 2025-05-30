@@ -25,13 +25,13 @@ public:
 	[[nodiscard]]
 	inline VkSwapchainKHR vkSwapChain() const { return m_vkSwapChain; }
 	[[nodiscard]]
-	inline VkSurfaceCapabilitiesKHR Capabilities() const { return m_capabilities; }
+	inline VkSurfaceCapabilitiesKHR Capabilities() const { return m_Capabilities; }
 
 	[[nodiscard]]
-	inline baamboo::ResourceHandle< Texture > GetImageToPresent() const { return m_textures[m_imageIndex]; }
+	inline baamboo::ResourceHandle< Texture > GetImageToPresent() const { return m_BackBuffers[m_ImageIndex]; }
 
 	[[nodiscard]]
-	inline u32 ImageCount() const { return m_imageCount; }
+	inline u32 ImageCount() const { return m_ImageCount; }
 	[[nodiscard]]
 	inline bool IsRenderable() const { return m_vkSwapChain != VK_NULL_HANDLE; }
 
@@ -40,20 +40,20 @@ private:
 	void Release(VkSwapchainKHR vkSwapChain);
 
 private:
-	RenderContext&   m_renderContext;
-	baamboo::Window& m_window;
+	RenderContext&   m_RenderContext;
+	baamboo::Window& m_Window;
 
-	VkFormat                 m_imageFormat = VK_FORMAT_UNDEFINED;
+	VkFormat                 m_ImageFormat = VK_FORMAT_UNDEFINED;
 	VkSurfaceKHR             m_vkSurface = VK_NULL_HANDLE;
 	VkSwapchainKHR           m_vkSwapChain = VK_NULL_HANDLE;
-	VkSurfaceCapabilitiesKHR m_capabilities;
+	VkSurfaceCapabilitiesKHR m_Capabilities;
 
-	u32 m_imageCount;
-	u32 m_imageIndex;
+	u32 m_ImageCount;
+	u32 m_ImageIndex;
 	bool m_vSync = true;
 	bool m_bResized = false;
 
-	std::vector< baamboo::ResourceHandle< Texture > > m_textures;
+	std::vector< baamboo::ResourceHandle< Texture > > m_BackBuffers;
 };
 
 } // namespace vk

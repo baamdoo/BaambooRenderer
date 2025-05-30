@@ -23,13 +23,13 @@ public:
 	VkDescriptorPool vkDescriptorPool() const { return m_vkDescriptorPool; }
 
 private:
-	RenderContext& m_renderContext;
+	RenderContext& m_RenderContext;
 
 	VkDescriptorPool            m_vkDescriptorPool;
-	u32                         m_maxSets = 0;
-	VkDescriptorPoolCreateFlags m_flags = 0;
+	u32                         m_MaxSets = 0;
+	VkDescriptorPoolCreateFlags m_Flags = 0;
 
-	std::unordered_map< VkDescriptorSetLayout, DescriptorSet* > m_descriptorSetCache;
+	std::unordered_map< VkDescriptorSetLayout, DescriptorSet* > m_DescriptorSetCache;
 };
 
 } // namespace vk

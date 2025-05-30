@@ -39,7 +39,7 @@ public:
     void InvalidateImageLayout();
     
     [[nodiscard]]
-    const VkRenderPassBeginInfo& GetBeginInfo() const { return m_beginInfo; }
+    const VkRenderPassBeginInfo& GetBeginInfo() const { return m_BeginInfo; }
     [[nodiscard]]
     VkViewport GetViewport(float2 scale = { 1.0f, 1.0f }, float2 bias = { 0.0f, 0.0f }, f32 minDepth = 0.0f, f32 maxDepth = 1.0f) const;
     [[nodiscard]]
@@ -51,26 +51,26 @@ public:
     inline VkFramebuffer vkFramebuffer() const { return m_vkFramebuffer; }
 
     [[nodiscard]]
-    baamboo::ResourceHandle< Texture > Attachment(eAttachmentPoint attachment) const { return m_attachments[attachment]; }
+    baamboo::ResourceHandle< Texture > Attachment(eAttachmentPoint attachment) const { return m_Attachments[attachment]; }
     [[nodiscard]]
-    inline u32 GetNumColours() const { return m_numColours; }
+    inline u32 GetNumColors() const { return m_NumColors; }
 
 private:
     [[nodiscard]]
     bool IsDepthOnly() const;
 
 private:
-    RenderContext& m_renderContext;
+    RenderContext& m_RenderContext;
 
     VkRenderPass          m_vkRenderPass = VK_NULL_HANDLE;
     VkFramebuffer         m_vkFramebuffer = VK_NULL_HANDLE;
-    VkRenderPassBeginInfo m_beginInfo = {};
+    VkRenderPassBeginInfo m_BeginInfo = {};
 
-    std::vector< baamboo::ResourceHandle< Texture > > m_attachments;
-    std::vector< VkClearValue >                       m_clearValues;
-    VkAttachmentDescription                           m_attachmentDesc;
+    std::vector< baamboo::ResourceHandle< Texture > > m_Attachments;
+    std::vector< VkClearValue >                       m_ClearValues;
+    VkAttachmentDescription                           m_AttachmentDesc;
 
-    u32 m_numColours = 0;
+    u32 m_NumColors = 0;
     u32 m_bLoadAttachmentBits = 0;
 };
 

@@ -155,7 +155,7 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 
 Shader::Shader(RenderContext& context, std::wstring_view name, CreationInfo&& info)
 	: Super(context, name)
-	, m_creationInfo(info)
+	, m_CreationInfo(info)
 {
 	auto code = ReadSpirv(info.filepath);
 
@@ -163,14 +163,14 @@ Shader::Shader(RenderContext& context, std::wstring_view name, CreationInfo&& in
 	shaderInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
 	shaderInfo.codeSize = code.size();
 	shaderInfo.pCode = reinterpret_cast<const u32*>(code.data());
-	VK_CHECK(vkCreateShaderModule(m_renderContext.vkDevice(), &shaderInfo, nullptr, &m_vkModule));
+	VK_CHECK(vkCreateShaderModule(m_RenderContext.vkDevice(), &shaderInfo, nullptr, &m_vkModule));
 
-	m_stage = ParseSpirv(reinterpret_cast<const u32*>(code.data()), code.size() / 4, m_reflection);
+	m_Stage = ParseSpirv(reinterpret_cast<const u32*>(code.data()), code.size() / 4, m_Reflection);
 }
 
 Shader::~Shader()
 {
-	vkDestroyShaderModule(m_renderContext.vkDevice(), m_vkModule, nullptr);
+	vkDestroyShaderModule(m_RenderContext.vkDevice(), m_vkModule, nullptr);
 }
 
 } // namespace vk

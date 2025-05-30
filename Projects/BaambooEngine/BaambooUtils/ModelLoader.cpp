@@ -11,19 +11,21 @@ namespace baamboo
 ModelLoader::ModelLoader(fs::path filepath_, MeshDescriptor descriptor)
 	: filepath(filepath_)
 {
-	i32 importFlags = aiProcess_CalcTangentSpace |
+	i32 importFlags = 
+		aiProcess_CalcTangentSpace |
 		aiProcess_Triangulate |
 		aiProcess_SortByPType |
 		aiProcess_PreTransformVertices |
-		aiProcess_GenNormals |
-		aiProcess_GenUVCoords |
+		aiProcess_GenSmoothNormals |
+		//aiProcess_GenUVCoords |
 		aiProcess_RemoveRedundantMaterials |
-		aiProcess_FindDegenerates |
+		//aiProcess_FindDegenerates |
 		aiProcess_GenBoundingBoxes |
 		aiProcess_ValidateDataStructure |
+		aiProcess_JoinIdenticalVertices |
 		aiProcess_ConvertToLeftHanded;
 	importFlags |= (descriptor.bOptimize ? aiProcess_OptimizeMeshes | aiProcess_ImproveCacheLocality : 0);
-	importFlags |= (descriptor.bWindingCW ? aiProcess_FlipWindingOrder : 0);
+	//importFlags |= (descriptor.bWindingCW ? aiProcess_FlipWindingOrder : 0);
 	//importFlags |= ((descriptor.rendererAPI == eRendererAPI::D3D11 || descriptor.rendererAPI == eRendererAPI::D3D12) ? aiProcess_ConvertToLeftHanded : 0);
 
 	Assimp::Importer importer;
@@ -90,8 +92,8 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, Node* currentN
 
 		if (mesh->HasTextureCoords(0)) 
 		{
-			vertex.uv.x = mesh->mTextureCoords[0][i].x - 1.f;
-			vertex.uv.y = mesh->mTextureCoords[0][i].y - 1.f;
+			vertex.uv.x = mesh->mTextureCoords[0][i].x;
+			vertex.uv.y = mesh->mTextureCoords[0][i].y;
 		}
 
 		if (mesh->HasTangentsAndBitangents())

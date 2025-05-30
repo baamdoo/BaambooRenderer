@@ -16,6 +16,6 @@ private:
 	virtual bool LoadScene() override;
 	virtual void DrawUI() override;
 
-	baamboo::CameraController_FirstPerson m_cameraController;
+	baamboo::CameraController_FirstPerson m_CameraController;
 };
 

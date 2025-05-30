@@ -23,7 +23,7 @@ VertexBuffer::VertexBuffer(RenderContext& context, std::wstring_view name, Creat
 	: Super(context, name, std::move(info))
 {
 	m_d3d12BufferView.BufferLocation = m_d3d12Resource->GetGPUVirtualAddress();
-	m_d3d12BufferView.StrideInBytes = static_cast<u32>(info.elementSizeInBytes);
+	m_d3d12BufferView.StrideInBytes = sizeof(Vertex);
 	m_d3d12BufferView.SizeInBytes = static_cast<u32>(GetSizeInBytes());
 }
 
@@ -31,7 +31,7 @@ IndexBuffer::IndexBuffer(RenderContext& context, std::wstring_view name, Creatio
 	: Super(context, name, std::move(info))
 {
 	m_d3d12BufferView.BufferLocation = m_d3d12Resource->GetGPUVirtualAddress();
-	m_d3d12BufferView.Format = DXGI_FORMAT_R16_UINT;
+	m_d3d12BufferView.Format = DXGI_FORMAT_R32_UINT;
 	m_d3d12BufferView.SizeInBytes = static_cast<u32>(GetSizeInBytes());
 }
 

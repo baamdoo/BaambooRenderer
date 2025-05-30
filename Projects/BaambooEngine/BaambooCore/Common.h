@@ -134,11 +134,11 @@ struct SceneRenderView;
 
 enum eComponentType
 {
-    TTransform = 0,
-    TStaticMesh = 1,
-    TDynamicMesh = 2,
-    TMaterial = 3,
-    TPointLight = 4,
+    CTransform = 0,
+    CStaticMesh = 1,
+    CDynamicMesh = 2,
+    CMaterial = 3,
+    CPointLight = 4,
 
     // ...
     NumComponents
@@ -162,7 +162,8 @@ using Index = u32;
 
 struct TransformData
 {
-    mat4 mWorld;
+    mat4 mWorldToView;
+    mat4 mViewToWorld;
 };
 
 struct MaterialData 

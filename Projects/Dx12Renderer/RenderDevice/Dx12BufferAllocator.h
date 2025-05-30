@@ -76,7 +76,7 @@ private:
 class StaticBufferAllocator
 {
 public:
-    StaticBufferAllocator(RenderContext& context, size_t bufferSize = _4MB);
+    StaticBufferAllocator(RenderContext& context, const std::wstring& name, size_t bufferSize = _4MB);
     ~StaticBufferAllocator();
 
     struct Allocation
@@ -102,6 +102,7 @@ private:
 
 private:
     RenderContext& m_RenderContext;
+    std::wstring   m_Name;
 
     baamboo::ResourceHandle< StructuredBuffer > m_Buffer;
     D3D12_GPU_VIRTUAL_ADDRESS                   m_BaseGpuHandle;

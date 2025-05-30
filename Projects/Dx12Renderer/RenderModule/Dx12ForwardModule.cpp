@@ -85,7 +85,13 @@ void ForwardModule::Apply(CommandList& cmdList)
 	cmdList.SetGraphicsRootSignature(m_pRootSignature);
 	cmdList.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
+	auto pTransform = g_FrameData.pSceneResource->GetTransformBuffer();
+	auto pMaterial = g_FrameData.pSceneResource->GetMaterialBuffer();
+	assert(pTransform && pMaterial);
+
 	cmdList.SetGraphicsDynamicConstantBuffer(2, g_FrameData.camera);
+	cmdList.SetGraphicsShaderResourceView(3, pTransform->GetD3D12Resource()->GetGPUVirtualAddress());
+	cmdList.SetGraphicsShaderResourceView(4, pMaterial->GetD3D12Resource()->GetGPUVirtualAddress());
 	cmdList.StageDescriptors(5, static_cast<u32>(g_FrameData.pSceneResource->srvs.size()), 0, *(g_FrameData.pSceneResource->srvs.data()));
 	cmdList.DrawIndexedIndirect(*g_FrameData.pSceneResource);
 

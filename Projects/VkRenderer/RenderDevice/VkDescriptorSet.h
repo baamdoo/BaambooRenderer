@@ -33,10 +33,10 @@ public:
     const VkDescriptorSet vkDescriptorSet() const { return m_vkDescriptorSet; }
 
 private:
-    RenderContext& m_renderContext;
+    RenderContext& m_RenderContext;
 
     VkDescriptorSet     m_vkDescriptorSet = VK_NULL_HANDLE;
-    baamboo::FreeList<> m_indexAllocator;
+    baamboo::FreeList<> m_IndexAllocator;
 };
 
 } // namespace vk

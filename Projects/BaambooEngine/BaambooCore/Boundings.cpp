@@ -9,8 +9,8 @@
 //-------------------------------------------------------------------------
 BoundingSphere::BoundingSphere(const BoundingBox& aabb)
 {
-	m_center = (aabb.Min() + aabb.Max()) * 0.5f;
-	m_radius = glm::distance(m_center, aabb.Max());
+	m_Center = (aabb.Min() + aabb.Max()) * 0.5f;
+	m_Radius = glm::distance(m_Center, aabb.Max());
 }
 
 BoundingSphere& BoundingSphere::operator*(const mat4& transform)
@@ -20,16 +20,16 @@ BoundingSphere& BoundingSphere::operator*(const mat4& transform)
 	glm::quat rotation;
 	glm::decompose(transform, scale, rotation, translation, skew, perspective);
 
-	m_center = float3(glm::translate(mat4(1.f), translation) * float4(m_center, 1.f));
-	m_radius = std::max({ scale.x, scale.y, scale.z });
+	m_Center = float3(glm::translate(mat4(1.f), translation) * float4(m_Center, 1.f));
+	m_Radius = std::max({ scale.x, scale.y, scale.z });
 
 	return *this;
 }
 
 bool BoundingSphere::Surrounds(const float3& point) const
 {
-	const auto distance = glm::distance(m_center, point);
-	return distance <= m_radius;
+	const auto distance = glm::distance(m_Center, point);
+	return distance <= m_Radius;
 }
 
 bool BoundingSphere::Surrounds(const BoundingBox& aabb) const
@@ -39,8 +39,8 @@ bool BoundingSphere::Surrounds(const BoundingBox& aabb) const
 
 bool BoundingSphere::Surrounds(const BoundingSphere& other) const
 {
-	const float distance = glm::distance(m_center, other.Center());
-	return distance + other.Radius() <= m_radius;
+	const float distance = glm::distance(m_Center, other.Center());
+	return distance + other.Radius() <= m_Radius;
 }
 
 bool BoundingSphere::Overlaps(const BoundingBox& aabb) const
@@ -50,8 +50,8 @@ bool BoundingSphere::Overlaps(const BoundingBox& aabb) const
 
 bool BoundingSphere::Overlaps(const BoundingSphere& other) const
 {
-	const float distance = glm::distance(m_center, other.Center());
-	return distance < m_radius + other.Radius();
+	const float distance = glm::distance(m_Center, other.Center());
+	return distance < m_Radius + other.Radius();
 }
 
 const BoundingSphere BoundingSphere::Union(const BoundingSphere& sphere, const float3& point)
@@ -95,14 +95,14 @@ BoundingBox::BoundingBox(const BoundingSphere& sphere)
 	const auto center = sphere.Center();
 	const auto r = sphere.Radius();
 	const float3 radius = float3(r, r, r);
-	m_min = center - radius;
-	m_max = center + radius;
+	m_Min = center - radius;
+	m_Max = center + radius;
 }
 
 bool BoundingBox::Surrounds(const float3& point) const
 {
-	if (!glm::lessThan(point, m_min).length()) return false;
-	if (!glm::greaterThan(point, m_max).length()) return false;
+	if (!glm::lessThan(point, m_Min).length()) return false;
+	if (!glm::greaterThan(point, m_Max).length()) return false;
 	return true;
 }
 
@@ -118,9 +118,9 @@ bool BoundingBox::Surrounds(const BoundingSphere& sphere) const
 
 bool BoundingBox::Overlaps(const BoundingBox& other) const
 {
-	if (m_max.x < other.Min().x || other.Max().x < m_min.x) return false;
-	if (m_max.y < other.Min().y || other.Max().y < m_min.y) return false;
-	if (m_max.z < other.Min().z || other.Max().z < m_min.z) return false;
+	if (m_Max.x < other.Min().x || other.Max().x < m_Min.x) return false;
+	if (m_Max.y < other.Min().y || other.Max().y < m_Min.y) return false;
+	if (m_Max.z < other.Min().z || other.Max().z < m_Min.z) return false;
 	return true;
 }
 
@@ -136,7 +136,7 @@ const BoundingBox BoundingBox::Union(const BoundingBox& aabb, const float3& poin
 
 const BoundingBox BoundingBox::Union(const BoundingBox& aabb1, const BoundingBox& aabb2)
 {
-	const auto min = glm::min(aabb1.m_min, aabb2.m_min);
-	const auto max = glm::max(aabb1.m_max, aabb2.m_max);
+	const auto min = glm::min(aabb1.m_Min, aabb2.m_Min);
+	const auto max = glm::max(aabb1.m_Max, aabb2.m_Max);
 	return BoundingBox(min, max);
 }

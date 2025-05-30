@@ -27,10 +27,10 @@ private:
 	void UpdateWorldTransform(entt::entity entity);
 
 private:
-	entt::registry& m_registry;
+	entt::registry& m_Registry;
 
 	std::vector< mat4 > m_mWorlds;
-	FreeList<>          m_indexAllocator;
+	FreeList<>          m_IndexAllocator;
 };
 
 } // namespace baamboo
