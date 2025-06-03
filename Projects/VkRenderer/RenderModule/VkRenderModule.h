@@ -3,19 +3,19 @@
 namespace vk
 {
 
-class CommandBuffer;
+class CommandContext;
 
 class RenderModule
 {
 public:
-	RenderModule(RenderContext& context) : m_RenderContext(context) {}
+	RenderModule(RenderDevice& device) : m_RenderDevice(device) {}
 	virtual ~RenderModule() = default;
 
-	virtual void Apply(CommandBuffer& cmdBuffer) { UNUSED(cmdBuffer); }
+	virtual void Apply(CommandContext& context) { UNUSED(context); }
 	virtual void Resize(u32 width, u32 height, u32 depth = 1) { UNUSED(width); UNUSED(height); UNUSED(depth); }
 
 protected:
-	RenderContext& m_RenderContext;
+	RenderDevice& m_RenderDevice;
 };
 
 } // namespace vk

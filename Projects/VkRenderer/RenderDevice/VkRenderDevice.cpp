@@ -1,8 +1,8 @@
 #include "RendererPch.h"
-#include "VkRenderContext.h"
+#include "VkRenderDevice.h"
 #include "VkBuildHelpers.h"
 #include "VkCommandQueue.h"
-#include "VkCommandBuffer.h"
+#include "VkCommandContext.h"
 #include "VkResourceManager.h"
 #include "VkDescriptorPool.h"
 #include "RenderResource/VkSceneResource.h"
@@ -21,7 +21,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
 	return VK_FALSE;
 }
 
-RenderContext::RenderContext()
+RenderDevice::RenderDevice()
 {
 	InstanceBuilder instanceBuilder;
 	m_vkInstance = instanceBuilder.AddExtensionLayer(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME).Build();
@@ -39,13 +39,13 @@ RenderContext::RenderContext()
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_SamplerAnistropy)
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_IndexTypeUint8)
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_Sync2).Build(m_vkInstance);
-	m_vkPhysicalDevice = deviceBuilder.physicalDevice;
+	m_vkPhysicalDevice         = deviceBuilder.physicalDevice;
 	m_PhysicalDeviceProperties = deviceBuilder.physicalDeviceProperties;
 
-	m_pGraphicsQueue = new CommandQueue(*this, deviceBuilder.queueFamilyIndices.graphicsQueueIndex);
-	m_pComputeQueue = new CommandQueue(*this, deviceBuilder.queueFamilyIndices.computeQueueIndex);
-	m_pTransferQueue = new CommandQueue(*this, deviceBuilder.queueFamilyIndices.transferQueueIndex);
-	assert(m_pGraphicsQueue && m_pComputeQueue);
+	m_pGraphicsQueue = new CommandQueue(*this, deviceBuilder.queueFamilyIndices.graphicsQueueIndex, eCommandType::Graphics);
+	m_pComputeQueue  = new CommandQueue(*this, deviceBuilder.queueFamilyIndices.computeQueueIndex, eCommandType::Compute);
+	m_pTransferQueue = new CommandQueue(*this, deviceBuilder.queueFamilyIndices.transferQueueIndex, eCommandType::Transfer);
+	assert(m_pGraphicsQueue && m_pComputeQueue && m_pTransferQueue);
 
 
 	// **
@@ -79,14 +79,10 @@ RenderContext::RenderContext()
 	emptyLayoutInfo.bindingCount = 0;
 	emptyLayoutInfo.pBindings = nullptr;
 	VK_CHECK(vkCreateDescriptorSetLayout(m_vkDevice, &emptyLayoutInfo, nullptr, &m_vkEmptySetLayout));
-
-	g_FrameData.pSceneResource = new SceneResource(*this);
 }
 
-RenderContext::~RenderContext()
+RenderDevice::~RenderDevice()
 {
-	RELEASE(g_FrameData.pSceneResource);
-
 	RELEASE(m_pTransferQueue);
 	RELEASE(m_pComputeQueue);
 	RELEASE(m_pGraphicsQueue);
@@ -103,32 +99,54 @@ RenderContext::~RenderContext()
 	vkDestroyInstance(m_vkInstance, nullptr);
 }
 
-u8 RenderContext::NextFrame()
+u8 RenderDevice::NextFrame()
 {
 	m_ContextIndex = (m_ContextIndex + 1) % m_NumContexts;
 	return m_ContextIndex;
 }
 
-VkDeviceSize RenderContext::GetAlignedSize(VkDeviceSize size) const
+void RenderDevice::Flush()
+{
+	m_pGraphicsQueue->Flush();
+	m_pComputeQueue->Flush();
+	m_pTransferQueue->Flush();
+}
+
+VkDeviceSize RenderDevice::GetAlignedSize(VkDeviceSize size) const
 {
 	const VkDeviceSize alignment = m_PhysicalDeviceProperties.limits.minMemoryMapAlignment;
 	return (size + alignment - 1) & ~(alignment - 1);
 }
 
-DescriptorSet& RenderContext::AllocateDescriptorSet(VkDescriptorSetLayout vkSetLayout) const
+CommandContext& RenderDevice::BeginCommand(eCommandType cmdType, VkCommandBufferUsageFlags usage, bool bTransient)
+{
+	switch (cmdType)
+	{
+	case eCommandType::Graphics:
+		return m_pGraphicsQueue->Allocate(usage, bTransient);
+	case eCommandType::Compute:
+		return m_pComputeQueue->Allocate(usage, bTransient);
+	case eCommandType::Transfer:
+		return m_pTransferQueue->Allocate(usage, bTransient);
+	}
+
+	assert(false, "Invalid entry!");
+}
+
+DescriptorSet& RenderDevice::AllocateDescriptorSet(VkDescriptorSetLayout vkSetLayout) const
 {
 	return m_pGlobalDescriptorPool->AllocateSet(vkSetLayout);
 }
 
-void RenderContext::SetVkObjectName(std::string_view name, u64 handle, VkObjectType type)
+void RenderDevice::SetVkObjectName(std::string_view name, u64 handle, VkObjectType type)
 {
 	VkDebugUtilsObjectNameInfoEXT nameInfo = {};
-	nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
-	nameInfo.objectType = type;
+	nameInfo.sType        = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+	nameInfo.objectType   = type;
 	nameInfo.objectHandle = handle;
-	nameInfo.pObjectName = name.data();
+	nameInfo.pObjectName  = name.data();
 
-	auto vkSetDebugUtilsObjectNameEXT = (PFN_vkSetDebugUtilsObjectNameEXT)vkGetInstanceProcAddr(m_vkInstance, "vkSetDebugUtilsObjectNameEXT");
+	static auto vkSetDebugUtilsObjectNameEXT = (PFN_vkSetDebugUtilsObjectNameEXT)vkGetInstanceProcAddr(m_vkInstance, "vkSetDebugUtilsObjectNameEXT");
 	VK_CHECK(vkSetDebugUtilsObjectNameEXT(m_vkDevice, &nameInfo));
 }
 

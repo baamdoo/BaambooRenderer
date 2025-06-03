@@ -1,6 +1,12 @@
 #pragma once
+
+//-------------------------------------------------------------------------
+// Vulkan Includes
+//-------------------------------------------------------------------------
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
+#include <vk_mem_alloc.h>
+
 
 //-------------------------------------------------------------------------
 // Assertion
@@ -74,6 +80,6 @@ struct IndirectDrawData
 
 
 //-------------------------------------------------------------------------
-// Render Context
+// Render Device
 //-------------------------------------------------------------------------
-#include "RenderDevice/VkRenderContext.h"
+#include "RenderDevice/VkRenderDevice.h"

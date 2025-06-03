@@ -12,10 +12,10 @@ class ImGuiModule : public RenderModule
 {
 using Super = RenderModule;
 public:
-	ImGuiModule(RenderContext& context, vk::SwapChain& swapChain, ImGuiContext* pImGuiContext);
+	ImGuiModule(RenderDevice& device, vk::SwapChain& swapChain, ImGuiContext* pImGuiContext);
 	~ImGuiModule();
 
-	void Apply(CommandBuffer& cmdBuffer) override;
+	void Apply(CommandContext& context) override;
 
 private:
 	VkDescriptorPool m_vkImGuiPool = nullptr;

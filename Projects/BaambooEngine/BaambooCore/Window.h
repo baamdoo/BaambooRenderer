@@ -1,6 +1,4 @@
 #pragma once
-#include "BaambooCore/Common.h"
-
 #if defined(_WIN32)
 	#define GLFW_EXPOSE_NATIVE_WIN32
 #endif

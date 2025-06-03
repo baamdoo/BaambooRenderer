@@ -12,23 +12,23 @@ enum class eTextureType
 	TextureCube,
 };
 
-class Texture : public Resource< Texture >
+class Texture : public Resource
 {
-using Super = Resource< Texture >;
+using Super = Resource;
 
 public:
     struct CreationInfo
     {
-        eTextureType type = eTextureType::Texture2D;
+        eTextureType type       = eTextureType::Texture2D;
         VkExtent3D   resolution = {};
-        VkFormat     format = VK_FORMAT_R8G8B8A8_UNORM;
+        VkFormat     format     = VK_FORMAT_R8G8B8A8_UNORM;
 
 		VkClearColorValue        colorClearValue = { 0, 0, 0, 0 };
 		VkClearDepthStencilValue depthClearValue = { 1.0f, 0 };
 
-        u32  arrayLayers = 1;
-        u32  sampleCount = 1;
-        bool bFlipY = false;
+        u32  arrayLayers   = 1;
+        u32  sampleCount   = 1;
+        bool bFlipY        = false;
         bool bGenerateMips = false;
 
         VmaMemoryUsage    memoryUsage = VMA_MEMORY_USAGE_AUTO;
@@ -118,9 +118,16 @@ public:
 			return state_;
 		}
 
-		State                          state;
+		State                          state = {};
 		std::map< Subresource, State > subresourceStates;
 	};
+
+	static Arc< Texture > Create(RenderDevice& device, std::string_view name, CreationInfo&& desc);
+	static Arc< Texture > CreateEmpty(RenderDevice& device, std::string_view name);
+
+	Texture(RenderDevice& device, std::string_view name);
+	Texture(RenderDevice& device, std::string_view name, CreationInfo&& info);
+	virtual ~Texture();
 
 	void Resize(u32 width, u32 height, u32 depth);
 	void SetResource(VkImage vkImage, VkImageView vkImageView, VmaAllocation vmaAllocation, VkImageAspectFlags aspectMask);
@@ -151,14 +158,6 @@ public:
 	void FlattenSubresourceStates() { m_CurrentState.FlattenResourceState(); }
 
 protected:
-	template< typename T >
-	friend class ResourcePool;
-	friend class ResourceManager;
-
-	explicit Texture(RenderContext& context, std::wstring_view name);
-	explicit Texture(RenderContext& context, std::wstring_view name, CreationInfo&& info);
-	virtual ~Texture();
-
     void CreateImageAndView(const CreationInfo& info);
     VkImageViewCreateInfo GetViewDesc(const VkImageCreateInfo& imageDesc);
 
@@ -170,8 +169,6 @@ private:
 
 	CreationInfo  m_CreationInfo = {}; // for resize
 	ResourceState m_CurrentState = {};
-
-	bool m_bOwnedBySwapChain = false;
 };
 
 } // namespace vk

@@ -137,7 +137,7 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 
 	for (const auto& resource : resources.push_constant_buffers)
 	{
-		const std::string& name = resource.name;
+		//const std::string& name = resource.name;
 		const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
 		// u32 memberCount = u32(type.member_types.size());
 		u32 size = (u32)compiler.get_declared_struct_size(type);
@@ -153,24 +153,31 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 	return stage;
 }
 
-Shader::Shader(RenderContext& context, std::wstring_view name, CreationInfo&& info)
-	: Super(context, name)
+Arc<Shader> Shader::Create(RenderDevice& device, std::string_view name, CreationInfo&& info)
+{
+	return MakeArc< Shader >(device, name, std::move(info));
+}
+
+Shader::Shader(RenderDevice& device, std::string_view name, CreationInfo&& info)
+	: Super(device, name, eResourceType::Shader)
 	, m_CreationInfo(info)
 {
 	auto code = ReadSpirv(info.filepath);
 
 	VkShaderModuleCreateInfo shaderInfo = {};
-	shaderInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	shaderInfo.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
 	shaderInfo.codeSize = code.size();
-	shaderInfo.pCode = reinterpret_cast<const u32*>(code.data());
-	VK_CHECK(vkCreateShaderModule(m_RenderContext.vkDevice(), &shaderInfo, nullptr, &m_vkModule));
+	shaderInfo.pCode    = reinterpret_cast<const u32*>(code.data());
+	VK_CHECK(vkCreateShaderModule(m_RenderDevice.vkDevice(), &shaderInfo, nullptr, &m_vkModule));
 
 	m_Stage = ParseSpirv(reinterpret_cast<const u32*>(code.data()), code.size() / 4, m_Reflection);
+
+	SetDeviceObjectName((u64)m_vkModule, VK_OBJECT_TYPE_SHADER_MODULE);
 }
 
 Shader::~Shader()
 {
-	vkDestroyShaderModule(m_RenderContext.vkDevice(), m_vkModule, nullptr);
+	vkDestroyShaderModule(m_RenderDevice.vkDevice(), m_vkModule, nullptr);
 }
 
 } // namespace vk

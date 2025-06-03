@@ -1,7 +1,6 @@
 #pragma once
-#include "BaambooCore/BackendAPI.h"
-#include "BaambooCore/Transform.hpp"
-#include "BaambooCore/Boundings.h"
+#include "Transform.hpp"
+#include "Boundings.h"
 
 #include <entt/entt.hpp>
 

@@ -27,8 +27,6 @@ public:
 
     glm::mat4 Rotate(float dYaw, float dPitch, float dRoll)
     {
-        UNUSED(dRoll);
-
         glm::quat qYaw = glm::angleAxis(dYaw, glm::vec3(0, 1, 0));
         glm::quat qPitch = glm::angleAxis(dPitch, glm::vec3(1, 0, 0));
         m_Orientation = qYaw * m_Orientation * qPitch;

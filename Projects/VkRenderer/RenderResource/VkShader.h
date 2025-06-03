@@ -4,9 +4,9 @@
 namespace vk
 {
 
-class Shader : public Resource< Shader >
+class Shader : public Resource
 {
-using Super = Resource< Shader >;
+using Super = Resource;
 
 public:
     struct CreationInfo
@@ -17,9 +17,9 @@ public:
 	struct DescriptorInfo
 	{
 		std::string_view name;
-		u32              binding;
-		u32              arraySize;
-		VkDescriptorType descriptorType;
+		u32              binding        = INVALID_INDEX;
+		u32              arraySize      = 0;
+		VkDescriptorType descriptorType = VK_DESCRIPTOR_TYPE_MAX_ENUM;
 	};
 
 	struct ShaderReflection
@@ -28,19 +28,17 @@ public:
 		std::unordered_map< u32, DescriptorInfo > descriptors;
 	};
 
+	static Arc< Shader > Create(RenderDevice& device, std::string_view name, CreationInfo&& info);
+
+	Shader(RenderDevice& device, std::string_view name, CreationInfo&& info);
+	virtual ~Shader();
+
 	[[nodiscard]]
 	inline VkShaderModule vkModule() const { return m_vkModule; }
 	[[nodiscard]]
 	inline VkShaderStageFlagBits Stage() const { assert(m_Stage != VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM); return m_Stage; }
 	[[nodiscard]]
 	inline const ShaderReflection& Reflection() const { return m_Reflection; }
-
-protected:
-	template< typename T >
-	friend class ResourcePool;
-
-	Shader(RenderContext& context, std::wstring_view name, CreationInfo&& info);
-	virtual ~Shader();
 
 private:
     VkShaderModule        m_vkModule = VK_NULL_HANDLE;

@@ -4,9 +4,9 @@
 #include "BaambooCore/Window.h"
 #include "BaambooCore/EngineCore.h"
 #include "BaambooCore/Input.hpp"
-#include "BaambooCore/ThreadQueue.hpp"
-#include "Scene/Entity.h"
-#include "Scene/TransformSystem.h"
+#include "BaambooScene/Entity.h"
+#include "BaambooScene/TransformSystem.h"
+#include "ThreadQueue.hpp"
 
 #include <filesystem>
 #include <imgui/imgui.h>
@@ -156,9 +156,6 @@ void Engine::Update(f32 dt)
 		m_bWindowResized = false;
 		m_ResizeWidth = m_ResizeHeight = -1;
 	}
-
-	s_Data.viewportWidth = (float)m_pWindow->Desc().width;
-	s_Data.viewportHeight = (float)m_pWindow->Desc().height;
 
 	GameLoop(dt);
 }

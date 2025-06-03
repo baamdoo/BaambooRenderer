@@ -41,6 +41,11 @@ ModelLoader::ModelLoader(fs::path filepath_, MeshDescriptor descriptor)
 	ProcessNode(aiScene->mRootNode, aiScene, pRoot, descriptor);
 }
 
+ModelLoader::~ModelLoader()
+{
+	RELEASE(pRoot);
+}
+
 void ModelLoader::ProcessNode(aiNode* node, const aiScene* scene, Node* currentNode, MeshDescriptor descriptor)
 {
 	for (u32 i = 0; i < node->mNumMeshes; i++) 
@@ -153,6 +158,12 @@ std::string ModelLoader::GetTextureFilename(aiMaterial* mat, aiTextureType type)
 	else {
 		return "";
 	}
+}
+
+ModelLoader::Node::~Node()
+{
+	for (auto pChild : pChilds)
+		RELEASE(pChild);
 }
 
 } // namespace baamboo

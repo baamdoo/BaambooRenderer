@@ -1,8 +1,8 @@
 #pragma once
+#include "ThreadQueue.hpp"
 #include "BaambooCore/BackendAPI.h"
-#include "BaambooCore/ThreadQueue.hpp"
-#include "Scene/Scene.h"
-#include "Scene/Camera.h"
+#include "BaambooScene/Scene.h"
+#include "BaambooScene/Camera.h"
 
 namespace baamboo { class Engine; }
 namespace ImGui

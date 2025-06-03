@@ -1,38 +1,25 @@
 #pragma once
-#include <BaambooCore/ResourceHandle.h>
 
 namespace vk
 {
 
 class CommandQueue;
-class CommandBuffer;
+class CommandContext;
 class SceneResource;
 class ResourceManager;
 class DescriptorSet;
 class DescriptorPool;
-class Texture;
 
-struct FrameData
-{
-	// data
-	CameraData camera = {};
+enum class eCommandType;
 
-	// scene-resource
-	SceneResource* pSceneResource = nullptr;
-
-	// framebuffer
-	baamboo::ResourceHandle< Texture > color;
-	baamboo::ResourceHandle< Texture > depth;
-};
-inline FrameData g_FrameData = {};
-
-class RenderContext
+class RenderDevice
 {
 public:
-	RenderContext();
-	~RenderContext();
+	RenderDevice();
+	~RenderDevice();
 
 	u8 NextFrame();
+	void Flush();
 
 	[[nodiscard]]
 	VkDeviceSize GetAlignedSize(VkDeviceSize size) const;
@@ -51,7 +38,10 @@ public:
 	[[nodiscard]]
 	inline CommandQueue& ComputeQueue() const { return *m_pComputeQueue; }
 	[[nodiscard]]
-	inline CommandQueue* TransferQueue() const { return m_pTransferQueue; }
+	inline CommandQueue& TransferQueue() const { return *m_pTransferQueue; }
+
+	[[nodiscard]]
+	CommandContext& BeginCommand(eCommandType cmdType, VkCommandBufferUsageFlags usage = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, bool bTransient = false);
 
 	[[nodiscard]]
 	inline VmaAllocator vmaAllocator() const { return m_vmaAllocator; }

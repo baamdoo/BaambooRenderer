@@ -1,5 +1,5 @@
 #pragma once
-#include <BaambooUtils/FreeList.hpp>
+#include "FreeList.hpp"
 
 namespace vk
 {
@@ -18,7 +18,7 @@ struct DescriptorHandle
 class DescriptorSet
 {
 public:
-    DescriptorSet(RenderContext& context);
+    DescriptorSet(RenderDevice& device);
     ~DescriptorSet();
 
     DescriptorHandle StageDescriptor(const VkDescriptorImageInfo& imageInfo, u32 binding, VkDescriptorType descriptorType);
@@ -33,7 +33,7 @@ public:
     const VkDescriptorSet vkDescriptorSet() const { return m_vkDescriptorSet; }
 
 private:
-    RenderContext& m_RenderContext;
+    RenderDevice& m_RenderDevice;
 
     VkDescriptorSet     m_vkDescriptorSet = VK_NULL_HANDLE;
     baamboo::FreeList<> m_IndexAllocator;

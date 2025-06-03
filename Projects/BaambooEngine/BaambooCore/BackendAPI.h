@@ -1,7 +1,14 @@
 #pragma once
-#include "BaambooCore/Common.h"
+struct SceneRenderView;
 
-#include <functional>
+enum class eRendererAPI
+{
+	D3D11,
+	D3D12,
+	Vulkan,
+	OpenGL,
+	Metal,
+};
 
 enum class eRendererType
 {

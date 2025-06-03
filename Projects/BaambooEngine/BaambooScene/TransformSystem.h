@@ -1,6 +1,6 @@
 #pragma once
 #include "Components.h"
-#include "BaambooUtils/FreeList.hpp"
+#include "FreeList.hpp"
 
 namespace baamboo
 {

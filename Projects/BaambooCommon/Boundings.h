@@ -1,4 +1,5 @@
 #pragma once
+#include "MathTypes.h"
 
 //-------------------------------------------------------------------------
 // Bounding Sphere
@@ -88,7 +89,5 @@ public:
 
 private:
 	float3 m_Min;
-	int    padding0;
 	float3 m_Max;
-	int    padding1;
 };

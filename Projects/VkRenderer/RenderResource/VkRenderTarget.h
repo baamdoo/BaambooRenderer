@@ -1,6 +1,4 @@
 #pragma once
-#include "BaambooCore/ResourceHandle.h"
-
 namespace vk
 {
 
@@ -27,10 +25,10 @@ class RenderTarget
 {
 
 public:
-    RenderTarget(RenderContext& context);
+    RenderTarget(RenderDevice& device, std::string_view name);
     ~RenderTarget();
 
-    RenderTarget& AttachTexture(eAttachmentPoint attachmentPoint, baamboo::ResourceHandle< Texture > tex);
+    RenderTarget& AttachTexture(eAttachmentPoint attachmentPoint, Arc< Texture > pTex);
     RenderTarget& SetLoadAttachment(eAttachmentPoint attachmentPoint);
     void Build();
 
@@ -51,7 +49,7 @@ public:
     inline VkFramebuffer vkFramebuffer() const { return m_vkFramebuffer; }
 
     [[nodiscard]]
-    baamboo::ResourceHandle< Texture > Attachment(eAttachmentPoint attachment) const { return m_Attachments[attachment]; }
+    Arc< Texture > Attachment(eAttachmentPoint attachment) const;
     [[nodiscard]]
     inline u32 GetNumColors() const { return m_NumColors; }
 
@@ -60,15 +58,16 @@ private:
     bool IsDepthOnly() const;
 
 private:
-    RenderContext& m_RenderContext;
+    RenderDevice&   m_RenderDevice;
+    std::string_view m_Name;
 
     VkRenderPass          m_vkRenderPass = VK_NULL_HANDLE;
     VkFramebuffer         m_vkFramebuffer = VK_NULL_HANDLE;
     VkRenderPassBeginInfo m_BeginInfo = {};
 
-    std::vector< baamboo::ResourceHandle< Texture > > m_Attachments;
-    std::vector< VkClearValue >                       m_ClearValues;
-    VkAttachmentDescription                           m_AttachmentDesc;
+    std::vector< Arc< Texture > > m_pAttachments;
+    std::vector< VkClearValue >   m_ClearValues;
+    VkAttachmentDescription       m_AttachmentDesc;
 
     u32 m_NumColors = 0;
     u32 m_bLoadAttachmentBits = 0;

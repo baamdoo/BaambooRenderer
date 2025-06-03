@@ -1,28 +1,29 @@
 #include "RendererPch.h"
 #include "VkRenderTarget.h"
 #include "VkTexture.h"
-#include "RenderDevice/VkCommandBuffer.h"
-#include "RenderDevice/VkResourceManager.h"
 
 namespace vk
 {
 
-RenderTarget::RenderTarget(RenderContext& context)
-	: m_RenderContext(context)
-	, m_Attachments(eAttachmentPoint::NumAttachmentPoints)
+RenderTarget::RenderTarget(RenderDevice& device, std::string_view name)
+	: m_RenderDevice(device)
+	, m_Name(name)
+	, m_pAttachments(eAttachmentPoint::NumAttachmentPoints)
 {
 }
 
 RenderTarget::~RenderTarget()
 {
-	if (m_vkFramebuffer) vkDestroyFramebuffer(m_RenderContext.vkDevice(), m_vkFramebuffer, nullptr);
-	if (m_vkRenderPass) vkDestroyRenderPass(m_RenderContext.vkDevice(), m_vkRenderPass, nullptr);
+	if (m_vkFramebuffer) 
+		vkDestroyFramebuffer(m_RenderDevice.vkDevice(), m_vkFramebuffer, nullptr);
+	if (m_vkRenderPass) 
+		vkDestroyRenderPass(m_RenderDevice.vkDevice(), m_vkRenderPass, nullptr);
 }
 
-RenderTarget& RenderTarget::AttachTexture(eAttachmentPoint attachmentPoint, baamboo::ResourceHandle< Texture > tex)
+RenderTarget& RenderTarget::AttachTexture(eAttachmentPoint attachmentPoint, Arc< Texture > pTex)
 {
 	assert(attachmentPoint < eAttachmentPoint::NumAttachmentPoints);
-	m_Attachments[attachmentPoint] = tex;
+	m_pAttachments[attachmentPoint] = pTex;
 
     return *this;
 }
@@ -35,19 +36,18 @@ RenderTarget& RenderTarget::SetLoadAttachment(eAttachmentPoint attachmentPoint)
 
 void RenderTarget::Build()
 {
-	const auto& rm = m_RenderContext.GetResourceManager();
-	const bool bUseDepth = m_Attachments[eAttachmentPoint::DepthStencil].IsValid();
+	const bool bUseDepth = m_pAttachments[eAttachmentPoint::DepthStencil] != nullptr;
 
 	// **
 	// Render pass
 	// **
 	u32 width = 0; u32 height = 0; u32 depth = 0;
-	std::vector< VkImageView > attachments; attachments.reserve(m_Attachments.size());
-	std::vector< VkAttachmentReference > colorReferences; colorReferences.reserve(m_Attachments.size());
-	std::vector< VkAttachmentDescription > attachmentDescs; attachmentDescs.reserve(m_Attachments.size());
+	std::vector< VkImageView > attachments; attachments.reserve(m_pAttachments.size());
+	std::vector< VkAttachmentReference > colorReferences; colorReferences.reserve(m_pAttachments.size());
+	std::vector< VkAttachmentDescription > attachmentDescs; attachmentDescs.reserve(m_pAttachments.size());
 	for (u32 i = 0; i < eAttachmentPoint::NumColorAttachments; ++i)
 	{
-		auto pTex = rm.Get(m_Attachments[i]);
+		auto pTex = m_pAttachments[i];
 		if (!pTex)
 			continue;
 
@@ -82,7 +82,7 @@ void RenderTarget::Build()
 	VkAttachmentReference depthReference;
 	if (bUseDepth)
 	{
-		auto pTex = rm.Get(m_Attachments[eAttachmentPoint::DepthStencil]);
+		auto pTex = m_pAttachments[eAttachmentPoint::DepthStencil];
 		if (pTex)
 		{
 			const bool bIsDepthOnly = IsDepthOnly();
@@ -139,7 +139,7 @@ void RenderTarget::Build()
 	renderPassInfo.pSubpasses = subpasses.data();
 	renderPassInfo.dependencyCount = static_cast<u32>(dependencies.size());
 	renderPassInfo.pDependencies = dependencies.data();
-	VK_CHECK(vkCreateRenderPass(m_RenderContext.vkDevice(), &renderPassInfo, nullptr, &m_vkRenderPass));
+	VK_CHECK(vkCreateRenderPass(m_RenderDevice.vkDevice(), &renderPassInfo, nullptr, &m_vkRenderPass));
 
 
 	// **
@@ -153,19 +153,19 @@ void RenderTarget::Build()
 	framebufferInfo.width = width;
 	framebufferInfo.height = height;
 	framebufferInfo.layers = depth;
-	VK_CHECK(vkCreateFramebuffer(m_RenderContext.vkDevice(), &framebufferInfo, nullptr, &m_vkFramebuffer));
+	VK_CHECK(vkCreateFramebuffer(m_RenderDevice.vkDevice(), &framebufferInfo, nullptr, &m_vkFramebuffer));
 
 
 	// **
 	// Begin info
 	// **
-	auto pColor0 = rm.Get(m_Attachments[eAttachmentPoint::Color0]);
-	auto pDepthStencil = rm.Get(m_Attachments[eAttachmentPoint::DepthStencil]);
+	auto pColor0 = m_pAttachments[eAttachmentPoint::Color0];
+	auto pDepthStencil = m_pAttachments[eAttachmentPoint::DepthStencil];
 	assert(pColor0 || pDepthStencil);
 
 	for (u32 i = 0; i < eAttachmentPoint::NumAttachmentPoints; ++i)
 	{
-		auto pTex = rm.Get(m_Attachments[i]);
+		auto pTex = m_pAttachments[i];
 		if (!pTex)
 			continue;
 
@@ -178,23 +178,24 @@ void RenderTarget::Build()
 	m_BeginInfo.renderArea = { { 0, 0 }, { width, height } };
 	m_BeginInfo.clearValueCount = static_cast<u32>(m_ClearValues.size());
 	m_BeginInfo.pClearValues = m_ClearValues.data();
+
+	m_RenderDevice.SetVkObjectName(m_Name, (u64)m_vkRenderPass, VK_OBJECT_TYPE_RENDER_PASS);
+	m_RenderDevice.SetVkObjectName(m_Name, (u64)m_vkFramebuffer, VK_OBJECT_TYPE_FRAMEBUFFER);
 }
 
 void RenderTarget::Resize(u32 width, u32 height, u32 depth)
 {
-	const auto& rm = m_RenderContext.GetResourceManager();
-	for (auto attachment : m_Attachments)
+	for (auto pAttachment : m_pAttachments)
 	{
-		auto pAttachment = rm.Get(attachment);
 		if (pAttachment)
 			pAttachment->Resize(width, height, depth);
 	}
 
 	u32 bLoadAttachmentBits = m_bLoadAttachmentBits;
-	std::vector< baamboo::ResourceHandle< Texture > > attachments = m_Attachments;
+	std::vector< Arc< Texture > > pAttachments = m_pAttachments;
 	Reset();
 
-	m_Attachments = attachments;
+	m_pAttachments = pAttachments;
 	m_bLoadAttachmentBits = bLoadAttachmentBits;
 	Build();
 }
@@ -203,18 +204,18 @@ void RenderTarget::Reset()
 {
 	m_bLoadAttachmentBits = 0;
 
-	m_Attachments.clear();
-	m_Attachments.resize(eAttachmentPoint::NumAttachmentPoints);
+	m_pAttachments.clear();
+	m_pAttachments.reserve(eAttachmentPoint::NumAttachmentPoints);
 
-	if (m_vkFramebuffer) vkDestroyFramebuffer(m_RenderContext.vkDevice(), m_vkFramebuffer, nullptr);
-	if (m_vkRenderPass) vkDestroyRenderPass(m_RenderContext.vkDevice(), m_vkRenderPass, nullptr);
+	if (m_vkFramebuffer) vkDestroyFramebuffer(m_RenderDevice.vkDevice(), m_vkFramebuffer, nullptr);
+	if (m_vkRenderPass) vkDestroyRenderPass(m_RenderDevice.vkDevice(), m_vkRenderPass, nullptr);
 }
 
 void RenderTarget::InvalidateImageLayout()
 {
 	for (u32 i = 0; i < eAttachmentPoint::NumColorAttachments; ++i)
 	{
-		auto pTex = m_RenderContext.GetResourceManager().Get(m_Attachments[i]);
+		auto pTex = m_pAttachments[i];
 		if (!pTex)
 			continue;
 
@@ -257,10 +258,8 @@ void RenderTarget::InvalidateImageLayout()
 
 VkViewport RenderTarget::GetViewport(float2 scale, float2 bias, f32 minDepth, f32 maxDepth) const
 {
-	const auto& rm = m_RenderContext.GetResourceManager();
-
-	auto pColor0 = rm.Get(m_Attachments[eAttachmentPoint::Color0]);
-	auto pDepthStencil = rm.Get(m_Attachments[eAttachmentPoint::DepthStencil]);
+	auto pColor0       = m_pAttachments[eAttachmentPoint::Color0];
+	auto pDepthStencil = m_pAttachments[eAttachmentPoint::DepthStencil];
 	assert(pColor0 || pDepthStencil);
 
 	u32 width = pColor0 ?
@@ -269,10 +268,10 @@ VkViewport RenderTarget::GetViewport(float2 scale, float2 bias, f32 minDepth, f3
 		pColor0->Desc().extent.height : pDepthStencil->Desc().extent.height;
 
 	VkViewport viewport = {};
-	viewport.x = static_cast<float>(width) * bias.x;
-	viewport.y = static_cast<float>(height) * bias.y;
-	viewport.width = static_cast<float>(width) * scale.x;
-	viewport.height = static_cast<float>(height) * scale.y;
+	viewport.x        = static_cast<float>(width) * bias.x;
+	viewport.y        = static_cast<float>(height) * bias.y;
+	viewport.width    = static_cast<float>(width) * scale.x;
+	viewport.height   = static_cast<float>(height) * scale.y;
 	viewport.minDepth = minDepth;
 	viewport.maxDepth = maxDepth;
 
@@ -281,10 +280,8 @@ VkViewport RenderTarget::GetViewport(float2 scale, float2 bias, f32 minDepth, f3
 
 VkRect2D RenderTarget::GetScissorRect() const
 {
-	const auto& rm = m_RenderContext.GetResourceManager();
-
-	auto pColor0 = rm.Get(m_Attachments[eAttachmentPoint::Color0]);
-	auto pDepthStencil = rm.Get(m_Attachments[eAttachmentPoint::DepthStencil]);
+	auto pColor0       = m_pAttachments[eAttachmentPoint::Color0];
+	auto pDepthStencil = m_pAttachments[eAttachmentPoint::DepthStencil];
 	assert(pColor0 || pDepthStencil);
 
 	u32 width = pColor0 ?
@@ -299,13 +296,19 @@ VkRect2D RenderTarget::GetScissorRect() const
 	return scissor;
 }
 
+Arc< Texture > RenderTarget::Attachment(eAttachmentPoint attachment) const
+{
+	return m_pAttachments[attachment];
+}
+
 bool RenderTarget::IsDepthOnly() const
 {
     bool bDepthOnly = true;
     for (u32 i = 0; i < eAttachmentPoint::NumColorAttachments; ++i)
-        if (m_Attachments[i].IsValid()) bDepthOnly = false;
+        if (m_pAttachments[i]) 
+			bDepthOnly = false;
 
-    assert(!bDepthOnly || m_Attachments[eAttachmentPoint::DepthStencil].IsValid());
+    assert(!bDepthOnly || m_pAttachments[eAttachmentPoint::DepthStencil]);
     return bDepthOnly;
 }
 

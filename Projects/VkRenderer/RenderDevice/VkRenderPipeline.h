@@ -44,18 +44,18 @@ struct DescriptorInfo
 class GraphicsPipeline
 {
 public:
-	GraphicsPipeline(RenderContext& context, std::string name);
+	GraphicsPipeline(RenderDevice& device, std::string name);
 	~GraphicsPipeline();
 
 	GraphicsPipeline& SetShaders(
-		baamboo::ResourceHandle< Shader > vs, 
-		baamboo::ResourceHandle< Shader > fs,
-		baamboo::ResourceHandle< Shader > gs = baamboo::ResourceHandle< Shader >(),
-		baamboo::ResourceHandle< Shader > hs = baamboo::ResourceHandle< Shader >(),
-		baamboo::ResourceHandle< Shader > ds = baamboo::ResourceHandle< Shader >());
+		Arc< Shader > vs, 
+		Arc< Shader > fs,
+		Arc< Shader > gs = Arc< Shader >(),
+		Arc< Shader > hs = Arc< Shader >(),
+		Arc< Shader > ds = Arc< Shader >());
 	GraphicsPipeline& SetMeshShaders(
-		baamboo::ResourceHandle< Shader > ms,
-		baamboo::ResourceHandle< Shader > ts = baamboo::ResourceHandle< Shader >());
+		Arc< Shader > ms,
+		Arc< Shader > ts = Arc< Shader >());
 
 	GraphicsPipeline& SetVertexInputs(std::vector< VkVertexInputBindingDescription >&& streams, std::vector< VkVertexInputAttributeDescription >&& attributes);
 	GraphicsPipeline& SetRenderTarget(const RenderTarget& renderTarget);
@@ -80,39 +80,30 @@ public:
 	inline VkDescriptorSetLayout vkSetLayout(u8 set) const { return m_vkSetLayouts[set]; }
 
 private:
-	RenderContext& m_RenderContext;
-	std::string    m_Name;
+	RenderDevice& m_RenderDevice;
+	std::string   m_Name;
 
 	VkPipeline		                     m_vkPipeline = VK_NULL_HANDLE;
 	VkPipelineLayout                     m_vkPipelineLayout = VK_NULL_HANDLE;
 	std::vector< VkDescriptorSetLayout > m_vkSetLayouts;
 
-	baamboo::ResourceHandle< Shader > m_VS;
-	baamboo::ResourceHandle< Shader > m_FS;
-	baamboo::ResourceHandle< Shader > m_GS;
-	baamboo::ResourceHandle< Shader > m_DS;
-	baamboo::ResourceHandle< Shader > m_HS;
-
-	baamboo::ResourceHandle< Shader > m_TS;
-	baamboo::ResourceHandle< Shader > m_MS;
-
 	bool m_bMeshShader = false;
 
-	struct
+	struct PipelineDesc
 	{
 		VkRenderPass renderPass = VK_NULL_HANDLE;
 
 		std::vector< VkPipelineShaderStageCreateInfo >     shaderStages;
 		std::vector< VkPipelineColorBlendAttachmentState > blendStates;
-		VkLogicOp                                          blendLogicOp;
+		VkLogicOp                                          blendLogicOp = VK_LOGIC_OP_CLEAR;
 
-		VkPipelineVertexInputStateCreateInfo	vertexInputInfo;
-		VkPipelineInputAssemblyStateCreateInfo	inputAssemblyInfo;
-		VkPipelineViewportStateCreateInfo		viewportStateInfo;
-		VkPipelineRasterizationStateCreateInfo	rasterizerInfo;
-		VkPipelineDepthStencilStateCreateInfo	depthStencilInfo;
-		VkPipelineMultisampleStateCreateInfo	multisamplingInfo;
-	} m_CreateInfos;
+		VkPipelineVertexInputStateCreateInfo	vertexInputInfo   = {};
+		VkPipelineInputAssemblyStateCreateInfo	inputAssemblyInfo = {};
+		VkPipelineViewportStateCreateInfo		viewportStateInfo = {};
+		VkPipelineRasterizationStateCreateInfo	rasterizerInfo    = {};
+		VkPipelineDepthStencilStateCreateInfo	depthStencilInfo  = {};
+		VkPipelineMultisampleStateCreateInfo	multisamplingInfo = {};
+	} m_PipelineDesc = {};
 
 	std::unordered_map< u32, DescriptorSet& > m_DescriptorTable;
 };
@@ -124,19 +115,17 @@ private:
 class ComputePipeline
 {
 public:
-	ComputePipeline(RenderContext& context);
+	ComputePipeline(RenderDevice& device);
 	~ComputePipeline();
 
 	[[nodiscard]]
 	inline VkPipeline vkPipeline() const { return m_vkPipeline; }
 
 private:
-	RenderContext& m_RenderContext;
+	RenderDevice& m_RenderDevice;
 
 	VkPipeline		 m_vkPipeline = VK_NULL_HANDLE;
 	VkPipelineLayout m_vkPipelineLayout = VK_NULL_HANDLE;
-
-	baamboo::ResourceHandle< Shader > m_CS;
 };
 
 } // namespace vk

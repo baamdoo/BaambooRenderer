@@ -1,10 +1,9 @@
 #include "RendererPch.h"
 #include "VkTexture.h"
 #include "VkBuffer.h"
-#include "RenderDevice/VkCommandQueue.h"
-#include "RenderDevice/VkCommandBuffer.h"
+#include "RenderDevice/VkCommandContext.h"
 
-#include <BaambooUtils/Math.hpp>
+#include "Utils/Math.hpp"
 
 namespace vk
 {
@@ -78,7 +77,7 @@ void Texture::CreateImageAndView(const CreationInfo& info)
 	vmaInfo.usage = info.memoryUsage;
 	vmaInfo.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
 
-	VK_CHECK(vmaCreateImage(m_RenderContext.vmaAllocator(), &m_Desc, &vmaInfo, &m_vkImage, &m_vmaAllocation, &m_vmaAllocationInfo));
+	VK_CHECK(vmaCreateImage(m_RenderDevice.vmaAllocator(), &m_Desc, &vmaInfo, &m_vkImage, &m_vmaAllocation, &m_AllocationInfo));
 
 
 	// **
@@ -86,7 +85,7 @@ void Texture::CreateImageAndView(const CreationInfo& info)
 	// **
 	auto viewInfo = GetViewDesc(m_Desc);
 	m_AspectFlags = viewInfo.subresourceRange.aspectMask;
-	VK_CHECK(vkCreateImageView(m_RenderContext.vkDevice(), &viewInfo, nullptr, &m_vkImageView));
+	VK_CHECK(vkCreateImageView(m_RenderDevice.vkDevice(), &viewInfo, nullptr, &m_vkImageView));
 }
 
 VkImageViewCreateInfo Texture::GetViewDesc(const VkImageCreateInfo& imageInfo)
@@ -178,32 +177,43 @@ u64 Texture::SizeInBytes() const
 	return m_Desc.extent.width * m_Desc.extent.height * m_Desc.extent.depth * GetFormatElementSizeInBytes(m_Desc.format);
 }
 
-Texture::Texture(RenderContext& context, std::wstring_view name)
-	: Super(context, name)
+Texture::Texture(RenderDevice& device, std::string_view name)
+	: Super(device, name, eResourceType::Texture)
 {
 }
 
-Texture::Texture(RenderContext& context, std::wstring_view name, CreationInfo&& info)
-	: Super(context, name)
+Texture::Texture(RenderDevice& device, std::string_view name, CreationInfo&& info)
+	: Super(device, name, eResourceType::Texture)
 	, m_CreationInfo(info)
 {
 	CreateImageAndView(m_CreationInfo);
+	SetDeviceObjectName((u64)m_vkImage, VK_OBJECT_TYPE_IMAGE);
 }
 
 Texture::~Texture()
 {
-	vkDestroyImageView(m_RenderContext.vkDevice(), m_vkImageView, nullptr);
-	if (!m_bOwnedBySwapChain)
-		vmaDestroyImage(m_RenderContext.vmaAllocator(), m_vkImage, m_vmaAllocation);
+	vkDestroyImageView(m_RenderDevice.vkDevice(), m_vkImageView, nullptr);
+	if (m_vmaAllocation)
+		vmaDestroyImage(m_RenderDevice.vmaAllocator(), m_vkImage, m_vmaAllocation);
+}
+
+Arc< Texture > Texture::Create(RenderDevice& device, std::string_view name, CreationInfo&& desc)
+{
+	return MakeArc< Texture >(device, name, std::move(desc));
+}
+
+Arc<Texture> Texture::CreateEmpty(RenderDevice& device, std::string_view name)
+{
+	return MakeArc< Texture >(device, name);
 }
 
 void Texture::Resize(u32 width, u32 height, u32 depth)
 {
 	assert(m_vkImage && m_vkImageView);
 
-	vkDestroyImageView(m_RenderContext.vkDevice(), m_vkImageView, nullptr);
-	if (!m_bOwnedBySwapChain)
-		vmaDestroyImage(m_RenderContext.vmaAllocator(), m_vkImage, m_vmaAllocation);
+	vkDestroyImageView(m_RenderDevice.vkDevice(), m_vkImageView, nullptr);
+	if (m_vmaAllocation)
+		vmaDestroyImage(m_RenderDevice.vmaAllocator(), m_vkImage, m_vmaAllocation);
 
 	m_CreationInfo.resolution = { width, height, depth };
 	CreateImageAndView(m_CreationInfo);
@@ -217,7 +227,6 @@ void Texture::SetResource(VkImage vkImage, VkImageView vkImageView, VmaAllocatio
 	m_vkImageView = vkImageView;
 	m_vmaAllocation = vmaAllocation;
 	m_AspectFlags = aspectMask;
-	m_bOwnedBySwapChain = vmaAllocation == VK_NULL_HANDLE;
 }
 
 } // namespace vk

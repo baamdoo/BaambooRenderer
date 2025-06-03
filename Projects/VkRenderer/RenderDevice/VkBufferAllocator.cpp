@@ -1,9 +1,8 @@
 #include "RendererPch.h"
 #include "VkBufferAllocator.h"
 #include "VkCommandQueue.h"
-#include "VkCommandBuffer.h"
-
-#include <BaambooUtils/Math.hpp>
+#include "VkCommandContext.h"
+#include "Utils/Math.hpp"
 
 namespace vk
 {
@@ -12,11 +11,11 @@ namespace vk
 //-------------------------------------------------------------------------
 // Dynamic-Buffer Allocator
 //-------------------------------------------------------------------------
-DynamicBufferAllocator::DynamicBufferAllocator(RenderContext& context, VkDeviceSize pageSize)
-	: m_RenderContext(context)
+DynamicBufferAllocator::DynamicBufferAllocator(RenderDevice& device, VkDeviceSize pageSize)
+	: m_RenderDevice(device)
 	, m_MaxPageSize(pageSize)
 {
-	m_Alignment = m_RenderContext.DeviceProps().limits.minUniformBufferOffsetAlignment;
+	m_Alignment = m_RenderDevice.DeviceProps().limits.minUniformBufferOffsetAlignment;
 }
 
 DynamicBufferAllocator::~DynamicBufferAllocator()
@@ -58,15 +57,15 @@ DynamicBufferAllocator::Page* DynamicBufferAllocator::RequestPage()
 	}
 	else
 	{
-		pPage = new Page(m_RenderContext, m_MaxPageSize);
+		pPage = new Page(m_RenderDevice, m_MaxPageSize);
 		m_pPages.push_back(pPage);
 	}
 
 	return pPage;
 }
 
-DynamicBufferAllocator::Page::Page(RenderContext& context, VkDeviceSize sizeInBytes)
-	: m_RenderContext(context)
+DynamicBufferAllocator::Page::Page(RenderDevice& device, VkDeviceSize sizeInBytes)
+	: m_RenderDevice(device)
 	, m_BaseCpuHandle(nullptr)
 	, m_Offset(0)
 	, m_PageSize(sizeInBytes)
@@ -81,16 +80,16 @@ DynamicBufferAllocator::Page::Page(RenderContext& context, VkDeviceSize sizeInBy
 	vmaInfo.usage = VMA_MEMORY_USAGE_AUTO;
 
 	VmaAllocationInfo vmaAllocationInfo = {};
-	VK_CHECK(vmaCreateBuffer(context.vmaAllocator(), &bufferInfo, &vmaInfo, &m_vkBuffer, &m_vmaAllocation, &vmaAllocationInfo));
+	VK_CHECK(vmaCreateBuffer(m_RenderDevice.vmaAllocator(), &bufferInfo, &vmaInfo, &m_vkBuffer, &m_vmaAllocation, &vmaAllocationInfo));
 
 	m_BaseCpuHandle = vmaAllocationInfo.pMappedData;
-	//VK_CHECK(vmaMapMemory(context.vmaAllocator(), m_vmaAllocation, &m_BaseCpuHandle));
+	//VK_CHECK(vmaMapMemory(m_RenderDevice.vmaAllocator(), m_vmaAllocation, &m_BaseCpuHandle));
 }
 
 DynamicBufferAllocator::Page::~Page()
 {
-	//vmaUnmapMemory(m_RenderContext.vmaAllocator(), m_vmaAllocation);
-	vmaDestroyBuffer(m_RenderContext.vmaAllocator(), m_vkBuffer, m_vmaAllocation);
+	//vmaUnmapMemory(m_RenderDevice.vmaAllocator(), m_vmaAllocation);
+	vmaDestroyBuffer(m_RenderDevice.vmaAllocator(), m_vkBuffer, m_vmaAllocation);
 }
 
 DynamicBufferAllocator::Allocation DynamicBufferAllocator::Page::Allocate(VkDeviceSize sizeInBytes, VkDeviceSize alignment)
@@ -127,10 +126,10 @@ bool DynamicBufferAllocator::Page::HasSpace(VkDeviceSize sizeInBytes, VkDeviceSi
 //-------------------------------------------------------------------------
 // Static-Buffer Allocator
 //-------------------------------------------------------------------------
-StaticBufferAllocator::StaticBufferAllocator(RenderContext& context, VkDeviceSize bufferSize, VkBufferUsageFlags usage)
-	: m_RenderContext(context)
+StaticBufferAllocator::StaticBufferAllocator(RenderDevice& device, VkDeviceSize bufferSize, VkBufferUsageFlags usage)
+	: m_RenderDevice(device)
 {
-	m_Alignment = m_RenderContext.DeviceProps().limits.minStorageBufferOffsetAlignment;
+	m_Alignment = m_RenderDevice.DeviceProps().limits.minStorageBufferOffsetAlignment;
 	m_UsageFlags = usage |
 		           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
 		           VK_BUFFER_USAGE_TRANSFER_DST_BIT |
@@ -142,7 +141,7 @@ StaticBufferAllocator::StaticBufferAllocator(RenderContext& context, VkDeviceSiz
 
 StaticBufferAllocator::~StaticBufferAllocator()
 {
-	vmaDestroyBuffer(m_RenderContext.vmaAllocator(), m_vkBuffer, m_vmaAllocation);
+	vmaDestroyBuffer(m_RenderDevice.vmaAllocator(), m_vkBuffer, m_vmaAllocation);
 }
 
 StaticBufferAllocator::Allocation StaticBufferAllocator::Allocate(u32 numElements, u64 elementSizeInBytes)
@@ -187,34 +186,26 @@ void StaticBufferAllocator::Resize(VkDeviceSize sizeInBytes)
 	VkBuffer          vkBuffer = VK_NULL_HANDLE;
 	VmaAllocation     vmaAllocation = VK_NULL_HANDLE;
 	VmaAllocationInfo allocationInfo = {};
-	VK_CHECK(vmaCreateBuffer(m_RenderContext.vmaAllocator(), &bufferInfo, &vmaInfo, &vkBuffer, &vmaAllocation, &allocationInfo));
+	VK_CHECK(vmaCreateBuffer(m_RenderDevice.vmaAllocator(), &bufferInfo, &vmaInfo, &vkBuffer, &vmaAllocation, &allocationInfo));
+
+
 
 	VkBufferDeviceAddressInfo addressInfo = {};
 	addressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
 	addressInfo.buffer = vkBuffer;
-	VkDeviceAddress baseGpuHandle = vkGetBufferDeviceAddress(m_RenderContext.vkDevice(), &addressInfo);
+	VkDeviceAddress baseGpuHandle = vkGetBufferDeviceAddress(m_RenderDevice.vkDevice(), &addressInfo);
 
 	if (m_Offset > 0 && m_vkBuffer != VK_NULL_HANDLE) 
 	{
-		if (auto pTransferQueue = m_RenderContext.TransferQueue())
-		{
-			auto& cmdBuffer = pTransferQueue->Allocate(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
-			cmdBuffer.CopyBuffer(vkBuffer, m_vkBuffer, m_Offset, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT);
-			cmdBuffer.Close();
-			pTransferQueue->ExecuteCommandBuffer(cmdBuffer);
-		}
-		else
-		{
-			auto& cmdBuffer = m_RenderContext.GraphicsQueue().Allocate(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
-			cmdBuffer.CopyBuffer(vkBuffer, m_vkBuffer, m_Offset, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT);
-			cmdBuffer.Close();
-			m_RenderContext.GraphicsQueue().ExecuteCommandBuffer(cmdBuffer);
-		}
+		auto& context = m_RenderDevice.BeginCommand(eCommandType::Transfer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
+		context.CopyBuffer(vkBuffer, m_vkBuffer, m_Offset, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT);
+		context.Close();
+		context.Execute();
 	}
 
 	if (m_vkBuffer != VK_NULL_HANDLE) 
 	{
-		vmaDestroyBuffer(m_RenderContext.vmaAllocator(), m_vkBuffer, m_vmaAllocation);
+		vmaDestroyBuffer(m_RenderDevice.vmaAllocator(), m_vkBuffer, m_vmaAllocation);
 	}
 
 	m_vkBuffer       = vkBuffer;

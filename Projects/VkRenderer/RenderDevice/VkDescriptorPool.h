@@ -12,7 +12,7 @@ class DescriptorSet;
 class DescriptorPool
 {
 public:
-	DescriptorPool(RenderContext& context, std::vector< VkDescriptorPoolSize >&& poolSizes, u32 maxSets, VkDescriptorPoolCreateFlags flags = 0);
+	DescriptorPool(RenderDevice& device, std::vector< VkDescriptorPoolSize >&& poolSizes, u32 maxSets, VkDescriptorPoolCreateFlags flags = 0);
 	~DescriptorPool();
 
 	[[nodiscard]]
@@ -23,7 +23,7 @@ public:
 	VkDescriptorPool vkDescriptorPool() const { return m_vkDescriptorPool; }
 
 private:
-	RenderContext& m_RenderContext;
+	RenderDevice& m_RenderDevice;
 
 	VkDescriptorPool            m_vkDescriptorPool;
 	u32                         m_MaxSets = 0;

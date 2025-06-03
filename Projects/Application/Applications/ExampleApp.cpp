@@ -1,9 +1,10 @@
 #include "ExampleApp.h"
-#include "Scene/Entity.h"
-#include "Scene/Components.h"
+#include "BaambooCore/Common.h"
 #include "BaambooCore/Window.h"
 #include "BaambooCore/Input.hpp"
-#include "BaambooUtils/ModelLoader.h"
+#include "BaambooScene/Entity.h"
+#include "BaambooScene/Components.h"
+#include "BaambooScene/ModelLoader.h"
 
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui/backends/imgui_impl_glfw.h>

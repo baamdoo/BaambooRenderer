@@ -1,5 +1,5 @@
 #pragma once
-#include "BaambooCore/Common.h"
+#include "Primitives.h"
 
 struct TransformRenderView
 {
@@ -47,8 +47,8 @@ struct MaterialRenderView
 struct DrawRenderView
 {
 	u32 transform = INVALID_INDEX;
-	u32 mesh = INVALID_INDEX;
-	u32 material = INVALID_INDEX;
+	u32 mesh      = INVALID_INDEX;
+	u32 material  = INVALID_INDEX;
 };
 
 //-------------------------------------------------------------------------

@@ -3,19 +3,19 @@
 namespace vk
 {
 
-class CommandBuffer;
+class CommandContext;
 
 class CommandQueue
 {
 public:
-	CommandQueue(RenderContext& context, u32 queueIndex);
+	CommandQueue(RenderDevice& device, u32 queueIndex, eCommandType type);
 	~CommandQueue();
 	
 	[[nodiscard]]
-	CommandBuffer& Allocate(VkCommandBufferUsageFlags flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, bool bTransient = false);
+	CommandContext& Allocate(VkCommandBufferUsageFlags flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, bool bTransient = false);
 	void Flush();
 
-	void ExecuteCommandBuffer(CommandBuffer& cmdBuffer);
+	void ExecuteCommandBuffer(CommandContext& context);
 
 
 	[[nodiscard]]
@@ -26,16 +26,14 @@ public:
 	inline VkCommandPool vkCommandPool() const { return m_vkCommandPool; }
 
 private:
-	CommandBuffer* RequestList(VkCommandPool vkCommandPool);
-
-private:
-	RenderContext& m_RenderContext;
+	RenderDevice& m_RenderDevice;
+	eCommandType  m_CommandType;
 
 	VkQueue       m_vkQueue = VK_NULL_HANDLE;
 	VkCommandPool m_vkCommandPool = VK_NULL_HANDLE;
 
-	std::vector< CommandBuffer* > m_pCmdBuffers;
-	std::queue< CommandBuffer* >  m_pAvailableCmdBuffers;
+	std::vector< CommandContext* > m_pContexts;
+	std::queue< CommandContext* >  m_pAvailableContexts;
 
 	u32 m_QueueIndex = UINT_MAX;
 };

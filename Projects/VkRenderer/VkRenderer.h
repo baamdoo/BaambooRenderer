@@ -1,6 +1,5 @@
 #pragma once
 #include "BaambooCore/BackendAPI.h"
-#include "BaambooCore/ResourceHandle.h"
 
 struct ImGuiContext;
 
@@ -12,7 +11,7 @@ namespace baamboo
 namespace vk
 {
 
-class CommandBuffer;
+class CommandContext;
 class RenderModule;
 
 class Renderer : public RendererAPI
@@ -29,13 +28,11 @@ public:
 	virtual void SetRendererType(eRendererType type) override;
 
 private:
-	void CreateDefaultResources();
-
-	CommandBuffer& BeginFrame();
-	void EndFrame(CommandBuffer& cmdBuffer);
+	CommandContext& BeginFrame();
+	void EndFrame(CommandContext& cmdBuffer);
 
 private:
-	class RenderContext* m_pRenderContext = nullptr;
+	class RenderDevice* m_pRenderDevice = nullptr;
 	class SwapChain*     m_pSwapChain = nullptr;
 
 	std::vector< RenderModule* > m_pRenderModules;

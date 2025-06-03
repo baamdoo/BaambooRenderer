@@ -5,8 +5,8 @@
 namespace vk
 {
 
-DescriptorSet::DescriptorSet(RenderContext& context)
-	: m_RenderContext(context)
+DescriptorSet::DescriptorSet(RenderDevice& device)
+	: m_RenderDevice(device)
 {
 }
 
@@ -21,7 +21,7 @@ DescriptorSet& DescriptorSet::Allocate(VkDescriptorSetLayout vkSetLayout, VkDesc
     allocateInfo.descriptorPool = vkPool;
     allocateInfo.descriptorSetCount = 1;
     allocateInfo.pSetLayouts = &vkSetLayout;
-    VK_CHECK(vkAllocateDescriptorSets(m_RenderContext.vkDevice(), &allocateInfo, &m_vkDescriptorSet));
+    VK_CHECK(vkAllocateDescriptorSets(m_RenderDevice.vkDevice(), &allocateInfo, &m_vkDescriptorSet));
 
     return *this;
 }
@@ -51,7 +51,7 @@ DescriptorHandle DescriptorSet::StageDescriptors(const std::vector< VkDescriptor
     descriptorWrite.descriptorType = descriptorType;
     descriptorWrite.descriptorCount = static_cast<u32>(imageInfos.size());
     descriptorWrite.pImageInfo = imageInfos.data();
-    vkUpdateDescriptorSets(m_RenderContext.vkDevice(), 1, &descriptorWrite, 0, nullptr);
+    vkUpdateDescriptorSets(m_RenderDevice.vkDevice(), 1, &descriptorWrite, 0, nullptr);
 
     return { index, u32(imageInfos.size()) };
 }
@@ -81,7 +81,7 @@ DescriptorHandle DescriptorSet::StageDescriptors(const std::vector< VkDescriptor
     descriptorWrite.descriptorType = descriptorType;
     descriptorWrite.descriptorCount = static_cast<u32>(bufferInfos.size());
     descriptorWrite.pBufferInfo = bufferInfos.data();
-    vkUpdateDescriptorSets(m_RenderContext.vkDevice(), 1, &descriptorWrite, 0, nullptr);
+    vkUpdateDescriptorSets(m_RenderDevice.vkDevice(), 1, &descriptorWrite, 0, nullptr);
 
     return { index, u32(bufferInfos.size()) };
 }

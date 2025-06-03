@@ -1,24 +1,31 @@
 #pragma once
-#include "BaambooCore/ResourceHandle.h"
-
 namespace vk
 {
 
-template< typename TResource >
-class Resource
+enum class eResourceType : u8 
 {
+	Buffer,
+	Texture,
+	Sampler,
+	Shader,
+	AccelerationStructure
+};
+
+class Resource : public ArcBase
+{
+public:
+	Resource(RenderDevice& device, std::string_view name, eResourceType type);
+	virtual ~Resource() = default;
+
 protected:
-	friend class ResourceManager;
+	void SetDeviceObjectName(u64 handle, VkObjectType type);
 
-	Resource(RenderContext& context, std::wstring_view name) : m_RenderContext(context), m_Name(name) {}
-	virtual ~Resource() {}
+	RenderDevice&    m_RenderDevice;
+	std::string_view m_Name;
+	eResourceType    m_Type;
 
-protected:
-	RenderContext&     m_RenderContext;
-	std::wstring_view  m_Name;
-
-	VmaAllocation     m_vmaAllocation = VK_NULL_HANDLE;
-	VmaAllocationInfo m_vmaAllocationInfo = {};
+	VmaAllocation     m_vmaAllocation  = VK_NULL_HANDLE;
+	VmaAllocationInfo m_AllocationInfo = {};
 };
 
 }

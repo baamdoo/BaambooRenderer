@@ -1,14 +1,15 @@
 #pragma once
-#include "BaambooCore/Common.h"
-#include "BaambooCore/Boundings.h"
-#include "FileIO.hpp"
+#include "Boundings.h"
+#include "Utils/FileIO.hpp"
 
 struct aiScene;
 struct aiNode;
 struct aiMesh;
 struct aiMaterial;
 struct aiString;
+
 enum aiTextureType : i32;
+enum class eRendererAPI;
 
 struct MeshData
 {
@@ -43,28 +44,21 @@ class ModelLoader
 public:
 	struct Node
 	{
-		~Node()
-		{
-			for (auto pChild : pChilds)
-				RELEASE(pChild);
-		}
+		~Node();
 
-		Node* pParent;
+		Node*                pParent = nullptr;
 		std::vector< Node* > pChilds;
 
 		std::vector< MeshData > meshes;
 		std::vector< u32 >      materialIndices;
-		BoundingBox             aabb;
+		BoundingBox             aabb = {};
 	};
 
 public:
 	ModelLoader(fs::path filepath, MeshDescriptor descriptor);
-	~ModelLoader()
-	{
-		RELEASE(pRoot);
-	}
+	~ModelLoader();
 
-	Node*    pRoot;
+	Node*    pRoot = nullptr;
 	fs::path filepath;
 
 private:

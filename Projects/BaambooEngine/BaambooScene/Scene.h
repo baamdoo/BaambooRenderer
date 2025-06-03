@@ -1,7 +1,7 @@
 #pragma once
 #include "Components.h"
 #include "SceneRenderView.h"
-#include "BaambooUtils/ModelLoader.h"
+#include "ModelLoader.h"
 
 namespace baamboo
 {

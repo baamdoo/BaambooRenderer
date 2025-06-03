@@ -1,5 +1,9 @@
 #pragma once
-#include "RenderDevice/VkResourceManager.h"
+#include "VkBuffer.h"
+#include "VkTexture.h"
+#include "VkSampler.h"
+
+struct SceneRenderView;
 
 namespace vk
 {
@@ -14,18 +18,31 @@ struct BufferHandle
     u32 offset;
     u64 elementSizeInBytes;
 };
-using TextureHandle = baamboo::ResourceHandle< Texture >;
+
+struct FrameData
+{
+    // data
+    CameraData camera = {};
+
+    // scene-resource
+    struct SceneResource* pSceneResource = nullptr;
+
+    // framebuffer
+    Weak< Texture > pColor;
+    Weak< Texture > pDepth;
+};
+inline FrameData g_FrameData;
 
 struct SceneResource
 {
-    SceneResource(RenderContext& context);
+    SceneResource(RenderDevice& device);
     ~SceneResource();
 
     void UpdateSceneResources(const SceneRenderView& sceneView);
 
     BufferHandle GetOrUpdateVertex(u32 entity, std::string_view filepath, const void* pData, u32 count);
     BufferHandle GetOrUpdateIndex(u32 entity, std::string_view filepath, const void* pData, u32 count);
-    TextureHandle GetOrLoadTexture(u32 entity, std::string_view filepath);
+    Arc< Texture > GetOrLoadTexture(u32 entity, std::string_view filepath);
 
     [[nodiscard]]
     VkDescriptorBufferInfo GetVertexDescriptorInfo() const;
@@ -47,22 +64,23 @@ private:
     void ResetFrameBuffers();
     void UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator* pTargetBuffer);
 
-    RenderContext& m_RenderContext;
+private:
+    RenderDevice& m_RenderDevice;
 
-    VkDescriptorSetLayout m_vkSetLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_vkSetLayout     = VK_NULL_HANDLE;
     DescriptorPool*       m_pDescriptorPool = nullptr;
 
-    StaticBufferAllocator* m_pVertexBufferPool = nullptr;
-    StaticBufferAllocator* m_pIndexBufferPool = nullptr;
+    StaticBufferAllocator* m_pVertexBufferPool       = nullptr;
+    StaticBufferAllocator* m_pIndexBufferPool        = nullptr;
     StaticBufferAllocator* m_pIndirectDrawBufferPool = nullptr;
-    StaticBufferAllocator* m_pTransformBufferPool = nullptr;
-    StaticBufferAllocator* m_pMaterialBufferPool = nullptr;
+    StaticBufferAllocator* m_pTransformBufferPool    = nullptr;
+    StaticBufferAllocator* m_pMaterialBufferPool     = nullptr;
 
-    std::unordered_map< std::string, BufferHandle >  m_VertexCache;
-    std::unordered_map< std::string, BufferHandle >  m_IndexCache;
-    std::unordered_map< std::string, TextureHandle > m_TextureCache;
+    std::unordered_map< std::string, BufferHandle >   m_VertexCache;
+    std::unordered_map< std::string, BufferHandle >   m_IndexCache;
+    std::unordered_map< std::string, Arc< Texture > > m_TextureCache;
 
-    baamboo::ResourceHandle< Sampler > m_DefaultSampler;
+    Arc< Sampler > m_pDefaultSampler;
 };
 
 

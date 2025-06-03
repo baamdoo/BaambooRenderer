@@ -5,8 +5,8 @@
 namespace vk
 {
 
-DescriptorPool::DescriptorPool(RenderContext& context, std::vector< VkDescriptorPoolSize >&& poolSizes, u32 maxSets, VkDescriptorPoolCreateFlags flags)
-	: m_RenderContext(context)
+DescriptorPool::DescriptorPool(RenderDevice& device, std::vector< VkDescriptorPoolSize >&& poolSizes, u32 maxSets, VkDescriptorPoolCreateFlags flags)
+	: m_RenderDevice(device)
 	, m_Flags(flags)
 	, m_MaxSets(maxSets)
 {
@@ -19,7 +19,7 @@ DescriptorPool::DescriptorPool(RenderContext& context, std::vector< VkDescriptor
 	poolInfo.maxSets = m_MaxSets;
 	poolInfo.poolSizeCount = static_cast<u32>(poolSizes.size());
 	poolInfo.pPoolSizes = poolSizes.data();
-	VK_CHECK(vkCreateDescriptorPool(m_RenderContext.vkDevice(), &poolInfo, nullptr, &m_vkDescriptorPool));
+	VK_CHECK(vkCreateDescriptorPool(m_RenderDevice.vkDevice(), &poolInfo, nullptr, &m_vkDescriptorPool));
 }
 
 DescriptorPool::~DescriptorPool()
@@ -28,7 +28,7 @@ DescriptorPool::~DescriptorPool()
 	{
 		RELEASE(pSet);
 	}
-	vkDestroyDescriptorPool(m_RenderContext.vkDevice(), m_vkDescriptorPool, nullptr);
+	vkDestroyDescriptorPool(m_RenderDevice.vkDevice(), m_vkDescriptorPool, nullptr);
 }
 
 DescriptorSet& DescriptorPool::AllocateSet(VkDescriptorSetLayout vkSetLayout)
@@ -41,7 +41,7 @@ DescriptorSet& DescriptorPool::AllocateSet(VkDescriptorSetLayout vkSetLayout)
 		return *it->second;
 	}
 
-	auto pDescriptorSet = new DescriptorSet(m_RenderContext);
+	auto pDescriptorSet = new DescriptorSet(m_RenderDevice);
 	m_DescriptorSetCache.emplace(vkSetLayout, pDescriptorSet);
 	
 	return pDescriptorSet->Allocate(vkSetLayout, m_vkDescriptorPool);
@@ -49,7 +49,7 @@ DescriptorSet& DescriptorPool::AllocateSet(VkDescriptorSetLayout vkSetLayout)
 
 void DescriptorPool::Reset()
 {
-	VK_CHECK(vkResetDescriptorPool(m_RenderContext.vkDevice(), m_vkDescriptorPool, 0));
+	VK_CHECK(vkResetDescriptorPool(m_RenderDevice.vkDevice(), m_vkDescriptorPool, 0));
 }
 
 } // namespace vk

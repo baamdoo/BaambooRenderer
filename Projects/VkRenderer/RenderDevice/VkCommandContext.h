@@ -1,6 +1,6 @@
 #pragma once
 #include "VkRenderPipeline.h"
-#include "Core/VkCore.h"
+#include "RenderResource/VkTexture.h"
 
 namespace vk
 {
@@ -12,24 +12,29 @@ class ComputePipeline;
 class DescriptorInfo;
 class DynamicBufferAllocator;
 class StaticBufferAllocator;
-class VertexBuffer;
-class IndexBuffer;
 class Buffer;
-class Texture;
 
 constexpr u32 MAX_NUM_PENDING_BARRIERS = 16;
 
+enum class eCommandType
+{
+    Graphics,
+    Compute,
+    Transfer,
+};
+
 //-------------------------------------------------------------------------
-// CommandBuffer
+// Command Context
 //-------------------------------------------------------------------------
-class CommandBuffer
+class CommandContext
 {
 public:
-    CommandBuffer(RenderContext& context, VkCommandPool vkCommandPool, VkCommandBufferLevel vkLevel = VK_COMMAND_BUFFER_LEVEL_PRIMARY);
-    virtual ~CommandBuffer();
+    CommandContext(RenderDevice& device, VkCommandPool vkCommandPool, eCommandType type, VkCommandBufferLevel vkLevel = VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+    virtual ~CommandContext();
 
     void Open(VkCommandBufferUsageFlags flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
     void Close();
+    void Execute();
 
     void CopyBuffer(
         VkBuffer vkDstBuffer, 
@@ -40,31 +45,31 @@ public:
         VkDeviceSize srcOffset = 0, 
         bool bFlushImmediate = true);
     void CopyBuffer(
-        Buffer* pDstBuffer, 
-        Buffer* pSrcBuffer, 
+        Arc< Buffer > pDstBuffer,
+        Arc< Buffer > pSrcBuffer,
         VkDeviceSize sizeInBytes,
         VkPipelineStageFlags2 dstStageMask,
         VkDeviceSize dstOffset = 0, 
         VkDeviceSize srcOffset = 0, 
         bool bFlushImmediate = true);
     void CopyBuffer(
-        Texture* pDstTexture, 
-        Buffer* pSrcBuffer, 
+        Arc< Texture > pDstTexture,
+        Arc< Buffer > pSrcBuffer,
         const std::vector< VkBufferImageCopy >& regions, 
         bool bAllSubresources = true);
-    void CopyTexture(Texture* pDstTexture, Texture* pSrcTexture);
-    void GenerateMips(Texture* pTexture);
+    void CopyTexture(Arc< Texture > pDstTexture, Arc< Texture > pSrcTexture);
+    void GenerateMips(Arc< Texture > pTexture);
 
     // todo. unlock other types of barrier
     void TransitionImageLayout(
-        Texture* pTexture,
+        Arc< Texture > pTexture,
         VkImageLayout newLayout,
         VkPipelineStageFlags2 dstStageMask,
         VkImageAspectFlags aspectMask,
         bool bFlushImmediate = true,
         bool bFlatten = false);
     void TransitionImageLayout(
-        Texture* pTexture, 
+        Arc< Texture > pTexture,
         VkImageLayout newLayout, 
         VkPipelineStageFlags2 dstStageMask,
         VkImageSubresourceRange subresourceRange,
@@ -72,7 +77,7 @@ public:
         bool bFlatten = false);
 
     void ClearTexture(
-        Texture* pTexture, 
+        Arc< Texture >pTexture, 
         VkImageLayout newLayout, 
         VkPipelineStageFlags2 dstStageMask,
         u32 baseMip = 0, u32 numMips = 1, u32 baseArray = 0, u32 numArrays = 1);
@@ -123,20 +128,21 @@ private:
 
 private:
     friend class CommandQueue;
-    RenderContext& m_RenderContext;
+    RenderDevice& m_RenderDevice;
+    eCommandType  m_CommandType;
 
     VkCommandBuffer      m_vkCommandBuffer = VK_NULL_HANDLE;
-    VkCommandPool        m_vkBelongedPool = VK_NULL_HANDLE;
-    VkCommandBufferLevel m_Level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    VkCommandPool        m_vkBelongedPool  = VK_NULL_HANDLE;
+    VkCommandBufferLevel m_Level           = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
     DynamicBufferAllocator* m_pUniformBufferPool = nullptr;
 
-    VkSemaphore m_vkRenderCompleteSemaphore = VK_NULL_HANDLE;
+    VkSemaphore m_vkRenderCompleteSemaphore  = VK_NULL_HANDLE;
     VkSemaphore m_vkPresentCompleteSemaphore = VK_NULL_HANDLE;
-    VkFence     m_vkFence = VK_NULL_HANDLE;
+    VkFence     m_vkFence                    = VK_NULL_HANDLE;
 
     GraphicsPipeline* m_pGraphicsPipeline = nullptr;
-    ComputePipeline*  m_pComputePipeline = nullptr;
+    ComputePipeline*  m_pComputePipeline  = nullptr;
 
     struct AllocationInfo
     {
@@ -146,10 +152,10 @@ private:
     };
     std::vector< AllocationInfo > m_PushAllocations;
 
-    u32                    m_NumBufferBarriersToFlush = 0;
+    u32                    m_NumBufferBarriersToFlush                 = 0;
     VkBufferMemoryBarrier2 m_BufferBarriers[MAX_NUM_PENDING_BARRIERS] = {};
-    u32                    m_NumImageBarriersToFlush = 0;
-    VkImageMemoryBarrier2  m_ImageBarriers[MAX_NUM_PENDING_BARRIERS] = {};
+    u32                    m_NumImageBarriersToFlush                  = 0;
+    VkImageMemoryBarrier2  m_ImageBarriers[MAX_NUM_PENDING_BARRIERS]  = {};
 
     u32 m_CurrentContextIndex = 0;
 

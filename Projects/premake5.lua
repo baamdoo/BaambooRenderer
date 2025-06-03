@@ -26,6 +26,7 @@ project "Application"
 
 	includedirs {
 		"%{prj.name}/",
+		"%{Path.Solution}Projects/BaambooCommon",
 		"%{Path.Solution}Projects/BaambooEngine",
 		"%{Path.Solution}Projects/ThirdParties",
 		"%{Path.Solution}Projects/ThirdParties/glm",
@@ -86,6 +87,10 @@ project "BaambooEngine"
 		"%{prj.name}/**.cpp",
 		"%{prj.name}/**.c",
 
+		"%{Path.Solution}Projects/BaambooCommon/*.h",
+		"%{Path.Solution}Projects/BaambooCommon/*.hpp",
+		"%{Path.Solution}Projects/BaambooCommon/*.cpp",
+
 		"%{Path.Solution}Projects/ThirdParties/imgui/*.h",
 		"%{Path.Solution}Projects/ThirdParties/imgui/*.cpp",
 		"%{Path.Solution}Projects/ThirdParties/imgui/misc/cpp/imgui_stdlib.h",
@@ -96,6 +101,7 @@ project "BaambooEngine"
 
 	includedirs {
 		"%{prj.name}/",
+		"%{Path.Solution}Projects/BaambooCommon",
 		"%{Path.Solution}Projects/ThirdParties",
 		"%{Path.Solution}Projects/ThirdParties/glm",
 		"%{Path.Solution}Projects/ThirdParties/glfw/include",
@@ -163,6 +169,13 @@ project "Dx12Renderer"
 		"%{prj.name}/**.cpp",
 		"%{prj.name}/**.c",
 		"%{prj.name}/**.def",
+
+		"%{Path.Solution}Projects/BaambooCommon/*.h",
+		"%{Path.Solution}Projects/BaambooCommon/*.hpp",
+		"%{Path.Solution}Projects/BaambooCommon/*.cpp",
+		"%{Path.Solution}Projects/BaambooCommon/RendererCommon/*.h",
+		"%{Path.Solution}Projects/BaambooCommon/RendererCommon/*.hpp",
+		"%{Path.Solution}Projects/BaambooCommon/RendererCommon/*.cpp",
 		"%{Path.ShaderSrc}/HLSL/**.hlsl",
 
 		"%{Path.Solution}Projects/ThirdParties/imgui/*.h",
@@ -179,6 +192,7 @@ project "Dx12Renderer"
 	includedirs {
 		"%{prj.name}/",
 		"%{prj.name}/RenderDevice/D3D12MemoryAllocator/include/",
+		"%{Path.Solution}Projects/BaambooCommon",
 		"%{Path.Solution}Projects/BaambooEngine",
 		"%{Path.Solution}Projects/ThirdParties",
 		"%{Path.Solution}Projects/ThirdParties/glm",
@@ -221,6 +235,8 @@ project "Dx12Renderer"
 	filter { "files:Dx12Renderer/RenderDevice/D3D12MemoryAllocator/src/**.cpp" }
 		flags "NoPCH"
 	filter { "files:ThirdParties/imgui/**.cpp" }
+		flags "NoPCH" 
+	filter { "files:BaambooCommon/**.cpp" }
 		flags "NoPCH" 
 
 	filter "system:windows"
@@ -292,6 +308,13 @@ project "VkRenderer"
 		"%{prj.name}/**.cpp",
 		"%{prj.name}/**.c",
 		"%{prj.name}/**.def",
+
+		"%{Path.Solution}Projects/BaambooCommon/*.h",
+		"%{Path.Solution}Projects/BaambooCommon/*.hpp",
+		"%{Path.Solution}Projects/BaambooCommon/*.cpp",
+		"%{Path.Solution}Projects/BaambooCommon/RendererCommon/*.h",
+		"%{Path.Solution}Projects/BaambooCommon/RendererCommon/*.hpp",
+		"%{Path.Solution}Projects/BaambooCommon/RendererCommon/*.cpp",
 		"%{Path.ShaderSrc}/GLSL/**",
 
 		"%{Path.Solution}Projects/ThirdParties/imgui/*.h",
@@ -306,6 +329,7 @@ project "VkRenderer"
 	includedirs {
 		"%{prj.name}/",
 		"%{prj.name}/RenderDevice/VulkanMemoryAllocator/include/",
+		"%{Path.Solution}Projects/BaambooCommon",
 		"%{Path.Solution}Projects/BaambooEngine",
 		"%{Path.Solution}Projects/ThirdParties",
 		"%{Path.Solution}Projects/ThirdParties/glm",
@@ -324,6 +348,8 @@ project "VkRenderer"
 	}
 
 	filter { "files:ThirdParties/imgui/**.cpp" }
+		flags "NoPCH" 
+	filter { "files:BaambooCommon/**.cpp" }
 		flags "NoPCH" 
 
 	filter "configurations:Debug"

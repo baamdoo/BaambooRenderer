@@ -10,11 +10,6 @@ namespace vk
 //-------------------------------------------------------------------------
 class DynamicBufferAllocator
 {
-private:
-    friend class CommandBuffer;
-    DynamicBufferAllocator(RenderContext& context, VkDeviceSize pageSize = _1MB);
-    ~DynamicBufferAllocator();
-
 public:
     struct Allocation
 	{
@@ -24,6 +19,9 @@ public:
         void*        cpuHandle;
     };
 
+    DynamicBufferAllocator(RenderDevice& device, VkDeviceSize pageSize = _1MB);
+    ~DynamicBufferAllocator();
+
     [[nodiscard]]
     Allocation Allocate(VkDeviceSize sizeInBytes);
     void Reset();
@@ -31,7 +29,7 @@ public:
 private:
     struct Page
     {
-        Page(RenderContext& context, VkDeviceSize sizeInBytes);
+        Page(RenderDevice& device, VkDeviceSize sizeInBytes);
         ~Page();
 
         [[nodiscard]]
@@ -44,7 +42,7 @@ private:
         void Activate(bool bActive) { m_bActivated = bActive; }
 
     private:
-        RenderContext& m_RenderContext;
+        RenderDevice& m_RenderDevice;
 
         VkBuffer      m_vkBuffer = nullptr;
         VmaAllocation m_vmaAllocation = VK_NULL_HANDLE;
@@ -59,7 +57,7 @@ private:
     Page* RequestPage();
 
 private:
-    RenderContext& m_RenderContext;
+    RenderDevice& m_RenderDevice;
 
     std::vector< Page* > m_pPages;
     std::deque< Page* >  m_pAvailablePages;
@@ -78,7 +76,7 @@ private:
 class StaticBufferAllocator
 {
 public:
-    StaticBufferAllocator(RenderContext& context, VkDeviceSize bufferSize = _4MB, VkBufferUsageFlags usage = 0);
+    StaticBufferAllocator(RenderDevice& device, VkDeviceSize bufferSize = _4MB, VkBufferUsageFlags usage = 0);
     ~StaticBufferAllocator();
 
     struct Allocation
@@ -102,7 +100,7 @@ private:
     void Resize(VkDeviceSize sizeInBytes);
 
 private:
-    RenderContext& m_RenderContext;
+    RenderDevice& m_RenderDevice;
 
     VkBuffer          m_vkBuffer = nullptr;
     VmaAllocation     m_vmaAllocation = VK_NULL_HANDLE;

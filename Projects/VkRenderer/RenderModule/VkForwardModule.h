@@ -4,7 +4,6 @@
 namespace vk
 {
 
-class CommandBuffer;
 class RenderTarget;
 class GraphicsPipeline;
 
@@ -12,10 +11,10 @@ class ForwardModule : public RenderModule
 {
 using Super = RenderModule;
 public:
-	ForwardModule(RenderContext& context);
+	ForwardModule(RenderDevice& device);
 	virtual ~ForwardModule();
 
-	virtual void Apply(CommandBuffer& cmdBuffer) override;
+	virtual void Apply(CommandContext& context) override;
 	virtual void Resize(u32 width, u32 height, u32 depth = 1) override;
 
 private:

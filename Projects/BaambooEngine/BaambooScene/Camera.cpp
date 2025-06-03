@@ -1,7 +1,7 @@
 #include "BaambooPch.h"
 #include "Camera.h"
 #include "BaambooCore/Input.hpp"
-#include "BaambooUtils/Math.hpp"
+#include "Utils/Math.hpp"
 
 namespace baamboo
 {

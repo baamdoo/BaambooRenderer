@@ -2,6 +2,9 @@
 #pragma warning( disable: 4238 )
 #pragma warning( disable: 4099 )
 
+//-------------------------------------------------------------------------
+// STL
+//-------------------------------------------------------------------------
 #include <algorithm>
 #include <type_traits>
 #include <iostream>
@@ -9,7 +12,12 @@
 #include <deque>
 #include <map>
 
-#include <vk_mem_alloc.h>
 
-#include "BaambooCore/Common.h"
+//-------------------------------------------------------------------------
+// Includes
+//-------------------------------------------------------------------------
+#include "Defines.h"
+#include "RendererCommon/ShaderTypes.h"
+#include "RendererCommon/Pointer.hpp"
 #include "Core/VkCore.h"
+

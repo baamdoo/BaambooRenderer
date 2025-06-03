@@ -1,20 +1,21 @@
 #include "RendererPch.h"
 #include "VkCommandQueue.h"
-#include "VkCommandBuffer.h"
+#include "VkCommandContext.h"
 
 namespace vk
 {
 
-CommandQueue::CommandQueue(RenderContext& context, u32 queueIndex)
-	: m_RenderContext(context)
+CommandQueue::CommandQueue(RenderDevice& device, u32 queueIndex, eCommandType type)
+	: m_RenderDevice(device)
+	, m_CommandType(type)
 	, m_QueueIndex(queueIndex)
 {
 	// **
 	// Get queue
 	// **
-	vkGetDeviceQueue(m_RenderContext.vkDevice(), m_QueueIndex, 0, &m_vkQueue);
+	vkGetDeviceQueue(m_RenderDevice.vkDevice(), m_QueueIndex, 0, &m_vkQueue);
 	assert(m_vkQueue);
-
+	
 
 	// **
 	// Create command pool
@@ -23,91 +24,85 @@ CommandQueue::CommandQueue(RenderContext& context, u32 queueIndex)
 	commandPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; /* reset command buffers individually */
 	commandPoolInfo.queueFamilyIndex = m_QueueIndex;
-	VK_CHECK(vkCreateCommandPool(m_RenderContext.vkDevice(), &commandPoolInfo, nullptr, &m_vkCommandPool));
+	VK_CHECK(vkCreateCommandPool(m_RenderDevice.vkDevice(), &commandPoolInfo, nullptr, &m_vkCommandPool));
 }
 
 CommandQueue::~CommandQueue()
 {
-	for (auto pCmdBuffer : m_pCmdBuffers)
-		RELEASE(pCmdBuffer);
+	for (auto pContext : m_pContexts)
+		RELEASE(pContext);
 
-	vkDestroyCommandPool(m_RenderContext.vkDevice(), m_vkCommandPool, nullptr);
+	vkDestroyCommandPool(m_RenderDevice.vkDevice(), m_vkCommandPool, nullptr);
 }
 
-CommandBuffer& CommandQueue::Allocate(VkCommandBufferUsageFlags flags, bool bTransient)
+CommandContext& CommandQueue::Allocate(VkCommandBufferUsageFlags flags, bool bTransient)
 {
-	CommandBuffer* pCmdBuffer = nullptr;
+	CommandContext* pContext = nullptr;
 	if (bTransient)
 	{
-		pCmdBuffer = new CommandBuffer(m_RenderContext, m_vkCommandPool);
+		pContext = new CommandContext(m_RenderDevice, m_vkCommandPool, m_CommandType);
 	}
 	else
 	{
-		if (!m_pAvailableCmdBuffers.empty() && m_pAvailableCmdBuffers.front()->IsFenceComplete())
+		if (!m_pAvailableContexts.empty() && m_pAvailableContexts.front()->IsFenceComplete())
 		{
-			pCmdBuffer = m_pAvailableCmdBuffers.front();
-			m_pAvailableCmdBuffers.pop();
+			pContext = m_pAvailableContexts.front();
+			m_pAvailableContexts.pop();
 		}
 		else
 		{
-			pCmdBuffer = new CommandBuffer(m_RenderContext, m_vkCommandPool);
-			m_pCmdBuffers.push_back(pCmdBuffer);
+			pContext = new CommandContext(m_RenderDevice, m_vkCommandPool, m_CommandType);
+			m_pContexts.push_back(pContext);
 		}
 	}
-	assert(pCmdBuffer);
+	assert(pContext);
 
-	pCmdBuffer->Open(flags);
-	pCmdBuffer->SetTransient(bTransient);
-	return *pCmdBuffer;
+	pContext->Open(flags);
+	pContext->SetTransient(bTransient);
+	return *pContext;
 }
 
 void CommandQueue::Flush()
 {
-	for (auto pCmdBuffer : m_pCmdBuffers)
+	for (auto pCmdBuffer : m_pContexts)
 		pCmdBuffer->WaitForFence();
 }
 
-void CommandQueue::ExecuteCommandBuffer(CommandBuffer& cmdBuffer)
+void CommandQueue::ExecuteCommandBuffer(CommandContext& context)
 {
 	// **
 	// Submit queue
 	// **
-	if (!cmdBuffer.IsTransient())
+	if (!context.IsTransient())
 	{
 		VkPipelineStageFlags waitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
 		VkSubmitInfo submitInfo = {};
 		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submitInfo.waitSemaphoreCount = 1;
-		submitInfo.pWaitSemaphores = &cmdBuffer.m_vkPresentCompleteSemaphore;
+		submitInfo.pWaitSemaphores = &context.m_vkPresentCompleteSemaphore;
 		submitInfo.pWaitDstStageMask = &waitStages;
 		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers = &cmdBuffer.m_vkCommandBuffer;
+		submitInfo.pCommandBuffers = &context.m_vkCommandBuffer;
 		submitInfo.signalSemaphoreCount = 1;
-		submitInfo.pSignalSemaphores = &cmdBuffer.m_vkRenderCompleteSemaphore;
-		VK_CHECK(vkQueueSubmit(m_vkQueue, 1, &submitInfo, cmdBuffer.m_vkFence));
+		submitInfo.pSignalSemaphores = &context.m_vkRenderCompleteSemaphore;
+		VK_CHECK(vkQueueSubmit(m_vkQueue, 1, &submitInfo, context.m_vkFence));
 
-		m_pAvailableCmdBuffers.push(&cmdBuffer);
+		m_pAvailableContexts.push(&context);
 	}
 	else
 	{
 		VkSubmitInfo submitInfo = {};
 		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers = &cmdBuffer.m_vkCommandBuffer;
-		VK_CHECK(vkQueueSubmit(m_vkQueue, 1, &submitInfo, cmdBuffer.m_vkFence));
-		cmdBuffer.WaitForFence();
+		submitInfo.pCommandBuffers = &context.m_vkCommandBuffer;
+		VK_CHECK(vkQueueSubmit(m_vkQueue, 1, &submitInfo, context.m_vkFence));
+		context.WaitForFence();
 		//VK_CHECK(vkQueueWaitIdle(m_vkQueue));
 
-		auto pCmdBuffer = &cmdBuffer;
-		RELEASE(pCmdBuffer);
+		auto pContext = &context;
+		RELEASE(pContext);
 	}
-}
-
-CommandBuffer* CommandQueue::RequestList(VkCommandPool vkCommandPool)
-{
-	auto pCommandBuffer = new CommandBuffer(m_RenderContext, vkCommandPool);
-	return pCommandBuffer;
 }
 
 } // namespace vk
