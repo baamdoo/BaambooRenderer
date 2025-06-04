@@ -65,6 +65,7 @@ public:
 	}
 
 	void Update(f32 dt);
+	void Reset();
 
 	[[nodiscard]]
 	virtual mat4 GetView() const override { return glm::inverse(m_Transform.Matrix()); }
@@ -91,7 +92,7 @@ public:
 	} config;
 
 private:
-	float3 m_MoveVelocity = float3(0.0f);
+	float3 m_MoveVelocity     = float3(0.0f);
 	float3 m_RotationVelocity = float3(0.0f);
 };
 

@@ -15,21 +15,16 @@ public:
         u64 elementSizeInBytes;
     };
 
+    Buffer(RenderDevice& device, std::wstring_view name);
+    Buffer(RenderDevice& device, std::wstring_view name, CreationInfo&& info);
+    virtual ~Buffer() = default;
+
     [[nodiscard]]
     inline u64 GetSizeInBytes() const { return m_Count * m_ElementSize; }
     [[nodiscard]]
     inline u32 GetBufferCount() const { return m_Count; }
     [[nodiscard]]
     inline u64 GetElementSize() const { return m_ElementSize; }
-
-protected:
-    template< typename T >
-    friend class ResourcePool;
-    friend class ResourceManager;
-
-    Buffer(RenderContext& context, std::wstring_view name);
-    Buffer(RenderContext& context, std::wstring_view name, CreationInfo&& info);
-    virtual ~Buffer() = default;
 
 protected:
     u32 m_Count;
@@ -41,7 +36,7 @@ class VertexBuffer final : public Buffer
 using Super = Buffer;
 
 public:
-    VertexBuffer(RenderContext& context, std::wstring_view name, CreationInfo&& info);
+    VertexBuffer(RenderDevice& device, std::wstring_view name, CreationInfo&& info);
     virtual ~VertexBuffer() = default;
 
     [[nodiscard]]
@@ -56,7 +51,7 @@ class IndexBuffer final : public Buffer
 using Super = Buffer;
 
 public:
-    IndexBuffer(RenderContext& context, std::wstring_view name, CreationInfo&& info);
+    IndexBuffer(RenderDevice& device, std::wstring_view name, CreationInfo&& info);
     virtual ~IndexBuffer() = default;
 
     [[nodiscard]]
@@ -71,7 +66,7 @@ class ConstantBuffer : public Buffer
 using Super = Buffer;
 
 public:
-    ConstantBuffer(RenderContext& context, std::wstring_view name, CreationInfo&& info);
+    ConstantBuffer(RenderDevice& device, std::wstring_view name, CreationInfo&& info);
     virtual ~ConstantBuffer();
 
     [[nodiscard]]
@@ -89,7 +84,7 @@ class StructuredBuffer : public Buffer
 using Super = Buffer;
 
 public:
-    StructuredBuffer(RenderContext& context, std::wstring_view name, CreationInfo&& info);
+    StructuredBuffer(RenderDevice& device, std::wstring_view name, CreationInfo&& info);
     virtual ~StructuredBuffer();
 
     [[nodiscard]]

@@ -1,7 +1,7 @@
 #include "RendererPch.h"
 #include "Dx12SwapChain.h"
 #include "Dx12CommandQueue.h"
-#include "Dx12ResourceManager.h"
+#include "RenderResource/Dx12Texture.h"
 #include "RenderResource/Dx12RenderTarget.h"
 
 #include <BaambooCore/Window.h>
@@ -9,11 +9,11 @@
 namespace dx12
 {
 
-SwapChain::SwapChain(RenderContext& context, baamboo::Window& window)
-	: m_RenderContext(context)
-	, m_window(window)
+SwapChain::SwapChain(RenderDevice& device, baamboo::Window& window)
+	: m_RenderDevice(device)
+	, m_Window(window)
 {
-	auto d3d12CommandQueue = m_RenderContext.GetCommandQueue(D3D12_COMMAND_LIST_TYPE_DIRECT).GetD3D12CommandQueue();
+	auto d3d12CommandQueue = m_RenderDevice.GraphicsQueue().GetD3D12CommandQueue();
 	IDXGIFactory4* dxgiFactory = nullptr;
 
 	DWORD dwCreateFactoryFlags = 0;
@@ -27,8 +27,8 @@ SwapChain::SwapChain(RenderContext& context, baamboo::Window& window)
 	// SwapChain
 	{
 		DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
-		swapChainDesc.Width = m_window.Width();
-		swapChainDesc.Height = m_window.Height();
+		swapChainDesc.Width = m_Window.Width();
+		swapChainDesc.Height = m_Window.Height();
 		swapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		//swapChainDesc.BufferDesc.RefreshRate.Numerator = m_uiRefreshRate;
 		//swapChainDesc.BufferDesc.RefreshRate.Denominator = 1;
@@ -39,27 +39,27 @@ SwapChain::SwapChain(RenderContext& context, baamboo::Window& window)
 		swapChainDesc.Scaling = DXGI_SCALING_NONE;
 		swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
 		swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
-		swapChainDesc.Flags |= m_window.Desc().bVSync ? 0 : DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
+		swapChainDesc.Flags |= m_Window.Desc().bVSync ? 0 : DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
 
 		DXGI_SWAP_CHAIN_FULLSCREEN_DESC fsSwapChainDesc = {};
 		fsSwapChainDesc.Windowed = TRUE;
 
 		IDXGISwapChain1* pSwapChain1 = nullptr;
 		ThrowIfFailed(
-			dxgiFactory->CreateSwapChainForHwnd(d3d12CommandQueue, m_window.WinHandle(), &swapChainDesc, &fsSwapChainDesc, nullptr, &pSwapChain1)
+			dxgiFactory->CreateSwapChainForHwnd(d3d12CommandQueue, m_Window.WinHandle(), &swapChainDesc, &fsSwapChainDesc, nullptr, &pSwapChain1)
 		);
 		pSwapChain1->QueryInterface(IID_PPV_ARGS(&m_dxgiSwapChain));
 		pSwapChain1->Release();
 		pSwapChain1 = nullptr;
-		m_imageIndex = m_dxgiSwapChain->GetCurrentBackBufferIndex();
+		m_ImageIndex = m_dxgiSwapChain->GetCurrentBackBufferIndex();
 
 		CreateSwapChainResources();
 	}
 	COM_RELEASE(dxgiFactory);
 
-	// update values in render-context to easily be referenced by other dx12-components
-	m_RenderContext.SetWindowWidth(m_window.Width());
-	m_RenderContext.SetWindowHeight(m_window.Height());
+	// update values in render-device to easily be referenced by other dx12-components
+	m_RenderDevice.SetWindowWidth(m_Window.Width());
+	m_RenderDevice.SetWindowHeight(m_Window.Height());
 }
 
 SwapChain::~SwapChain()
@@ -69,13 +69,13 @@ SwapChain::~SwapChain()
 
 void SwapChain::Present()
 {
-	HRESULT hr = m_dxgiSwapChain->Present(m_window.Desc().bVSync, m_window.Desc().bVSync ? 0 : DXGI_PRESENT_ALLOW_TEARING);
+	HRESULT hr = m_dxgiSwapChain->Present(m_Window.Desc().bVSync, m_Window.Desc().bVSync ? 0 : DXGI_PRESENT_ALLOW_TEARING);
 	if (DXGI_ERROR_DEVICE_REMOVED == hr)
 	{
 		__debugbreak();
 	}
 
-	m_imageIndex = m_dxgiSwapChain->GetCurrentBackBufferIndex();
+	m_ImageIndex = m_dxgiSwapChain->GetCurrentBackBufferIndex();
 }
 
 void SwapChain::ResizeViewport(u32 width, u32 height)
@@ -83,14 +83,10 @@ void SwapChain::ResizeViewport(u32 width, u32 height)
 	if (!m_dxgiSwapChain)
 		return;
 
-	auto& rm = m_RenderContext.GetResourceManager();
-
 	// need to release all references before resize buffers
-	for (u32 i = 0; i < NUM_FRAMES_IN_FLIGHT; ++i)
+	for (auto pTex : m_pBackImages)
 	{
-		auto pTex = rm.Get(m_textures[i]);
 		assert(pTex);
-
 		pTex->Release();
 	}
 
@@ -99,7 +95,7 @@ void SwapChain::ResizeViewport(u32 width, u32 height)
 	DX_CHECK(m_dxgiSwapChain->ResizeBuffers(NUM_FRAMES_IN_FLIGHT, width, height, desc.Format, desc.Flags));
 	for (u32 i = 0; i < NUM_FRAMES_IN_FLIGHT; ++i)
 	{
-		auto pTex = rm.Get(m_textures[i]);
+		auto pTex = m_pBackImages[i];
 		assert(pTex);
 
 		ID3D12Resource* d3d12Resource = nullptr;
@@ -108,22 +104,20 @@ void SwapChain::ResizeViewport(u32 width, u32 height)
 		pTex->SetD3D12Resource(d3d12Resource);
 	}
 
-	m_imageIndex = m_dxgiSwapChain->GetCurrentBackBufferIndex();
+	m_ImageIndex = m_dxgiSwapChain->GetCurrentBackBufferIndex();
 }
 
 void SwapChain::CreateSwapChainResources()
 {
-	auto& rm = m_RenderContext.GetResourceManager();
 	for (u32 i = 0; i < NUM_FRAMES_IN_FLIGHT; ++i)
 	{
 		ID3D12Resource* d3d12Resource = nullptr;
 		m_dxgiSwapChain->GetBuffer(i, IID_PPV_ARGS(&d3d12Resource));
 
-		auto pTex = rm.CreateEmpty< Texture >(L"SwapChain::RTV_" + std::to_wstring(i));
+		auto pTex = MakeArc< Texture >(m_RenderDevice, L"SwapChain::RTV_" + std::to_wstring(i));
 		pTex->SetD3D12Resource(d3d12Resource);
 
-		auto tex = rm.Add< Texture >(pTex);
-		m_textures[i] = tex;
+		m_pBackImages[i] = pTex;
 	}
 }
 

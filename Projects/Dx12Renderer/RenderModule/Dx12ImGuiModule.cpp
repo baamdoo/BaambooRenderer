@@ -1,7 +1,7 @@
 #include "RendererPch.h"
 #include "Dx12ImGuiModule.h"
-#include "RenderDevice/Dx12CommandList.h"
 #include "RenderDevice/Dx12CommandQueue.h"
+#include "RenderDevice/Dx12CommandContext.h"
 
 #include <imgui/imgui.h>
 #include <imgui/backends/imgui_impl_dx12.h>
@@ -9,8 +9,8 @@
 namespace dx12
 {
 
-ImGuiModule::ImGuiModule(RenderContext& context, ImGuiContext* pImGuiContext)
-	: Super(context)
+ImGuiModule::ImGuiModule(RenderDevice& device, ImGuiContext* pImGuiContext)
+	: Super(device)
 {
 	assert(pImGuiContext);
 	ImGui::SetCurrentContext(pImGuiContext);
@@ -19,11 +19,11 @@ ImGuiModule::ImGuiModule(RenderContext& context, ImGuiContext* pImGuiContext)
 	desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	desc.NumDescriptors = 64;
 	desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	DX_CHECK(context.GetD3D12Device()->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&m_d3d12SrvDescHeap)) != S_OK);
+	DX_CHECK(device.GetD3D12Device()->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&m_d3d12SrvDescHeap)) != S_OK);
 
 	ImGui_ImplDX12_InitInfo info = {};
-	info.Device = context.GetD3D12Device();
-	info.CommandQueue = context.GetCommandQueue().GetD3D12CommandQueue();
+	info.Device = device.GetD3D12Device();
+	info.CommandQueue = device.GraphicsQueue().GetD3D12CommandQueue();
 	info.RTVFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 	info.NumFramesInFlight = NUM_FRAMES_IN_FLIGHT;
 	info.SrvDescriptorHeap = m_d3d12SrvDescHeap;
@@ -38,10 +38,10 @@ ImGuiModule::~ImGuiModule()
 	COM_RELEASE(m_d3d12SrvDescHeap);
 }
 
-void ImGuiModule::Apply(CommandList& cmdList)
+void ImGuiModule::Apply(CommandContext& context)
 {
-	cmdList.SetDescriptorHeaps({ m_d3d12SrvDescHeap });
-	ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmdList.GetD3D12CommandList());
+	context.SetDescriptorHeaps({ m_d3d12SrvDescHeap });
+	ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), context.GetD3D12CommandList());
 }
 
 } // namespace dx12

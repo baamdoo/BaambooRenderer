@@ -4,8 +4,8 @@
 namespace dx12
 {
 
-RootSignature::RootSignature(RenderContext& context)
-	: m_RenderContext(context)
+RootSignature::RootSignature(RenderDevice& device)
+	: m_RenderDevice(device)
 {
 }
 
@@ -72,7 +72,7 @@ u32 RootSignature::AddDescriptorTable(const DescriptorTable& table, D3D12_SHADER
 
 void RootSignature::Build()
 {
-	auto d3d12Device = m_RenderContext.GetD3D12Device();
+	auto d3d12Device = m_RenderDevice.GetD3D12Device();
 
 	u32 t = 0;
 	for (size_t i = 0; i < m_RootParameters.size(); ++i)
@@ -122,7 +122,7 @@ void RootSignature::Build()
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
 	);
 
-	D3D_ROOT_SIGNATURE_VERSION highestVersion = m_RenderContext.GetHighestRootSignatureVersion();
+	D3D_ROOT_SIGNATURE_VERSION highestVersion = m_RenderDevice.GetHighestRootSignatureVersion();
 	ID3DBlob* d3dSignature = nullptr;
 	ID3DBlob* d3dError = nullptr;
 	ThrowIfFailed(

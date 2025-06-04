@@ -162,6 +162,8 @@ void Engine::Update(f32 dt)
 
 void Engine::Release()
 {
+	Input::Inst()->Reset();
+
 	m_RenderViewQueue.clear();
 	if (m_RenderThread.joinable())
 	{

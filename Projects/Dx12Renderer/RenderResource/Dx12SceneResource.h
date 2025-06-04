@@ -1,10 +1,13 @@
 #pragma once
-#include "RenderDevice/Dx12ResourceManager.h"
+#include "Dx12Buffer.h"
+#include "Dx12Texture.h"
+#include "Dx12Sampler.h"
+
+struct SceneRenderView;
 
 namespace dx12
 {
 
-class CommandList;
 class RootSignature;
 class CommandSignature;
 class StaticBufferAllocator;
@@ -17,18 +20,31 @@ struct BufferHandle
 
     D3D12_GPU_VIRTUAL_ADDRESS gpuHandle;
 };
-using TextureHandle = baamboo::ResourceHandle< Texture >;
+
+struct FrameData
+{
+    // data
+    CameraData camera = {};
+
+    // scene-resource
+    struct SceneResource* pSceneResource = nullptr;
+
+    // render-target
+    Weak< Texture > pColor;
+    Weak< Texture > pDepth;
+};
+inline FrameData g_FrameData = {};
 
 struct SceneResource
 {
-    SceneResource(RenderContext& context);
+    SceneResource(RenderDevice& device);
     ~SceneResource();
 
     void UpdateSceneResources(const SceneRenderView& sceneView);
 
-    VertexBuffer* GetOrUpdateVertex(u32 entity, std::string_view filepath, const void* pData, u32 count);
-    IndexBuffer*  GetOrUpdateIndex(u32 entity, std::string_view filepath, const void* pData, u32 count);
-    Texture*      GetOrLoadTexture(u32 entity, std::string_view filepath);
+    Arc< VertexBuffer > GetOrUpdateVertex(u32 entity, std::string_view filepath, const void* pData, u32 count);
+    Arc< IndexBuffer >  GetOrUpdateIndex(u32 entity, std::string_view filepath, const void* pData, u32 count);
+    Arc< Texture >      GetOrLoadTexture(u32 entity, std::string_view filepath);
 
     [[nodiscard]]
     inline RootSignature* GetSceneRootSignature() const { return m_pRootSignature; }
@@ -36,11 +52,11 @@ struct SceneResource
     ID3D12CommandSignature* GetSceneD3D12CommandSignature() const;
 
     [[nodiscard]]
-    StructuredBuffer* GetIndirectBuffer() const;
+    Arc< StructuredBuffer > GetIndirectBuffer() const;
     [[nodiscard]]
-    StructuredBuffer* GetTransformBuffer() const;
+    Arc< StructuredBuffer > GetTransformBuffer() const;
     [[nodiscard]]
-    StructuredBuffer* GetMaterialBuffer() const;
+    Arc< StructuredBuffer > GetMaterialBuffer() const;
 
     [[nodiscard]]
     inline u32 NumMeshes() const { return m_NumMeshes; }
@@ -52,7 +68,7 @@ private:
     void ResetFrameBuffers();
     void UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator* pTargetBuffer);
 
-    RenderContext& m_RenderContext;
+    RenderDevice& m_RenderDevice;
 
     RootSignature*    m_pRootSignature = nullptr;
     CommandSignature* m_pCommandSignature = nullptr;
@@ -61,9 +77,9 @@ private:
     StaticBufferAllocator* m_pTransformBufferPool = nullptr;
     StaticBufferAllocator* m_pMaterialBufferPool = nullptr;
 
-    std::unordered_map< std::string, VertexBuffer* > m_VertexCache;
-    std::unordered_map< std::string, IndexBuffer*  > m_IndexCache;
-    std::unordered_map< std::string, Texture* >      m_TextureCache;
+    std::unordered_map< std::string, Arc< VertexBuffer > > m_VertexCache;
+    std::unordered_map< std::string, Arc< IndexBuffer >  > m_IndexCache;
+    std::unordered_map< std::string, Arc< Texture > >      m_TextureCache;
 
     u32 m_NumMeshes = 0;
 };

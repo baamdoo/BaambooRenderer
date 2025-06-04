@@ -12,10 +12,8 @@ class StructuredBuffer;
 //-------------------------------------------------------------------------
 class DynamicBufferAllocator
 {
-protected:
-    friend class CommandList;
-
-    explicit DynamicBufferAllocator(RenderContext& context, size_t pageSize = _2MB);
+public:
+    explicit DynamicBufferAllocator(RenderDevice& device, size_t pageSize = _2MB);
     virtual ~DynamicBufferAllocator();
 
 public:
@@ -35,7 +33,7 @@ public:
 private:
     struct Page
     {
-        Page(RenderContext& context, size_t sizeInBytes);
+        Page(RenderDevice& device, size_t sizeInBytes);
         ~Page();
 
         Allocation Allocate(size_t sizeInBytes, size_t alignment);
@@ -45,7 +43,7 @@ private:
         bool HasSpace(size_t sizeInBytes, size_t alignment) const;
 
     private:
-        RenderContext&  m_RenderContext;
+        RenderDevice&  m_RenderDevice;
         ID3D12Resource* m_d3d12Resource = nullptr;
 
         void*                     m_BaseCpuHandle = nullptr;
@@ -57,7 +55,7 @@ private:
 
     Page* RequestPage();
 
-    RenderContext& m_RenderContext;
+    RenderDevice& m_RenderDevice;
 
     using PagePool = std::deque< Page* >;
     PagePool m_PagePool;
@@ -76,12 +74,12 @@ private:
 class StaticBufferAllocator
 {
 public:
-    StaticBufferAllocator(RenderContext& context, const std::wstring& name, size_t bufferSize = _4MB);
+    StaticBufferAllocator(RenderDevice& device, const std::wstring& name, size_t bufferSize = _4MB);
     ~StaticBufferAllocator();
 
     struct Allocation
     {
-        baamboo::ResourceHandle< StructuredBuffer > buffer;
+        Arc< StructuredBuffer >   pBuffer;
 
         u64                       offset = 0;
         u64                       sizeInBytes = 0;
@@ -95,17 +93,17 @@ public:
     [[nodiscard]]
     u64 GetAllocatedSize() const { return m_Offset; }
     [[nodiscard]]
-    StructuredBuffer* GetBuffer() const;
+    Arc< StructuredBuffer > GetBuffer() const { return m_pBuffer; }
 
 private:
     void Resize(size_t sizeInBytes);
 
 private:
-    RenderContext& m_RenderContext;
+    RenderDevice& m_RenderDevice;
     std::wstring   m_Name;
 
-    baamboo::ResourceHandle< StructuredBuffer > m_Buffer;
-    D3D12_GPU_VIRTUAL_ADDRESS                   m_BaseGpuHandle;
+    Arc< StructuredBuffer >   m_pBuffer;
+    D3D12_GPU_VIRTUAL_ADDRESS m_BaseGpuHandle;
 
     u64 m_Size = 0;
     u64 m_Offset = 0;

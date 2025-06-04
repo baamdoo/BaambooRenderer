@@ -1,18 +1,18 @@
 #include "RendererPch.h"
-#include "Dx12CommandList.h"
+#include "Dx12CommandContext.h"
 #include "Dx12DescriptorHeap.h"
 #include "Dx12DescriptorPool.h"
 
 namespace dx12
 {
 
-DescriptorHeap::DescriptorHeap(RenderContext& context, D3D12_DESCRIPTOR_HEAP_TYPE type, u32 maxDescriptors)
-    : m_RenderContext(context)
+DescriptorHeap::DescriptorHeap(RenderDevice& device, D3D12_DESCRIPTOR_HEAP_TYPE type, u32 maxDescriptors)
+    : m_RenderDevice(device)
     , m_NumDescriptors(maxDescriptors)
     , m_Type(type)
 {
     m_pDescriptorPool =
-        new DescriptorPool(context, type, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, m_NumDescriptors);
+        new DescriptorPool(device, type, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, m_NumDescriptors);
 }
 
 DescriptorHeap::~DescriptorHeap()
@@ -43,7 +43,7 @@ u32 DescriptorHeap::StageDescriptors(u32 rootIndex, u32 numDescriptors, u32 offs
 {
     assert(rootIndex < MAX_ROOT_INDEX && numDescriptors < m_NumDescriptors && offset + numDescriptors < m_NumDescriptors);
 
-    auto d3d12Device = m_RenderContext.GetD3D12Device();
+    auto d3d12Device = m_RenderDevice.GetD3D12Device();
     m_CachedDescriptorAllocations[rootIndex] = m_pDescriptorPool->Allocate(numDescriptors);
 
     auto& allocation = m_CachedDescriptorAllocations[rootIndex];
@@ -55,21 +55,21 @@ u32 DescriptorHeap::StageDescriptors(u32 rootIndex, u32 numDescriptors, u32 offs
     return allocation.Index(offset);
 }
 
-void DescriptorHeap::CommitDescriptorsForDraw(CommandList& commandList)
+void DescriptorHeap::CommitDescriptorsForDraw(CommandContext& context)
 {
-    CommitDescriptorTables(commandList, &ID3D12GraphicsCommandList::SetGraphicsRootDescriptorTable);
+    CommitDescriptorTables(context, &ID3D12GraphicsCommandList::SetGraphicsRootDescriptorTable);
 }
 
-void DescriptorHeap::CommitDescriptorsForDispatch(CommandList& commandList)
+void DescriptorHeap::CommitDescriptorsForDispatch(CommandContext& context)
 {
-    CommitDescriptorTables(commandList, &ID3D12GraphicsCommandList::SetComputeRootDescriptorTable);
+    CommitDescriptorTables(context, &ID3D12GraphicsCommandList::SetComputeRootDescriptorTable);
 }
 
-void DescriptorHeap::CommitDescriptorTables(CommandList& commandList, std::function< void(ID3D12GraphicsCommandList*, u32, D3D12_GPU_DESCRIPTOR_HANDLE) > setFunc)
+void DescriptorHeap::CommitDescriptorTables(CommandContext& context, std::function< void(ID3D12GraphicsCommandList*, u32, D3D12_GPU_DESCRIPTOR_HANDLE) > setFunc)
 {
     if (m_DescriptorTableDirtyFlags)
     {
-        auto d3d12CommandList = commandList.GetD3D12CommandList();
+        auto d3d12CommandList = context.GetD3D12CommandList();
 
         DWORD rootIndex;
         while (_BitScanForward64(&rootIndex, m_DescriptorTableDirtyFlags))

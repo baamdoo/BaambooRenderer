@@ -1,6 +1,6 @@
 #include "RendererPch.h"
 #include "Dx12Shader.h"
-#include "RenderDevice/Dx12RenderContext.h"
+#include "RenderDevice/Dx12RenderDevice.h"
 
 #include <fstream>
 #include <iostream>
@@ -13,8 +13,8 @@ IDxcUtils* Shader::ms_dxcUtils = nullptr;
 IDxcCompiler3* Shader::ms_dxcCompiler = nullptr;
 u32 Shader::ms_RefCount = 0;
 
-Shader::Shader(RenderContext& context, std::wstring_view name, CreationInfo&& info)
-	: Super(context, name, eResourceType::Shader)
+Shader::Shader(RenderDevice& device, std::wstring_view name, CreationInfo&& info)
+	: Super(device, name, eResourceType::Shader)
 {
     if (name != L"Dummy")
     {

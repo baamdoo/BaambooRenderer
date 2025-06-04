@@ -5,26 +5,26 @@
 namespace dx12
 {
 
-Resource::Resource(RenderContext& context, std::wstring_view name)
-	: m_RenderContext(context)
+Resource::Resource(RenderDevice& device, std::wstring_view name)
+	: m_RenderDevice(device)
 	, m_Name(name)
 {
 }
 
-Resource::Resource(RenderContext& context, std::wstring_view name, eResourceType type)
-	: m_RenderContext(context)
+Resource::Resource(RenderDevice& device, std::wstring_view name, eResourceType type)
+	: m_RenderDevice(device)
 	, m_Name(name)
 	, m_Type(type)
 {
 }
 
-Resource::Resource(RenderContext& context, std::wstring_view name, ResourceCreationInfo&& info, eResourceType type)
-	: m_RenderContext(context)
+Resource::Resource(RenderDevice& device, std::wstring_view name, ResourceCreationInfo&& info, eResourceType type)
+	: m_RenderDevice(device)
 	, m_Name(name)
 	, m_Type(type)
 	, m_CurrentState(info.initialState)
 {
-	auto d3d12Device = m_RenderContext.GetD3D12Device();
+	auto d3d12Device = m_RenderDevice.GetD3D12Device();
 
 	switch (m_Type)
 	{
@@ -64,10 +64,10 @@ Resource::~Resource()
 {
 	RELEASE(m_pClearValue);
 
-	Resource::Release();
+	Resource::Reset();
 }
 
-void Resource::Release()
+void Resource::Reset()
 {
 	COM_RELEASE(m_d3d12Resource);
 }
@@ -98,7 +98,7 @@ void Resource::SetD3D12Resource(ID3D12Resource* d3d12Resource, D3D12_RESOURCE_ST
 
 void Resource::SetFormatSupported()
 {
-	auto d3d12Device = m_RenderContext.GetD3D12Device();
+	auto d3d12Device = m_RenderDevice.GetD3D12Device();
 
 	m_FormatSupport.Format = m_ResourceDesc.Format;
 	ThrowIfFailed(d3d12Device->CheckFeatureSupport(D3D12_FEATURE_FORMAT_SUPPORT, &m_FormatSupport, sizeof(D3D12_FEATURE_DATA_FORMAT_SUPPORT)));

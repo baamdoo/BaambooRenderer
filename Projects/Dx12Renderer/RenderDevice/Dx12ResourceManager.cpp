@@ -5,32 +5,33 @@
 namespace dx12
 {
 
-ResourceManager::ResourceManager(RenderContext& context)
-    : m_RenderContext(context)
+ResourceManager::ResourceManager(RenderDevice& device)
+    : m_RenderDevice(device)
 {
-    for (u32 i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; ++i)
-        m_pDescriptorPools[i] = 
-            new DescriptorPool(context, (D3D12_DESCRIPTOR_HEAP_TYPE)i, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, MAX_NUM_DESCRIPTOR_PER_POOL[i]);
-}
-
-ResourceManager::~ResourceManager()
-{
-    m_VertexBufferPool.Release();
-    m_IndexBufferPool.Release();
-    m_ConstantBufferPool.Release();
-    m_StructuredBufferPool.Release();
-
-    m_TexturePool.Release();
-    m_SamplerPool.Release();
-    m_ShaderPool.Release();
-
-    for (u32 i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; ++i)
-        RELEASE(m_pDescriptorPools[i]);
+    m_pViewDescriptorPool =
+        std::make_unique< DescriptorPool >(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, MAX_NUM_DESCRIPTOR_PER_POOL[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]);
+    m_pRtvDescriptorPool =
+        std::make_unique< DescriptorPool >(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, MAX_NUM_DESCRIPTOR_PER_POOL[D3D12_DESCRIPTOR_HEAP_TYPE_RTV]);
+    m_pDsvDescriptorPool =
+        std::make_unique< DescriptorPool >(device, D3D12_DESCRIPTOR_HEAP_TYPE_DSV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, MAX_NUM_DESCRIPTOR_PER_POOL[D3D12_DESCRIPTOR_HEAP_TYPE_DSV]);
 }
 
 DescriptorAllocation ResourceManager::AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE type, u32 numDescriptors)
 {
-    return m_pDescriptorPools[type]->Allocate(numDescriptors);
+    switch (type)
+    {
+    case D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV:
+        return m_pViewDescriptorPool->Allocate(numDescriptors);
+    case D3D12_DESCRIPTOR_HEAP_TYPE_RTV:
+        return m_pRtvDescriptorPool->Allocate(numDescriptors);
+    case D3D12_DESCRIPTOR_HEAP_TYPE_DSV:
+        return m_pDsvDescriptorPool->Allocate(numDescriptors);
+
+    default:
+        assert(false && "Invalid entry!");
+    }
+
+    return DescriptorAllocation();
 }
 
 }

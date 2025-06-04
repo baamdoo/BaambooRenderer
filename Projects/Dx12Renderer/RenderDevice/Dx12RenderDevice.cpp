@@ -1,10 +1,11 @@
 #include "RendererPch.h"
-#include "Dx12RenderContext.h"
+#include "Dx12RenderDevice.h"
 #include "Dx12CommandQueue.h"
-#include "Dx12CommandList.h"
+#include "Dx12CommandContext.h"
 #include "Dx12DescriptorPool.h"
 #include "Dx12DescriptorAllocation.h"
 #include "Dx12ResourceManager.h"
+#include "RenderResource/Dx12Resource.h"
 #include "RenderResource/Dx12SceneResource.h"
 
 #include "D3D12MemAlloc.h"
@@ -12,13 +13,13 @@
 namespace dx12
 {
 
-RenderContext::RenderContext(bool bEnableGBV)
+RenderDevice::RenderDevice(bool bEnableGBV)
 {
 	CreateDevice(bEnableGBV);
 
 	m_pGraphicsCommandQueue = new CommandQueue(*this, D3D12_COMMAND_LIST_TYPE_DIRECT);
-	m_pComputeCommandQueue = new CommandQueue(*this, D3D12_COMMAND_LIST_TYPE_COMPUTE);
-	m_pCopyCommandQueue = new CommandQueue(*this, D3D12_COMMAND_LIST_TYPE_COPY);
+	m_pComputeCommandQueue  = new CommandQueue(*this, D3D12_COMMAND_LIST_TYPE_COMPUTE);
+	m_pCopyCommandQueue     = new CommandQueue(*this, D3D12_COMMAND_LIST_TYPE_COPY);
 
 	m_pResourceManager = new ResourceManager(*this); 
 
@@ -39,13 +40,10 @@ RenderContext::RenderContext(bool bEnableGBV)
 		}
 		m_HighestRootSignatureVersion = featureData.HighestVersion;
 	}
-
-	g_FrameData.pSceneResource = new SceneResource(*this);
 }
 
-RenderContext::~RenderContext()
+RenderDevice::~RenderDevice()
 {
-	RELEASE(g_FrameData.pSceneResource);
 	RELEASE(m_pResourceManager);
 
 	RELEASE(m_pCopyCommandQueue);
@@ -56,7 +54,7 @@ RenderContext::~RenderContext()
 	COM_RELEASE(m_d3d12Device);
 }
 
-void RenderContext::Flush()
+void RenderDevice::Flush()
 {
 	if (m_pGraphicsCommandQueue)
 		m_pGraphicsCommandQueue->Flush();
@@ -68,22 +66,17 @@ void RenderContext::Flush()
 		m_pCopyCommandQueue->Flush();
 }
 
-u32 RenderContext::Swap()
+u32 RenderDevice::Swap()
 {
-	u8 nextContextIndex = (m_ContextIndex + 1) % NUM_FRAMES_IN_FLIGHT;
-	m_ContextIndex = nextContextIndex;
+	u8 nextContextIndex = (m_FrameIndex + 1) % NUM_FRAMES_IN_FLIGHT;
+	m_FrameIndex = nextContextIndex;
 
 	return nextContextIndex;
 }
 
-CommandList& RenderContext::AllocateCommandList(D3D12_COMMAND_LIST_TYPE type)
+void RenderDevice::UpdateSubresources(Arc< Resource > pResource, u32 firstSubresource, u32 numSubresources, const D3D12_SUBRESOURCE_DATA* pSrcData)
 {
-	return GetCommandQueue(type).Allocate();
-}
-
-void RenderContext::UpdateSubresources(Resource* pResource, u32 firstSubresource, u32 numSubresources, const D3D12_SUBRESOURCE_DATA* pSrcData)
-{
-	auto& d3d12CommandQueue = GetCommandQueue();
+	auto& d3d12CommandQueue = GraphicsQueue();
 	u64 uploadBufferSize = GetRequiredIntermediateSize(pResource->GetD3D12Resource(), firstSubresource, numSubresources);
 
 	auto heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
@@ -113,7 +106,7 @@ void RenderContext::UpdateSubresources(Resource* pResource, u32 firstSubresource
 	COM_RELEASE(d3d12UploadBuffer);
 }
 
-ID3D12Resource* RenderContext::CreateRHIResource(const D3D12_RESOURCE_DESC& desc, D3D12_RESOURCE_STATES initialState, D3D12_HEAP_PROPERTIES heapProperties, const D3D12_CLEAR_VALUE* pClearValue)
+ID3D12Resource* RenderDevice::CreateRHIResource(const D3D12_RESOURCE_DESC& desc, D3D12_RESOURCE_STATES initialState, D3D12_HEAP_PROPERTIES heapProperties, const D3D12_CLEAR_VALUE* pClearValue)
 {
 	ID3D12Resource* d3d12Resource = nullptr;
 
@@ -125,28 +118,25 @@ ID3D12Resource* RenderContext::CreateRHIResource(const D3D12_RESOURCE_DESC& desc
 	return d3d12Resource;
 }
 
-CommandQueue& RenderContext::GetCommandQueue(D3D12_COMMAND_LIST_TYPE type)
+CommandContext& RenderDevice::BeginCommand(D3D12_COMMAND_LIST_TYPE commandType) const
 {
-	CommandQueue* commandQueue = nullptr;
-	switch (type)
+	switch(commandType)
 	{
 	case D3D12_COMMAND_LIST_TYPE_DIRECT:
-		commandQueue = m_pGraphicsCommandQueue;
-		break;
+		return m_pGraphicsCommandQueue->Allocate();
 	case D3D12_COMMAND_LIST_TYPE_COMPUTE:
-		commandQueue = m_pComputeCommandQueue;
-		break;
+		return m_pComputeCommandQueue->Allocate();
 	case D3D12_COMMAND_LIST_TYPE_COPY:
-		commandQueue = m_pCopyCommandQueue;
-		break;
+		return m_pCopyCommandQueue->Allocate();
+
 	default:
-		assert(false && "Invalid command queue type.");
+		break;
 	}
 
-	return *commandQueue;
+	assert(false && "Invalid entry!");
 }
 
-DXGI_SAMPLE_DESC RenderContext::GetMultisampleQualityLevels(DXGI_FORMAT format, D3D12_MULTISAMPLE_QUALITY_LEVEL_FLAGS flags) const
+DXGI_SAMPLE_DESC RenderDevice::GetMultisampleQualityLevels(DXGI_FORMAT format, D3D12_MULTISAMPLE_QUALITY_LEVEL_FLAGS flags) const
 {
 	DXGI_SAMPLE_DESC sampleDesc = { 1, 0 };
 
@@ -169,7 +159,7 @@ DXGI_SAMPLE_DESC RenderContext::GetMultisampleQualityLevels(DXGI_FORMAT format, 
 	return sampleDesc;
 }
 
-void RenderContext::CreateDevice(bool bEnableGBV)
+void RenderDevice::CreateDevice(bool bEnableGBV)
 {
 	ID3D12Debug* d3d12DebugController = nullptr;
 	IDXGIFactory6* dxgiFactory = nullptr;

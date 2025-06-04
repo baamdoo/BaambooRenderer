@@ -2,8 +2,6 @@
 #include <cstdint>
 #include <codecvt>
 
-#define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
 #include <comdef.h>
 
 
@@ -14,7 +12,6 @@
 #include <dxgi1_6.h>
 #include <d3d11on12.h>
 #include <d3dcompiler.h>
-#include <dwrite.h>
 #include <d3dx12.h>
 #include <DDSTextureLoader.h>
 #include <WICTextureLoader.h>
@@ -130,4 +127,4 @@ struct IndirectDrawData
 //-------------------------------------------------------------------------
 // Render Context
 //-------------------------------------------------------------------------
-#include "RenderDevice/Dx12RenderContext.h"
+#include "RenderDevice/Dx12RenderDevice.h"

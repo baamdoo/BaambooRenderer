@@ -17,6 +17,9 @@ public:
 		std::string_view filepath;
 	};
 
+	Shader(RenderDevice& device, std::wstring_view name, CreationInfo&& info);
+	virtual ~Shader();
+
 	[[nodiscard]]
 	inline LPVOID GetShaderBufferPointer() const { assert(m_d3dShaderBlob); return m_d3dShaderBlob->GetBufferPointer(); }
 	[[nodiscard]]
@@ -26,13 +29,6 @@ public:
 	inline ID3D12ShaderReflection* GetShaderReflection() const { return m_d3d12ShaderReflection; }
 
 protected:
-	template< typename T >
-	friend class ResourcePool;
-	friend class ResourceManager;
-
-	Shader(RenderContext& context, std::wstring_view name, CreationInfo&& info);
-	virtual ~Shader();
-
 	void LoadBinary(std::string_view filepath);
 	void Reflect();
 

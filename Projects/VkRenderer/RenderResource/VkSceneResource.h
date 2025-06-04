@@ -60,6 +60,9 @@ struct SceneResource
     [[nodiscard]]
     VkDescriptorSetLayout GetSceneDescriptorSetLayout() const { return m_vkSetLayout; }
 
+    // TEMP
+    std::vector< VkDescriptorImageInfo > imageInfos;
+
 private:
     void ResetFrameBuffers();
     void UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator* pTargetBuffer);

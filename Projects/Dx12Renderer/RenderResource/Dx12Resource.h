@@ -1,7 +1,6 @@
 #pragma once
 #include "RenderDevice/Dx12DescriptorAllocation.h"
 
-#include <BaambooCore/ResourceHandle.h>
 #include <filesystem>
 namespace fs = std::filesystem;
 
@@ -68,36 +67,40 @@ struct ResourceCreationInfo
 	D3D12_CLEAR_VALUE     clearValue;
 };
 
-class Resource
+class Resource : public ArcBase
 {
-protected:
+public:
 	friend class ResourceManager;
 
-	Resource(RenderContext& context, std::wstring_view name);
-	Resource(RenderContext& context, std::wstring_view name, eResourceType type);
-	Resource(RenderContext& context, std::wstring_view name, ResourceCreationInfo&& info, eResourceType type);
+	Resource(RenderDevice& device, std::wstring_view name);
+	Resource(RenderDevice& device, std::wstring_view name, eResourceType type);
+	Resource(RenderDevice& device, std::wstring_view name, ResourceCreationInfo&& info, eResourceType type);
 	virtual ~Resource();
 
-	virtual void Release();
-
-	bool IsFormatSupported(D3D12_FORMAT_SUPPORT1 formatSupport) const;
-	bool IsFormatSupported(D3D12_FORMAT_SUPPORT2 formatSupport) const;
-
-public:
+	[[nodiscard]]
 	inline bool IsValid() const { return m_d3d12Resource != nullptr; }
 
+	[[nodiscard]]
 	inline ID3D12Resource* GetD3D12Resource() const { return m_d3d12Resource; }
+	[[nodiscard]]
 	inline D3D12_RESOURCE_DESC GetResourceDesc() const { return m_ResourceDesc; }
+	[[nodiscard]]
 	inline const ResourceState& GetCurrentState() const { return m_CurrentState; }
 
 	virtual void SetD3D12Resource(ID3D12Resource* d3d12Resource, D3D12_RESOURCE_STATES states);
 	void SetCurrentState(D3D12_RESOURCE_STATES state, u32 subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES) { m_CurrentState.SetSubresourceState(state, subresource); }
 
+protected:
+	bool IsFormatSupported(D3D12_FORMAT_SUPPORT1 formatSupport) const;
+	bool IsFormatSupported(D3D12_FORMAT_SUPPORT2 formatSupport) const;
+
+	virtual void Reset();
+
 private:
 	void SetFormatSupported();
 
 protected:
-	RenderContext&    m_RenderContext;
+	RenderDevice&    m_RenderDevice;
 	std::wstring_view m_Name;
 	eResourceType     m_Type = eResourceType::None;
 
@@ -106,6 +109,7 @@ protected:
 	D3D12_FEATURE_DATA_FORMAT_SUPPORT m_FormatSupport = {};
 
 	ResourceState m_CurrentState = {};
+
 	D3D12_CLEAR_VALUE* m_pClearValue = nullptr;
 };
 

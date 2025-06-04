@@ -1,5 +1,4 @@
 #pragma once
-#include <BaambooCore/ResourceHandle.h>
 
 namespace baamboo
 {
@@ -14,7 +13,7 @@ class Texture;
 class SwapChain
 {
 public:
-	SwapChain(RenderContext& context, baamboo::Window& window);
+	SwapChain(RenderDevice& device, baamboo::Window& window);
 	~SwapChain();
 
 	void Present();
@@ -23,21 +22,21 @@ public:
 
 public:
 	[[nodiscard]]
-	inline baamboo::ResourceHandle< Texture > GetImageToPresent() const { return m_textures[m_imageIndex]; }
+	inline Arc< Texture > GetBackImage() const { return m_pBackImages[m_ImageIndex]; }
 
 protected:
 	void CreateSwapChainResources();
 
 private:
-	RenderContext&   m_RenderContext;
-	baamboo::Window& m_window;
+	RenderDevice&   m_RenderDevice;
+	baamboo::Window& m_Window;
 
 	IDXGISwapChain3* m_dxgiSwapChain = nullptr;
 
-	u32  m_imageIndex = 0;
+	u32  m_ImageIndex = 0;
 	bool m_vSync = true;
 
-	baamboo::ResourceHandle< Texture > m_textures[NUM_FRAMES_IN_FLIGHT];
+	Arc< Texture > m_pBackImages[NUM_FRAMES_IN_FLIGHT];
 };
 
 }

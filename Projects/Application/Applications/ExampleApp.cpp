@@ -26,6 +26,13 @@ void ExampleApp::Update(f32 dt)
 	m_CameraController.Update(dt);
 }
 
+void ExampleApp::Release()
+{
+	m_CameraController.Reset();
+
+	Super::Release();
+}
+
 bool ExampleApp::InitWindow()
 {
 	// **

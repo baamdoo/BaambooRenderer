@@ -48,7 +48,7 @@ class RootSignatureDesc
 class RootSignature
 {
 public:
-	RootSignature(RenderContext& context);
+	RootSignature(RenderDevice& device);
 	~RootSignature();
 
 	u32 AddConstants(u32 reg, u32 space, u32 numConstants, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
@@ -80,7 +80,7 @@ protected:
 	u32 AddParameter(const CD3DX12_ROOT_PARAMETER1& param);
 
 private:
-	RenderContext& m_RenderContext;
+	RenderDevice& m_RenderDevice;
 
 	ID3D12RootSignature* m_d3d12RootSignature = nullptr;
 

@@ -1,45 +1,44 @@
 #include "RendererPch.h"
 #include "Dx12Buffer.h"
 #include "RenderDevice/Dx12ResourceManager.h"
-
-#include <BaambooUtils/Math.hpp>
+#include "Utils/Math.hpp"
 
 namespace dx12
 {
 
-Buffer::Buffer(RenderContext& context, std::wstring_view name)
-	: Super(context, name)
+Buffer::Buffer(RenderDevice& device, std::wstring_view name)
+	: Super(device, name)
 {
 }
 
-Buffer::Buffer(RenderContext& context, std::wstring_view name, CreationInfo&& info)
-	: Super(context, name, std::move(info), eResourceType::Buffer)
+Buffer::Buffer(RenderDevice& device, std::wstring_view name, CreationInfo&& info)
+	: Super(device, name, std::move(info), eResourceType::Buffer)
 	, m_Count(info.count)
 	, m_ElementSize(info.elementSizeInBytes)
 {
 }
 
-VertexBuffer::VertexBuffer(RenderContext& context, std::wstring_view name, CreationInfo&& info)
-	: Super(context, name, std::move(info))
+VertexBuffer::VertexBuffer(RenderDevice& device, std::wstring_view name, CreationInfo&& info)
+	: Super(device, name, std::move(info))
 {
 	m_d3d12BufferView.BufferLocation = m_d3d12Resource->GetGPUVirtualAddress();
 	m_d3d12BufferView.StrideInBytes = sizeof(Vertex);
 	m_d3d12BufferView.SizeInBytes = static_cast<u32>(GetSizeInBytes());
 }
 
-IndexBuffer::IndexBuffer(RenderContext& context, std::wstring_view name, CreationInfo&& info)
-	: Super(context, name, std::move(info))
+IndexBuffer::IndexBuffer(RenderDevice& device, std::wstring_view name, CreationInfo&& info)
+	: Super(device, name, std::move(info))
 {
 	m_d3d12BufferView.BufferLocation = m_d3d12Resource->GetGPUVirtualAddress();
 	m_d3d12BufferView.Format = DXGI_FORMAT_R32_UINT;
 	m_d3d12BufferView.SizeInBytes = static_cast<u32>(GetSizeInBytes());
 }
 
-ConstantBuffer::ConstantBuffer(RenderContext& context, std::wstring_view name, CreationInfo&& info)
-	: Super(context, name, std::move(info))
+ConstantBuffer::ConstantBuffer(RenderDevice& device, std::wstring_view name, CreationInfo&& info)
+	: Super(device, name, std::move(info))
 {
-	auto d3d12Device = m_RenderContext.GetD3D12Device();
-	auto& rm = m_RenderContext.GetResourceManager();
+	auto d3d12Device = m_RenderDevice.GetD3D12Device();
+	auto& rm = m_RenderDevice.GetResourceManager();
 	m_CBVAllocation = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, m_Count);
 
 	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
@@ -63,11 +62,11 @@ ConstantBuffer::~ConstantBuffer()
 	m_CBVAllocation.Free();
 }
 
-StructuredBuffer::StructuredBuffer(RenderContext& context, std::wstring_view name, CreationInfo&& info)
-	: Super(context, name, std::move(info))
+StructuredBuffer::StructuredBuffer(RenderDevice& device, std::wstring_view name, CreationInfo&& info)
+	: Super(device, name, std::move(info))
 {
-	auto d3d12Device = m_RenderContext.GetD3D12Device();
-	auto& rm = m_RenderContext.GetResourceManager();
+	auto d3d12Device = m_RenderDevice.GetD3D12Device();
+	auto& rm = m_RenderDevice.GetResourceManager();
 
 	// srv
 	{

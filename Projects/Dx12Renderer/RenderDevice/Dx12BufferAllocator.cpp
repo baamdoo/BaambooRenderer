@@ -1,12 +1,10 @@
 #include "RendererPch.h"
 #include "Dx12BufferAllocator.h"
 #include "Dx12CommandQueue.h"
-#include "Dx12CommandList.h"
+#include "Dx12CommandContext.h"
 #include "Dx12ResourceManager.h"
 #include "RenderResource/Dx12Buffer.h"
-
-#include <BaambooCore/ResourceHandle.h>
-#include <BaambooUtils/Math.hpp>
+#include "Utils/Math.hpp"
 
 namespace dx12
 {
@@ -15,8 +13,8 @@ namespace dx12
 //-------------------------------------------------------------------------
 // Dynamic-Buffer Allocator
 //-------------------------------------------------------------------------
-DynamicBufferAllocator::DynamicBufferAllocator(RenderContext& context, size_t pageSize)
-	: m_RenderContext(context)
+DynamicBufferAllocator::DynamicBufferAllocator(RenderDevice& device, size_t pageSize)
+	: m_RenderDevice(device)
 	, m_MaxPageSize(pageSize)
 {
 }
@@ -56,7 +54,7 @@ DynamicBufferAllocator::Page* DynamicBufferAllocator::RequestPage()
 	}
 	else
 	{
-		pPage = new Page(m_RenderContext, m_MaxPageSize);
+		pPage = new Page(m_RenderDevice, m_MaxPageSize);
 		m_PagePool.push_back(pPage);
 	}
 
@@ -74,14 +72,14 @@ void DynamicBufferAllocator::Reset()
 	}
 }
 
-DynamicBufferAllocator::Page::Page(RenderContext& context, size_t sizeInBytes)
-	: m_RenderContext(context)
+DynamicBufferAllocator::Page::Page(RenderDevice& device, size_t sizeInBytes)
+	: m_RenderDevice(device)
 	, m_BaseCpuHandle(nullptr)
 	, m_BaseGpuHandle(D3D12_GPU_VIRTUAL_ADDRESS(0))
 	, m_PageSize(sizeInBytes)
 	, m_Offset(0)
 {
-	auto d3d12Device = m_RenderContext.GetD3D12Device();
+	auto d3d12Device = m_RenderDevice.GetD3D12Device();
 
 	auto heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
 	auto desc = CD3DX12_RESOURCE_DESC::Buffer(m_PageSize);
@@ -142,8 +140,8 @@ void DynamicBufferAllocator::Page::Reset()
 //-------------------------------------------------------------------------
 // Static-Buffer Allocator
 //-------------------------------------------------------------------------
-StaticBufferAllocator::StaticBufferAllocator(RenderContext& context, const std::wstring& name, size_t bufferSize)
-	: m_RenderContext(context)
+StaticBufferAllocator::StaticBufferAllocator(RenderDevice& device, const std::wstring& name, size_t bufferSize)
+	: m_RenderDevice(device)
 	, m_Name(name)
 {
 	Resize(bufferSize);
@@ -167,7 +165,7 @@ StaticBufferAllocator::Allocation StaticBufferAllocator::Allocate(u32 numElement
 	}
 
 	Allocation allocation;
-	allocation.buffer = m_Buffer;
+	allocation.pBuffer = m_pBuffer;
 	allocation.offset = (u32)(m_Offset / elementSizeInBytes);
 	allocation.sizeInBytes = sizeInBytes;
 	allocation.gpuHandle = m_BaseGpuHandle + m_Offset;
@@ -182,41 +180,37 @@ void StaticBufferAllocator::Reset()
 	m_Offset = 0;
 }
 
-StructuredBuffer* StaticBufferAllocator::GetBuffer() const
-{
-	auto& rm = m_RenderContext.GetResourceManager();
-	return rm.Get(m_Buffer);
-}
-
 void StaticBufferAllocator::Resize(size_t sizeInBytes)
 {
-	auto& rm = m_RenderContext.GetResourceManager();
+	auto pNewBuffer = MakeArc< StructuredBuffer >(
+		m_RenderDevice, 
+		m_Name, 
+		Buffer::CreationInfo
+		{
+			ResourceCreationInfo
+			{
+				CD3DX12_RESOURCE_DESC::Buffer(sizeInBytes)
+			},
+			1,
+			sizeInBytes
+		});
 
-	auto heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-
-	Buffer::CreationInfo creationInfo = {};
-	creationInfo.desc = CD3DX12_RESOURCE_DESC::Buffer(sizeInBytes);
-	creationInfo.count = 1;
-	creationInfo.elementSizeInBytes = sizeInBytes;
-	auto buffer = rm.Create< StructuredBuffer >(m_Name, std::move(creationInfo));
-
-	if (m_Offset > 0 && m_Buffer.IsValid())
+	if (m_Offset > 0 && m_pBuffer)
 	{
-		auto& transferQueue = m_RenderContext.GetCommandQueue(D3D12_COMMAND_LIST_TYPE_COPY);
-		auto& cmdList = m_RenderContext.AllocateCommandList(D3D12_COMMAND_LIST_TYPE_COPY);
-		cmdList.CopyBuffer(rm.Get(buffer), rm.Get(m_Buffer), m_Offset);
-		cmdList.Close();
-		transferQueue.ExecuteCommandList(&cmdList);
+		auto& commandQueue = m_RenderDevice.CopyQueue();
+		auto& context = commandQueue.Allocate();
+		context.CopyBuffer(pNewBuffer, m_pBuffer, m_Offset);
+		context.Close();
+		commandQueue.ExecuteCommandList(&context);
 	}
 
-	if (m_Buffer.IsValid())
+	if (m_pBuffer)
 	{
-		rm.Remove(m_Buffer);
-		m_Buffer.Reset();
+		m_pBuffer.reset();
 	}
 
-	m_Buffer = buffer;
-	m_BaseGpuHandle = rm.Get(m_Buffer)->GetD3D12Resource()->GetGPUVirtualAddress();
+	m_pBuffer = pNewBuffer;
+	m_BaseGpuHandle = m_pBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
 	m_Size = sizeInBytes;
 }
 

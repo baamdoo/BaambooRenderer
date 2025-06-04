@@ -14,15 +14,13 @@ class ImGuiModule : public RenderModule
 {
 	using Super = RenderModule;
 public:
-	ImGuiModule(RenderContext& context, ImGuiContext* pImGuiContext);
+	ImGuiModule(RenderDevice& device, ImGuiContext* pImGuiContext);
 	virtual ~ImGuiModule();
 
-	virtual void Apply(CommandList& cmdBuffer) override;
+	virtual void Apply(CommandContext& context) override;
 
 private:
-	RenderTarget      m_RenderTarget;
-	RootSignature*    m_pRootSignature = nullptr;
-	GraphicsPipeline* m_pGraphicsPipeline = nullptr;
+	RenderTarget m_RenderTarget;
 
 	ID3D12DescriptorHeap* m_d3d12SrvDescHeap = nullptr;
 };

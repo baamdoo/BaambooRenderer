@@ -3,14 +3,15 @@
 #include "RenderDevice/Dx12SwapChain.h"
 #include "RenderDevice/Dx12DescriptorPool.h"
 #include "RenderDevice/Dx12CommandQueue.h"
-#include "RenderDevice/Dx12CommandList.h"
+#include "RenderDevice/Dx12CommandContext.h"
 #include "RenderModule/Dx12ForwardModule.h"
 #include "RenderModule/Dx12ImGuiModule.h"
+#include "RenderResource/Dx12Texture.h"
 #include "RenderResource/Dx12SceneResource.h"
+#include "SceneRenderView.h"
 
 #include <imgui/imgui.h>
 #include <imgui/backends/imgui_impl_dx12.h>
-#include <Scene/SceneRenderView.h>
 
 namespace dx12
 {
@@ -19,24 +20,27 @@ Renderer::Renderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext)
 {
 	DX_CHECK(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
 
-	m_pRenderContext = new RenderContext(true);
-	m_pSwapChain = new SwapChain(*m_pRenderContext, *pWindow);
+	m_pRenderDevice = new RenderDevice(true);
+	m_pSwapChain = new SwapChain(*m_pRenderDevice, *pWindow);
 
-	m_pRenderModules.push_back(new ForwardModule(*m_pRenderContext));
-	m_pRenderModules.push_back(new ImGuiModule(*m_pRenderContext, pImGuiContext));
+	g_FrameData.pSceneResource = new SceneResource(*m_pRenderDevice);
+
+	m_pRenderModules.push_back(new ForwardModule(*m_pRenderDevice));
+	m_pRenderModules.push_back(new ImGuiModule(*m_pRenderDevice, pImGuiContext));
 
 	printf("D3D12Renderer constructed!\n");
 }
 
 Renderer::~Renderer()
 {
-	m_pRenderContext->Flush();
+	m_pRenderDevice->Flush();
 
-	for (auto pModule : m_pRenderModules)
+	RELEASE(g_FrameData.pSceneResource);
+	for (auto& pModule : m_pRenderModules)
 		RELEASE(pModule);
 
 	RELEASE(m_pSwapChain);
-	RELEASE(m_pRenderContext);
+	RELEASE(m_pRenderDevice);
 
 	CoUninitialize();
 	printf("D3D12Renderer destructed!\n");
@@ -52,7 +56,7 @@ void Renderer::Render(SceneRenderView&& renderView)
 	assert(g_FrameData.pSceneResource);
 	g_FrameData.pSceneResource->UpdateSceneResources(renderView);
 
-	auto& cmdList = BeginFrame();
+	auto& context = BeginFrame();
 	{
 		CameraData camera = {};
 		camera.mView = renderView.camera.mView;
@@ -62,9 +66,9 @@ void Renderer::Render(SceneRenderView&& renderView)
 		g_FrameData.camera = std::move(camera);
 
 		for (auto pModule : m_pRenderModules)
-			pModule->Apply(cmdList);
+			pModule->Apply(context);
 	}
-	EndFrame(cmdList);
+	EndFrame(context);
 }
 
 void Renderer::OnWindowResized(i32 width, i32 height)
@@ -75,12 +79,12 @@ void Renderer::OnWindowResized(i32 width, i32 height)
 	if (!m_pSwapChain)
 		return;
 
-	if (m_pRenderContext->WindowWidth() == static_cast<u32>(width) && m_pRenderContext->WindowHeight() == static_cast<u32>(height))
+	if (m_pRenderDevice->WindowWidth() == static_cast<u32>(width) && m_pRenderDevice->WindowHeight() == static_cast<u32>(height))
 		return;
 
-	m_pRenderContext->Flush();
-	m_pRenderContext->SetWindowWidth(width);
-	m_pRenderContext->SetWindowHeight(height);
+	m_pRenderDevice->Flush();
+	m_pRenderDevice->SetWindowWidth(width);
+	m_pRenderDevice->SetWindowHeight(height);
 
 	m_pSwapChain->ResizeViewport(width, height);
 
@@ -93,38 +97,42 @@ void Renderer::SetRendererType(eRendererType type)
 	m_type = type;
 }
 
-CommandList& Renderer::BeginFrame()
+CommandContext& Renderer::BeginFrame()
 {
-	auto& cmdList = m_pRenderContext->AllocateCommandList(D3D12_COMMAND_LIST_TYPE_DIRECT);
+	auto& cmdList = m_pRenderDevice->BeginCommand(D3D12_COMMAND_LIST_TYPE_DIRECT);
 	return cmdList;
 }
 
-void Renderer::EndFrame(CommandList& cmdList)
+void Renderer::EndFrame(CommandContext& context)
 {
-	auto& rm = m_pRenderContext->GetResourceManager();
+	auto frameIndex = m_pRenderDevice->FrameIndex();
+	auto& commandQueue = m_pRenderDevice->GraphicsQueue();
 
-	auto contextIndex = m_pRenderContext->ContextIndex();
-	auto& commandQueue = m_pRenderContext->GetCommandQueue();
-
-	auto backBuffer = m_pSwapChain->GetImageToPresent();
+	auto pBackImage = m_pSwapChain->GetBackImage();
 	if constexpr (NUM_SAMPLING > 1)
 	{
-		cmdList.ResolveSubresource(rm.Get(backBuffer), g_FrameData.pColor);
+		if (g_FrameData.pColor.valid())
+		{
+			context.ResolveSubresource(pBackImage, g_FrameData.pColor.lock());
+		}
 	}
 	else
 	{
-		cmdList.CopyTexture(rm.Get(backBuffer), g_FrameData.pColor);
+		if (g_FrameData.pColor.valid())
+		{
+			context.CopyTexture(pBackImage, g_FrameData.pColor.lock());
+		}
 	}
-	cmdList.TransitionBarrier(rm.Get(backBuffer), D3D12_RESOURCE_STATE_PRESENT);
-	cmdList.Close();
+	context.TransitionBarrier(pBackImage, D3D12_RESOURCE_STATE_PRESENT);
+	context.Close();
 
-	auto fenceValue = commandQueue.ExecuteCommandList(&cmdList);
-	m_ContextFenceValue[contextIndex] = fenceValue;
+	auto fenceValue = commandQueue.ExecuteCommandList(&context);
+	m_FrameFenceValue[frameIndex] = fenceValue;
 
 	m_pSwapChain->Present();
 
-	UINT nextContextIndex = m_pRenderContext->Swap();
-	commandQueue.WaitForFenceValue(m_ContextFenceValue[nextContextIndex]);
+	UINT nextFrameIndex = m_pRenderDevice->Swap();
+	commandQueue.WaitForFenceValue(m_FrameFenceValue[nextFrameIndex]);
 }
 
 } // namespace dx12

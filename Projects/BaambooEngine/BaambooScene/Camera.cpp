@@ -60,4 +60,10 @@ void CameraController_FirstPerson::Update(f32 dt)
 	m_Transform.position += m_MoveVelocity * dt;
 }
 
+void CameraController_FirstPerson::Reset()
+{
+	m_MoveVelocity     = float3(0.0f);
+	m_RotationVelocity = float3(0.0f);
+}
+
 } // namespace baamboo

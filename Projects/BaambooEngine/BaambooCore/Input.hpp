@@ -10,12 +10,24 @@ namespace baamboo
 class Input : public Singleton< Input >
 {
 public:
+	void Reset()
+	{
+		m_TransientKeyStates.reset();
+		m_PersistentKeyStates.reset();
+
+		m_TransientMouseStates.reset();
+		m_PersistentMouseStates.reset();
+
+		m_MouseWheel = 0.0f;
+		m_MouseDeltaX = m_MouseDeltaY = 0.0f;
+	}
+
 	void EndFrame()
 	{
 		m_TransientKeyStates.reset();
 		m_TransientMouseStates.reset();
 
-		m_MouseWheel = 0.0f;
+		m_MouseWheel  = 0.0f;
 		m_MouseDeltaX = m_MouseDeltaY = 0.0f;
 	}
 	void UpdateKey(int keycode, bool bPressed)
@@ -69,11 +81,11 @@ private:
 	std::bitset< GLFW_MOUSE_BUTTON_LAST > m_TransientMouseStates = {};
 	std::bitset< GLFW_MOUSE_BUTTON_LAST > m_PersistentMouseStates = {};
 
-	float m_MouseDeltaX = 0.0f;
-	float m_MouseDeltaY = 0.0f;
+	float m_MouseDeltaX    = 0.0f;
+	float m_MouseDeltaY    = 0.0f;
 	float m_MousePositionX = 0.0f;
 	float m_MousePositionY = 0.0f;
-	float m_MouseWheel = 0.0f;
+	float m_MouseWheel     = 0.0f;
 };
 
 } // namespace baamboo

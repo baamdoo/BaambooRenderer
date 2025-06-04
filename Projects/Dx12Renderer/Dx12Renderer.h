@@ -27,14 +27,14 @@ public:
 	virtual void SetRendererType(eRendererType type) override;
 
 private:
-	class CommandList& BeginFrame();
-	void EndFrame(CommandList& cmdList);
+	class CommandContext& BeginFrame();
+	void EndFrame(CommandContext& context);
 
 private:
-	class RenderContext* m_pRenderContext = nullptr;
+	class RenderDevice* m_pRenderDevice = nullptr;
 	class SwapChain*     m_pSwapChain = nullptr;
 
-	u64 m_ContextFenceValue[NUM_FRAMES_IN_FLIGHT] = {};
+	u64 m_FrameFenceValue[NUM_FRAMES_IN_FLIGHT] = {};
 
 	std::vector< RenderModule* > m_pRenderModules;
 

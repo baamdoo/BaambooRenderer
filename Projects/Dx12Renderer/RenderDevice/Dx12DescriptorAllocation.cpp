@@ -1,6 +1,6 @@
 #include "RendererPch.h"
 #include "Dx12DescriptorAllocation.h"
-#include "Dx12RenderContext.h"
+#include "Dx12RenderDevice.h"
 #include "Dx12DescriptorPool.h"
 
 namespace dx12

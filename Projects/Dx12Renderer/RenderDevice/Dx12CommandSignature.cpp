@@ -109,9 +109,9 @@ CommandSignatureDesc& CommandSignatureDesc::AddDispatchRays()
 	return *this;
 }
 
-CommandSignature::CommandSignature(RenderContext& context, CommandSignatureDesc& signatureDesc, ID3D12RootSignature* d3d12RootSignature)
+CommandSignature::CommandSignature(RenderDevice& device, CommandSignatureDesc& signatureDesc, ID3D12RootSignature* d3d12RootSignature)
 {
-	auto d3d12Device = context.GetD3D12Device();
+	auto d3d12Device = device.GetD3D12Device();
 
 	D3D12_COMMAND_SIGNATURE_DESC desc = signatureDesc.Build();
 	DX_CHECK(d3d12Device->CreateCommandSignature(

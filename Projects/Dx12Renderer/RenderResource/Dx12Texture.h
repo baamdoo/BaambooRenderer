@@ -11,7 +11,11 @@ using Super = Resource;
 public:
     using CreationInfo = ResourceCreationInfo;
 
-    virtual void Release() override;
+    Texture(RenderDevice& device, std::wstring_view name);
+    Texture(RenderDevice& device, std::wstring_view name, CreationInfo&& info);
+    virtual ~Texture();
+
+    virtual void Reset() override;
     virtual void SetD3D12Resource(ID3D12Resource* d3d12Resource, D3D12_RESOURCE_STATES states = D3D12_RESOURCE_STATE_COMMON) override;
     void Resize(u32 width, u32 height, u32 depthOrArraySize = 1);
 
@@ -37,15 +41,6 @@ public:
     D3D12_CPU_DESCRIPTOR_HANDLE GetUnorderedAccessView(u32 mip) const { return m_UnorderedAccessView.GetCPUHandle(mip); }
 
 protected:
-    template< typename T >
-    friend class ResourcePool;
-    friend class ResourceManager;
-
-    // Resource can only be created by ResourceManger;
-    Texture(RenderContext& context, std::wstring_view name);
-    Texture(RenderContext& context, std::wstring_view name, CreationInfo&& info);
-    virtual ~Texture();
-
     void CreateViews();
 
 private:

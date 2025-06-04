@@ -4,13 +4,13 @@
 namespace dx12
 {
 
-DescriptorPool::DescriptorPool(RenderContext& context, D3D12_DESCRIPTOR_HEAP_TYPE type, D3D12_DESCRIPTOR_HEAP_FLAGS flags, u32 maxDescriptorCount)
-	: m_RenderContext(context)
+DescriptorPool::DescriptorPool(RenderDevice& device, D3D12_DESCRIPTOR_HEAP_TYPE type, D3D12_DESCRIPTOR_HEAP_FLAGS flags, u32 maxDescriptorCount)
+	: m_RenderDevice(device)
 	, m_d3d12HeapType(type)
 	, m_NumDescriptors(maxDescriptorCount)
 	, m_DescriptorSize(0)
 {
-    auto d3d12Device = m_RenderContext.GetD3D12Device();
+    auto d3d12Device = m_RenderDevice.GetD3D12Device();
 
     D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
     heapDesc.NumDescriptors = m_NumDescriptors;

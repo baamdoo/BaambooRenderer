@@ -17,28 +17,28 @@ class Buffer;
 class Texture;
 class SceneResource;
 
-class CommandList
+class CommandContext
 {
 public:
-	CommandList(RenderContext& context, D3D12_COMMAND_LIST_TYPE type);
-	~CommandList();
+	CommandContext(RenderDevice& device, D3D12_COMMAND_LIST_TYPE type);
+	~CommandContext();
 
 	void Open();
 	void Close();
 
-	void TransitionBarrier(Resource* pResource, D3D12_RESOURCE_STATES stateAfter, u32 subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, bool bFlushImmediate = true);
-	void UAVBarrier(Resource* pResource, bool bFlushImmediate = false);
-	void AliasingBarrier(Resource* pResourceBefore, Resource* pResourceAfter, bool bFlushImmediate = false);
+	void TransitionBarrier(const Arc< Resource >& pResource, D3D12_RESOURCE_STATES stateAfter, u32 subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, bool bFlushImmediate = true);
+	void UAVBarrier(const Arc< Resource >& pResource, bool bFlushImmediate = false);
+	void AliasingBarrier(const Arc< Resource >& pResourceBefore, const Arc< Resource >& pResourceAfter, bool bFlushImmediate = false);
 
-	void CopyBuffer(Buffer* pDstBuffer, Buffer* pSrcBuffer, size_t sizeInBytes);
+	void CopyBuffer(const Arc< Buffer >& pDstBuffer, const Arc< Buffer >& pSrcBuffer, size_t sizeInBytes);
 	void CopyBuffer(ID3D12Resource* d3d12DstBuffer, ID3D12Resource* d3d12SrcBuffer, SIZE_T sizeInBytes);
-	void CopyTexture(Texture* pDstTexture, Texture* pSrcTexture);
-	void ResolveSubresource(Resource* pDstResource, Resource* pSrcResource, u32 dstSubresource = 0, u32 srcSubresource = 0);
+	void CopyTexture(const Arc< Texture >& pDstTexture, const Arc< Texture >& pSrcTexture);
+	void ResolveSubresource(const Arc< Resource >& pDstResource, const Arc< Resource >& pSrcResource, u32 dstSubresource = 0, u32 srcSubresource = 0);
 
 	void SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY primitiveTopology);
 
-	void ClearTexture(Texture* pTexture);
-	void ClearDepthStencilTexture(Texture* pTexture, D3D12_CLEAR_FLAGS clearFlags);
+	void ClearTexture(const Arc< Texture >& pTexture);
+	void ClearDepthStencilTexture(const Arc< Texture >& pTexture, D3D12_CLEAR_FLAGS clearFlags);
 
 	void SetViewport(const D3D12_VIEWPORT& viewport);
 	void SetViewports(const std::vector< D3D12_VIEWPORT >& viewports);
@@ -75,11 +75,6 @@ public:
 		D3D12_CPU_DESCRIPTOR_HANDLE srcHandle,
 		D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-	void SetVertexBuffer(u32 slot, VertexBuffer* pVertexBuffer);
-	void SetVertexBuffers(u32 startSlot, const std::vector< VertexBuffer* >& vertexBufferList);
-
-	void SetIndexBuffer(IndexBuffer* pIndexBuffer);
-
 	void Draw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t startVertex = 0, uint32_t startInstance = 0);
 	void DrawIndexed(uint32_t indexCount, uint32_t instanceCount = 1, uint32_t startIndex = 0, int32_t baseVertex = 0, uint32_t startInstance = 0);
 	void DrawIndexedIndirect(const SceneResource& sceneResource);
@@ -97,7 +92,7 @@ public:
 	ID3D12GraphicsCommandList2* GetD3D12CommandList() const { return m_d3d12CommandList; }
 
 private:
-	RenderContext&          m_RenderContext;
+	RenderDevice&           m_RenderDevice;
 	D3D12_COMMAND_LIST_TYPE m_Type = {};
 	
 	DynamicBufferAllocator* m_pDynamicBufferAllocator = nullptr;
@@ -117,8 +112,6 @@ private:
 
 	u32 m_NumBarriersToFlush = 0;
 	D3D12_RESOURCE_BARRIER m_ResourceBarriers[MAX_NUM_PENDING_BARRIERS] = {};
-
-	u32 m_CurrentContextIndex = 0;
 };
 
 }

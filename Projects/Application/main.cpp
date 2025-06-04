@@ -5,8 +5,8 @@
 int main()
 {
 	// TODO: Utilize args
-	//eRendererAPI rendererAPI = eRendererAPI::D3D12;
-	eRendererAPI rendererAPI = eRendererAPI::Vulkan;
+	eRendererAPI rendererAPI = eRendererAPI::D3D12;
+	//eRendererAPI rendererAPI = eRendererAPI::Vulkan;
 
 	ExampleApp app = {};
 	try

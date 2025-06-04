@@ -1,6 +1,6 @@
 #include "RendererPch.h"
 #include "Dx12Texture.h"
-#include "RenderDevice/Dx12RenderContext.h"
+#include "RenderDevice/Dx12RenderDevice.h"
 #include "RenderDevice/Dx12ResourceManager.h"
 
 namespace dx12
@@ -56,13 +56,13 @@ D3D12_UNORDERED_ACCESS_VIEW_DESC GetUAVDesc(const D3D12_RESOURCE_DESC& resDesc, 
     return uavDesc;
 }
 
-Texture::Texture(RenderContext& context, std::wstring_view name)
-	: Super(context, name, eResourceType::Texture)
+Texture::Texture(RenderDevice& device, std::wstring_view name)
+	: Super(device, name, eResourceType::Texture)
 {
 }
 
-Texture::Texture(RenderContext& context, std::wstring_view name, CreationInfo&& info)
-    : Super(context, name, std::move(info), eResourceType::Texture)
+Texture::Texture(RenderDevice& device, std::wstring_view name, CreationInfo&& info)
+    : Super(device, name, std::move(info), eResourceType::Texture)
 {
     m_Width = static_cast<u32>(m_ResourceDesc.Width);
     m_Height = static_cast<u32>(m_ResourceDesc.Height);
@@ -73,10 +73,10 @@ Texture::Texture(RenderContext& context, std::wstring_view name, CreationInfo&& 
 
 Texture::~Texture()
 {
-    Release();
+    Reset();
 }
 
-void Texture::Release()
+void Texture::Reset()
 {
     Super::Release();
 
@@ -117,10 +117,10 @@ void Texture::Resize(u32 width, u32 height, u32 depthOrArraySize)
         desc.DepthOrArraySize = static_cast<u16>(depthOrArraySize);
         desc.MipLevels = desc.SampleDesc.Count > 1 ? 1 : m_ResourceDesc.MipLevels;
         
-        Release();
+        Reset();
 
         ID3D12Resource* d3d12Resource = 
-            m_RenderContext.CreateRHIResource(desc, m_CurrentState.GetSubresourceState(), CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), m_pClearValue);
+            m_RenderDevice.CreateRHIResource(desc, m_CurrentState.GetSubresourceState(), CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), m_pClearValue);
 
         SetD3D12Resource(d3d12Resource, m_CurrentState.GetSubresourceState());
     }
@@ -130,8 +130,8 @@ void Texture::CreateViews()
 {
     if (m_d3d12Resource)
     {
-        auto  d3d12Device = m_RenderContext.GetD3D12Device();
-        auto& rm = m_RenderContext.GetResourceManager();
+        auto  d3d12Device = m_RenderDevice.GetD3D12Device();
+        auto& rm = m_RenderDevice.GetResourceManager();
 
         CD3DX12_RESOURCE_DESC desc(m_d3d12Resource->GetDesc());
 

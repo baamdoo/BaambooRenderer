@@ -1,51 +1,51 @@
 #include "RendererPch.h"
 #include "Dx12CommandQueue.h"
-#include "Dx12CommandList.h"
+#include "Dx12CommandContext.h"
 
 namespace dx12
 {
 
-CommandQueue::CommandQueue(RenderContext& context, D3D12_COMMAND_LIST_TYPE type)
-	: m_RenderContext(context)
+CommandQueue::CommandQueue(RenderDevice& device, D3D12_COMMAND_LIST_TYPE type)
+	: m_RenderDevice(device)
 	, m_Type(type)
 {
 	D3D12_COMMAND_QUEUE_DESC queueDesc = {};
 	queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
 	queueDesc.Type = m_Type;
 	
-	auto d3d12Device = m_RenderContext.GetD3D12Device();
+	auto d3d12Device = m_RenderDevice.GetD3D12Device();
 	ThrowIfFailed(d3d12Device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&m_d3d12CommandQueue)));
 	ThrowIfFailed(d3d12Device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_d3d12Fence)));
 }
 
 CommandQueue::~CommandQueue()
 {
-	while (!m_AvailableLists.empty())
+	while (!m_pAvailableContexts.empty())
 	{
-		auto cmdList = m_AvailableLists.front();
-		m_AvailableLists.pop();
+		auto pContext = m_pAvailableContexts.front();
+		m_pAvailableContexts.pop();
 
-		RELEASE(cmdList);
+		RELEASE(pContext);
 	}
 
 	COM_RELEASE(m_d3d12Fence);
 	COM_RELEASE(m_d3d12CommandQueue);
 }
 
-CommandList& CommandQueue::Allocate()
+CommandContext& CommandQueue::Allocate()
 {
-	auto iter = m_PendingLists.begin();
-	while (iter != m_PendingLists.end() && IsFenceComplete(iter->first))
+	auto iter = m_pPendingContexts.begin();
+	while (iter != m_pPendingContexts.end() && IsFenceComplete(iter->first))
 	{
-		m_AvailableLists.push(iter->second);
-		iter = m_PendingLists.erase(iter);
+		m_pAvailableContexts.push(iter->second);
+		iter = m_pPendingContexts.erase(iter);
 	}
 
-	CommandList* pCommandList = nullptr;
-	if (!m_AvailableLists.empty())
+	CommandContext* pCommandList = nullptr;
+	if (!m_pAvailableContexts.empty())
 	{
-		pCommandList = m_AvailableLists.front();
-		m_AvailableLists.pop();
+		pCommandList = m_pAvailableContexts.front();
+		m_pAvailableContexts.pop();
 
 		pCommandList->Open();
 	}
@@ -59,30 +59,30 @@ CommandList& CommandQueue::Allocate()
 	return *pCommandList;
 }
 
-CommandList* CommandQueue::RequestList()
+CommandContext* CommandQueue::RequestList()
 {
-	auto pCommandList = new CommandList(m_RenderContext, m_Type);
+	auto pCommandList = new CommandContext(m_RenderDevice, m_Type);
 	return pCommandList;
 }
 
-u64 CommandQueue::ExecuteCommandList(CommandList* pCommandList)
+u64 CommandQueue::ExecuteCommandList(CommandContext* pContext)
 {
-	return ExecuteCommandLists({ pCommandList });
+	return ExecuteCommandLists({ pContext });
 }
 
-u64 CommandQueue::ExecuteCommandLists(const std::vector< CommandList* >& pCommandLists)
+u64 CommandQueue::ExecuteCommandLists(const std::vector< CommandContext* >& pCommandContexts)
 {
 	std::vector< ID3D12CommandList* > d3d12CommandLists;
-	d3d12CommandLists.reserve(pCommandLists.size());
+	d3d12CommandLists.reserve(pCommandContexts.size());
 
-	for (auto pCommandList : pCommandLists)
+	for (auto pCommandList : pCommandContexts)
 		d3d12CommandLists.push_back(pCommandList->GetD3D12CommandList());
 
 	m_d3d12CommandQueue->ExecuteCommandLists(static_cast<u32>(d3d12CommandLists.size()), d3d12CommandLists.data());
 
 	auto fenceValue = Signal();
-	for (auto pCommandList : pCommandLists)
-		m_PendingLists.insert({ fenceValue, pCommandList });
+	for (auto pContext : pCommandContexts)
+		m_pPendingContexts.insert({ fenceValue, pContext });
 
 	return fenceValue;
 }
@@ -122,11 +122,11 @@ void CommandQueue::Flush()
 {
 	WaitForFenceValue(Signal());
 
-	auto iter = m_PendingLists.begin();
-	while (iter != m_PendingLists.end())
+	auto iter = m_pPendingContexts.begin();
+	while (iter != m_pPendingContexts.end())
 	{
-		m_AvailableLists.push(iter->second);
-		iter = m_PendingLists.erase(iter);
+		m_pAvailableContexts.push(iter->second);
+		iter = m_pPendingContexts.erase(iter);
 	}
 }
 

@@ -4,8 +4,8 @@
 namespace dx12
 {
 
-Sampler::Sampler(RenderContext& context, std::wstring_view name, CreationInfo&& info)
-	: Super(context, name, eResourceType::Sampler)
+Sampler::Sampler(RenderDevice& device, std::wstring_view name, CreationInfo&& info)
+	: Super(device, name, eResourceType::Sampler)
 {
 	D3D12_SAMPLER_DESC desc = {};
 	desc.Filter = info.filter;
@@ -22,7 +22,7 @@ Sampler::Sampler(RenderContext& context, std::wstring_view name, CreationInfo&& 
 	desc.MinLOD = 0.0f;
 	desc.MaxLOD = info.lod;
 
-	auto d3d12Device = m_RenderContext.GetD3D12Device();
+	auto d3d12Device = m_RenderDevice.GetD3D12Device();
 	d3d12Device->CreateSampler(&desc, m_SamplerView);
 }
 

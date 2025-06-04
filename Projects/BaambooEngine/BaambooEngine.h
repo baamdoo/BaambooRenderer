@@ -33,7 +33,7 @@ public:
 	eRendererAPI BackendAPI() const { return m_eBackendAPI; }
 
 protected:
-	void Release();
+	virtual void Release();
 
 	virtual void Update(float dt);
 	virtual void GameLoop(float dt);

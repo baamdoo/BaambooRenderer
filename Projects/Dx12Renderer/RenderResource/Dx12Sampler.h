@@ -27,12 +27,7 @@ public:
         f32                   borderColor[4];
     };
 
-protected:
-    template< typename T >
-    friend class ResourcePool;
-    friend class ResourceManager;
-
-	Sampler(RenderContext& context, std::wstring_view name, CreationInfo&& info);
+    Sampler(RenderDevice& device, std::wstring_view name, CreationInfo&& info);
     virtual ~Sampler();
 
 private:

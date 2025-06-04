@@ -15,15 +15,15 @@ class RenderTarget;
 class GraphicsPipeline
 {
 public:
-	GraphicsPipeline(RenderContext& context, const std::wstring& name);
+	GraphicsPipeline(RenderDevice& device, const std::wstring& name);
 	~GraphicsPipeline();
 
 	GraphicsPipeline& SetShaderModules(
-		baamboo::ResourceHandle< Shader > vs, 
-		baamboo::ResourceHandle< Shader > ps, 
-		baamboo::ResourceHandle< Shader > gs = baamboo::ResourceHandle< Shader >(), 
-		baamboo::ResourceHandle< Shader > hs = baamboo::ResourceHandle< Shader >(),
-		baamboo::ResourceHandle< Shader > ds = baamboo::ResourceHandle< Shader >());
+		Box< Shader > vs,
+		Box< Shader > ps,
+		Box< Shader > gs = nullptr,
+		Box< Shader > hs = nullptr,
+		Box< Shader > ds = nullptr);
 	GraphicsPipeline& SetRootSignature(RootSignature* pRootSignature);
 	GraphicsPipeline& SetRenderTargetFormats(const RenderTarget& renderTarget);
 
@@ -45,19 +45,19 @@ protected:
 	void SetVertexInputLayout(ID3D12ShaderReflection* d3d12ShaderReflection);
 
 private:
-	RenderContext& m_RenderContext;
+	RenderDevice& m_RenderDevice;
 	std::wstring   m_Name;
 
-	baamboo::ResourceHandle< Shader > m_hVS;
-	baamboo::ResourceHandle< Shader > m_hPS;
-	baamboo::ResourceHandle< Shader > m_hGS;
-	baamboo::ResourceHandle< Shader > m_hHS;
-	baamboo::ResourceHandle< Shader > m_hDS;
+	Box< Shader > m_VS;
+	Box< Shader > m_PS;
+	Box< Shader > m_GS;
+	Box< Shader > m_HS;
+	Box< Shader > m_DS;
 
 	ID3D12PipelineState* m_d3d12PipelineState = nullptr;
 
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC m_d3d12PipelineDesc = {};
-	std::vector< D3D12_INPUT_ELEMENT_DESC > m_d3d12InputLayoutDesc;
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC      m_PipelineDesc = {};
+	std::vector< D3D12_INPUT_ELEMENT_DESC > m_InputLayoutDesc;
 };
 
 
@@ -67,10 +67,10 @@ private:
 class ComputePipeline
 {
 public:
-	ComputePipeline(RenderContext& context, const std::wstring& name);
+	ComputePipeline(RenderDevice& device, const std::wstring& name);
 	~ComputePipeline();
 
-	void SetShaderModules(baamboo::ResourceHandle< Shader > cs);
+	void SetShaderModules(Box< Shader > cs);
 	void SetRootSignature(RootSignature* pRootSignature);
 
 	void Build();
@@ -79,13 +79,14 @@ public:
 	inline ID3D12PipelineState* GetD3D12PipelineState() const { return m_d3d12PipelineState; }
 
 private:
-	RenderContext& m_RenderContext;
+	RenderDevice& m_RenderDevice;
 	std::wstring   m_Name;
 
-	baamboo::ResourceHandle< Shader > m_hCS;
+	Box< Shader > m_CS;
+
 	ID3D12PipelineState* m_d3d12PipelineState = nullptr;
 
-	D3D12_COMPUTE_PIPELINE_STATE_DESC m_d3d12PipelineDesc = {};
+	D3D12_COMPUTE_PIPELINE_STATE_DESC m_PipelineDesc = {};
 };
 
 }

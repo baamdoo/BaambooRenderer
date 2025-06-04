@@ -14,3 +14,4 @@ using i64 = int64_t;
 using f32 = float;
 
 constexpr u32 INVALID_INDEX = 0xffffffff;
+inline bool IsValidIndex(u32 idx) { return idx != INVALID_INDEX; }

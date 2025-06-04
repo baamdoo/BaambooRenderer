@@ -130,7 +130,7 @@ CommandContext& RenderDevice::BeginCommand(eCommandType cmdType, VkCommandBuffer
 		return m_pTransferQueue->Allocate(usage, bTransient);
 	}
 
-	assert(false, "Invalid entry!");
+	assert(false && "Invalid entry!");
 }
 
 DescriptorSet& RenderDevice::AllocateDescriptorSet(VkDescriptorSetLayout vkSetLayout) const

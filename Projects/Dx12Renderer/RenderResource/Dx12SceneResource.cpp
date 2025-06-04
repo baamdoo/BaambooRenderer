@@ -1,31 +1,32 @@
 #include "RendererPch.h"
 #include "Dx12SceneResource.h"
-#include "RenderDevice/Dx12CommandList.h"
+#include "RenderDevice/Dx12CommandContext.h"
 #include "RenderDevice/Dx12CommandQueue.h"
 #include "RenderDevice/Dx12Rootsignature.h"
 #include "RenderDevice/Dx12CommandSignature.h"
 #include "RenderDevice/Dx12BufferAllocator.h"
-
-#include <Scene/SceneRenderView.h>
+#include "RenderResource/Dx12Buffer.h"
+#include "RenderResource/Dx12Texture.h"
+#include "SceneRenderView.h"
 
 namespace dx12
 {
 
-SceneResource::SceneResource(RenderContext& context)
-    : m_RenderContext(context)
+SceneResource::SceneResource(RenderDevice& device)
+    : m_RenderDevice(device)
 {
     // **
     // scene buffers
     // **
-    m_pIndirectDrawBufferPool = new StaticBufferAllocator(m_RenderContext, L"IndirectDrawPool", sizeof(IndirectDrawData) * _KB(8));
-    m_pTransformBufferPool    = new StaticBufferAllocator(m_RenderContext, L"TransformPool", sizeof(TransformData) * _KB(8));
-    m_pMaterialBufferPool     = new StaticBufferAllocator(m_RenderContext, L"MaterialPool", sizeof(MaterialData) * _KB(8));
+    m_pIndirectDrawBufferPool = new StaticBufferAllocator(m_RenderDevice, L"IndirectDrawPool", sizeof(IndirectDrawData) * _KB(8));
+    m_pTransformBufferPool    = new StaticBufferAllocator(m_RenderDevice, L"TransformPool", sizeof(TransformData) * _KB(8));
+    m_pMaterialBufferPool     = new StaticBufferAllocator(m_RenderDevice, L"MaterialPool", sizeof(MaterialData) * _KB(8));
 
 
     // **
     // root signature for scene draw
     // **
-    m_pRootSignature = new RootSignature(m_RenderContext);
+    m_pRootSignature = new RootSignature(m_RenderDevice);
 
     const u32 transformRootIdx = m_pRootSignature->AddConstants(0, 0, 1, D3D12_SHADER_VISIBILITY_VERTEX);
     const u32 materialRootIdx  = m_pRootSignature->AddConstants(0, 0, 1, D3D12_SHADER_VISIBILITY_PIXEL);
@@ -45,7 +46,7 @@ SceneResource::SceneResource(RenderContext& context)
     // command signature
     // **
     m_pCommandSignature = new CommandSignature(
-        m_RenderContext,
+        m_RenderDevice,
         CommandSignatureDesc(5, sizeof(IndirectDrawData))
             .AddConstant(transformRootIdx, 0, 1)
             .AddConstant(materialRootIdx, 0, 1)
@@ -95,15 +96,15 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
         if (!materialView.albedoTex.empty())
         {
             auto pAlbedo = GetOrLoadTexture(materialView.id, materialView.albedoTex);
-            if (srvIndexCache.contains(pAlbedo))
+            if (srvIndexCache.contains(pAlbedo.get()))
             {
-                material.albedoID = srvIndexCache[pAlbedo];
+                material.albedoID = srvIndexCache[pAlbedo.get()];
             }
             else
             {
                 srvs.push_back(pAlbedo->GetShaderResourceView());
                 material.albedoID = (u32)srvs.size() - 1;
-                srvIndexCache.emplace(pAlbedo, material.albedoID);
+                srvIndexCache.emplace(pAlbedo.get(), material.albedoID);
             }
         }
 
@@ -111,14 +112,15 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
         if (!materialView.normalTex.empty())
         {
             auto pNormal = GetOrLoadTexture(materialView.id, materialView.normalTex);
-            if (srvIndexCache.contains(pNormal))
+            if (srvIndexCache.contains(pNormal.get()))
             {
-                material.albedoID = srvIndexCache[pNormal];
+                material.normalID = srvIndexCache[pNormal.get()];
             }
             else
             {
                 srvs.push_back(pNormal->GetShaderResourceView());
                 material.normalID = (u32)srvs.size() - 1;
+                srvIndexCache.emplace(pNormal.get(), material.normalID);
             }
         }
 
@@ -126,14 +128,15 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
         if (!materialView.specularTex.empty())
         {
             auto pSpecular = GetOrLoadTexture(materialView.id, materialView.specularTex);
-            if (srvIndexCache.contains(pSpecular))
+            if (srvIndexCache.contains(pSpecular.get()))
             {
-                material.albedoID = srvIndexCache[pSpecular];
+                material.specularID = srvIndexCache[pSpecular.get()];
             }
             else
             {
                 srvs.push_back(pSpecular->GetShaderResourceView());
                 material.specularID = (u32)srvs.size() - 1;
+                srvIndexCache.emplace(pSpecular.get(), material.specularID);
             }
         }
 
@@ -141,14 +144,15 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
         if (!materialView.aoTex.empty())
         {
             auto pAo = GetOrLoadTexture(materialView.id, materialView.aoTex);
-            if (srvIndexCache.contains(pAo))
+            if (srvIndexCache.contains(pAo.get()))
             {
-                material.albedoID = srvIndexCache[pAo];
+                material.aoID = srvIndexCache[pAo.get()];
             }
             else
             {
                 srvs.push_back(pAo->GetShaderResourceView());
                 material.aoID = (u32)srvs.size() - 1;
+                srvIndexCache.emplace(pAo.get(), material.aoID);
             }
         }
 
@@ -156,14 +160,15 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
         if (!materialView.roughnessTex.empty())
         {
             auto pRoughness = GetOrLoadTexture(materialView.id, materialView.roughnessTex);
-            if (srvIndexCache.contains(pRoughness))
+            if (srvIndexCache.contains(pRoughness.get()))
             {
-                material.albedoID = srvIndexCache[pRoughness];
+                material.roughnessID = srvIndexCache[pRoughness.get()];
             }
             else
             {
                 srvs.push_back(pRoughness->GetShaderResourceView());
                 material.roughnessID = (u32)srvs.size() - 1;
+                srvIndexCache.emplace(pRoughness.get(), material.roughnessID);
             }
         }
 
@@ -171,14 +176,15 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
         if (!materialView.metallicTex.empty())
         {
             auto pMetallic = GetOrLoadTexture(materialView.id, materialView.metallicTex);
-            if (srvIndexCache.contains(pMetallic))
+            if (srvIndexCache.contains(pMetallic.get()))
             {
-                material.albedoID = srvIndexCache[pMetallic];
+                material.metallicID = srvIndexCache[pMetallic.get()];
             }
             else
             {
                 srvs.push_back(pMetallic->GetShaderResourceView());
                 material.metallicID = (u32)srvs.size() - 1;
+                srvIndexCache.emplace(pMetallic.get(), material.metallicID);
             }
         }
 
@@ -186,14 +192,15 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
         if (!materialView.emissionTex.empty())
         {
             auto pEmission = GetOrLoadTexture(materialView.id, materialView.emissionTex);
-            if (srvIndexCache.contains(pEmission))
+            if (srvIndexCache.contains(pEmission.get()))
             {
-                material.albedoID = srvIndexCache[pEmission];
+                material.emissionID = srvIndexCache[pEmission.get()];
             }
             else
             {
                 srvs.push_back(pEmission->GetShaderResourceView());
                 material.emissionID = (u32)srvs.size() - 1;
+                srvIndexCache.emplace(pEmission.get(), material.emissionID);
             }
         }
 
@@ -239,10 +246,9 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
     UpdateFrameBuffer(indirects.data(), (u32)indirects.size(), sizeof(IndirectDrawData), m_pIndirectDrawBufferPool);
 }
 
-VertexBuffer* SceneResource::GetOrUpdateVertex(u32 entity, std::string_view filepath, const void* pData, u32 count)
+Arc< VertexBuffer > SceneResource::GetOrUpdateVertex(u32 entity, std::string_view filepath, const void* pData, u32 count)
 {
-    auto& rm = m_RenderContext.GetResourceManager();
-    auto& commandQueue = m_RenderContext.GetCommandQueue(D3D12_COMMAND_LIST_TYPE_DIRECT);
+    auto& commandQueue = m_RenderDevice.GraphicsQueue();
 
     std::string f = filepath.data();
     if (m_VertexCache.contains(f))
@@ -254,7 +260,7 @@ VertexBuffer* SceneResource::GetOrUpdateVertex(u32 entity, std::string_view file
 
     // staging buffer
     ID3D12Resource* d3d12UploadBuffer =
-        m_RenderContext.CreateRHIResource(CD3DX12_RESOURCE_DESC::Buffer(sizeInBytes), D3D12_RESOURCE_STATE_GENERIC_READ, CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD));
+        m_RenderDevice.CreateRHIResource(CD3DX12_RESOURCE_DESC::Buffer(sizeInBytes), D3D12_RESOURCE_STATE_GENERIC_READ, CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD));
 
     UINT8* pMappedPtr = nullptr;
     CD3DX12_RANGE readRange(0, 0);
@@ -264,15 +270,21 @@ VertexBuffer* SceneResource::GetOrUpdateVertex(u32 entity, std::string_view file
     d3d12UploadBuffer->Unmap(0, nullptr);
 
     // vertex buffer
-    Buffer::CreationInfo info = {};
-    info.desc = CD3DX12_RESOURCE_DESC::Buffer(sizeInBytes);
-    info.count = count;
-    info.elementSizeInBytes = sizeof(Vertex);
-    auto vb = rm.Create< VertexBuffer >(L"", std::move(info));
-    auto pVB = rm.Get(vb);
+    auto pVB = MakeArc< VertexBuffer >(
+        m_RenderDevice, 
+        L"", 
+        Buffer::CreationInfo
+        {
+            ResourceCreationInfo
+        	{
+                CD3DX12_RESOURCE_DESC::Buffer(sizeInBytes),
+            },
+            count,
+            sizeof(Vertex)
+        });
 
     // copy
-    auto& cmdList = m_RenderContext.AllocateCommandList(D3D12_COMMAND_LIST_TYPE_DIRECT);
+    auto& cmdList = commandQueue.Allocate();
     {
         cmdList.TransitionBarrier(pVB, D3D12_RESOURCE_STATE_COPY_DEST);
         cmdList.CopyBuffer(pVB->GetD3D12Resource(), d3d12UploadBuffer, sizeInBytes);
@@ -289,10 +301,9 @@ VertexBuffer* SceneResource::GetOrUpdateVertex(u32 entity, std::string_view file
     return pVB;
 }
 
-IndexBuffer* SceneResource::GetOrUpdateIndex(u32 entity, std::string_view filepath, const void* pData, u32 count)
+Arc< IndexBuffer > SceneResource::GetOrUpdateIndex(u32 entity, std::string_view filepath, const void* pData, u32 count)
 {
-    auto& rm = m_RenderContext.GetResourceManager();
-    auto& commandQueue = m_RenderContext.GetCommandQueue(D3D12_COMMAND_LIST_TYPE_DIRECT);
+    auto& commandQueue = m_RenderDevice.GraphicsQueue();
 
     std::string f = filepath.data();
     if (m_IndexCache.contains(f))
@@ -304,7 +315,7 @@ IndexBuffer* SceneResource::GetOrUpdateIndex(u32 entity, std::string_view filepa
 
     // staging buffer
     ID3D12Resource* d3d12UploadBuffer =
-        m_RenderContext.CreateRHIResource(CD3DX12_RESOURCE_DESC::Buffer(sizeInBytes), D3D12_RESOURCE_STATE_GENERIC_READ, CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD));
+        m_RenderDevice.CreateRHIResource(CD3DX12_RESOURCE_DESC::Buffer(sizeInBytes), D3D12_RESOURCE_STATE_GENERIC_READ, CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD));
 
     UINT8* pMappedPtr = nullptr;
     CD3DX12_RANGE readRange(0, 0);
@@ -318,11 +329,21 @@ IndexBuffer* SceneResource::GetOrUpdateIndex(u32 entity, std::string_view filepa
     info.desc = CD3DX12_RESOURCE_DESC::Buffer(sizeInBytes);
     info.count = count;
     info.elementSizeInBytes = sizeof(Index);
-    auto ib = rm.Create< IndexBuffer >(L"", std::move(info));
-    auto pIB = rm.Get(ib);
+    auto pIB = MakeArc< IndexBuffer >(
+        m_RenderDevice,
+        L"",
+        Buffer::CreationInfo
+        {
+            ResourceCreationInfo
+        	{
+				CD3DX12_RESOURCE_DESC::Buffer(sizeInBytes),
+            },
+            count,
+            sizeof(Index)
+		});
 
     // copy
-    auto& cmdList = m_RenderContext.AllocateCommandList(D3D12_COMMAND_LIST_TYPE_DIRECT);
+    auto& cmdList = commandQueue.Allocate();
     {
         cmdList.TransitionBarrier(pIB, D3D12_RESOURCE_STATE_COPY_DEST);
         cmdList.CopyBuffer(pIB->GetD3D12Resource(), d3d12UploadBuffer, sizeInBytes);
@@ -330,7 +351,7 @@ IndexBuffer* SceneResource::GetOrUpdateIndex(u32 entity, std::string_view filepa
     }
     cmdList.Close();
 
-    auto fenceValue = commandQueue.ExecuteCommandList(&cmdList);
+    const auto fenceValue = commandQueue.ExecuteCommandList(&cmdList);
     commandQueue.WaitForFenceValue(fenceValue);
 
     COM_RELEASE(d3d12UploadBuffer);
@@ -339,17 +360,15 @@ IndexBuffer* SceneResource::GetOrUpdateIndex(u32 entity, std::string_view filepa
     return pIB;
 }
 
-Texture* SceneResource::GetOrLoadTexture(u32 entity, std::string_view filepath)
+Arc< Texture > SceneResource::GetOrLoadTexture(u32 entity, std::string_view filepath)
 {
-    auto& rm = m_RenderContext.GetResourceManager();
-
     std::string f = filepath.data();
     if (m_TextureCache.contains(f))
     {
         return m_TextureCache.find(f)->second;
     }
 
-    auto d3d12Device = m_RenderContext.GetD3D12Device();
+    auto d3d12Device = m_RenderDevice.GetD3D12Device();
 
     fs::path path = filepath;
     auto extension = path.extension().wstring();
@@ -357,7 +376,7 @@ Texture* SceneResource::GetOrLoadTexture(u32 entity, std::string_view filepath)
     std::unique_ptr< uint8_t[] > rawData;
     ID3D12Resource* d3d12TexResource = nullptr;
 
-    auto pTex = rm.CreateEmpty< Texture >(path.wstring());
+    auto pEmptyTex = MakeArc< Texture >(m_RenderDevice, path.wstring());
     if (extension == L".dds")
     {
         std::vector< D3D12_SUBRESOURCE_DATA > subresouceData;
@@ -366,8 +385,8 @@ Texture* SceneResource::GetOrLoadTexture(u32 entity, std::string_view filepath)
 
         UINT subresouceSize = (UINT)subresouceData.size();
 
-        pTex->SetD3D12Resource(d3d12TexResource);
-        m_RenderContext.UpdateSubresources(pTex, 0, subresouceSize, subresouceData.data());
+        pEmptyTex->SetD3D12Resource(d3d12TexResource);
+        m_RenderDevice.UpdateSubresources(pEmptyTex, 0, subresouceSize, subresouceData.data());
     }
     else
     {
@@ -375,15 +394,14 @@ Texture* SceneResource::GetOrLoadTexture(u32 entity, std::string_view filepath)
         DX_CHECK(DirectX::LoadWICTextureFromFile(
             d3d12Device, path.c_str(), &d3d12TexResource, rawData, subresouceData));
 
-        pTex->SetD3D12Resource(d3d12TexResource, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        pEmptyTex->SetD3D12Resource(d3d12TexResource, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
         UINT subresouceSize = 1;
-        m_RenderContext.UpdateSubresources(pTex, 0, subresouceSize, &subresouceData);
+        m_RenderDevice.UpdateSubresources(pEmptyTex, 0, subresouceSize, &subresouceData);
     }
-    rm.Add< Texture >(pTex);
 
-    m_TextureCache.emplace(filepath, pTex);
-    return pTex;
+    m_TextureCache.emplace(filepath, pEmptyTex);
+    return pEmptyTex;
 }
 
 void SceneResource::UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator* pTargetBuffer)
@@ -391,12 +409,11 @@ void SceneResource::UpdateFrameBuffer(const void* pData, u32 count, u64 elementS
     if (count == 0 || elementSizeInBytes == 0)
         return;
 
-    auto& rm = m_RenderContext.GetResourceManager();
     u64 sizeInBytes = count * elementSizeInBytes;
 
     // staging buffer
     ID3D12Resource* d3d12UploadBuffer =
-        m_RenderContext.CreateRHIResource(CD3DX12_RESOURCE_DESC::Buffer(sizeInBytes), D3D12_RESOURCE_STATE_GENERIC_READ, CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD));
+        m_RenderDevice.CreateRHIResource(CD3DX12_RESOURCE_DESC::Buffer(sizeInBytes), D3D12_RESOURCE_STATE_GENERIC_READ, CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD));
 
     UINT8* pMappedPtr = nullptr;
     CD3DX12_RANGE readRange(0, 0);
@@ -407,9 +424,9 @@ void SceneResource::UpdateFrameBuffer(const void* pData, u32 count, u64 elementS
 
     auto allocation = pTargetBuffer->Allocate(count, elementSizeInBytes);
 
-    auto& cmdQueue = m_RenderContext.GetCommandQueue(D3D12_COMMAND_LIST_TYPE_COPY);
-    auto& cmdList = m_RenderContext.AllocateCommandList(D3D12_COMMAND_LIST_TYPE_COPY);
-    cmdList.CopyBuffer(rm.Get(allocation.buffer)->GetD3D12Resource(), d3d12UploadBuffer, sizeInBytes);
+    auto& cmdQueue = m_RenderDevice.CopyQueue();
+    auto& cmdList = cmdQueue.Allocate();
+    cmdList.CopyBuffer(allocation.pBuffer->GetD3D12Resource(), d3d12UploadBuffer, sizeInBytes);
     cmdList.Close();
 
     auto fenceValue = cmdQueue.ExecuteCommandList(&cmdList);
@@ -423,17 +440,17 @@ ID3D12CommandSignature* SceneResource::GetSceneD3D12CommandSignature() const
     return m_pCommandSignature->GetD3D12CommandSignature();
 }
 
-StructuredBuffer* SceneResource::GetIndirectBuffer() const
+Arc< StructuredBuffer > SceneResource::GetIndirectBuffer() const
 {
     return m_pIndirectDrawBufferPool->GetBuffer();
 }
 
-StructuredBuffer* SceneResource::GetTransformBuffer() const
+Arc< StructuredBuffer > SceneResource::GetTransformBuffer() const
 {
     return m_pTransformBufferPool->GetBuffer();
 }
 
-StructuredBuffer* SceneResource::GetMaterialBuffer() const
+Arc< StructuredBuffer > SceneResource::GetMaterialBuffer() const
 {
     return m_pMaterialBufferPool->GetBuffer();
 }
