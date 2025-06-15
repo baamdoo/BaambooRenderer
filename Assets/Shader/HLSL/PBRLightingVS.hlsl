@@ -1,4 +1,5 @@
-#include "../Common.bsh"
+#define _CAMERA
+#include "Common.hlsli"
 
 struct TransformData
 {
@@ -8,16 +9,7 @@ struct TransformData
 
 StructuredBuffer< TransformData > g_Transforms : register(t0, space0);
 
-struct CameraData
-{
-    float4x4 mProj;
-    float4x4 mView;
-    float4x4 mViewProj;
-    float3   posWORLD;
-    float    padding;
-}; ConstantBuffer< CameraData > g_Camera : register(b1);
-
-cbuffer RootConstants : register(b0, space0)
+cbuffer RootConstants : register(b1, space0)
 {
     uint TransformIndex;
 };
@@ -33,6 +25,7 @@ struct VSInput
 struct VSOutput
 {
     float4 posCLIP      : SV_Position;
+    float3 posWORLD     : POSITION;
     float2 uv           : TEXCOORD0;
     float3 normalWORLD  : TEXCOORD1;
     float3 tangentWORLD : TEXCOORD2;
@@ -44,13 +37,14 @@ VSOutput main(VSInput IN, uint vid : SV_VertexID)
 
     TransformData transform = g_Transforms[TransformIndex];
 
-    float4 posWORLD = mul(transform.mWorldToView, float4(IN.position, 1.0));
-    float4 normalWORLD = mul(transpose(transform.mViewToWorld), float4(IN.normal, 1.0));
+    float4 posWORLD     = mul(transform.mWorldToView, float4(IN.position, 1.0));
+    float4 normalWORLD  = mul(transpose(transform.mViewToWorld), float4(IN.normal, 1.0));
     float4 tangentWORLD = mul(transform.mWorldToView, float4(IN.tangent, 0.0));
 
-    output.uv = IN.uv;
-    output.normalWORLD = normalize(normalWORLD.xyz);
+    output.posWORLD     = posWORLD.xyz;
+    output.uv           = IN.uv;
+    output.normalWORLD  = normalize(normalWORLD.xyz);
     output.tangentWORLD = tangentWORLD.xyz;
-    output.posCLIP = mul(g_Camera.mViewProj, posWORLD);
+    output.posCLIP      = mul(g_Camera.mViewProj, posWORLD);
     return output;
 }

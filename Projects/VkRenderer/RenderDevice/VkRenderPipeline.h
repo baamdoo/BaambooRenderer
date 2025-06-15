@@ -18,24 +18,34 @@ struct DescriptorInfo
 	DescriptorInfo(const VkDescriptorImageInfo& imageInfo_)
 	{
 		imageInfo = imageInfo_;
+
+		bImage = true;
 	}
 	DescriptorInfo(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout)
 	{
 		imageInfo.sampler = sampler;
 		imageInfo.imageView = imageView;
 		imageInfo.imageLayout = imageLayout;
+
+		bImage = true;
 	}
 
 	DescriptorInfo(const VkDescriptorBufferInfo& bufferInfo_)
 	{
 		bufferInfo = bufferInfo_;
+
+		bImage = false;
 	}
 	DescriptorInfo(VkBuffer buffer, VkDeviceSize offset = 0, VkDeviceSize range = VK_WHOLE_SIZE)
 	{
 		bufferInfo.buffer = buffer;
 		bufferInfo.offset = offset;
 		bufferInfo.range = range;
+
+		bImage = false;
 	}
+
+	bool bImage = false;
 };
 
 //-------------------------------------------------------------------------
@@ -70,7 +80,6 @@ public:
 	GraphicsPipeline& SetLogicOp(VkLogicOp logicOp);
 
 	void Build();
-
 
 	[[nodiscard]]
 	inline VkPipeline vkPipeline() const { return m_vkPipeline; }
@@ -115,17 +124,28 @@ private:
 class ComputePipeline
 {
 public:
-	ComputePipeline(RenderDevice& device);
+	ComputePipeline(RenderDevice& device, std::string name);
 	~ComputePipeline();
+
+	ComputePipeline& SetComputeShader(Arc< Shader > pCS);
+	void Build();
 
 	[[nodiscard]]
 	inline VkPipeline vkPipeline() const { return m_vkPipeline; }
+	[[nodiscard]]
+	inline VkPipelineLayout vkPipelineLayout() const { return m_vkPipelineLayout; }
 
 private:
 	RenderDevice& m_RenderDevice;
+	std::string   m_Name;
 
-	VkPipeline		 m_vkPipeline = VK_NULL_HANDLE;
-	VkPipelineLayout m_vkPipelineLayout = VK_NULL_HANDLE;
+	VkPipeline		                     m_vkPipeline = VK_NULL_HANDLE;
+	VkPipelineLayout                     m_vkPipelineLayout = VK_NULL_HANDLE;
+	std::vector< VkDescriptorSetLayout > m_vkSetLayouts;
+
+	Arc< Shader > m_pCS;
+
+	std::unordered_map< u32, DescriptorSet& > m_DescriptorTable;
 };
 
 } // namespace vk

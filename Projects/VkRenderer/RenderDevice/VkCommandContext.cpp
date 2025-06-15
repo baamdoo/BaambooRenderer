@@ -226,6 +226,41 @@ void CommandContext::CopyTexture(Arc< Texture > pDstTexture, Arc< Texture > pSrc
 	vkCmdCopyImage(m_vkCommandBuffer, pSrcTexture->vkImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, pDstTexture->vkImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 }
 
+void CommandContext::BlitTexture(Arc<Texture> pDstTexture, Arc<Texture> pSrcTexture)
+{
+	VkImageAspectFlags format = 
+		pSrcTexture->Desc().format < VK_FORMAT_D16_UNORM ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
+	TransitionImageLayout(
+		pSrcTexture,
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		//VK_PIPELINE_STAGE_2_HOST_BIT, 
+		VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+		format, true);
+	TransitionImageLayout(
+		pDstTexture,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		//VK_PIPELINE_STAGE_2_HOST_BIT,
+		VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+		format, true);
+
+	const auto& src = pSrcTexture->Desc().extent;
+	const auto& dst = pDstTexture->Desc().extent;
+	VkImageBlit blitRegion = {};
+	blitRegion.srcSubresource = { format, 0, 0, 1 };
+	blitRegion.srcOffsets[0]  = { 0, 0, 0 };
+	blitRegion.srcOffsets[1]  = { static_cast<i32>(src.width), static_cast<i32>(src.height), static_cast<i32>(src.depth) };
+	blitRegion.dstSubresource = { format, 0, 0, 1 };
+	blitRegion.dstOffsets[0]  = { 0, 0, 0 };
+	blitRegion.dstOffsets[1]  = { static_cast<i32>(dst.width), static_cast<i32>(dst.height), static_cast<i32>(dst.depth) };
+
+	vkCmdBlitImage(m_vkCommandBuffer,
+		pSrcTexture->vkImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		pDstTexture->vkImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		1, 
+		&blitRegion,
+		VK_FILTER_LINEAR);
+}
+
 void CommandContext::GenerateMips(Arc< Texture > pTexture)
 {
 	VkImageSubresourceRange subresourceRange = {};
@@ -309,6 +344,10 @@ void CommandContext::TransitionImageLayout(
 	bool bFlatten)
 {
 	Texture::State oldState = pTexture->GetState().GetSubresourceState(subresourceRange);
+	if (oldState.layout == newLayout)
+	{
+		return;
+	}
 
 	VkImageMemoryBarrier2 imageMemoryBarrier = {};
 	imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
@@ -470,6 +509,8 @@ void CommandContext::SetRenderPipeline(GraphicsPipeline* pRenderPipeline)
 	{
 		m_pGraphicsPipeline = pRenderPipeline;
 		vkCmdBindPipeline(m_vkCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pGraphicsPipeline->vkPipeline());
+
+		m_PushAllocations.clear();
 	}
 }
 
@@ -480,6 +521,8 @@ void CommandContext::SetRenderPipeline(ComputePipeline* pRenderPipeline)
 	{
 		m_pComputePipeline = pRenderPipeline;
 		vkCmdBindPipeline(m_vkCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pComputePipeline->vkPipeline());
+
+		m_PushAllocations.clear();
 	}
 }
 
@@ -502,6 +545,8 @@ void CommandContext::EndRenderPass()
 
 void CommandContext::Draw(u32 vertexCount, u32 instanceCount, u32 firstVertex, u32 firstInstance)
 {
+	FlushBarriers();
+
 	std::vector< VkWriteDescriptorSet > writes;
 	for (const auto& allocation : m_PushAllocations)
 	{
@@ -512,7 +557,10 @@ void CommandContext::Draw(u32 vertexCount, u32 instanceCount, u32 firstVertex, u
 		write.dstArrayElement = 0;
 		write.descriptorCount = 1;
 		write.descriptorType = allocation.descriptorType;
-		write.pBufferInfo = &allocation.descriptor.bufferInfo;
+		if (allocation.descriptor.bImage)
+			write.pImageInfo = &allocation.descriptor.imageInfo;
+		else
+			write.pBufferInfo = &allocation.descriptor.bufferInfo;
 		writes.push_back(write);		
 	}
 
@@ -527,6 +575,8 @@ void CommandContext::Draw(u32 vertexCount, u32 instanceCount, u32 firstVertex, u
 
 void CommandContext::DrawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex, i32 vertexOffset, u32 firstInstance)
 {
+	FlushBarriers();
+
 	std::vector< VkWriteDescriptorSet > writes;
 	for (const auto& allocation : m_PushAllocations)
 	{
@@ -537,7 +587,10 @@ void CommandContext::DrawIndexed(u32 indexCount, u32 instanceCount, u32 firstInd
 		write.dstArrayElement = 0;
 		write.descriptorCount = 1;
 		write.descriptorType = allocation.descriptorType;
-		write.pBufferInfo = &allocation.descriptor.bufferInfo;
+		if (allocation.descriptor.bImage)
+			write.pImageInfo = &allocation.descriptor.imageInfo;
+		else
+			write.pBufferInfo = &allocation.descriptor.bufferInfo;
 		writes.push_back(write);
 	}
 
@@ -552,6 +605,8 @@ void CommandContext::DrawIndexed(u32 indexCount, u32 instanceCount, u32 firstInd
 
 void CommandContext::DrawIndexedIndirect(const SceneResource& sceneResource)
 {
+	FlushBarriers();
+
 	auto vkDescriptorSet = sceneResource.GetSceneDescriptorSet();
 	vkCmdBindDescriptorSets(
 		m_vkCommandBuffer,
@@ -569,7 +624,10 @@ void CommandContext::DrawIndexedIndirect(const SceneResource& sceneResource)
 		write.dstArrayElement = 0;
 		write.descriptorCount = 1;
 		write.descriptorType = allocation.descriptorType;
-		write.pBufferInfo = &allocation.descriptor.bufferInfo;
+		if (allocation.descriptor.bImage)
+			write.pImageInfo = &allocation.descriptor.imageInfo;
+		else
+			write.pBufferInfo = &allocation.descriptor.bufferInfo;
 		writes.push_back(write);
 	}
 
@@ -579,9 +637,39 @@ void CommandContext::DrawIndexedIndirect(const SceneResource& sceneResource)
 		m_pGraphicsPipeline->vkPipelineLayout(),
 		eDescriptorSet_Push, static_cast<u32>(writes.size()), writes.data());
 
-	const auto& indirectInfo = sceneResource.GetIndirectDrawDescriptorInfo();
-	vkCmdBindIndexBuffer(m_vkCommandBuffer, sceneResource.GetIndexDescriptorInfo().buffer, 0, VK_INDEX_TYPE_UINT32);
+	const auto& indirectInfo = sceneResource.GetIndirectBufferInfo();
+	vkCmdBindIndexBuffer(m_vkCommandBuffer, sceneResource.GetIndexBufferInfo().buffer, 0, VK_INDEX_TYPE_UINT32);
 	vkCmdDrawIndexedIndirect(m_vkCommandBuffer, indirectInfo.buffer, indirectInfo.offset, u32(indirectInfo.range / sizeof(IndirectDrawData)), sizeof(IndirectDrawData));
+}
+
+void CommandContext::Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ)
+{
+	FlushBarriers();
+
+	std::vector< VkWriteDescriptorSet > writes;
+	for (const auto& allocation : m_PushAllocations)
+	{
+		VkWriteDescriptorSet write = {};
+		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		write.dstSet = VK_NULL_HANDLE;
+		write.dstBinding = allocation.binding;
+		write.dstArrayElement = 0;
+		write.descriptorCount = 1;
+		write.descriptorType = allocation.descriptorType;
+		if (allocation.descriptor.bImage)
+		    write.pImageInfo = &allocation.descriptor.imageInfo;
+		else
+			write.pBufferInfo = &allocation.descriptor.bufferInfo;
+		writes.push_back(write);
+	}
+
+	vkCmdPushDescriptorSetKHR(
+		m_vkCommandBuffer,
+		VK_PIPELINE_BIND_POINT_COMPUTE,
+		m_pComputePipeline->vkPipelineLayout(),
+		eDescriptorSet_Push, static_cast<u32>(writes.size()), writes.data());
+
+	vkCmdDispatch(m_vkCommandBuffer, numGroupsX, numGroupsY, numGroupsZ);
 }
 
 void CommandContext::AddBarrier(const VkBufferMemoryBarrier2& barrier, bool bFlushImmediate)

@@ -64,7 +64,7 @@ Texture::Texture(RenderDevice& device, std::wstring_view name)
 Texture::Texture(RenderDevice& device, std::wstring_view name, CreationInfo&& info)
     : Super(device, name, std::move(info), eResourceType::Texture)
 {
-    m_Width = static_cast<u32>(m_ResourceDesc.Width);
+    m_Width  = static_cast<u32>(m_ResourceDesc.Width);
     m_Height = static_cast<u32>(m_ResourceDesc.Height);
     m_Format = m_ResourceDesc.Format;
 
@@ -154,7 +154,7 @@ void Texture::CreateViews()
             d3d12Device->CreateShaderResourceView(m_d3d12Resource, nullptr, m_ShaderResourceView.GetCPUHandle());
         }
         // Create UAV for each mip (only supported for 1D and 2D textures).
-        if ((desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS) != 0 && IsDSVSupported() && desc.DepthOrArraySize == 1)
+        if ((desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS) != 0 && IsUAVSupported() && desc.DepthOrArraySize == 1)
         {
             m_UnorderedAccessView =
                 rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, desc.MipLevels);
@@ -165,6 +165,16 @@ void Texture::CreateViews()
             }
         }
     }
+}
+
+Arc< Texture > Texture::Create(RenderDevice& device, std::wstring_view name, CreationInfo&& desc)
+{
+    return MakeArc< Texture >(device, name, std::move(desc));
+}
+
+Arc<Texture> Texture::CreateEmpty(RenderDevice& device, std::wstring_view name)
+{
+    return MakeArc< Texture >(device, name);
 }
 
 }

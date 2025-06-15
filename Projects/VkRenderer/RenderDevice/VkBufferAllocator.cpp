@@ -173,6 +173,15 @@ void StaticBufferAllocator::Reset()
 	m_Offset = 0;
 }
 
+VkDescriptorBufferInfo StaticBufferAllocator::GetDescriptorInfo(u64 offset) const
+{
+	VkDescriptorBufferInfo descriptorInfo = {};
+	descriptorInfo.buffer = vkBuffer();
+	descriptorInfo.offset = offset;
+	descriptorInfo.range = GetAllocatedSize();
+	return descriptorInfo;
+}
+
 void StaticBufferAllocator::Resize(VkDeviceSize sizeInBytes)
 {
 	VkBufferCreateInfo bufferInfo = {};

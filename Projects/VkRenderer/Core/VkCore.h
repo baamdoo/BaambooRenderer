@@ -59,6 +59,7 @@ enum eDescriptorSetIndexType : u8
 	eStaticSetBindingIndex_IndirectDraw = 2,
 	eStaticSetBindingIndex_Transform = 3,
 	eStaticSetBindingIndex_Material = 4,
+	eStaticSetBindingIndex_Lighting = 5,
 };
 
 

@@ -35,13 +35,14 @@ inline bool LoadRenderer(eRendererAPI eApi, baamboo::Window* pWindow, struct ImG
 	default:
 		return FALSE;
 	}
-	WCHAR wchErrTxt[128] = {};
+	WCHAR wchErrTxt[256] = {};
 	DWORD dwErrCode = 0;
 
 	hEngineDLL = LoadLibrary(enginePath.c_str());
 	if (!hEngineDLL)
 	{
 		dwErrCode = GetLastError();
+		//fs::path absolutePath = fs::absolute(enginePath);
 		swprintf_s(wchErrTxt, L"Fail to LoadLibrary(%s) - Error Code: %u", enginePath.c_str(), dwErrCode);
 		MessageBox(pWindow->WinHandle(), wchErrTxt, L"Error", MB_OK);
 		__debugbreak();

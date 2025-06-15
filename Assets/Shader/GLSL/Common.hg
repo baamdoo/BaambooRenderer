@@ -1,0 +1,19 @@
+#ifndef _GLSL_COMMON_HEADER
+#define _GLSL_COMMON_HEADER
+
+#extension GL_GOOGLE_include_directive: require
+#include "../Common.bsh"
+
+#ifdef _CAMERA
+layout(set = SET_PUSH, binding = 0) uniform Camera 
+{ 
+	mat4  mProj;
+	mat4  mView;
+	mat4  mViewProj;
+
+	vec3  posWORLD;
+	float padding;
+} g_Camera;
+#endif
+
+#endif // _GLSL_COMMON_HEADER

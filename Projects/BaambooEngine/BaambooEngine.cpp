@@ -182,6 +182,9 @@ void Engine::GameLoop(float dt)
 {
 	ProcessInput();
 
+	if (m_pScene == nullptr)
+		return;
+
 	std::lock_guard< std::mutex > lock(m_ImGuiMutex);
 
 	m_pScene->Update(dt);
@@ -416,6 +419,105 @@ void Engine::DrawUI()
 					if (bMark)
 					{
 						m_pScene->Registry().patch< MaterialComponent >(ImGui::SelectedEntity.ID(), [](auto&) {});
+					}
+				}
+			}
+
+			if (ImGui::SelectedEntity.HasAll< LightComponent >())
+			{
+				if (ImGui::CollapsingHeader("Light"))
+				{
+					auto& component = ImGui::SelectedEntity.GetComponent< LightComponent >();
+
+					const char* lightTypes[] = { "Directional", "Point", "Spot" };
+					int currentType = (int)component.type;
+					if (ImGui::Combo("Type", &currentType, lightTypes, IM_ARRAYSIZE(lightTypes)))
+					{
+						component.type = (eLightType)currentType;
+
+						switch (component.type)
+						{
+						case eLightType::Directional:
+							component.SetDefaultDirectionalLight();
+							break;
+						case eLightType::Point:
+							component.SetDefaultPoint();
+							break;
+						case eLightType::Spot:
+							component.SetDefaultSpot();
+							break;
+						}
+					}
+
+					ImGui::ColorEdit3("Color", &component.color.x);
+
+					if (ImGui::DragFloat("Temperature (K)", &component.temperature_K, 10.0f, 0.0f, 10000.0f))
+					{
+						// Temperature of 0 means use RGB color
+					}
+					if (ImGui::IsItemHovered())
+					{
+						ImGui::BeginTooltip();
+						ImGui::EndTooltip();
+					}
+
+
+					switch (component.type)
+					{
+
+					case eLightType::Directional:
+					{
+						ImGui::DragFloat("Illuminance (lux)", &component.illuminance_lux, 0.1f, 0.0f, 10.0f, "%.1f");
+						if (ImGui::IsItemHovered())
+						{
+							ImGui::BeginTooltip();
+							ImGui::EndTooltip();
+						}
+
+						float angularRadius = glm::degrees(component.angularRadius_rad);
+						if (ImGui::DragFloat("Angular Radius (deg)", &angularRadius, 0.01f, 0.0f, 10.0f, "%.3f"))
+						{
+							component.angularRadius_rad = glm::radians(angularRadius);
+						}
+						break;
+					}
+					case eLightType::Point:
+					{
+						ImGui::DragFloat("Power (lm)", &component.luminousPower_lm, 10.0f, 0.0f, 10000.0f, "%.0f");
+						if (ImGui::IsItemHovered())
+						{
+							ImGui::BeginTooltip();
+							ImGui::EndTooltip();
+						}
+						ImGui::DragFloat("Source Radius (m)", &component.radius_m, 0.001f, 0.001f, 1.0f, "%.3f");
+						break;
+					}
+					case eLightType::Spot:
+					{
+						ImGui::DragFloat("Power (lumens)", &component.luminousPower_lm, 10.0f, 0.0f, 10000.0f, "%.0f");
+						ImGui::DragFloat("Source Radius (m)", &component.radius_m, 0.001f, 0.001f, 1.0f, "%.3f");
+
+						float innerAngle = glm::degrees(component.innerConeAngle_rad);
+						float outerAngle = glm::degrees(component.outerConeAngle_rad);
+
+						if (ImGui::DragFloat("Inner Angle (deg)", &innerAngle, 1.0f, 0.0f, 90.0f, "%.1f"))
+						{
+							component.innerConeAngle_rad = glm::radians(innerAngle);
+
+							if (component.outerConeAngle_rad <= component.innerConeAngle_rad)
+								component.outerConeAngle_rad = component.innerConeAngle_rad + glm::radians(1.0f);
+						}
+
+						if (ImGui::DragFloat("Outer Angle (deg)", &outerAngle, 1.0f, 0.0f, 90.0f, "%.1f"))
+						{
+							component.outerConeAngle_rad = glm::radians(outerAngle);
+
+							if (component.innerConeAngle_rad >= component.outerConeAngle_rad)
+								component.innerConeAngle_rad = component.outerConeAngle_rad - glm::radians(1.0f);
+						}
+						break;
+					}
+
 					}
 				}
 			}

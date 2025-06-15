@@ -51,6 +51,23 @@ u32 DescriptorHeap::StageDescriptors(u32 rootIndex, u32 numDescriptors, u32 offs
     d3d12Device->CopyDescriptorsSimple(numDescriptors, dstHandle, srcHandle, m_Type);
 
     m_DescriptorTableDirtyFlags |= (1LL << rootIndex);
+
+    return allocation.Index(offset);
+}
+
+u32 DescriptorHeap::StageDescriptors(u32 rootIndex, u32 offset, std::vector< D3D12_CPU_DESCRIPTOR_HANDLE >&& srcHandles)
+{
+    u32 numDescriptors = static_cast<u32>(srcHandles.size());
+    assert(rootIndex < MAX_ROOT_INDEX && numDescriptors < m_NumDescriptors && offset + numDescriptors < m_NumDescriptors);
+
+    auto d3d12Device = m_RenderDevice.GetD3D12Device();
+    m_CachedDescriptorAllocations[rootIndex] = m_pDescriptorPool->Allocate(numDescriptors);
+
+    auto& allocation = m_CachedDescriptorAllocations[rootIndex];
+    auto  dstHandle  = allocation.GetCPUHandle(offset);
+    d3d12Device->CopyDescriptorsSimple(numDescriptors, dstHandle, *srcHandles.data(), m_Type);
+
+    m_DescriptorTableDirtyFlags |= (1LL << rootIndex);
     
     return allocation.Index(offset);
 }

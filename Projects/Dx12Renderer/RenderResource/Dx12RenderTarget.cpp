@@ -33,7 +33,7 @@ void RenderTarget::ClearTexture(CommandContext& context, eAttachmentPoint attach
 
     if (m_pAttachments[eAttachmentPoint::DepthStencil] && (attachmentPoint == eAttachmentPoint::All || attachmentPoint == eAttachmentPoint::DepthStencil))
     {
-        const auto& desc = m_pAttachments[eAttachmentPoint::DepthStencil]->GetResourceDesc();
+        const auto& desc = m_pAttachments[eAttachmentPoint::DepthStencil]->Desc();
 
         const D3D12_CLEAR_FLAGS flags = desc.Format == DXGI_FORMAT_D32_FLOAT ? D3D12_CLEAR_FLAG_DEPTH : D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL;
         context.ClearDepthStencilTexture(m_pAttachments[eAttachmentPoint::DepthStencil], flags);

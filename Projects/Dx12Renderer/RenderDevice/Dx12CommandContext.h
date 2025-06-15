@@ -17,6 +17,17 @@ class Buffer;
 class Texture;
 class SceneResource;
 
+class SyncObject
+{
+public:
+	SyncObject(u64 fenceValue, CommandQueue& cmdQueue) : m_FenceValue(fenceValue), m_CommandQueue(cmdQueue) {}
+	void Wait();
+
+private:
+	u64           m_FenceValue;
+	CommandQueue& m_CommandQueue;
+};
+
 class CommandContext
 {
 public:
@@ -25,6 +36,7 @@ public:
 
 	void Open();
 	void Close();
+	SyncObject Execute();
 
 	void TransitionBarrier(const Arc< Resource >& pResource, D3D12_RESOURCE_STATES stateAfter, u32 subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, bool bFlushImmediate = true);
 	void UAVBarrier(const Arc< Resource >& pResource, bool bFlushImmediate = false);
@@ -46,8 +58,8 @@ public:
 	void SetScissorRect(const D3D12_RECT& scissorRect);
 	void SetScissorRects(const std::vector< D3D12_RECT >& scissorRects);
 
-	void SetPipelineState(GraphicsPipeline* pGraphicsPipelineState);
-	void SetPipelineState(ComputePipeline* pComputePipelineState);
+	void SetRenderPipeline(GraphicsPipeline* pGraphicsPipelineState);
+	void SetRenderPipeline(ComputePipeline* pComputePipelineState);
 
 	void SetGraphicsRootSignature(RootSignature* pRootSignature);
 	void SetComputeRootSignature(RootSignature* pRootSignature);
@@ -66,7 +78,10 @@ public:
 		SetGraphicsDynamicConstantBuffer(rootIndex, sizeof(T), &data);
 	}
 
+	void SetGraphicsConstantBufferView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle);
 	void SetGraphicsShaderResourceView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle);
+	void SetComputeShaderResourceView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle);
+	void SetComputeUnorderedAccessView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle);
 
 	void StageDescriptors(
 		u32 rootIndex,
@@ -75,11 +90,41 @@ public:
 		D3D12_CPU_DESCRIPTOR_HANDLE srcHandle,
 		D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
+	void StageDescriptors(
+		u32 rootIndex,
+		u32 offset,
+		std::vector< D3D12_CPU_DESCRIPTOR_HANDLE >&& srcHandles,
+		D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
 	void Draw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t startVertex = 0, uint32_t startInstance = 0);
 	void DrawIndexed(uint32_t indexCount, uint32_t instanceCount = 1, uint32_t startIndex = 0, int32_t baseVertex = 0, uint32_t startInstance = 0);
 	void DrawIndexedIndirect(const SceneResource& sceneResource);
 
-	void Dispatch(uint32_t numGroupsX, uint32_t numGroupsY = 1, uint32_t numGroupsZ = 1);
+	void Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ);
+
+	template< u32 numThreadsPerGroupX >
+	void Dispatch1D(u32 numThreadsX)
+	{
+		u32 numGroupsX = RoundUpAndDivide(numThreadsX, numThreadsPerGroupX);
+		Dispatch(numGroupsX, 1, 1);
+	}
+
+	template< u32 numThreadsPerGroupX, u32 numThreadsPerGroupY >
+	void Dispatch2D(u32 numThreadsX, u32 numThreadsY)
+	{
+		u32 numGroupsX = RoundUpAndDivide(numThreadsX, numThreadsPerGroupX);
+		u32 numGroupsY = RoundUpAndDivide(numThreadsY, numThreadsPerGroupY);
+		Dispatch(numGroupsX, numGroupsY, 1);
+	}
+
+	template< u32 numThreadsPerGroupX, u32 numThreadsPerGroupY, u32 numThreadsPerGroupZ >
+	void Dispatch3D(u32 numThreadsX, u32 numThreadsY, u32 numThreadsZ)
+	{
+		u32 numGroupsX = RoundUpAndDivide(numThreadsX, numThreadsPerGroupX);
+		u32 numGroupsY = RoundUpAndDivide(numThreadsY, numThreadsPerGroupY);
+		u32 numGroupsZ = RoundUpAndDivide(numThreadsZ, numThreadsPerGroupZ);
+		Dispatch(numGroupsX, numGroupsY, numGroupsZ);
+	}
 
 private:
 	void AddBarrier(const D3D12_RESOURCE_BARRIER& barrier, bool bFlushImmediate);
@@ -90,6 +135,12 @@ private:
 public:
 	D3D12_COMMAND_LIST_TYPE GetCommandListType() const { return m_Type; }
 	ID3D12GraphicsCommandList2* GetD3D12CommandList() const { return m_d3d12CommandList; }
+
+	template< typename T >
+	constexpr T RoundUpAndDivide(T Value, size_t Alignment)
+	{
+		return (T)((Value + Alignment - 1) / Alignment);
+	}
 
 private:
 	RenderDevice&           m_RenderDevice;

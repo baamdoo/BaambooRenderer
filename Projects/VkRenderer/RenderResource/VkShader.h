@@ -24,8 +24,8 @@ public:
 
 	struct ShaderReflection
 	{
-		std::vector< VkPushConstantRange >        pushConstants;
-		std::unordered_map< u32, DescriptorInfo > descriptors;
+		std::vector< VkPushConstantRange >                       pushConstants;
+		std::unordered_map< u32, std::vector< DescriptorInfo > > descriptors;
 	};
 
 	static Arc< Shader > Create(RenderDevice& device, std::string_view name, CreationInfo&& info);

@@ -6,6 +6,12 @@
 
 #define INVALID_INDEX 0xffffffff
 
+#define PI             3.14159265359
+#define PI_MUL(num)   (PI * num)
+#define PI_DIV(denom) (PI / denom)
+
+#define EPSILON    0.00001
+
 struct Vertex
 {
 	float posX, posY, posZ;
@@ -14,21 +20,81 @@ struct Vertex
 	float tangentX, tangentY, tangentZ;
 };
 
+
+//-------------------------------------------------------------------------
+// Material
+//-------------------------------------------------------------------------
 struct MaterialData 
 {
 	float tintR, tintG, tintB; 
 	float metallic; 
-	float roughness; 
-	float padding0, padding1, padding2;
+	float roughness;
+	float ior;
+	float padding0, padding1;
 
 	uint albedoID;
 	uint normalID;
 	uint specularID;
-	uint aoID;
-	uint roughnessID;
-	uint metallicID;
+	uint metallicRoughnessAoID;
 	uint emissiveID;
 	uint padding3;
+};
+
+
+//-------------------------------------------------------------------------
+// Light
+//-------------------------------------------------------------------------
+#define LUMENS_PER_CANDELA 4.0 * PI
+
+struct DirectionalLight
+{
+	float dirX, dirY, dirZ;
+	float illuminance_lux; // lm/m^2
+	float colorR, colorG, colorB;
+	float angularRadius_rad;
+	float temperature_K;
+	float padding0, padding1, padding2;
+};
+
+struct PointLight
+{
+	float posX, posY, posZ;
+	float luminousPower_lm;
+	float colorR, colorG, colorB;
+	float radius_m;
+	float temperature_K;
+	float padding0, padding1, padding2;
+};
+
+struct SpotLight
+{
+	float posX, posY, posZ;
+	float luminousPower_lm;
+	float dirX, dirY, dirZ;
+	float radius_m;
+	float colorR, colorG, colorB;
+	float innerConeAngle_rad;
+	float outerConeAngle_rad;
+	float temperature_K;
+	float padding0, padding1;
+};
+
+#define MAX_DIRECTIONAL_LIGHT 4
+#define MAX_POINT_LIGHT       512
+#define MAX_SPOT_LIGHT        32
+struct LightingData
+{
+	DirectionalLight directionals[MAX_DIRECTIONAL_LIGHT];
+	PointLight       points[MAX_POINT_LIGHT];
+	SpotLight        spots[MAX_SPOT_LIGHT];
+
+	uint  numDirectionals;
+	uint  numPoints;
+	uint  numSpots;
+	float exposure;
+
+	float ambientIntensity;
+	float ambientColorR, ambientColorG, ambientColorB;
 };
 
 #endif // _COMMON_HEADER

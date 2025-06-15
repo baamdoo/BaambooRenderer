@@ -70,7 +70,6 @@ void Renderer::Render(SceneRenderView&& renderView)
 		camera.mProj     = ApplyVulkanNDC(renderView.camera.mProj);
 		camera.mViewProj = camera.mProj * camera.mView;
 		camera.position  = renderView.camera.pos;
-		context.SetGraphicsDynamicUniformBuffer(0, camera);
 
 		g_FrameData.camera = std::move(camera);
 		
@@ -116,7 +115,7 @@ void Renderer::EndFrame(CommandContext& context)
 	
 	if (g_FrameData.pColor.valid())
 	{
-		context.CopyTexture(pBackBuffer, g_FrameData.pColor.lock());
+		context.BlitTexture(pBackBuffer, g_FrameData.pColor.lock());
 	}
 	context.TransitionImageLayout(
 		pBackBuffer,

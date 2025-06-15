@@ -219,14 +219,15 @@ void Texture::Resize(u32 width, u32 height, u32 depth)
 	CreateImageAndView(m_CreationInfo);
 }
 
-void Texture::SetResource(VkImage vkImage, VkImageView vkImageView, VmaAllocation vmaAllocation, VkImageAspectFlags aspectMask)
+void Texture::SetResource(VkImage vkImage, VkImageView vkImageView, VkImageCreateInfo createInfo, VmaAllocation vmaAllocation, VkImageAspectFlags aspectMask)
 {
 	assert(!m_vkImage && !m_vkImageView);
 
-	m_vkImage = vkImage;
-	m_vkImageView = vkImageView;
+	m_vkImage       = vkImage;
+	m_vkImageView   = vkImageView;
+	m_Desc          = createInfo;
 	m_vmaAllocation = vmaAllocation;
-	m_AspectFlags = aspectMask;
+	m_AspectFlags   = aspectMask;
 }
 
 } // namespace vk

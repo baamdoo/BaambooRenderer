@@ -19,11 +19,11 @@ public:
 	~GraphicsPipeline();
 
 	GraphicsPipeline& SetShaderModules(
-		Box< Shader > vs,
-		Box< Shader > ps,
-		Box< Shader > gs = nullptr,
-		Box< Shader > hs = nullptr,
-		Box< Shader > ds = nullptr);
+		Arc< Shader > pVS,
+		Arc< Shader > pPS,
+		Arc< Shader > pGS = nullptr,
+		Arc< Shader > pHS = nullptr,
+		Arc< Shader > pDS = nullptr);
 	GraphicsPipeline& SetRootSignature(RootSignature* pRootSignature);
 	GraphicsPipeline& SetRenderTargetFormats(const RenderTarget& renderTarget);
 
@@ -48,11 +48,11 @@ private:
 	RenderDevice& m_RenderDevice;
 	std::wstring   m_Name;
 
-	Box< Shader > m_VS;
-	Box< Shader > m_PS;
-	Box< Shader > m_GS;
-	Box< Shader > m_HS;
-	Box< Shader > m_DS;
+	Arc< Shader > m_pVS;
+	Arc< Shader > m_pPS;
+	Arc< Shader > m_pGS;
+	Arc< Shader > m_pHS;
+	Arc< Shader > m_pDS;
 
 	ID3D12PipelineState* m_d3d12PipelineState = nullptr;
 
@@ -70,8 +70,8 @@ public:
 	ComputePipeline(RenderDevice& device, const std::wstring& name);
 	~ComputePipeline();
 
-	void SetShaderModules(Box< Shader > cs);
-	void SetRootSignature(RootSignature* pRootSignature);
+	ComputePipeline& SetShaderModules(Arc< Shader > pCS);
+	ComputePipeline& SetRootSignature(RootSignature* pRootSignature);
 
 	void Build();
 
@@ -82,7 +82,7 @@ private:
 	RenderDevice& m_RenderDevice;
 	std::wstring   m_Name;
 
-	Box< Shader > m_CS;
+	Arc< Shader > m_pCS;
 
 	ID3D12PipelineState* m_d3d12PipelineState = nullptr;
 

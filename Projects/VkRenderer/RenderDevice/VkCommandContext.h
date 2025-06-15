@@ -58,6 +58,7 @@ public:
         const std::vector< VkBufferImageCopy >& regions, 
         bool bAllSubresources = true);
     void CopyTexture(Arc< Texture > pDstTexture, Arc< Texture > pSrcTexture);
+    void BlitTexture(Arc< Texture > pDstTexture, Arc< Texture > pSrcTexture);
     void GenerateMips(Arc< Texture > pTexture);
 
     // todo. unlock other types of barrier
@@ -101,6 +102,32 @@ public:
     void Draw(u32 vertexCount, u32 instanceCount = 1, u32 firstVertex = 0, u32 firstInstance = 0);
     void DrawIndexed(u32 indexCount, u32 instanceCount = 1, u32 firstIndex = 0, i32 vertexOffset = 0, u32 firstInstance = 0);
     void DrawIndexedIndirect(const SceneResource& sceneResource);
+    
+    void Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ);
+
+    template< u32 numThreadsPerGroupX >
+    void Dispatch1D(u32 numThreadsX)
+    {
+        u32 numGroupsX = RoundUpAndDivide(numThreadsX, numThreadsPerGroupX);
+        Dispatch(numGroupsX, 1, 1);
+    }
+
+    template< u32 numThreadsPerGroupX, u32 numThreadsPerGroupY >
+    void Dispatch2D(u32 numThreadsX, u32 numThreadsY)
+    {
+        u32 numGroupsX = RoundUpAndDivide(numThreadsX, numThreadsPerGroupX);
+        u32 numGroupsY = RoundUpAndDivide(numThreadsY, numThreadsPerGroupY);
+        Dispatch(numGroupsX, numGroupsY, 1);
+    }
+
+    template< u32 numThreadsPerGroupX, u32 numThreadsPerGroupY, u32 numThreadsPerGroupZ >
+    void Dispatch3D(u32 numThreadsX, u32 numThreadsY, u32 numThreadsZ)
+    {
+        u32 numGroupsX = RoundUpAndDivide(numThreadsX, numThreadsPerGroupX);
+        u32 numGroupsY = RoundUpAndDivide(numThreadsY, numThreadsPerGroupY);
+        u32 numGroupsZ = RoundUpAndDivide(numThreadsZ, numThreadsPerGroupZ);
+        Dispatch(numGroupsX, numGroupsY, numGroupsZ);
+    }
 
     [[nodiscard]]
     bool IsFenceComplete() const;
@@ -125,6 +152,12 @@ private:
     void AddBarrier(const VkBufferMemoryBarrier2& barrier, bool bFlushImmediate);
     void AddBarrier(const VkImageMemoryBarrier2& barrier, bool bFlushImmediate);
     void FlushBarriers();
+
+    template< typename T >
+    constexpr T RoundUpAndDivide(T Value, size_t Alignment)
+    {
+        return (T)((Value + Alignment - 1) / Alignment);
+    }
 
 private:
     friend class CommandQueue;

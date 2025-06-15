@@ -96,6 +96,9 @@ public:
     [[nodiscard]]
     u64 GetAllocatedSize() const { return m_Offset; }
 
+    [[nodiscard]]
+    VkDescriptorBufferInfo GetDescriptorInfo(u64 offset = 0) const;
+
 private:
     void Resize(VkDeviceSize sizeInBytes);
 

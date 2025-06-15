@@ -83,8 +83,8 @@ void SwapChain::Init()
 		                            .AddImageUsage(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
 		                            .Build(m_RenderDevice.vkDevice(), m_RenderDevice.GraphicsQueue().Index(), oldSwapchain);
 
-	m_ImageCount = swapChainBuilder.imageCount;
-	m_ImageFormat = swapChainBuilder.selectedSurface.format;
+	m_ImageCount   = swapChainBuilder.imageCount;
+	m_ImageFormat  = swapChainBuilder.selectedSurface.format;
 	m_Capabilities = swapChainBuilder.capabilities;
 	if (oldSwapchain)
 		Release(oldSwapchain);
@@ -123,8 +123,17 @@ void SwapChain::Init()
 		VK_CHECK(vkCreateImageView(m_RenderDevice.vkDevice(), &imageViewInfo, nullptr, &imageViews[i]));
 
 		auto pTex = Texture::CreateEmpty(m_RenderDevice, "SwapChainBuffer_" + std::to_string(i));
-		pTex->SetResource(images[i], imageViews[i], VK_NULL_HANDLE, VK_IMAGE_ASPECT_COLOR_BIT);
-
+		pTex->SetResource(
+			images[i],
+			imageViews[i],
+			{
+				.imageType = VK_IMAGE_TYPE_2D,
+				.format    = m_ImageFormat,
+				.extent    = { (u32)m_Window.Desc().width, (u32)m_Window.Desc().height, 1 }, 
+			}, 
+			VK_NULL_HANDLE, 
+			VK_IMAGE_ASPECT_COLOR_BIT);
+		
 		m_BackBuffers[i] = pTex;
 	}
 

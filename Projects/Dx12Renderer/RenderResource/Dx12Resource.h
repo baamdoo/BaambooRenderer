@@ -81,11 +81,13 @@ public:
 	inline bool IsValid() const { return m_d3d12Resource != nullptr; }
 
 	[[nodiscard]]
-	inline ID3D12Resource* GetD3D12Resource() const { return m_d3d12Resource; }
+	ID3D12Resource* GetD3D12Resource() const { return m_d3d12Resource; }
 	[[nodiscard]]
-	inline D3D12_RESOURCE_DESC GetResourceDesc() const { return m_ResourceDesc; }
+	D3D12_RESOURCE_DESC Desc() const { return m_ResourceDesc; }
 	[[nodiscard]]
-	inline const ResourceState& GetCurrentState() const { return m_CurrentState; }
+	const ResourceState& GetCurrentState() const { return m_CurrentState; }
+	[[nodiscard]]
+	D3D12_GPU_VIRTUAL_ADDRESS GpuAddress() const { assert(GetD3D12Resource()); return GetD3D12Resource()->GetGPUVirtualAddress(); }
 
 	virtual void SetD3D12Resource(ID3D12Resource* d3d12Resource, D3D12_RESOURCE_STATES states);
 	void SetCurrentState(D3D12_RESOURCE_STATES state, u32 subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES) { m_CurrentState.SetSubresourceState(state, subresource); }

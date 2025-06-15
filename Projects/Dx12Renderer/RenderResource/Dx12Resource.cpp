@@ -36,11 +36,15 @@ Resource::Resource(RenderDevice& device, std::wstring_view name, ResourceCreatio
 		break;
 
 	case eResourceType::Texture:
-		assert(info.clearValue.Format == info.desc.Format);
+		m_pClearValue = nullptr;
+		if (info.clearValue.Format != DXGI_FORMAT_UNKNOWN)
+		{
+			assert(info.clearValue.Format == info.desc.Format);
 
-		m_pClearValue = new D3D12_CLEAR_VALUE();
-		m_pClearValue->Format = info.clearValue.Format;
-		memcpy(&(m_pClearValue->Color), &info.clearValue.Color[0], sizeof(info.clearValue.Color));
+			m_pClearValue = new D3D12_CLEAR_VALUE();
+			m_pClearValue->Format = info.clearValue.Format;
+			memcpy(&(m_pClearValue->Color), &info.clearValue.Color[0], sizeof(info.clearValue.Color));
+		}
 
 		ThrowIfFailed(d3d12Device->CreateCommittedResource(
 			&info.heapProps, info.heapFlags,

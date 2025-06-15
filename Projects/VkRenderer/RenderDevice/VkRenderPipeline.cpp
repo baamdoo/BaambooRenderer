@@ -140,14 +140,17 @@ GraphicsPipeline& GraphicsPipeline::SetShaders(
 
 	// vs
 	const auto& vsReflection = pVS->Reflection();
-	for (const auto& [set, info] : vsReflection.descriptors)
+	for (const auto& [set, infos] : vsReflection.descriptors)
 	{
-		VkDescriptorSetLayoutBinding layoutBinding = {};
-		layoutBinding.binding = info.binding;
-		layoutBinding.descriptorCount = 1;
-		layoutBinding.descriptorType = info.descriptorType;
-		layoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-		descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
+		for (const auto& info : infos)
+		{
+			VkDescriptorSetLayoutBinding layoutBinding = {};
+			layoutBinding.binding = info.binding;
+			layoutBinding.descriptorCount = 1;
+			layoutBinding.descriptorType = info.descriptorType;
+			layoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+			descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
+		}
 
 		maxSet = maxSet < (i32)set ? (i32)set : maxSet;
 	}
@@ -156,20 +159,23 @@ GraphicsPipeline& GraphicsPipeline::SetShaders(
 	if (pFS)
 	{
 		const auto& fsReflection = pFS->Reflection();
-		for (const auto& [set, info] : fsReflection.descriptors)
+		for (const auto& [set, infos] : fsReflection.descriptors)
 		{
-			if (descriptorSetLayoutBindingMap[set].contains(info.binding))
+			for (const auto& info : infos)
 			{
-				descriptorSetLayoutBindingMap[set][info.binding].stageFlags |= VK_SHADER_STAGE_FRAGMENT_BIT;
-			}
-			else
-			{
-				VkDescriptorSetLayoutBinding layoutBinding = {};
-				layoutBinding.binding = info.binding;
-				layoutBinding.descriptorCount = 1;
-				layoutBinding.descriptorType = info.descriptorType;
-				layoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-				descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
+				if (descriptorSetLayoutBindingMap[set].contains(info.binding))
+				{
+					descriptorSetLayoutBindingMap[set][info.binding].stageFlags |= VK_SHADER_STAGE_FRAGMENT_BIT;
+				}
+				else
+				{
+					VkDescriptorSetLayoutBinding layoutBinding = {};
+					layoutBinding.binding = info.binding;
+					layoutBinding.descriptorCount = 1;
+					layoutBinding.descriptorType = info.descriptorType;
+					layoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+					descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
+				}
 			}
 
 			maxSet = maxSet < (i32)set ? (i32)set : maxSet;
@@ -180,20 +186,23 @@ GraphicsPipeline& GraphicsPipeline::SetShaders(
 	if (pGS)
 	{
 		const auto& gsReflection = pGS->Reflection();
-		for (const auto& [set, info] : gsReflection.descriptors)
+		for (const auto& [set, infos] : gsReflection.descriptors)
 		{
-			if (descriptorSetLayoutBindingMap[set].contains(info.binding))
+			for (const auto& info : infos)
 			{
-				descriptorSetLayoutBindingMap[set][info.binding].stageFlags |= VK_SHADER_STAGE_GEOMETRY_BIT;
-			}
-			else
-			{
-				VkDescriptorSetLayoutBinding layoutBinding = {};
-				layoutBinding.binding = info.binding;
-				layoutBinding.descriptorCount = 1;
-				layoutBinding.descriptorType = info.descriptorType;
-				layoutBinding.stageFlags = VK_SHADER_STAGE_GEOMETRY_BIT;
-				descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
+				if (descriptorSetLayoutBindingMap[set].contains(info.binding))
+				{
+					descriptorSetLayoutBindingMap[set][info.binding].stageFlags |= VK_SHADER_STAGE_GEOMETRY_BIT;
+				}
+				else
+				{
+					VkDescriptorSetLayoutBinding layoutBinding = {};
+					layoutBinding.binding = info.binding;
+					layoutBinding.descriptorCount = 1;
+					layoutBinding.descriptorType = info.descriptorType;
+					layoutBinding.stageFlags = VK_SHADER_STAGE_GEOMETRY_BIT;
+					descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
+				}
 			}
 
 			maxSet = maxSet < (i32)set ? (i32)set : maxSet;
@@ -204,20 +213,23 @@ GraphicsPipeline& GraphicsPipeline::SetShaders(
 	if (pHS)
 	{
 		const auto& hsReflection = pHS->Reflection();
-		for (const auto& [set, info] : hsReflection.descriptors)
+		for (const auto& [set, infos] : hsReflection.descriptors)
 		{
-			if (descriptorSetLayoutBindingMap[set].contains(info.binding))
+			for (const auto& info : infos)
 			{
-				descriptorSetLayoutBindingMap[set][info.binding].stageFlags |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-			}
-			else
-			{
-				VkDescriptorSetLayoutBinding layoutBinding = {};
-				layoutBinding.binding = info.binding;
-				layoutBinding.descriptorCount = 1;
-				layoutBinding.descriptorType = info.descriptorType;
-				layoutBinding.stageFlags = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-				descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
+				if (descriptorSetLayoutBindingMap[set].contains(info.binding))
+				{
+					descriptorSetLayoutBindingMap[set][info.binding].stageFlags |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+				}
+				else
+				{
+					VkDescriptorSetLayoutBinding layoutBinding = {};
+					layoutBinding.binding = info.binding;
+					layoutBinding.descriptorCount = 1;
+					layoutBinding.descriptorType = info.descriptorType;
+					layoutBinding.stageFlags = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+					descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
+				}
 			}
 
 			maxSet = maxSet < (i32)set ? (i32)set : maxSet;
@@ -228,20 +240,23 @@ GraphicsPipeline& GraphicsPipeline::SetShaders(
 	if (pDS)
 	{
 		const auto& dsReflection = pDS->Reflection();
-		for (const auto& [set, info] : dsReflection.descriptors)
+		for (const auto& [set, infos] : dsReflection.descriptors)
 		{
-			if (descriptorSetLayoutBindingMap[set].contains(info.binding))
+			for (const auto& info : infos)
 			{
-				descriptorSetLayoutBindingMap[set][info.binding].stageFlags |= VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-			}
-			else
-			{
-				VkDescriptorSetLayoutBinding layoutBinding = {};
-				layoutBinding.binding = info.binding;
-				layoutBinding.descriptorCount = 1;
-				layoutBinding.descriptorType = info.descriptorType;
-				layoutBinding.stageFlags = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-				descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
+				if (descriptorSetLayoutBindingMap[set].contains(info.binding))
+				{
+					descriptorSetLayoutBindingMap[set][info.binding].stageFlags |= VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+				}
+				else
+				{
+					VkDescriptorSetLayoutBinding layoutBinding = {};
+					layoutBinding.binding = info.binding;
+					layoutBinding.descriptorCount = 1;
+					layoutBinding.descriptorType = info.descriptorType;
+					layoutBinding.stageFlags = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+					descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
+				}
 			}
 
 			maxSet = maxSet < (i32)set ? (i32)set : maxSet;
@@ -573,8 +588,9 @@ void GraphicsPipeline::Build()
 //-------------------------------------------------------------------------
 // Compute Pipeline
 //-------------------------------------------------------------------------
-ComputePipeline::ComputePipeline(RenderDevice& device)
+ComputePipeline::ComputePipeline(RenderDevice& device, std::string name)
 	: m_RenderDevice(device)
+	, m_Name(name)
 {
 }
 
@@ -582,6 +598,165 @@ ComputePipeline::~ComputePipeline()
 {
 	vkDestroyPipeline(m_RenderDevice.vkDevice(), m_vkPipeline, nullptr);
 	vkDestroyPipelineLayout(m_RenderDevice.vkDevice(), m_vkPipelineLayout, nullptr);
+	for (u32 i = 1; i < m_vkSetLayouts.size(); ++i)
+	{
+		if (m_vkSetLayouts[i] == m_RenderDevice.GetEmptyDescriptorSetLayout())
+			continue;
+
+		vkDestroyDescriptorSetLayout(m_RenderDevice.vkDevice(), m_vkSetLayouts[i], nullptr);
+	}
+}
+
+ComputePipeline& ComputePipeline::SetComputeShader(Arc<Shader> pCS)
+{
+	assert(pCS);
+	m_pCS = pCS;
+
+
+	// **
+	// Construct descriptor-set layout
+	// **
+	i32 maxSet = -1;
+	std::unordered_map< u32, std::unordered_map< u32, VkDescriptorSetLayoutBinding > > descriptorSetLayoutBindingMap;
+
+	// vs
+	const auto& csReflection = m_pCS->Reflection();
+	for (const auto& [set, infos] : csReflection.descriptors)
+	{
+		for (const auto& info : infos)
+		{
+			VkDescriptorSetLayoutBinding layoutBinding = {};
+			layoutBinding.binding = info.binding;
+			layoutBinding.descriptorCount = 1;
+			layoutBinding.descriptorType = info.descriptorType;
+			layoutBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+			descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
+		}
+
+		maxSet = maxSet < (i32)set ? (i32)set : maxSet;
+	}
+
+	m_vkSetLayouts.clear();
+	m_vkSetLayouts.resize(maxSet + 1);
+	for (const auto& [set, binding] : descriptorSetLayoutBindingMap)
+	{
+		if (set == eDescriptorSet_Static)
+		{
+			m_vkSetLayouts[eDescriptorSet_Static] = g_FrameData.pSceneResource->GetSceneDescriptorSetLayout();
+			continue;
+		}
+
+		std::vector< VkDescriptorSetLayoutBinding > bindings;
+		for (auto& [_, info] : descriptorSetLayoutBindingMap[set])
+		{
+			assert((info.descriptorType != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || set == eDescriptorSet_Push)
+				&& "All uniform-buffers should be placed in push descriptor set!");
+			bindings.push_back(info);
+		}
+
+		/** Descriptor set layout **/
+		VkDescriptorSetLayoutCreateInfo layoutInfo = {};
+		layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		layoutInfo.bindingCount = static_cast<u32>(bindings.size());
+		layoutInfo.pBindings = bindings.data();
+		if (set == eDescriptorSet_Push)
+		{
+			layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
+		}
+		VK_CHECK(vkCreateDescriptorSetLayout(m_RenderDevice.vkDevice(), &layoutInfo, nullptr, &m_vkSetLayouts[set]));
+
+		if (set > eDescriptorSet_Push)
+		{
+			auto& descriptorSet = m_RenderDevice.AllocateDescriptorSet(m_vkSetLayouts[set]);
+			m_DescriptorTable.emplace(set, descriptorSet);
+		}
+	}
+
+	for (auto& vkSetLayout : m_vkSetLayouts)
+	{
+		if (vkSetLayout == VK_NULL_HANDLE)
+			vkSetLayout = m_RenderDevice.GetEmptyDescriptorSetLayout();
+	}
+
+	// **
+	// Push constants
+	// **
+	std::vector< VkPushConstantRange > pushConstants;
+	const auto& resourceInfo = m_pCS->Reflection();
+	pushConstants.append_range(resourceInfo.pushConstants);
+
+
+	// **
+	// Create pipeline layout
+	// **
+	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
+	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	pipelineLayoutInfo.setLayoutCount = static_cast<u32>(m_vkSetLayouts.size());
+	pipelineLayoutInfo.pSetLayouts = m_vkSetLayouts.data();
+	pipelineLayoutInfo.pushConstantRangeCount = static_cast<u32>(pushConstants.size());
+	pipelineLayoutInfo.pPushConstantRanges = pushConstants.data();
+	VK_CHECK(vkCreatePipelineLayout(m_RenderDevice.vkDevice(), &pipelineLayoutInfo, nullptr, &m_vkPipelineLayout));
+
+	return *this;
+}
+
+void ComputePipeline::Build()
+{
+	// **
+	// Pipeline
+	// **
+
+	// Pipeline cache
+	std::string filename   = m_Name + ".cache";
+	const bool bCacheExist = FileIO::FileExist(PIPELINE_PATH.string() + filename);
+
+	VkPipelineCache vkPipelineCache = VK_NULL_HANDLE;
+	VkPipelineCacheCreateInfo cacheInfo = {};
+	cacheInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+	if (bCacheExist)
+	{
+		FileIO::Data cacheData = FileIO::ReadBinary(PIPELINE_PATH.string() + filename);
+
+		const auto cacheHeader = (VkPipelineCacheHeaderVersionOne*)cacheData.data;
+		if (cacheHeader->deviceID == m_RenderDevice.DeviceProps().deviceID &&
+			cacheHeader->vendorID == m_RenderDevice.DeviceProps().vendorID &&
+			memcmp(cacheHeader->pipelineCacheUUID, m_RenderDevice.DeviceProps().pipelineCacheUUID, VK_UUID_SIZE) == 0)
+		{
+			cacheInfo.initialDataSize = cacheData.size;
+			cacheInfo.pInitialData = cacheData.data;
+		}
+
+		delete cacheHeader;
+	}
+	VK_CHECK(vkCreatePipelineCache(m_RenderDevice.vkDevice(), &cacheInfo, nullptr, &vkPipelineCache));
+
+	VkComputePipelineCreateInfo pipelineInfo = {};
+	pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+	pipelineInfo.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	pipelineInfo.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+	pipelineInfo.stage.module = m_pCS->vkModule();
+	pipelineInfo.stage.pName = "main";
+	pipelineInfo.layout = m_vkPipelineLayout;
+	pipelineInfo.basePipelineHandle = nullptr;
+	pipelineInfo.basePipelineIndex = 0;
+	VK_CHECK(vkCreateComputePipelines(m_RenderDevice.vkDevice(), nullptr, 1, &pipelineInfo, nullptr, &m_vkPipeline));
+
+
+	// **
+	// Clean up
+	// **
+	if (!bCacheExist && vkPipelineCache)
+	{
+		FileIO::Data writeData = {};
+		VK_CHECK(vkGetPipelineCacheData(m_RenderDevice.vkDevice(), vkPipelineCache, &writeData.size, nullptr));
+
+		writeData.data = _aligned_malloc(writeData.size, 64);
+		VK_CHECK(vkGetPipelineCacheData(m_RenderDevice.vkDevice(), vkPipelineCache, &writeData.size, writeData.data));
+
+		FileIO::WriteBinary(PIPELINE_PATH.string(), filename, writeData);
+		writeData.Deallocate();
+	}
+	vkDestroyPipelineCache(m_RenderDevice.vkDevice(), vkPipelineCache, nullptr);
 }
 
 } // namespace vk

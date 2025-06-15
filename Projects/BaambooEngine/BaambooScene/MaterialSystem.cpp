@@ -15,9 +15,9 @@ MaterialSystem::MaterialSystem(entt::registry& registry)
 void MaterialSystem::OnMaterialConstructed(entt::registry& registry, entt::entity entity)
 {
 	auto& material = registry.get< MaterialComponent >(entity);
-	material.tint = { 1, 1, 1 };
-	material.roughness = 1.0f;
-	material.metallic = 0.0f;
+	material.tint       = { 1, 1, 1 };
+	material.roughness  = 1.0f;
+	material.metallic   = 1.0f;
 	material.bDirtyMark = true;
 }
 

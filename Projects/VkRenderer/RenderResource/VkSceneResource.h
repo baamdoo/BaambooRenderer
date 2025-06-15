@@ -43,29 +43,23 @@ struct SceneResource
     BufferHandle GetOrUpdateVertex(u32 entity, std::string_view filepath, const void* pData, u32 count);
     BufferHandle GetOrUpdateIndex(u32 entity, std::string_view filepath, const void* pData, u32 count);
     Arc< Texture > GetOrLoadTexture(u32 entity, std::string_view filepath);
-
-    [[nodiscard]]
-    VkDescriptorBufferInfo GetVertexDescriptorInfo() const;
-    [[nodiscard]]
-    VkDescriptorBufferInfo GetIndexDescriptorInfo() const;
-    [[nodiscard]]
-    VkDescriptorBufferInfo GetIndirectDrawDescriptorInfo() const;
-    [[nodiscard]]
-    VkDescriptorBufferInfo GetTransformDescriptorInfo() const;
-    [[nodiscard]]
-    VkDescriptorBufferInfo GetMaterialDescriptorInfo() const;
+    Arc< Texture > GetTexture(std::string_view filepath);
 
     [[nodiscard]]
     VkDescriptorSet GetSceneDescriptorSet() const;
     [[nodiscard]]
     VkDescriptorSetLayout GetSceneDescriptorSetLayout() const { return m_vkSetLayout; }
+    [[nodiscard]]
+    VkDescriptorBufferInfo GetIndexBufferInfo() const;
+    [[nodiscard]]
+    VkDescriptorBufferInfo GetIndirectBufferInfo() const;
 
     // TEMP
     std::vector< VkDescriptorImageInfo > imageInfos;
 
 private:
     void ResetFrameBuffers();
-    void UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator* pTargetBuffer);
+    void UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator& targetBuffer);
 
 private:
     RenderDevice& m_RenderDevice;
@@ -73,11 +67,12 @@ private:
     VkDescriptorSetLayout m_vkSetLayout     = VK_NULL_HANDLE;
     DescriptorPool*       m_pDescriptorPool = nullptr;
 
-    StaticBufferAllocator* m_pVertexBufferPool       = nullptr;
-    StaticBufferAllocator* m_pIndexBufferPool        = nullptr;
-    StaticBufferAllocator* m_pIndirectDrawBufferPool = nullptr;
-    StaticBufferAllocator* m_pTransformBufferPool    = nullptr;
-    StaticBufferAllocator* m_pMaterialBufferPool     = nullptr;
+    Box< StaticBufferAllocator > m_pVertexAllocator;
+    Box< StaticBufferAllocator > m_pIndexAllocator;
+    Box< StaticBufferAllocator > m_pIndirectDrawAllocator;
+    Box< StaticBufferAllocator > m_pTransformAllocator;
+    Box< StaticBufferAllocator > m_pMaterialAllocator;
+    Box< StaticBufferAllocator > m_pLightAllocator;
 
     std::unordered_map< std::string, BufferHandle >   m_VertexCache;
     std::unordered_map< std::string, BufferHandle >   m_IndexCache;

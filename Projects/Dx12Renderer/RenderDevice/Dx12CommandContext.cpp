@@ -73,6 +73,25 @@ void CommandContext::Close()
 	m_d3d12CommandList->Close();
 }
 
+SyncObject CommandContext::Execute()
+{
+	switch (m_Type)
+	{
+	case D3D12_COMMAND_LIST_TYPE_DIRECT:
+		return { m_RenderDevice.GraphicsQueue().ExecuteCommandList(this), m_RenderDevice.GraphicsQueue() };
+		break;
+	case D3D12_COMMAND_LIST_TYPE_COMPUTE:
+		return { m_RenderDevice.ComputeQueue().ExecuteCommandList(this), m_RenderDevice.ComputeQueue() };
+		break;
+	case D3D12_COMMAND_LIST_TYPE_COPY:
+		return { m_RenderDevice.CopyQueue().ExecuteCommandList(this), m_RenderDevice.CopyQueue() };
+		break;
+	}
+
+	assert(false && "Invalid command list execution!");
+	return { 0, m_RenderDevice.GraphicsQueue() };
+}
+
 void CommandContext::TransitionBarrier(const Arc< Resource >& pResource, D3D12_RESOURCE_STATES stateAfter, u32 subresource, bool bFlushImmediate)
 {
 	if (pResource)
@@ -130,7 +149,7 @@ void CommandContext::CopyTexture(const Arc< Texture >& pDstTexture, const Arc< T
 	TransitionBarrier(pDstTexture, D3D12_RESOURCE_STATE_COPY_DEST);
 	TransitionBarrier(pSrcTexture, D3D12_RESOURCE_STATE_COPY_SOURCE);
 
-	D3D12_RESOURCE_DESC Desc = pDstTexture->GetResourceDesc();
+	D3D12_RESOURCE_DESC Desc = pDstTexture->Desc();
 	for (u16 i = 0; i < Desc.MipLevels; i++)
 	{
 		D3D12_TEXTURE_COPY_LOCATION	dstLocation = {};
@@ -157,7 +176,7 @@ void CommandContext::ResolveSubresource(const Arc< Resource >& pDstResource, con
 		FlushResourceBarriers();
 
 		m_d3d12CommandList->ResolveSubresource(pDstResource->GetD3D12Resource(), dstSubresource,
-			pSrcResource->GetD3D12Resource(), srcSubresource, pDstResource->GetResourceDesc().Format);
+			pSrcResource->GetD3D12Resource(), srcSubresource, pDstResource->Desc().Format);
 	}
 }
 
@@ -211,7 +230,7 @@ void CommandContext::SetScissorRects(const std::vector< D3D12_RECT >& scissorRec
 	m_d3d12CommandList->RSSetScissorRects(static_cast<u32>(scissorRects.size()), scissorRects.data());
 }
 
-void CommandContext::SetPipelineState(GraphicsPipeline* pGraphicsPipeline)
+void CommandContext::SetRenderPipeline(GraphicsPipeline* pGraphicsPipeline)
 {
 	if (m_pGraphicsPipeline != pGraphicsPipeline)
 	{
@@ -220,7 +239,7 @@ void CommandContext::SetPipelineState(GraphicsPipeline* pGraphicsPipeline)
 	}
 }
 
-void CommandContext::SetPipelineState(ComputePipeline* pComputePipeline)
+void CommandContext::SetRenderPipeline(ComputePipeline* pComputePipeline)
 {
 	if (m_pComputePipeline != pComputePipeline)
 	{
@@ -322,9 +341,24 @@ void CommandContext::SetGraphicsDynamicConstantBuffer(u32 rootIndex, size_t size
 	m_d3d12CommandList->SetGraphicsRootConstantBufferView(rootIndex, allocation.GPUHandle);
 }
 
+void CommandContext::SetGraphicsConstantBufferView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle)
+{
+	m_d3d12CommandList->SetGraphicsRootConstantBufferView(rootIndex, gpuHandle);
+}
+
 void CommandContext::SetGraphicsShaderResourceView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle)
 {
 	m_d3d12CommandList->SetGraphicsRootShaderResourceView(rootIndex, gpuHandle);
+}
+
+void CommandContext::SetComputeShaderResourceView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle)
+{
+	m_d3d12CommandList->SetComputeRootShaderResourceView(rootIndex, gpuHandle);
+}
+
+void CommandContext::SetComputeUnorderedAccessView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle)
+{
+	m_d3d12CommandList->SetComputeRootUnorderedAccessView(rootIndex, gpuHandle);
 }
 
 void CommandContext::StageDescriptors(
@@ -335,6 +369,15 @@ void CommandContext::StageDescriptors(
 	D3D12_DESCRIPTOR_HEAP_TYPE heapType)
 {
 	m_pDescriptorHeaps[heapType]->StageDescriptors(rootIndex, numDescriptors, offset, srcHandle);
+}
+
+void CommandContext::StageDescriptors(
+	u32 rootIndex, 
+	u32 offset, 
+	std::vector< D3D12_CPU_DESCRIPTOR_HANDLE >&& srcHandles, 
+	D3D12_DESCRIPTOR_HEAP_TYPE heapType)
+{
+	m_pDescriptorHeaps[heapType]->StageDescriptors(rootIndex, offset, std::move(srcHandles));
 }
 
 void CommandContext::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t startVertex, uint32_t startInstance)

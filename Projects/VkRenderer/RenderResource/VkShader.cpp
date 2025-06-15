@@ -78,7 +78,7 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 			// u32 size = (u32)compiler.get_declared_struct_size(type);
 			u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_DYNAMIC_ARRAY_SIZE : type.array[0]; // assume utilize only 1d-array for now
 
-			Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set];
+			Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
 			descriptorInfo.binding = binding;
 			descriptorInfo.name = name;
 			descriptorInfo.arraySize = arraySize;
@@ -97,7 +97,7 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 			u32 binding = compiler.get_decoration(resource.id, spv::DecorationBinding);
 			u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_DYNAMIC_ARRAY_SIZE : type.array[0]; // assume utilize only 1d-array for now
 
-			Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set];
+			Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
 			descriptorInfo.binding = binding;
 			descriptorInfo.name = name;
 			descriptorInfo.arraySize = arraySize;
@@ -113,11 +113,11 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 		u32 binding = compiler.get_decoration(resource.id, spv::DecorationBinding);
 		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_DYNAMIC_ARRAY_SIZE : type.array[0]; // assume utilize only 1d-array for now
 
-		Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set];
+		Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
 		descriptorInfo.binding = binding;
 		descriptorInfo.name = name;
 		descriptorInfo.arraySize = arraySize;
-		descriptorInfo.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+		descriptorInfo.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	}
 
 	for (const auto& resource : resources.storage_images)
@@ -128,7 +128,7 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 		u32 binding = compiler.get_decoration(resource.id, spv::DecorationBinding);
 		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_DYNAMIC_ARRAY_SIZE : type.array[0]; // assume utilize only 1d-array for now
 
-		Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set];
+		Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
 		descriptorInfo.binding = binding;
 		descriptorInfo.name = name;
 		descriptorInfo.arraySize = arraySize;
@@ -153,7 +153,7 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 	return stage;
 }
 
-Arc<Shader> Shader::Create(RenderDevice& device, std::string_view name, CreationInfo&& info)
+Arc< Shader > Shader::Create(RenderDevice& device, std::string_view name, CreationInfo&& info)
 {
 	return MakeArc< Shader >(device, name, std::move(info));
 }

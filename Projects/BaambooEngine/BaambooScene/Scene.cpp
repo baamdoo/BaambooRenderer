@@ -15,9 +15,9 @@ namespace baamboo
 Scene::Scene(const std::string& name)
 	: m_Name(name)
 {
-	m_pTransformSystem = new TransformSystem(m_Registry);
+	m_pTransformSystem  = new TransformSystem(m_Registry);
 	m_pStaticMeshSystem = new StaticMeshSystem(m_Registry);
-	m_pMaterialSystem = new MaterialSystem(m_Registry);
+	m_pMaterialSystem   = new MaterialSystem(m_Registry);
 }
 
 Scene::~Scene()
@@ -175,12 +175,12 @@ SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 	SceneRenderView view{};
 	view.camera.mView = camera.GetView();
 	view.camera.mProj = camera.GetProj();
-	view.camera.pos = camera.GetPosition();
+	view.camera.pos   = camera.GetPosition();
 
 	m_Registry.view< TransformComponent >().each([this, &view](auto id, auto& transformComponent)
 		{
 			TransformRenderView transformView = {};
-			transformView.id = entt::to_integral(id);
+			transformView.id     = entt::to_integral(id);
 			transformView.mWorld = m_pTransformSystem->WorldMatrix(transformComponent.world);
 			view.transforms.push_back(transformView);
 
@@ -192,11 +192,11 @@ SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 	m_Registry.view< TagComponent, StaticMeshComponent, MaterialComponent >().each([this, &view](auto id, auto& tagComponent, auto& meshComponent, auto& materialComponent)
 		{
 			StaticMeshRenderView meshView = {};
-			meshView.id = entt::to_integral(id);
-			meshView.tag = tagComponent.tag;
-			meshView.vData = meshComponent.vertices.data();
+			meshView.id     = entt::to_integral(id);
+			meshView.tag    = tagComponent.tag;
+			meshView.vData  = meshComponent.vertices.data();
 			meshView.vCount = static_cast<u32>(meshComponent.vertices.size());
-			meshView.iData = meshComponent.indices.data();
+			meshView.iData  = meshComponent.indices.data();
 			meshView.iCount = static_cast<u32>(meshComponent.indices.size());
 			view.meshes.push_back(meshView);
 
@@ -209,18 +209,18 @@ SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 			draw.mesh = static_cast<u32>(view.meshes.size()) - 1;
 
 			MaterialRenderView materialView = {};
-			materialView.id = entt::to_integral(id);
-			materialView.tint = materialComponent.tint;
+			materialView.id        = entt::to_integral(id);
+			materialView.tint      = materialComponent.tint;
 			materialView.roughness = materialComponent.roughness;
-			materialView.metallic = materialComponent.metallic;
+			materialView.metallic  = materialComponent.metallic;
 
-			materialView.albedoTex = materialComponent.albedoTex;
-			materialView.normalTex = materialComponent.normalTex;
-			materialView.specularTex = materialComponent.specularTex;
-			materialView.aoTex = materialComponent.aoTex;
+			materialView.albedoTex    = materialComponent.albedoTex;
+			materialView.normalTex    = materialComponent.normalTex;
+			materialView.specularTex  = materialComponent.specularTex;
+			materialView.aoTex        = materialComponent.aoTex;
 			materialView.roughnessTex = materialComponent.roughnessTex;
-			materialView.metallicTex = materialComponent.metallicTex;
-			materialView.emissionTex = materialComponent.emissionTex;
+			materialView.metallicTex  = materialComponent.metallicTex;
+			materialView.emissionTex  = materialComponent.emissionTex;
 			view.materials.push_back(materialView);
 
 			/*if (!view.draws.contains(materialView.id))
@@ -228,6 +228,59 @@ SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 				view.draws.emplace(materialView.id, DrawRenderView{});
 			}*/
 			draw.material = static_cast<u32>(view.materials.size()) - 1;
+		});
+
+
+	view.light.data = {};
+	view.light.data.ambientColor = float3(0.0f);
+	view.light.data.ambientIntensity = 0.0f;
+	m_Registry.view< TransformComponent, LightComponent >().each([this, &view](auto id, auto& transformComponent, auto& lightComponent)
+		{
+			mat4   mWorld    = m_pTransformSystem->WorldMatrix(transformComponent.world);
+			float3 position  = float3(mWorld[3]);
+			float3 direction = normalize(float3(mWorld[2]));
+
+			switch (lightComponent.type)
+			{
+			case eLightType::Directional:
+				if (view.light.data.numDirectionals < MAX_DIRECTIONAL_LIGHT)
+				{
+					auto& dirLight             = view.light.data.directionals[view.light.data.numDirectionals++];
+					dirLight.direction         = -position; // target to origin
+					dirLight.color             = lightComponent.color;
+					dirLight.temperature_K     = lightComponent.temperature_K;
+					dirLight.illuminance_lux   = lightComponent.illuminance_lux;
+					dirLight.angularRadius_rad = lightComponent.angularRadius_rad;
+				}
+				break;
+
+			case eLightType::Point:
+				if (view.light.data.numPoints < MAX_POINT_LIGHT)
+				{
+					PointLight& pointLight      = view.light.data.points[view.light.data.numPoints++];
+					pointLight.position         = position;
+					pointLight.color            = lightComponent.color;
+					pointLight.temperature_K    = lightComponent.temperature_K;
+					pointLight.luminousPower_lm = lightComponent.luminousPower_lm;
+					pointLight.radius_m         = lightComponent.radius_m;
+				}
+				break;
+
+			case eLightType::Spot:
+				if (view.light.data.numSpots < MAX_SPOT_LIGHT)
+				{
+					auto& spotLight              = view.light.data.spots[view.light.data.numSpots++];
+					spotLight.position           = position;
+					spotLight.direction          = direction;
+					spotLight.color              = lightComponent.color;
+					spotLight.temperature_K      = lightComponent.temperature_K;
+					spotLight.luminousPower_lm   = lightComponent.luminousPower_lm;
+					spotLight.radius_m           = lightComponent.radius_m;
+					spotLight.innerConeAngle_rad = lightComponent.innerConeAngle_rad;
+					spotLight.outerConeAngle_rad = lightComponent.outerConeAngle_rad;
+				}
+				break;
+			}
 		});
 
 	return view;

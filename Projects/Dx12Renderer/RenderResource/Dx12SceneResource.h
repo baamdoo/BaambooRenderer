@@ -45,6 +45,7 @@ struct SceneResource
     Arc< VertexBuffer > GetOrUpdateVertex(u32 entity, std::string_view filepath, const void* pData, u32 count);
     Arc< IndexBuffer >  GetOrUpdateIndex(u32 entity, std::string_view filepath, const void* pData, u32 count);
     Arc< Texture >      GetOrLoadTexture(u32 entity, std::string_view filepath);
+    Arc< Texture >      GetTexture(std::string_view filepath);
 
     [[nodiscard]]
     inline RootSignature* GetSceneRootSignature() const { return m_pRootSignature; }
@@ -57,6 +58,8 @@ struct SceneResource
     Arc< StructuredBuffer > GetTransformBuffer() const;
     [[nodiscard]]
     Arc< StructuredBuffer > GetMaterialBuffer() const;
+    [[nodiscard]]
+    Arc< StructuredBuffer > GetLightBuffer() const;
 
     [[nodiscard]]
     inline u32 NumMeshes() const { return m_NumMeshes; }
@@ -66,16 +69,17 @@ struct SceneResource
 
 private:
     void ResetFrameBuffers();
-    void UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator* pTargetBuffer);
+    void UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator& targetBuffer);
 
     RenderDevice& m_RenderDevice;
 
     RootSignature*    m_pRootSignature = nullptr;
     CommandSignature* m_pCommandSignature = nullptr;
 
-    StaticBufferAllocator* m_pIndirectDrawBufferPool = nullptr;
-    StaticBufferAllocator* m_pTransformBufferPool = nullptr;
-    StaticBufferAllocator* m_pMaterialBufferPool = nullptr;
+    Box< StaticBufferAllocator > m_pIndirectDrawAllocator;
+    Box< StaticBufferAllocator > m_pTransformAllocator;
+    Box< StaticBufferAllocator > m_pMaterialAllocator;
+    Box< StaticBufferAllocator > m_pLightAllocator;
 
     std::unordered_map< std::string, Arc< VertexBuffer > > m_VertexCache;
     std::unordered_map< std::string, Arc< IndexBuffer >  > m_IndexCache;

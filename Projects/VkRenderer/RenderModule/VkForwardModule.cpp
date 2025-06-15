@@ -20,6 +20,7 @@ ForwardModule::ForwardModule(RenderDevice& device)
 			"ForwardPass::Attachment0",
 			{
 				.resolution = { m_RenderDevice.WindowWidth(), m_RenderDevice.WindowHeight(), 1 },
+				.format     = VK_FORMAT_R32G32B32A32_SFLOAT,
 				.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
 			});
 	auto pAttachmentDepth =
@@ -35,8 +36,8 @@ ForwardModule::ForwardModule(RenderDevice& device)
 	m_pRenderTarget->AttachTexture(eAttachmentPoint::Color0, pAttachment0)
 		            .AttachTexture(eAttachmentPoint::DepthStencil, pAttachmentDepth).Build();
 
-	auto hVS = Shader::Create(m_RenderDevice, "SimpleModelVS", { .filepath = SPIRV_PATH.string() + "SimpleModel.vert.spv" });
-	auto hFS = Shader::Create(m_RenderDevice, "SimpleModelPS", { .filepath = SPIRV_PATH.string() + "SimpleModel.frag.spv" });
+	auto hVS = Shader::Create(m_RenderDevice, "PBRLightingVS", { .filepath = SPIRV_PATH.string() + "PBRLighting.vert.spv" });
+	auto hFS = Shader::Create(m_RenderDevice, "PBRLightingPS", { .filepath = SPIRV_PATH.string() + "PBRLighting.frag.spv" });
 	m_pGraphicsPipeline = new GraphicsPipeline(m_RenderDevice, "ForwardPSO");
 	m_pGraphicsPipeline->SetShaders(hVS, hFS).SetRenderTarget(*m_pRenderTarget).SetDepthWriteEnable(true).Build();
 
@@ -53,6 +54,8 @@ void ForwardModule::Apply(CommandContext& context)
 {
 	context.BeginRenderPass(*m_pRenderTarget);
 	context.SetRenderPipeline(m_pGraphicsPipeline);
+
+	context.SetGraphicsDynamicUniformBuffer(0, g_FrameData.camera);
 
 	context.DrawIndexedIndirect(*g_FrameData.pSceneResource);
 

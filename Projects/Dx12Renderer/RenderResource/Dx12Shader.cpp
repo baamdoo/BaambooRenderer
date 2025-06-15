@@ -79,4 +79,9 @@ void Shader::Reflect()
     ms_dxcUtils->CreateReflection(&dxcBuffer, IID_PPV_ARGS(&m_d3d12ShaderReflection));
 }
 
+Arc< Shader > Shader::Create(RenderDevice& device, std::wstring_view name, CreationInfo&& info)
+{
+    return MakeArc< Shader >(device, name, std::move(info));
+}
+
 }

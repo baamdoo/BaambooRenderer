@@ -130,7 +130,7 @@ public:
 	virtual ~Texture();
 
 	void Resize(u32 width, u32 height, u32 depth);
-	void SetResource(VkImage vkImage, VkImageView vkImageView, VmaAllocation vmaAllocation, VkImageAspectFlags aspectMask);
+	void SetResource(VkImage vkImage, VkImageView vkImageView, VkImageCreateInfo createInfo, VmaAllocation vmaAllocation, VkImageAspectFlags aspectMask);
 
 	[[nodiscard]]
 	inline CreationInfo Info() const { return m_CreationInfo; }

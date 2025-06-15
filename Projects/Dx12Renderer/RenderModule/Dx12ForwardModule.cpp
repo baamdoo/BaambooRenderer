@@ -41,21 +41,19 @@ ForwardModule::ForwardModule(RenderDevice& device)
 	depthClearValue.DepthStencil.Stencil = 0;
 
 	auto attachment0 =
-		MakeArc< Texture >(
+		Texture::Create(
 			m_RenderDevice,
 			L"ForwardPass::Attachment0",
-			Texture::CreationInfo
 			{
-				.desc = texDescColor,
+				.desc       = texDescColor,
 				.clearValue = colorClearValue
 			});
 	auto attachmentDepth =
-		MakeArc< Texture >(
+		Texture::Create(
 			m_RenderDevice,
 			L"ForwardPass::AttachmentDepth",
-			Texture::CreationInfo
 			{
-				.desc = texDescDepth,
+				.desc       = texDescDepth,
 				.clearValue = depthClearValue
 			});
 	m_RenderTarget.AttachTexture(eAttachmentPoint::Color0, attachment0)
@@ -66,8 +64,8 @@ ForwardModule::ForwardModule(RenderDevice& device)
 	// **
 	// Pipeline
 	// **
-	auto vs = std::make_unique< Shader >(m_RenderDevice, L"SimpleModelVS", Shader::CreationInfo{ .filepath = CSO_PATH.string() + "SimpleModelVS.cso" });
-	auto ps = std::make_unique< Shader >(m_RenderDevice, L"SimpleModelPS", Shader::CreationInfo{ .filepath = CSO_PATH.string() + "SimpleModelPS.cso" });
+	auto vs = Shader::Create(m_RenderDevice, L"PBRLightingVS", { .filepath = CSO_PATH.string() + "PBRLightingVS.cso" });
+	auto ps = Shader::Create(m_RenderDevice, L"PBRLightingPS", { .filepath = CSO_PATH.string() + "PBRLightingPS.cso" });
 	m_pGraphicsPipeline = new GraphicsPipeline(m_RenderDevice, L"ForwardPSO");
 	m_pGraphicsPipeline->SetShaderModules(std::move(vs), std::move(ps))
 		                .SetRenderTargetFormats(m_RenderTarget)
@@ -84,18 +82,20 @@ void ForwardModule::Apply(CommandContext& context)
 	m_RenderTarget.ClearTexture(context, eAttachmentPoint::All);
 	context.SetRenderTarget(m_RenderTarget);
 
-	context.SetPipelineState(m_pGraphicsPipeline);
+	context.SetRenderPipeline(m_pGraphicsPipeline);
 	context.SetGraphicsRootSignature(m_pRootSignature);
 	context.SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
+	auto pLight     = g_FrameData.pSceneResource->GetLightBuffer();
+	auto pMaterial  = g_FrameData.pSceneResource->GetMaterialBuffer();
 	auto pTransform = g_FrameData.pSceneResource->GetTransformBuffer();
-	auto pMaterial = g_FrameData.pSceneResource->GetMaterialBuffer();
 	assert(pTransform && pMaterial);
 
 	context.SetGraphicsDynamicConstantBuffer(2, g_FrameData.camera);
-	context.SetGraphicsShaderResourceView(3, pTransform->GetD3D12Resource()->GetGPUVirtualAddress());
-	context.SetGraphicsShaderResourceView(4, pMaterial->GetD3D12Resource()->GetGPUVirtualAddress());
-	context.StageDescriptors(5, static_cast<u32>(g_FrameData.pSceneResource->srvs.size()), 0, *(g_FrameData.pSceneResource->srvs.data()));
+	context.SetGraphicsConstantBufferView(3, pLight->GpuAddress());
+	context.SetGraphicsShaderResourceView(4, pTransform->GpuAddress());
+	context.SetGraphicsShaderResourceView(5, pMaterial->GpuAddress());
+	context.StageDescriptors(6, static_cast<u32>(g_FrameData.pSceneResource->srvs.size()), 0, *(g_FrameData.pSceneResource->srvs.data()));
 	context.DrawIndexedIndirect(*g_FrameData.pSceneResource);
 
 	g_FrameData.pColor = m_RenderTarget.Attachment(eAttachmentPoint::Color0);

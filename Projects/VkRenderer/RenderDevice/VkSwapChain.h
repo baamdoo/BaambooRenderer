@@ -43,7 +43,7 @@ private:
 	baamboo::Window& m_Window;
 
 	VkFormat                 m_ImageFormat = VK_FORMAT_UNDEFINED;
-	VkSurfaceKHR             m_vkSurface = VK_NULL_HANDLE;
+	VkSurfaceKHR             m_vkSurface   = VK_NULL_HANDLE;
 	VkSwapchainKHR           m_vkSwapChain = VK_NULL_HANDLE;
 	VkSurfaceCapabilitiesKHR m_Capabilities;
 

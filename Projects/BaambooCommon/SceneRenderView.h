@@ -1,5 +1,5 @@
 #pragma once
-#include "Primitives.h"
+#include "ShaderTypes.h"
 
 struct TransformRenderView
 {
@@ -51,16 +51,23 @@ struct DrawRenderView
 	u32 material  = INVALID_INDEX;
 };
 
+struct LightRenderView
+{
+	LightData data;
+};
+
 //-------------------------------------------------------------------------
 // SceneRenderView : Holds all the scene data
 //                   required for rendering in a refined state.
 //-------------------------------------------------------------------------
 struct SceneRenderView
 {
-	CameraRenderView                    camera;
 	std::vector< TransformRenderView >  transforms;
-	std::vector< StaticMeshRenderView > meshes;
+	std::vector< StaticMeshRenderView > meshes; 
 	std::vector< MaterialRenderView >   materials;
 
 	std::unordered_map< u32, DrawRenderView > draws;
+
+	CameraRenderView camera;
+	LightRenderView  light;
 };

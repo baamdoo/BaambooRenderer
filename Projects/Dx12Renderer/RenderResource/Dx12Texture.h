@@ -11,6 +11,9 @@ using Super = Resource;
 public:
     using CreationInfo = ResourceCreationInfo;
 
+    static Arc< Texture > Create(RenderDevice& device, std::wstring_view name, CreationInfo&& info);
+    static Arc< Texture > CreateEmpty(RenderDevice& device, std::wstring_view name);
+
     Texture(RenderDevice& device, std::wstring_view name);
     Texture(RenderDevice& device, std::wstring_view name, CreationInfo&& info);
     virtual ~Texture();

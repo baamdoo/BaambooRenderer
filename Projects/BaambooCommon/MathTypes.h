@@ -3,6 +3,10 @@
 
 #include <glm/glm.hpp>
 
+#define PI            (3.14159265359f)
+#define PI_MUL(num)   (PI * num)
+#define PI_DIV(denom) (PI / denom)
+
 using int2 = glm::ivec2;
 using int3 = glm::ivec3;
 using int4 = glm::ivec4;

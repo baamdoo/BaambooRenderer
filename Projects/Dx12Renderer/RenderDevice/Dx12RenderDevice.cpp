@@ -77,10 +77,10 @@ u32 RenderDevice::Swap()
 void RenderDevice::UpdateSubresources(Arc< Resource > pResource, u32 firstSubresource, u32 numSubresources, const D3D12_SUBRESOURCE_DATA* pSrcData)
 {
 	auto& d3d12CommandQueue = GraphicsQueue();
-	u64 uploadBufferSize = GetRequiredIntermediateSize(pResource->GetD3D12Resource(), firstSubresource, numSubresources);
+	u64 uploadBufferSize    = GetRequiredIntermediateSize(pResource->GetD3D12Resource(), firstSubresource, numSubresources);
 
 	auto heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-	auto desc = CD3DX12_RESOURCE_DESC::Buffer(uploadBufferSize);
+	auto desc      = CD3DX12_RESOURCE_DESC::Buffer(uploadBufferSize);
 
 	ID3D12Resource* d3d12UploadBuffer = nullptr;
 	ThrowIfFailed(m_d3d12Device->CreateCommittedResource(
@@ -180,6 +180,9 @@ void RenderDevice::CreateDevice(bool bEnableGBV)
 		if (S_OK == d3d12DebugController->QueryInterface(IID_PPV_ARGS(&d3d12DebugController5)))
 		{
 			d3d12DebugController5->SetEnableGPUBasedValidation(TRUE);
+			d3d12DebugController5->SetGPUBasedValidationFlags(
+				D3D12_GPU_BASED_VALIDATION_FLAGS_DISABLE_STATE_TRACKING
+			);
 			d3d12DebugController5->SetEnableAutoName(TRUE);
 			d3d12DebugController5->Release();
 		}
@@ -246,6 +249,11 @@ lb_exit:
 		dxgiFactory->Release();
 		dxgiFactory = nullptr;
 	}
+}
+
+void SyncObject::Wait()
+{
+	m_CommandQueue.WaitForFenceValue(m_FenceValue);
 }
 
 }

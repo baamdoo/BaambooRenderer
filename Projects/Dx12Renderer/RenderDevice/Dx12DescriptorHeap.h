@@ -17,6 +17,7 @@ public:
 	void ParseRootSignature(const RootSignature* pRootsignature);
 
 	u32 StageDescriptors(u32 rootIndex, u32 numDescriptors, u32 offset, D3D12_CPU_DESCRIPTOR_HANDLE srcHandle);
+	u32 StageDescriptors(u32 rootIndex, u32 offset, std::vector< D3D12_CPU_DESCRIPTOR_HANDLE >&& srcHandles);
 
 	void CommitDescriptorsForDraw(CommandContext& commandList);
 	void CommitDescriptorsForDispatch(CommandContext& commandList);

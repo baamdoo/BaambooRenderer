@@ -20,8 +20,8 @@ Renderer::Renderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext)
 {
 	DX_CHECK(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
 
-	m_pRenderDevice = new RenderDevice(true);
-	m_pSwapChain = new SwapChain(*m_pRenderDevice, *pWindow);
+	m_pRenderDevice = new RenderDevice(false);
+	m_pSwapChain    = new SwapChain(*m_pRenderDevice, *pWindow);
 
 	g_FrameData.pSceneResource = new SceneResource(*m_pRenderDevice);
 

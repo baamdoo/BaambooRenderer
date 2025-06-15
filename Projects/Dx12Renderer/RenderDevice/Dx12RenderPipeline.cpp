@@ -63,34 +63,34 @@ GraphicsPipeline::~GraphicsPipeline()
 }
 
 GraphicsPipeline& GraphicsPipeline::SetShaderModules(
-    Box< Shader > vs,
-    Box< Shader > ps,
-    Box< Shader > gs,
-    Box< Shader > hs,
-    Box< Shader > ds)
+    Arc< Shader > pVS,
+    Arc< Shader > pPS,
+    Arc< Shader > pGS,
+    Arc< Shader > pHS,
+    Arc< Shader > pDS)
 {
-    m_VS = std::move(vs);
-    m_PS = std::move(ps);
-    m_GS = std::move(gs);
-    m_HS = std::move(hs);
-    m_DS = std::move(ds);
-    assert(m_VS);
-    assert(m_PS);
+    m_pVS = std::move(pVS);
+    m_pPS = std::move(pPS);
+    m_pGS = std::move(pGS);
+    m_pHS = std::move(pHS);
+    m_pDS = std::move(pDS);
+    assert(m_pVS);
+    assert(m_pPS);
 
-    SetVertexInputLayout(m_VS->GetShaderReflection());
+    SetVertexInputLayout(m_pVS->GetShaderReflection());
 
 
     // **
     // Set pipeline desc
     // **
-    m_PipelineDesc.VS = CD3DX12_SHADER_BYTECODE(m_VS->GetShaderBufferPointer(), m_VS->GetShaderBufferSize());
-    m_PipelineDesc.PS = CD3DX12_SHADER_BYTECODE(m_PS->GetShaderBufferPointer(), m_PS->GetShaderBufferSize());
-    m_PipelineDesc.GS = m_GS ?
-        CD3DX12_SHADER_BYTECODE(m_GS->GetShaderBufferPointer(), m_GS->GetShaderBufferSize()) : CD3DX12_SHADER_BYTECODE();
-    m_PipelineDesc.HS = m_HS ?
-        CD3DX12_SHADER_BYTECODE(m_HS->GetShaderBufferPointer(), m_HS->GetShaderBufferSize()) : CD3DX12_SHADER_BYTECODE();
-    m_PipelineDesc.DS = m_DS ?
-        CD3DX12_SHADER_BYTECODE(m_DS->GetShaderBufferPointer(), m_DS->GetShaderBufferSize()) : CD3DX12_SHADER_BYTECODE();
+    m_PipelineDesc.VS = CD3DX12_SHADER_BYTECODE(m_pVS->GetShaderBufferPointer(), m_pVS->GetShaderBufferSize());
+    m_PipelineDesc.PS = CD3DX12_SHADER_BYTECODE(m_pPS->GetShaderBufferPointer(), m_pPS->GetShaderBufferSize());
+    m_PipelineDesc.GS = m_pGS ?
+        CD3DX12_SHADER_BYTECODE(m_pGS->GetShaderBufferPointer(), m_pGS->GetShaderBufferSize()) : CD3DX12_SHADER_BYTECODE();
+    m_PipelineDesc.HS = m_pHS ?
+        CD3DX12_SHADER_BYTECODE(m_pHS->GetShaderBufferPointer(), m_pHS->GetShaderBufferSize()) : CD3DX12_SHADER_BYTECODE();
+    m_PipelineDesc.DS = m_pDS ?
+        CD3DX12_SHADER_BYTECODE(m_pDS->GetShaderBufferPointer(), m_pDS->GetShaderBufferSize()) : CD3DX12_SHADER_BYTECODE();
 
     return *this;
 }
@@ -114,7 +114,7 @@ GraphicsPipeline& GraphicsPipeline::SetRenderTargetFormats(const RenderTarget& r
         if (pAttachments[i])
         {
             m_PipelineDesc.RTVFormats[i] = pAttachments[i]->GetFormat();
-            numSampling = std::max(numSampling, pAttachments[i]->GetResourceDesc().SampleDesc.Count);
+            numSampling = std::max(numSampling, pAttachments[i]->Desc().SampleDesc.Count);
             numAttachments++;
         }
     }
@@ -231,21 +231,25 @@ ComputePipeline::~ComputePipeline()
     COM_RELEASE(m_d3d12PipelineState);
 }
 
-void ComputePipeline::SetShaderModules(Box< Shader > cs)
+ComputePipeline& ComputePipeline::SetShaderModules(Arc< Shader > pCS)
 {
-    m_CS = std::move(cs);
-    assert(m_CS);
+    m_pCS = std::move(pCS);
+    assert(m_pCS);
 
     // **
     // Set pipeline desc
     // **
-    m_PipelineDesc.CS = CD3DX12_SHADER_BYTECODE(m_CS->GetShaderBufferPointer(), m_CS->GetShaderBufferSize());
+    m_PipelineDesc.CS = CD3DX12_SHADER_BYTECODE(m_pCS->GetShaderBufferPointer(), m_pCS->GetShaderBufferSize());
+
+    return *this;
 }
 
-void ComputePipeline::SetRootSignature(RootSignature* pRootSignature)
+ComputePipeline& ComputePipeline::SetRootSignature(RootSignature* pRootSignature)
 {
     assert(pRootSignature);
     m_PipelineDesc.pRootSignature = pRootSignature->GetD3D12RootSignature();
+
+    return *this;
 }
 
 void ComputePipeline::Build()

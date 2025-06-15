@@ -146,24 +146,74 @@ bool ExampleApp::InitWindow()
 bool ExampleApp::LoadScene()
 {
 	m_pScene = new Scene("ExampleScene");
-	auto entity0 = m_pScene->CreateEntity("Test0");
-	auto& tc0 = entity0.GetComponent< TransformComponent >();
-	tc0.transform.position = { 0.0f, 1.0f, 0.0f };
 
-	auto entity00 = m_pScene->CreateEntity("Test00");
-	entity0.AttachChild(entity00);
+	{
+		auto entity0 = m_pScene->CreateEntity("Test0");
+		auto& tc0 = entity0.GetComponent< TransformComponent >();
+		tc0.transform.position = { 0.0f, 1.0f, 0.0f };
 
-	auto entity1 = m_pScene->CreateEntity("Test1");
+		auto entity00 = m_pScene->CreateEntity("Test00");
+		entity0.AttachChild(entity00);
 
-	MeshDescriptor meshDescriptor = {};
-	meshDescriptor.bOptimize = true;
-	meshDescriptor.rendererAPI = m_eBackendAPI;
+		auto entity1 = m_pScene->CreateEntity("Test1");
 
-	auto dhEntity = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), meshDescriptor);
-	auto& tcdh = dhEntity.GetComponent< TransformComponent >();
-	tcdh.transform.position = { -1.0f, 0.0f, 0.0f };
+		MeshDescriptor meshDescriptor = {};
+		meshDescriptor.bOptimize = true;
+		meshDescriptor.rendererAPI = m_eBackendAPI;
 
-	auto dhEntity2 = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), meshDescriptor);
+		auto dhEntity = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), meshDescriptor);
+		auto& tcdh = dhEntity.GetComponent< TransformComponent >();
+		tcdh.transform.position = { -1.0f, 0.0f, 0.0f };
+
+		auto dhEntity2 = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), meshDescriptor);
+	}
+
+	{
+		auto sunLight = m_pScene->CreateEntity("Sun Light");
+		sunLight.AttachComponent< LightComponent >();
+
+		auto& light             = sunLight.GetComponent< LightComponent >();
+		light.type              = eLightType::Directional;
+		light.temperature_K     = 10000.0f;
+		light.color             = float3(1.0f, 0.95f, 0.8f);
+		light.illuminance_lux   = 3.0f;
+		light.angularRadius_rad = 0.00465f;
+	}
+
+	// Create a point light
+	{
+		/*auto pointLight = m_pScene->CreateEntity("Point Light");
+		pointLight.AttachComponent< LightComponent >();
+
+		auto& light            = pointLight.GetComponent< LightComponent >();
+		light.type             = eLightType::Point;
+		light.color            = float3(1.0f, 1.0f, 1.0f);
+		light.temperature_K    = 4000.0f;
+		light.radius_m         = 0.03f;
+		light.luminousPower_lm = 1000.0f;
+
+		auto& transformComponent              = pointLight.GetComponent< TransformComponent >();
+		transformComponent.transform.position = float3(0.0f, 0.0f, 5.0f);*/
+	}
+
+	// Create a spot light
+	{
+		//auto spotLight = m_pScene->CreateEntity("Spot Light");
+		//spotLight.AttachComponent <LightComponent >();
+
+		//auto& light              = spotLight.GetComponent< LightComponent >();
+		//light.type               = eLightType::Spot;
+		//light.color              = float3(1.0f, 1.0f, 1.0f);
+		//light.temperature_K      = 3200.0f;
+		//light.radius_m           = 0.05f;
+		//light.luminousPower_lm   = 25.0f * 10.0f;
+		//light.outerConeAngle_rad = PI_DIV(2.0f);
+
+		//auto& transform              = spotLight.GetComponent< TransformComponent >();
+		//transform.transform.position = float3(0.0f, 10.0f, 0.0f);
+		//transform.transform.rotation = float3(90.0f, 0.0f, 0.0f); // Point down
+	}
+
 	return true;
 }
 
