@@ -21,8 +21,8 @@ public:
 	class Entity CreateEntity(const std::string& tag = "Empty");
 	void RemoveEntity(Entity entity);
 
-	class Entity ImportModel(fs::path filepath, MeshDescriptor descriptor);
-	class Entity ImportModel(Entity rootEntity, fs::path filepath, MeshDescriptor descriptor);
+	class Entity ImportModel(const fs::path& filepath, MeshDescriptor descriptor);
+	class Entity ImportModel(Entity rootEntity, const fs::path& filepath, MeshDescriptor descriptor);
 
 	void Update(float dt);
 
@@ -41,6 +41,18 @@ public:
 	[[nodiscard]]
 	TransformSystem* GetTransformSystem() const { return m_pTransformSystem; }
 
+	const MeshData* GetMeshData(u32 meshID) const { auto it = m_MeshData.find(meshID); return (it != m_MeshData.end()) ? &it->second : nullptr;  }
+	const Skeleton* GetSkeleton(u32 skeletonID) const { auto it = m_Skeletons.find(skeletonID); return (it != m_Skeletons.end()) ? &it->second : nullptr; }
+	const AnimationClip* GetAnimationClip(u32 clipID) const { auto it = m_AnimationClips.find(clipID); return (it != m_AnimationClips.end()) ? &it->second : nullptr; }
+
+	u32 GetSkeletonCount() const { return static_cast<u32>(m_Skeletons.size()); }
+	u32 GetAnimationClipCount() const { return static_cast<u32>(m_AnimationClips.size()); }
+
+private:
+	u32 StoreMeshData(const MeshData& meshData);
+	u32 StoreSkeletonData(const Skeleton& skeleton);
+	u32 StoreAnimationClip(const AnimationClip& clip);
+
 private:
 	friend class Entity;
 	entt::registry m_Registry;
@@ -51,9 +63,17 @@ private:
 	// [entity, dirty-components]
 	std::unordered_map< entt::entity, u64 > m_EntityDirtyMasks;
 
-	TransformSystem*  m_pTransformSystem = nullptr;
+	// systems
+	TransformSystem*  m_pTransformSystem  = nullptr;
 	StaticMeshSystem* m_pStaticMeshSystem = nullptr;
-	MaterialSystem*   m_pMaterialSystem = nullptr;
+	MaterialSystem*   m_pMaterialSystem   = nullptr;
+
+	// animations
+	std::unordered_map< u32, MeshData >      m_MeshData;
+	std::unordered_map< u32, Skeleton >      m_Skeletons;
+	std::unordered_map< u32, AnimationClip > m_AnimationClips;
+
+	std::unordered_map< std::string, ModelLoader* > m_ModelLoaderCache;
 };
 
 } // namespace baamboo 

@@ -17,9 +17,9 @@ public:
 		std::string_view filepath;
 	};
 
-	static Arc< Shader > Create(RenderDevice& device, std::wstring_view name, CreationInfo&& info);
+	static Arc< Shader > Create(RenderDevice& device, const std::wstring& name, CreationInfo&& info);
 
-	Shader(RenderDevice& device, std::wstring_view name, CreationInfo&& info);
+	Shader(RenderDevice& device, const std::wstring& name, CreationInfo&& info);
 	virtual ~Shader();
 
 	[[nodiscard]]

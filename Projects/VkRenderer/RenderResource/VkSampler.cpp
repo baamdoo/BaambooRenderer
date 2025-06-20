@@ -4,12 +4,12 @@
 namespace vk
 {
 
-Arc< Sampler > Sampler::Create(RenderDevice& device, std::string_view name, CreationInfo&& info)
+Arc< Sampler > Sampler::Create(RenderDevice& device, const std::string& name, CreationInfo&& info)
 {
 	return MakeArc< Sampler >(device, name, std::move(info));
 }
 
-Arc< Sampler > Sampler::CreateLinearRepeat(RenderDevice& device, std::string_view name) {
+Arc< Sampler > Sampler::CreateLinearRepeat(RenderDevice& device, const std::string& name) {
     return Create(device, name,
         {
             .filter      = VK_FILTER_LINEAR,
@@ -17,7 +17,7 @@ Arc< Sampler > Sampler::CreateLinearRepeat(RenderDevice& device, std::string_vie
         });
 }
 
-Arc< Sampler > Sampler::CreateLinearClamp(RenderDevice& device, std::string_view name) 
+Arc< Sampler > Sampler::CreateLinearClamp(RenderDevice& device, const std::string& name)
 {
     return Create(device, name,
         {
@@ -26,7 +26,7 @@ Arc< Sampler > Sampler::CreateLinearClamp(RenderDevice& device, std::string_view
         });
 }
 
-Arc< Sampler > Sampler::CreatePointRepeat(RenderDevice& device, std::string_view name) 
+Arc< Sampler > Sampler::CreatePointRepeat(RenderDevice& device, const std::string& name)
 {
     return Create(device, name,
         {
@@ -36,7 +36,7 @@ Arc< Sampler > Sampler::CreatePointRepeat(RenderDevice& device, std::string_view
         });
 }
 
-Arc< Sampler > Sampler::CreatePointClamp(RenderDevice& device, std::string_view name) 
+Arc< Sampler > Sampler::CreatePointClamp(RenderDevice& device, const std::string& name)
 {
     return Create(device, name,
         {
@@ -46,7 +46,7 @@ Arc< Sampler > Sampler::CreatePointClamp(RenderDevice& device, std::string_view 
         });
 }
 
-Arc< Sampler > Sampler::CreateLinearClampCmp(RenderDevice& device, std::string_view name)
+Arc< Sampler > Sampler::CreateLinearClampCmp(RenderDevice& device, const std::string& name)
 {
     return Create(device, name,
         {
@@ -58,7 +58,7 @@ Arc< Sampler > Sampler::CreateLinearClampCmp(RenderDevice& device, std::string_v
         });
 }
 
-Sampler::Sampler(RenderDevice& device, std::string_view name, CreationInfo&& info)
+Sampler::Sampler(RenderDevice& device, const std::string& name, CreationInfo&& info)
 : Super(device, name, eResourceType::Sampler)
 , m_CreationInfo(std::move(info))
 {

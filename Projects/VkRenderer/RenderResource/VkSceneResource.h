@@ -40,10 +40,10 @@ struct SceneResource
 
     void UpdateSceneResources(const SceneRenderView& sceneView);
 
-    BufferHandle GetOrUpdateVertex(u32 entity, std::string_view filepath, const void* pData, u32 count);
-    BufferHandle GetOrUpdateIndex(u32 entity, std::string_view filepath, const void* pData, u32 count);
-    Arc< Texture > GetOrLoadTexture(u32 entity, std::string_view filepath);
-    Arc< Texture > GetTexture(std::string_view filepath);
+    BufferHandle GetOrUpdateVertex(u32 entity, const std::string& filepath, const void* pData, u32 count);
+    BufferHandle GetOrUpdateIndex(u32 entity, const std::string& filepath, const void* pData, u32 count);
+    Arc< Texture > GetOrLoadTexture(u32 entity, const std::string& filepath);
+    Arc< Texture > GetTexture(const std::string& filepath);
 
     [[nodiscard]]
     VkDescriptorSet GetSceneDescriptorSet() const;

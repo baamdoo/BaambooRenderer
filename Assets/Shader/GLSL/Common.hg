@@ -7,8 +7,8 @@
 #ifdef _CAMERA
 layout(set = SET_PUSH, binding = 0) uniform Camera 
 { 
-	mat4  mProj;
 	mat4  mView;
+	mat4  mProj;
 	mat4  mViewProj;
 
 	vec3  posWORLD;

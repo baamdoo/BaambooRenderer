@@ -4,7 +4,7 @@
 namespace vk
 {
 
-Resource::Resource(RenderDevice& device, std::string_view name, eResourceType type)
+Resource::Resource(RenderDevice& device, const std::string& name, eResourceType type)
 	: m_RenderDevice(device)
 	, m_Name(name)
 	, m_Type(type) 

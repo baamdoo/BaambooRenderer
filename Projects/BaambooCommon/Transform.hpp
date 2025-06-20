@@ -66,7 +66,7 @@ public:
     glm::vec3 scale    = glm::vec3(1.0f);
 
 private:
-    glm::quat m_Orientation;
+    glm::quat m_Orientation = {};
 };
 
 inline bool Transform::operator==(const Transform& other) const

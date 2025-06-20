@@ -111,8 +111,8 @@ private:
 
     VkDeviceAddress m_BaseGpuHandle;
 
-    u64 m_Size = 0;
-    u64 m_Offset = 0;
+    u64 m_Size      = 0;
+    u64 m_Offset    = 0;
     u64 m_Alignment = 0;
 
     VkBufferUsageFlags m_UsageFlags = 0;

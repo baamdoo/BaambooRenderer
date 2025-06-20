@@ -11,11 +11,11 @@ using Super = Resource;
 public:
     using CreationInfo = ResourceCreationInfo;
 
-    static Arc< Texture > Create(RenderDevice& device, std::wstring_view name, CreationInfo&& info);
-    static Arc< Texture > CreateEmpty(RenderDevice& device, std::wstring_view name);
+    static Arc< Texture > Create(RenderDevice& device, const std::wstring& name, CreationInfo&& info);
+    static Arc< Texture > CreateEmpty(RenderDevice& device, const std::wstring& name);
 
-    Texture(RenderDevice& device, std::wstring_view name);
-    Texture(RenderDevice& device, std::wstring_view name, CreationInfo&& info);
+    Texture(RenderDevice& device, const std::wstring& name);
+    Texture(RenderDevice& device, const std::wstring& name, CreationInfo&& info);
     virtual ~Texture();
 
     virtual void Reset() override;

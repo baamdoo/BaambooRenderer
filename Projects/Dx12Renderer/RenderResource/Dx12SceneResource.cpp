@@ -17,7 +17,7 @@ namespace dx12
 
 static RootSignature*   s_CombineTexturesRS  = nullptr;
 static ComputePipeline* s_CombineTexturesPSO = nullptr;
-Arc< Texture > CombineTextures(RenderDevice& renderDevice, std::wstring_view name, Arc< Texture > pTextureR, Arc< Texture > pTextureG, Arc< Texture > pTextureB)
+Arc< Texture > CombineTextures(RenderDevice& renderDevice, const std::wstring& name, Arc< Texture > pTextureR, Arc< Texture > pTextureG, Arc< Texture > pTextureB)
 {
     u32 width
         = std::max({ pTextureR->Desc().Width, pTextureG->Desc().Width, pTextureB->Desc().Width });
@@ -44,22 +44,19 @@ Arc< Texture > CombineTextures(RenderDevice& renderDevice, std::wstring_view nam
         context.TransitionBarrier(pTextureR, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, false);
         context.TransitionBarrier(pTextureG, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, false);
         context.TransitionBarrier(pTextureB, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, false);
-        context.TransitionBarrier(pCombinedTexture, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        context.TransitionBarrier(pCombinedTexture, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 
         context.StageDescriptors(0, 0,
             {
                 pTextureR->GetShaderResourceView(),
                 pTextureG->GetShaderResourceView(),
                 pTextureB->GetShaderResourceView(),
-            });
-        context.StageDescriptors(1, 0,
-            {
                 pCombinedTexture->GetUnorderedAccessView(0)
             });
 
         context.Dispatch2D< 16, 16 >(width, height);
 
-        context.TransitionBarrier(pCombinedTexture, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
+        context.TransitionBarrier(pCombinedTexture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
         context.Close();
     }
     context.Execute().Wait();
@@ -137,18 +134,18 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
         transform.mViewToWorld = glm::inverse(transformView.mWorld);
         transforms.push_back(transform);
     }
-    UpdateFrameBuffer(transforms.data(), (u32)transforms.size(), sizeof(TransformData), *m_pTransformAllocator);
+    UpdateFrameBuffer(transforms.data(), (u32)transforms.size(), sizeof(TransformData), *m_pTransformAllocator, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
 
-    srvs.clear();
+    sceneTexSRVs.clear();
     std::vector< MaterialData > materials;
     materials.reserve(sceneView.materials.size());
     std::unordered_map< Texture*, u32 > srvIndexCache;
     for (auto& materialView : sceneView.materials)
     {
         MaterialData material = {};
-        material.tint = materialView.tint;
-        material.roughness = materialView.roughness;
-        material.metallic = materialView.metallic;
+        material.tint         = materialView.tint;
+        material.roughness    = materialView.roughness;
+        material.metallic     = materialView.metallic;
 
         material.albedoID = INVALID_INDEX;
         if (!materialView.albedoTex.empty())
@@ -160,8 +157,8 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
             }
             else
             {
-                srvs.push_back(pAlbedo->GetShaderResourceView());
-                material.albedoID = (u32)srvs.size() - 1;
+                sceneTexSRVs.push_back(pAlbedo->GetShaderResourceView());
+                material.albedoID = (u32)sceneTexSRVs.size() - 1;
                 srvIndexCache.emplace(pAlbedo.get(), material.albedoID);
             }
         }
@@ -176,32 +173,16 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
             }
             else
             {
-                srvs.push_back(pNormal->GetShaderResourceView());
-                material.normalID = (u32)srvs.size() - 1;
+                sceneTexSRVs.push_back(pNormal->GetShaderResourceView());
+                material.normalID = (u32)sceneTexSRVs.size() - 1;
                 srvIndexCache.emplace(pNormal.get(), material.normalID);
             }
         }
 
-        material.specularID = INVALID_INDEX;
-        if (!materialView.specularTex.empty())
-        {
-            auto pSpecular = GetOrLoadTexture(materialView.id, materialView.specularTex);
-            if (srvIndexCache.contains(pSpecular.get()))
-            {
-                material.specularID = srvIndexCache[pSpecular.get()];
-            }
-            else
-            {
-                srvs.push_back(pSpecular->GetShaderResourceView());
-                material.specularID = (u32)srvs.size() - 1;
-                srvIndexCache.emplace(pSpecular.get(), material.specularID);
-            }
-        }
-
         // combine orm
-        std::string aoStr        = materialView.aoTex.data();
-        std::string roughnessStr = materialView.roughnessTex.data();
-        std::string metallicStr  = materialView.metallicTex.data();
+        std::string aoStr        = materialView.aoTex;
+        std::string roughnessStr = materialView.roughnessTex;
+        std::string metallicStr  = materialView.metallicTex;
         std::string ormStr       = aoStr + roughnessStr + metallicStr;
 
         material.metallicRoughnessAoID = INVALID_INDEX;
@@ -216,12 +197,8 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
                     DescriptorTable()
                         .AddSRVRange(0, 0, 1)  // g_TextureR
                         .AddSRVRange(1, 0, 1)  // g_TextureG
-                        .AddSRVRange(2, 0, 1), // g_TextureB
-                    D3D12_SHADER_VISIBILITY_ALL
-                );
-                s_CombineTexturesRS->AddDescriptorTable(
-                    DescriptorTable()
-                        .AddUAVRange(0, 0, 1), // g_TextureR
+                        .AddSRVRange(2, 0, 1)  // g_TextureB
+						.AddUAVRange(0, 0, 1), // g_CombinedTexture
                     D3D12_SHADER_VISIBILITY_ALL
                 );
                 s_CombineTexturesRS->AddSampler(0, 0, D3D12_FILTER_MIN_MAG_MIP_LINEAR, D3D12_TEXTURE_ADDRESS_MODE_WRAP, 1);
@@ -259,10 +236,25 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
         }
         else
         {
-            srvs.push_back(pORM->GetShaderResourceView());
-            material.metallicRoughnessAoID = (u32)srvs.size() - 1;
+            sceneTexSRVs.push_back(pORM->GetShaderResourceView());
+            material.metallicRoughnessAoID = (u32)sceneTexSRVs.size() - 1;
             srvIndexCache.emplace(pORM.get(), material.metallicRoughnessAoID);
         }
+
+        /*if (!materialView.metallicTex.empty())
+        {
+            auto pTemp = GetOrLoadTexture(materialView.id, materialView.metallicTex);
+            if (srvIndexCache.contains(pTemp.get()))
+            {
+                material.metallicRoughnessAoID = srvIndexCache[pTemp.get()];
+            }
+            else
+            {
+                sceneTexSRVs.push_back(pTemp->GetShaderResourceView());
+                material.metallicRoughnessAoID = (u32)sceneTexSRVs.size() - 1;
+                srvIndexCache.emplace(pTemp.get(), material.metallicRoughnessAoID);
+            }
+        }*/
 
         material.emissionID = INVALID_INDEX;
         if (!materialView.emissionTex.empty())
@@ -274,15 +266,15 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
             }
             else
             {
-                srvs.push_back(pEmission->GetShaderResourceView());
-                material.emissionID = (u32)srvs.size() - 1;
+                sceneTexSRVs.push_back(pEmission->GetShaderResourceView());
+                material.emissionID = (u32)sceneTexSRVs.size() - 1;
                 srvIndexCache.emplace(pEmission.get(), material.emissionID);
             }
         }
 
         materials.push_back(material);
     }
-    UpdateFrameBuffer(materials.data(), (u32)materials.size(), sizeof(MaterialData), *m_pMaterialAllocator);
+    UpdateFrameBuffer(materials.data(), (u32)materials.size(), sizeof(MaterialData), *m_pMaterialAllocator, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
     std::vector< IndirectDrawData > indirects;
     for (auto& [id, data] : sceneView.draws)
@@ -294,12 +286,12 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
             auto& meshView = sceneView.meshes[data.mesh];
 
             auto pVB = GetOrUpdateVertex(meshView.id, meshView.tag, meshView.vData, meshView.vCount);
-            auto pIB = GetOrUpdateIndex(meshView.id, meshView.tag, meshView.iData, meshView.iCount);
+            auto pIB  = GetOrUpdateIndex(meshView.id, meshView.tag, meshView.iData, meshView.iCount);
 
             indirect.draws.IndexCountPerInstance = pIB->GetBufferCount();
-            indirect.draws.InstanceCount = 1;
-            indirect.draws.StartIndexLocation = 0;
-            indirect.draws.BaseVertexLocation = 0;
+            indirect.draws.InstanceCount         = 1;
+            indirect.draws.StartIndexLocation    = 0;
+            indirect.draws.BaseVertexLocation    = 0;
             indirect.draws.StartInstanceLocation = 0;
 
             indirect.vbv = pVB->GetBufferView();
@@ -319,12 +311,12 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
             m_NumMeshes++;
         }
     }
-    UpdateFrameBuffer(indirects.data(), (u32)indirects.size(), sizeof(IndirectDrawData), *m_pIndirectDrawAllocator);
+    UpdateFrameBuffer(indirects.data(), (u32)indirects.size(), sizeof(IndirectDrawData), *m_pIndirectDrawAllocator, D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
 
-    UpdateFrameBuffer(&sceneView.light.data, 1, sizeof(LightData), *m_pLightAllocator);
+    UpdateFrameBuffer(&sceneView.light.data, 1, sizeof(LightData), *m_pLightAllocator, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
 }
 
-Arc< VertexBuffer > SceneResource::GetOrUpdateVertex(u32 entity, std::string_view filepath, const void* pData, u32 count)
+Arc< VertexBuffer > SceneResource::GetOrUpdateVertex(u32 entity, const std::string& filepath, const void* pData, u32 count)
 {
     auto& commandQueue = m_RenderDevice.GraphicsQueue();
 
@@ -379,7 +371,7 @@ Arc< VertexBuffer > SceneResource::GetOrUpdateVertex(u32 entity, std::string_vie
     return pVB;
 }
 
-Arc< IndexBuffer > SceneResource::GetOrUpdateIndex(u32 entity, std::string_view filepath, const void* pData, u32 count)
+Arc< IndexBuffer > SceneResource::GetOrUpdateIndex(u32 entity, const std::string& filepath, const void* pData, u32 count)
 {
     auto& commandQueue = m_RenderDevice.GraphicsQueue();
 
@@ -438,12 +430,11 @@ Arc< IndexBuffer > SceneResource::GetOrUpdateIndex(u32 entity, std::string_view 
     return pIB;
 }
 
-Arc< Texture > SceneResource::GetOrLoadTexture(u32 entity, std::string_view filepath)
+Arc< Texture > SceneResource::GetOrLoadTexture(u32 entity, const std::string& filepath)
 {
-    std::string f = filepath.data();
-    if (m_TextureCache.contains(f))
+    if (m_TextureCache.contains(filepath))
     {
-        return m_TextureCache.find(f)->second;
+        return m_TextureCache.find(filepath)->second;
     }
 
     auto d3d12Device = m_RenderDevice.GetD3D12Device();
@@ -457,14 +448,14 @@ Arc< Texture > SceneResource::GetOrLoadTexture(u32 entity, std::string_view file
     auto pEmptyTex = MakeArc< Texture >(m_RenderDevice, path.wstring());
     if (extension == L".dds")
     {
-        std::vector< D3D12_SUBRESOURCE_DATA > subresouceData;
+        std::vector< D3D12_SUBRESOURCE_DATA > subresourceData;
         DX_CHECK(DirectX::LoadDDSTextureFromFile(
-            d3d12Device, path.c_str(), &d3d12TexResource, rawData, subresouceData));
+            d3d12Device, path.c_str(), &d3d12TexResource, rawData, subresourceData));
 
-        UINT subresouceSize = (UINT)subresouceData.size();
+        UINT subresourceSize = (UINT)subresourceData.size();
 
         pEmptyTex->SetD3D12Resource(d3d12TexResource);
-        m_RenderDevice.UpdateSubresources(pEmptyTex, 0, subresouceSize, subresouceData.data());
+        m_RenderDevice.UpdateSubresources(pEmptyTex, 0, subresourceSize, subresourceData.data());
     }
     else
     {
@@ -482,7 +473,7 @@ Arc< Texture > SceneResource::GetOrLoadTexture(u32 entity, std::string_view file
     return pEmptyTex;
 }
 
-Arc< Texture > SceneResource::GetTexture(std::string_view filepath)
+Arc< Texture > SceneResource::GetTexture(const std::string& filepath)
 {
     std::string f = filepath.data();
     if (m_TextureCache.contains(f))
@@ -493,7 +484,7 @@ Arc< Texture > SceneResource::GetTexture(std::string_view filepath)
     return nullptr;
 }
 
-void SceneResource::UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator& targetBuffer)
+void SceneResource::UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator& targetBuffer, D3D12_RESOURCE_STATES stateAfter)
 {
     if (count == 0 || elementSizeInBytes == 0)
         return;
@@ -513,13 +504,14 @@ void SceneResource::UpdateFrameBuffer(const void* pData, u32 count, u64 elementS
 
     auto allocation = targetBuffer.Allocate(count, elementSizeInBytes);
 
-    auto& cmdQueue = m_RenderDevice.CopyQueue();
-    auto& cmdList = cmdQueue.Allocate();
-    cmdList.CopyBuffer(allocation.pBuffer->GetD3D12Resource(), d3d12UploadBuffer, sizeInBytes);
-    cmdList.Close();
-
-    auto fenceValue = cmdQueue.ExecuteCommandList(&cmdList);
-    cmdQueue.WaitForFenceValue(fenceValue);
+    auto& cmdList = m_RenderDevice.BeginCommand(D3D12_COMMAND_LIST_TYPE_DIRECT);
+    {
+        cmdList.TransitionBarrier(allocation.pBuffer, D3D12_RESOURCE_STATE_COPY_DEST);
+        cmdList.CopyBuffer(allocation.pBuffer->GetD3D12Resource(), d3d12UploadBuffer, sizeInBytes);
+        cmdList.TransitionBarrier(allocation.pBuffer, stateAfter);
+        cmdList.Close();
+    }
+    cmdList.Execute().Wait();
 
     COM_RELEASE(d3d12UploadBuffer);
 }

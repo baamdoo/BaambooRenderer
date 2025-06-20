@@ -6,35 +6,35 @@
 namespace dx12
 {
 
-Buffer::Buffer(RenderDevice& device, std::wstring_view name)
+Buffer::Buffer(RenderDevice& device, const std::wstring& name)
 	: Super(device, name)
 {
 }
 
-Buffer::Buffer(RenderDevice& device, std::wstring_view name, CreationInfo&& info)
+Buffer::Buffer(RenderDevice& device, const std::wstring& name, CreationInfo&& info)
 	: Super(device, name, std::move(info), eResourceType::Buffer)
 	, m_Count(info.count)
 	, m_ElementSize(info.elementSizeInBytes)
 {
 }
 
-VertexBuffer::VertexBuffer(RenderDevice& device, std::wstring_view name, CreationInfo&& info)
+VertexBuffer::VertexBuffer(RenderDevice& device, const std::wstring& name, CreationInfo&& info)
 	: Super(device, name, std::move(info))
 {
 	m_d3d12BufferView.BufferLocation = m_d3d12Resource->GetGPUVirtualAddress();
-	m_d3d12BufferView.StrideInBytes = sizeof(Vertex);
-	m_d3d12BufferView.SizeInBytes = static_cast<u32>(GetSizeInBytes());
+	m_d3d12BufferView.StrideInBytes  = sizeof(Vertex);
+	m_d3d12BufferView.SizeInBytes    = static_cast<u32>(GetSizeInBytes());
 }
 
-IndexBuffer::IndexBuffer(RenderDevice& device, std::wstring_view name, CreationInfo&& info)
+IndexBuffer::IndexBuffer(RenderDevice& device, const std::wstring& name, CreationInfo&& info)
 	: Super(device, name, std::move(info))
 {
 	m_d3d12BufferView.BufferLocation = m_d3d12Resource->GetGPUVirtualAddress();
-	m_d3d12BufferView.Format = DXGI_FORMAT_R32_UINT;
-	m_d3d12BufferView.SizeInBytes = static_cast<u32>(GetSizeInBytes());
+	m_d3d12BufferView.Format         = DXGI_FORMAT_R32_UINT;
+	m_d3d12BufferView.SizeInBytes    = static_cast<u32>(GetSizeInBytes());
 }
 
-ConstantBuffer::ConstantBuffer(RenderDevice& device, std::wstring_view name, CreationInfo&& info)
+ConstantBuffer::ConstantBuffer(RenderDevice& device, const std::wstring& name, CreationInfo&& info)
 	: Super(device, name, std::move(info))
 {
 	auto d3d12Device = m_RenderDevice.GetD3D12Device();
@@ -62,7 +62,7 @@ ConstantBuffer::~ConstantBuffer()
 	m_CBVAllocation.Free();
 }
 
-StructuredBuffer::StructuredBuffer(RenderDevice& device, std::wstring_view name, CreationInfo&& info)
+StructuredBuffer::StructuredBuffer(RenderDevice& device, const std::wstring& name, CreationInfo&& info)
 	: Super(device, name, std::move(info))
 {
 	auto d3d12Device = m_RenderDevice.GetD3D12Device();
@@ -73,13 +73,13 @@ StructuredBuffer::StructuredBuffer(RenderDevice& device, std::wstring_view name,
 		m_SRVAllocation = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
 
 		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		srvDesc.Format = DXGI_FORMAT_UNKNOWN;
-		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-		srvDesc.Buffer.FirstElement = 0;
-		srvDesc.Buffer.NumElements = m_Count;
-		srvDesc.Buffer.StructureByteStride = static_cast<u32>(m_ElementSize);
-		srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+		srvDesc.Shader4ComponentMapping         = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		srvDesc.Format                          = DXGI_FORMAT_UNKNOWN;
+		srvDesc.ViewDimension                   = D3D12_SRV_DIMENSION_BUFFER;
+		srvDesc.Buffer.FirstElement             = 0;
+		srvDesc.Buffer.NumElements              = m_Count;
+		srvDesc.Buffer.StructureByteStride      = static_cast<u32>(m_ElementSize);
+		srvDesc.Buffer.Flags                    = D3D12_BUFFER_SRV_FLAG_NONE;
 
 		d3d12Device->CreateShaderResourceView(m_d3d12Resource, &srvDesc, m_SRVAllocation.GetCPUHandle());
 	}
@@ -90,13 +90,13 @@ StructuredBuffer::StructuredBuffer(RenderDevice& device, std::wstring_view name,
 		m_UAVAllocation = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
 
 		D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
-		uavDesc.Format = DXGI_FORMAT_UNKNOWN;
-		uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
-		uavDesc.Buffer.FirstElement = 0;
-		uavDesc.Buffer.NumElements = m_Count;
-		uavDesc.Buffer.StructureByteStride = static_cast<u32>(m_ElementSize);
-		uavDesc.Buffer.CounterOffsetInBytes = 0;
-		uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+		uavDesc.Format                           = DXGI_FORMAT_UNKNOWN;
+		uavDesc.ViewDimension                    = D3D12_UAV_DIMENSION_BUFFER;
+		uavDesc.Buffer.FirstElement              = 0;
+		uavDesc.Buffer.NumElements               = m_Count;
+		uavDesc.Buffer.StructureByteStride       = static_cast<u32>(m_ElementSize);
+		uavDesc.Buffer.CounterOffsetInBytes      = 0;
+		uavDesc.Buffer.Flags                     = D3D12_BUFFER_UAV_FLAG_NONE;
 
 		d3d12Device->CreateUnorderedAccessView(m_d3d12Resource, nullptr, &uavDesc, m_UAVAllocation.GetCPUHandle());
 	}

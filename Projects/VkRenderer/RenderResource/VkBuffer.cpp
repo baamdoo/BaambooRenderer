@@ -8,7 +8,7 @@ namespace vk
 //-------------------------------------------------------------------------
 // Base Buffer
 //-------------------------------------------------------------------------
-Buffer::Buffer(RenderDevice& device, std::string_view name, CreationInfo&& info)
+Buffer::Buffer(RenderDevice& device, const std::string& name, CreationInfo&& info)
 	: Super(device, name, eResourceType::Buffer)
 	, m_CreationInfo(std::move(info))
 {
@@ -16,7 +16,7 @@ Buffer::Buffer(RenderDevice& device, std::string_view name, CreationInfo&& info)
 	SetDeviceObjectName((u64)m_vkBuffer, VK_OBJECT_TYPE_BUFFER);
 }
 
-Arc< Buffer > Buffer::Create(RenderDevice& device, std::string_view name, CreationInfo&& desc)
+Arc< Buffer > Buffer::Create(RenderDevice& device, const std::string& name, CreationInfo&& desc)
 {
 	return MakeArc< Buffer >(device, name, std::move(desc));
 }
@@ -79,12 +79,12 @@ void Buffer::Resize(u64 sizeInBytes, bool bReset)
 //-------------------------------------------------------------------------
 // Index Buffer
 //-------------------------------------------------------------------------
-Arc<IndexBuffer> IndexBuffer::Create(RenderDevice& device, std::string_view name, u32 numIndices, VkIndexType type)
+Arc<IndexBuffer> IndexBuffer::Create(RenderDevice& device, const std::string& name, u32 numIndices, VkIndexType type)
 {
 	return MakeArc< IndexBuffer >(device, name, numIndices, type);
 }
 
-IndexBuffer::IndexBuffer(RenderDevice& device, std::string_view name, u32 numIndices, VkIndexType type)
+IndexBuffer::IndexBuffer(RenderDevice& device, const std::string& name, u32 numIndices, VkIndexType type)
 	: m_IndexType(type)
 	, Super(device, name,
 		{
@@ -99,12 +99,12 @@ IndexBuffer::IndexBuffer(RenderDevice& device, std::string_view name, u32 numInd
 //-------------------------------------------------------------------------
 // Uniform Buffer
 //-------------------------------------------------------------------------
-Arc< UniformBuffer > UniformBuffer::Create(RenderDevice& device, std::string_view name, u64 sizeInBytes, VkBufferUsageFlags usage)
+Arc< UniformBuffer > UniformBuffer::Create(RenderDevice& device, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags usage)
 {
 	return MakeArc< UniformBuffer >(device, name, sizeInBytes, usage);
 }
 
-UniformBuffer::UniformBuffer(RenderDevice& device, std::string_view name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage)
+UniformBuffer::UniformBuffer(RenderDevice& device, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage)
 	: Super(device, name,
 		{
 			.sizeInBytes = sizeInBytes,
@@ -118,12 +118,12 @@ UniformBuffer::UniformBuffer(RenderDevice& device, std::string_view name, u64 si
 //-------------------------------------------------------------------------
 // Storage Buffer
 //-------------------------------------------------------------------------
-Arc<StorageBuffer> StorageBuffer::Create(RenderDevice& device, std::string_view name, u64 sizeInBytes, VkBufferUsageFlags usage)
+Arc< StorageBuffer > StorageBuffer::Create(RenderDevice& device, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags usage)
 {
 	return MakeArc< StorageBuffer >(device, name, sizeInBytes, usage);
 }
 
-StorageBuffer::StorageBuffer(RenderDevice& device, std::string_view name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage)
+StorageBuffer::StorageBuffer(RenderDevice& device, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage)
 	: Super(device, name,
 		{
 			.sizeInBytes = sizeInBytes,

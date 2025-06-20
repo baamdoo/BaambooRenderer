@@ -15,16 +15,56 @@
 namespace vk
 {
 
+static PFN_vkAcquireNextImage2KHR      fnAcquireNextImage2      = nullptr;
+static PFN_vkQueuePresentKHR           fnQueuePresent2          = nullptr;
+static PFN_vkGetSwapchainStatusKHR     fnGetSwapchainStatus     = nullptr;
+static PFN_vkReleaseSwapchainImagesEXT fnReleaseSwapchainImages = nullptr;
+
 SwapChain::SwapChain(RenderDevice& device, baamboo::Window& window)
 	: m_RenderDevice(device)
 	, m_Window(window)
 {
 	VkWin32SurfaceCreateInfoKHR createInfo{};
-	createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
-	createInfo.hwnd = m_Window.WinHandle();
+	createInfo.sType     = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+	createInfo.hwnd      = m_Window.WinHandle();
 	createInfo.hinstance = GetModuleHandle(nullptr);
 	VK_CHECK(vkCreateWin32SurfaceKHR(m_RenderDevice.vkInstance(), &createInfo, nullptr, &m_vkSurface));
-	
+
+	u32 deviceExtCount;
+	vkEnumerateDeviceExtensionProperties(device.vkPhysicalDevice(), nullptr, &deviceExtCount, nullptr);
+	std::vector<VkExtensionProperties> deviceExts(deviceExtCount);
+	vkEnumerateDeviceExtensionProperties(device.vkPhysicalDevice(), nullptr, &deviceExtCount, deviceExts.data());
+
+	for (const auto& ext : deviceExts) 
+	{
+		if (strcmp(ext.extensionName, VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME) == 0)
+			m_bHasMaintenance = true;
+	}
+
+	if (m_bHasMaintenance) 
+	{
+		fnAcquireNextImage2      = reinterpret_cast<PFN_vkAcquireNextImage2KHR>(vkGetDeviceProcAddr(device.vkDevice(), "vkAcquireNextImage2KHR"));
+		fnGetSwapchainStatus     = reinterpret_cast<PFN_vkGetSwapchainStatusKHR>(vkGetDeviceProcAddr(device.vkDevice(), "vkGetSwapchainStatusKHR"));
+		fnReleaseSwapchainImages = reinterpret_cast<PFN_vkReleaseSwapchainImagesEXT>(vkGetDeviceProcAddr(device.vkDevice(), "vkReleaseSwapchainImagesEXT"));
+
+		VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT maintenance1Features = {};
+		maintenance1Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT;
+
+		VkPhysicalDeviceFeatures2 features2 = {};
+		features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+		features2.pNext = &maintenance1Features;
+		vkGetPhysicalDeviceFeatures2(device.vkPhysicalDevice(), &features2);
+
+		m_bHasMaintenance = maintenance1Features.swapchainMaintenance1;
+
+		VkPhysicalDevicePresentIdFeaturesKHR presentIdFeatures = {};
+		presentIdFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR;
+		features2.pNext         = &presentIdFeatures;
+		vkGetPhysicalDeviceFeatures2(device.vkPhysicalDevice(), &features2);
+
+		m_bHasPresentFence = presentIdFeatures.presentId;
+	}
+
 	Init();
 }
 
@@ -34,30 +74,81 @@ SwapChain::~SwapChain()
 	vkDestroySurfaceKHR(m_RenderDevice.vkInstance(), m_vkSurface, nullptr);
 }
 
-u32 SwapChain::AcquireImageIndex(VkSemaphore vkPresentCompleteSemaphore)
+u32 SwapChain::AcquireNextImage(VkSemaphore vkPresentCompleteSemaphore)
 {
-	VK_CHECK(vkAcquireNextImageKHR(m_RenderDevice.vkDevice(), m_vkSwapChain, UINT64_MAX, vkPresentCompleteSemaphore, (VkFence)nullptr, &m_ImageIndex));
+	if (m_bHasMaintenance && fnAcquireNextImage2) 
+	{
+		VkResult result = 
+			vkAcquireNextImageKHR(m_RenderDevice.vkDevice(), m_vkSwapChain, UINT_MAX, vkPresentCompleteSemaphore, VK_NULL_HANDLE, &m_ImageIndex);
+		if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) 
+		{
+			ResizeViewport();
+			return AcquireNextImage(vkPresentCompleteSemaphore);
+		}
+		VK_CHECK(result);
+	}
+	else 
+	{
+		assert(false);
+	}
+
 	return m_ImageIndex;
 }
 
-void SwapChain::Present(VkSemaphore vkRenderCompleteSemaphore)
+void SwapChain::Present(VkSemaphore vkRenderCompleteSemaphore, VkFence vkSignalFence)
 {
-	VkPresentInfoKHR presentInfo = {};
-	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-	presentInfo.waitSemaphoreCount = 1;
-	presentInfo.pWaitSemaphores = &vkRenderCompleteSemaphore;
-	presentInfo.swapchainCount = 1;
-	presentInfo.pSwapchains = &m_vkSwapChain;
-	presentInfo.pImageIndices = &m_ImageIndex;
-	VkResult presentResult = vkQueuePresentKHR(m_RenderDevice.GraphicsQueue().vkQueue(), &presentInfo);
+	if (m_bHasMaintenance && m_bHasPresentFence) 
+	{
+		VkPresentInfoKHR presentInfo = {};
+		presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 
+		if (vkRenderCompleteSemaphore != VK_NULL_HANDLE) 
+		{
+			presentInfo.waitSemaphoreCount = 1;
+			presentInfo.pWaitSemaphores    = &vkRenderCompleteSemaphore;
+		}
+
+		presentInfo.swapchainCount = 1;
+		presentInfo.pSwapchains    = &m_vkSwapChain;
+		presentInfo.pImageIndices  = &m_ImageIndex;
+
+		VkSwapchainPresentFenceInfoEXT fenceInfo = {};
+		fenceInfo.sType          = VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_FENCE_INFO_EXT;
+		fenceInfo.swapchainCount = 1;
+		fenceInfo.pFences        = &vkSignalFence;
+
+		presentInfo.pNext = &fenceInfo;
+
+		VkResult presentResult = vkQueuePresentKHR(m_RenderDevice.GraphicsQueue().vkQueue(), &presentInfo);
+		if (presentResult != VK_SUCCESS)
+		{
+			if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR)
+				ResizeViewport();
+			else
+				VK_CHECK(presentResult);
+		}
+	}
+	else
+	{
+		assert(false);
+	}
+
+	/*VkPresentInfoKHR presentInfo   = {};
+	presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	presentInfo.waitSemaphoreCount = 1;
+	presentInfo.pWaitSemaphores    = &vkRenderCompleteSemaphore;
+	presentInfo.swapchainCount     = 1;
+	presentInfo.pSwapchains        = &m_vkSwapChain;
+	presentInfo.pImageIndices      = &m_ImageIndex;
+
+	VkResult presentResult = vkQueuePresentKHR(m_RenderDevice.GraphicsQueue().vkQueue(), &presentInfo);
 	if (presentResult != VK_SUCCESS) 
 	{
 		if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR)
 			ResizeViewport();
 		else
 			VK_CHECK(presentResult);
-	}
+	}*/
 }
 
 void SwapChain::ResizeViewport()

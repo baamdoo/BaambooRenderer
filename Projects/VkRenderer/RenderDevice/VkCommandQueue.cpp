@@ -44,10 +44,17 @@ CommandContext& CommandQueue::Allocate(VkCommandBufferUsageFlags flags, bool bTr
 	}
 	else
 	{
-		if (!m_pAvailableContexts.empty() && m_pAvailableContexts.front()->IsFenceComplete())
+		if (!m_pAvailableContexts.empty() && m_pAvailableContexts.front()->IsReady())
 		{
 			pContext = m_pAvailableContexts.front();
 			m_pAvailableContexts.pop();
+		}
+		else if (m_pContexts.size() == MAX_FRAMES_IN_FLIGHT) // limit the number of commands to avoid ImGui buffer recreate validation
+		{
+			pContext = m_pAvailableContexts.front();
+			m_pAvailableContexts.pop();
+
+			pContext->Flush();
 		}
 		else
 		{
@@ -64,8 +71,8 @@ CommandContext& CommandQueue::Allocate(VkCommandBufferUsageFlags flags, bool bTr
 
 void CommandQueue::Flush()
 {
-	for (auto pCmdBuffer : m_pContexts)
-		pCmdBuffer->WaitForFence();
+	for (auto pContext : m_pContexts)
+		pContext->Flush();
 }
 
 void CommandQueue::ExecuteCommandBuffer(CommandContext& context)
@@ -77,27 +84,27 @@ void CommandQueue::ExecuteCommandBuffer(CommandContext& context)
 	{
 		VkPipelineStageFlags waitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
-		VkSubmitInfo submitInfo = {};
-		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		submitInfo.waitSemaphoreCount = 1;
-		submitInfo.pWaitSemaphores = &context.m_vkPresentCompleteSemaphore;
-		submitInfo.pWaitDstStageMask = &waitStages;
-		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers = &context.m_vkCommandBuffer;
+		VkSubmitInfo submitInfo         = {};
+		submitInfo.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submitInfo.waitSemaphoreCount   = 1;
+		submitInfo.pWaitSemaphores      = &context.m_vkPresentCompleteSemaphore;
+		submitInfo.pWaitDstStageMask    = &waitStages;
+		submitInfo.commandBufferCount   = 1;
+		submitInfo.pCommandBuffers      = &context.m_vkCommandBuffer;
 		submitInfo.signalSemaphoreCount = 1;
-		submitInfo.pSignalSemaphores = &context.m_vkRenderCompleteSemaphore;
-		VK_CHECK(vkQueueSubmit(m_vkQueue, 1, &submitInfo, context.m_vkFence));
+		submitInfo.pSignalSemaphores    = &context.m_vkRenderCompleteSemaphore;
+		VK_CHECK(vkQueueSubmit(m_vkQueue, 1, &submitInfo, context.vkRenderCompleteFence()));
 
 		m_pAvailableContexts.push(&context);
 	}
 	else
 	{
-		VkSubmitInfo submitInfo = {};
-		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		VkSubmitInfo submitInfo       = {};
+		submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers = &context.m_vkCommandBuffer;
-		VK_CHECK(vkQueueSubmit(m_vkQueue, 1, &submitInfo, context.m_vkFence));
-		context.WaitForFence();
+		submitInfo.pCommandBuffers    = &context.m_vkCommandBuffer;
+		VK_CHECK(vkQueueSubmit(m_vkQueue, 1, &submitInfo, context.vkRenderCompleteFence()));
+		context.WaitForFence(context.vkRenderCompleteFence());
 		//VK_CHECK(vkQueueWaitIdle(m_vkQueue));
 
 		auto pContext = &context;

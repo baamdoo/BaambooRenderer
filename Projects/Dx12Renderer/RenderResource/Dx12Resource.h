@@ -72,9 +72,9 @@ class Resource : public ArcBase
 public:
 	friend class ResourceManager;
 
-	Resource(RenderDevice& device, std::wstring_view name);
-	Resource(RenderDevice& device, std::wstring_view name, eResourceType type);
-	Resource(RenderDevice& device, std::wstring_view name, ResourceCreationInfo&& info, eResourceType type);
+	Resource(RenderDevice& device, const std::wstring& name);
+	Resource(RenderDevice& device, const std::wstring& name, eResourceType type);
+	Resource(RenderDevice& device, const std::wstring& name, ResourceCreationInfo&& info, eResourceType type);
 	virtual ~Resource();
 
 	[[nodiscard]]
@@ -102,9 +102,9 @@ private:
 	void SetFormatSupported();
 
 protected:
-	RenderDevice&    m_RenderDevice;
-	std::wstring_view m_Name;
-	eResourceType     m_Type = eResourceType::None;
+	RenderDevice& m_RenderDevice;
+	std::wstring  m_Name;
+	eResourceType m_Type = eResourceType::None;
 
 	ID3D12Resource*                   m_d3d12Resource = nullptr;
 	D3D12_RESOURCE_DESC               m_ResourceDesc = {};

@@ -149,21 +149,21 @@ StaticBufferAllocator::Allocation StaticBufferAllocator::Allocate(u32 numElement
 	auto sizeInBytes = numElements * elementSizeInBytes;
 
 	VkDeviceSize alignedSize = baamboo::math::AlignUp(sizeInBytes, m_Alignment);
-	m_Offset = baamboo::math::AlignUp(m_Offset, m_Alignment);
+	//m_Offset = baamboo::math::AlignUp(m_Offset, m_Alignment);
 
-	if (m_Offset + alignedSize > m_Size)
+	if (m_Offset + sizeInBytes > m_Size)
 	{
-		VkDeviceSize newSize = (m_Offset + alignedSize) * 2;
+		VkDeviceSize newSize = (m_Offset + sizeInBytes) * 2;
 		Resize(newSize);
 	}
 
-	Allocation allocation;
-	allocation.vkBuffer = m_vkBuffer;
-	allocation.offset = (u32)(m_Offset / elementSizeInBytes);
-	allocation.size = sizeInBytes;
-	allocation.gpuHandle = m_BaseGpuHandle + m_Offset;
+	Allocation allocation = {};
+	allocation.vkBuffer   = m_vkBuffer;
+	allocation.offset     = (u32)(m_Offset / elementSizeInBytes);
+	allocation.size       = sizeInBytes;
+	allocation.gpuHandle  = m_BaseGpuHandle + m_Offset;
 
-	m_Offset += alignedSize;
+	m_Offset += sizeInBytes;
 
 	return allocation;
 }
@@ -186,21 +186,19 @@ void StaticBufferAllocator::Resize(VkDeviceSize sizeInBytes)
 {
 	VkBufferCreateInfo bufferInfo = {};
 	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	bufferInfo.size = sizeInBytes;
+	bufferInfo.size  = sizeInBytes;
 	bufferInfo.usage = m_UsageFlags;
 
 	VmaAllocationCreateInfo vmaInfo = {};
 	vmaInfo.usage = VMA_MEMORY_USAGE_AUTO;
 
-	VkBuffer          vkBuffer = VK_NULL_HANDLE;
-	VmaAllocation     vmaAllocation = VK_NULL_HANDLE;
+	VkBuffer          vkBuffer       = VK_NULL_HANDLE;
+	VmaAllocation     vmaAllocation  = VK_NULL_HANDLE;
 	VmaAllocationInfo allocationInfo = {};
 	VK_CHECK(vmaCreateBuffer(m_RenderDevice.vmaAllocator(), &bufferInfo, &vmaInfo, &vkBuffer, &vmaAllocation, &allocationInfo));
 
-
-
 	VkBufferDeviceAddressInfo addressInfo = {};
-	addressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+	addressInfo.sType  = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
 	addressInfo.buffer = vkBuffer;
 	VkDeviceAddress baseGpuHandle = vkGetBufferDeviceAddress(m_RenderDevice.vkDevice(), &addressInfo);
 
@@ -221,7 +219,7 @@ void StaticBufferAllocator::Resize(VkDeviceSize sizeInBytes)
 	m_vmaAllocation  = vmaAllocation;
 	m_AllocationInfo = allocationInfo;
 	m_BaseGpuHandle  = baseGpuHandle;
-	m_Size = sizeInBytes;
+	m_Size           = sizeInBytes;
 }
 
 } // namespace vk

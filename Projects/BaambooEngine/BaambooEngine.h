@@ -1,5 +1,6 @@
 #pragma once
 #include "ThreadQueue.hpp"
+#include "BaambooCore/Timer.h"
 #include "BaambooCore/BackendAPI.h"
 #include "BaambooScene/Scene.h"
 #include "BaambooScene/Camera.h"
@@ -65,6 +66,9 @@ private:
 	std::thread                    m_RenderThread;
 	ThreadQueue< SceneRenderView > m_RenderViewQueue;
 	std::atomic_bool               m_bRunning;
+
+	Timer m_GameTimer   = {};
+	Timer m_RenderTimer = {};
 
 
 	// mutex for sync between writing entity-components data in render-thread and reading(view-each) in game-thread

@@ -5,20 +5,20 @@
 namespace dx12
 {
 
-Resource::Resource(RenderDevice& device, std::wstring_view name)
+Resource::Resource(RenderDevice& device, const std::wstring& name)
 	: m_RenderDevice(device)
 	, m_Name(name)
 {
 }
 
-Resource::Resource(RenderDevice& device, std::wstring_view name, eResourceType type)
+Resource::Resource(RenderDevice& device, const std::wstring& name, eResourceType type)
 	: m_RenderDevice(device)
 	, m_Name(name)
 	, m_Type(type)
 {
 }
 
-Resource::Resource(RenderDevice& device, std::wstring_view name, ResourceCreationInfo&& info, eResourceType type)
+Resource::Resource(RenderDevice& device, const std::wstring& name, ResourceCreationInfo&& info, eResourceType type)
 	: m_RenderDevice(device)
 	, m_Name(name)
 	, m_Type(type)

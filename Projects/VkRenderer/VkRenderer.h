@@ -20,7 +20,7 @@ public:
 	explicit Renderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext);
 	virtual ~Renderer() override;
 
-	virtual void Render(SceneRenderView&& renderView) override;
+	virtual void Render(const SceneRenderView& renderView) override;
 	virtual void NewFrame() override;
 
 	virtual void OnWindowResized(i32 width, i32 height) override;
@@ -28,12 +28,9 @@ public:
 	virtual void SetRendererType(eRendererType type) override;
 
 private:
-	CommandContext& BeginFrame();
-	void EndFrame(CommandContext& cmdBuffer);
-
-private:
 	class RenderDevice* m_pRenderDevice = nullptr;
-	class SwapChain*     m_pSwapChain = nullptr;
+	class SwapChain*    m_pSwapChain = nullptr;
+	class FrameManager* m_pFrameManager = nullptr;
 
 	std::vector< RenderModule* > m_pRenderModules;
 

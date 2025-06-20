@@ -153,12 +153,12 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 	return stage;
 }
 
-Arc< Shader > Shader::Create(RenderDevice& device, std::string_view name, CreationInfo&& info)
+Arc< Shader > Shader::Create(RenderDevice& device, const std::string& name, CreationInfo&& info)
 {
 	return MakeArc< Shader >(device, name, std::move(info));
 }
 
-Shader::Shader(RenderDevice& device, std::string_view name, CreationInfo&& info)
+Shader::Shader(RenderDevice& device, const std::string& name, CreationInfo&& info)
 	: Super(device, name, eResourceType::Shader)
 	, m_CreationInfo(info)
 {

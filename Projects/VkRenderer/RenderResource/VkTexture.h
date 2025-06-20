@@ -122,11 +122,11 @@ public:
 		std::map< Subresource, State > subresourceStates;
 	};
 
-	static Arc< Texture > Create(RenderDevice& device, std::string_view name, CreationInfo&& desc);
-	static Arc< Texture > CreateEmpty(RenderDevice& device, std::string_view name);
+	static Arc< Texture > Create(RenderDevice& device, const std::string& name, CreationInfo&& desc);
+	static Arc< Texture > CreateEmpty(RenderDevice& device, const std::string& name);
 
-	Texture(RenderDevice& device, std::string_view name);
-	Texture(RenderDevice& device, std::string_view name, CreationInfo&& info);
+	Texture(RenderDevice& device, const std::string& name);
+	Texture(RenderDevice& device, const std::string& name, CreationInfo&& info);
 	virtual ~Texture();
 
 	void Resize(u32 width, u32 height, u32 depth);

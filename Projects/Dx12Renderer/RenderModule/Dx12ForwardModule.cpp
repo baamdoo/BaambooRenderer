@@ -95,7 +95,7 @@ void ForwardModule::Apply(CommandContext& context)
 	context.SetGraphicsConstantBufferView(3, pLight->GpuAddress());
 	context.SetGraphicsShaderResourceView(4, pTransform->GpuAddress());
 	context.SetGraphicsShaderResourceView(5, pMaterial->GpuAddress());
-	context.StageDescriptors(6, static_cast<u32>(g_FrameData.pSceneResource->srvs.size()), 0, *(g_FrameData.pSceneResource->srvs.data()));
+	context.StageDescriptors(6, 0, std::move(g_FrameData.pSceneResource->sceneTexSRVs));
 	context.DrawIndexedIndirect(*g_FrameData.pSceneResource);
 
 	g_FrameData.pColor = m_RenderTarget.Attachment(eAttachmentPoint::Color0);

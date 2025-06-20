@@ -125,6 +125,8 @@ project "BaambooEngine"
 
 	filter { "files:ThirdParties/imgui/**.cpp" }
 		flags "NoPCH"
+	filter { "files:BaambooCommon/**.cpp" }
+		flags "NoPCH" 
 
 	filter 'system:windows'
 		systemversion 'latest'

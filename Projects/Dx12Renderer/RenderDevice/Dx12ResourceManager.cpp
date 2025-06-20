@@ -37,7 +37,7 @@ DescriptorAllocation ResourceManager::AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_
     return DescriptorAllocation();
 }
 
-Arc< Texture > ResourceManager::CreateFlat2DTexture(std::wstring_view name, u32 color)
+Arc< Texture > ResourceManager::CreateFlat2DTexture(const std::wstring& name, u32 color)
 {
 	auto pFlatTexture =
 		Texture::Create(
@@ -62,7 +62,7 @@ Arc< Texture > ResourceManager::CreateFlat2DTexture(std::wstring_view name, u32 
 
 Arc< Texture > ResourceManager::GetFlatWhiteTexture() 
 {
-    if (m_pWhiteTexture)
+    if (!m_pWhiteTexture)
     {
         m_pWhiteTexture = CreateFlat2DTexture(L"DefaultTexture::White", 0xFFFFFFFFu);
     }
@@ -71,7 +71,7 @@ Arc< Texture > ResourceManager::GetFlatWhiteTexture()
 
 Arc< Texture > ResourceManager::GetFlatBlackTexture()
 {
-    if (m_pBlackTexture)
+    if (!m_pBlackTexture)
     {
         m_pBlackTexture = CreateFlat2DTexture(L"DefaultTexture::White", 0xFF000000u);
     }
@@ -80,7 +80,7 @@ Arc< Texture > ResourceManager::GetFlatBlackTexture()
 
 Arc< Texture > ResourceManager::GetFlatGrayTexture()
 {
-    if (m_pGrayTexture)
+    if (!m_pGrayTexture)
     {
         m_pGrayTexture = CreateFlat2DTexture(L"DefaultTexture::White", 0xFF808080u);
     }

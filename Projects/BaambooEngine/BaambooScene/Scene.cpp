@@ -8,9 +8,12 @@
 #include "MaterialSystem.h"
 
 #include <queue>
+#include <glm/gtx/matrix_decompose.hpp>
 
 namespace baamboo
 {
+
+static std::unordered_map< std::string, Entity > s_ModelCache;
 
 Scene::Scene(const std::string& name)
 	: m_Name(name)
@@ -22,6 +25,9 @@ Scene::Scene(const std::string& name)
 
 Scene::~Scene()
 {
+	for (auto& [_, pLoader] : m_ModelLoaderCache)
+		RELEASE(pLoader);
+
 	RELEASE(m_pMaterialSystem);
 	RELEASE(m_pStaticMeshSystem);
 	RELEASE(m_pTransformSystem);
@@ -61,89 +67,169 @@ void Scene::RemoveEntity(Entity entity)
 	m_EntityDirtyMasks.erase(entity.ID());
 }
 
-Entity Scene::ImportModel(fs::path filepath, MeshDescriptor descriptor)
+Entity Scene::ImportModel(const fs::path& filepath, MeshDescriptor descriptor)
 {
-	auto rootEntity = CreateEntity(filepath.filename().string() + "_root");
-
-	return ImportModel(rootEntity, filepath, descriptor);
+	return ImportModel(CreateEntity(filepath.filename().string() + "_Root"), filepath, descriptor);
 }
 
-Entity Scene::ImportModel(Entity rootEntity, fs::path filepath, MeshDescriptor descriptor)
+Entity Scene::ImportModel(Entity rootEntity, const fs::path& filepath, MeshDescriptor descriptor)
 {
-	u32 depth = 0;
-	auto loader = ModelLoader(filepath, descriptor);
-
-	std::queue< std::pair< ModelLoader::Node*, Entity > > nodeQ;
-	nodeQ.push(std::make_pair(loader.pRoot, rootEntity));
-	while (!nodeQ.empty())
+	if (auto it = s_ModelCache.find(filepath.string()); it != s_ModelCache.end())
 	{
-		auto [pNode, parent] = nodeQ.front(); nodeQ.pop();
+		return it->second.Clone();
+	}
 
-		auto nodeEntity = CreateEntity(filepath.filename().string() + "_child" + std::to_string(depth++));
-		parent.AttachChild(nodeEntity.ID());
+	m_bLoading = true;
 
-		if (!pNode->meshes.empty())
+	auto pLoader   = new ModelLoader(filepath, descriptor);
+	auto pRootNode = pLoader->GetRootNode();
+	m_ModelLoaderCache.emplace(filepath.string(), pLoader);
+
+	const AnimationData& animData = pLoader->GetAnimationData();
+	u32 skeletonID = INVALID_INDEX;
+
+	// If model has animations, create skeleton and animation components
+	if (pLoader->HasAnimations())
+	{
+		// Store skeleton (you'll need to add skeleton storage to Scene or a dedicated AnimationSystem)
+		skeletonID = StoreSkeletonData(animData.skeleton);
+
+		// Add skeleton component to root entity
+		rootEntity.AttachComponent< SkeletonComponent >().skeletonID = skeletonID;
+
+		// Add animation component if there are clips
+		if (!animData.clips.empty())
 		{
-			for (u32 i = 0; i < pNode->meshes.size(); ++i)
+			auto& animComp = rootEntity.AttachComponent<AnimationComponent>();
+			animComp.skeletonID = skeletonID;
+			animComp.currentClipID = 0; // Default to first clip
+			animComp.currentPose.boneTransforms.resize(animData.skeleton.bones.size());
+			animComp.currentPose.mBones.resize(animData.skeleton.bones.size());
+
+			// Initialize pose to bind pose
+			for (u64 i = 0; i < animData.skeleton.bones.size(); ++i)
 			{
-				auto& meshData = pNode->meshes[i];
-
-				// hierarchy
-				auto entity = CreateEntity(meshData.name);
-				nodeEntity.AttachChild(entity.ID());
-
-				// mesh
-				auto& mesh = entity.AttachComponent< StaticMeshComponent >();
-				mesh.path = filepath.string();
-
-				// geometry
-				mesh.vertices = std::move(meshData.vertices);
-				mesh.indices = std::move(meshData.indices);
-
-				// material
-				auto& material = entity.AttachComponent< MaterialComponent >();
-				if (!meshData.albedoTextureFilename.empty())
-				{
-					material.albedoTex = filepath.parent_path().string() + "/" + meshData.albedoTextureFilename;
-				}
-
-				if (!meshData.normalTextureFilename.empty())
-				{
-					material.normalTex = filepath.parent_path().string() + "/" + meshData.normalTextureFilename;
-				}
-
-				if (!meshData.specularTextureFilename.empty())
-				{
-					material.specularTex = filepath.parent_path().string() + "/" + meshData.specularTextureFilename;
-				}
-
-				if (!meshData.emissiveTextureFilename.empty())
-				{
-					material.emissionTex = filepath.parent_path().string() + "/" + meshData.emissiveTextureFilename;
-				}
-
-				if (!meshData.aoTextureFilename.empty())
-				{
-					material.aoTex = filepath.parent_path().string() + "/" + meshData.aoTextureFilename;
-				}
-
-				if (!meshData.roughnessTextureFilename.empty())
-				{
-					material.roughnessTex = filepath.parent_path().string() + "/" + meshData.roughnessTextureFilename;
-				}
-
-				if (!meshData.metallicTextureFilename.empty())
-				{
-					material.metallicTex = filepath.parent_path().string() + "/" + meshData.metallicTextureFilename;
-				}
+				animComp.currentPose.boneTransforms[i] = BoneTransform();
+				animComp.currentPose.mBones[i]         = mat4(1.0f);
 			}
 		}
 
-		for (auto& pChild : pNode->pChilds)
-			nodeQ.push(std::make_pair(pChild, nodeEntity));
+		// Store animation clips
+		for (const auto& clip : animData.clips)
+		{
+			StoreAnimationClip(clip);
+		}
 	}
 
+	std::string parentPath = filepath.parent_path().string() + "/";
+	std::function< void(const ModelNode*, Entity) > ProcessNode = [&](const ModelNode* node, Entity parent)
+		{
+			Entity entity = CreateEntity(node->name);
+
+			// Hierarchy
+			if (parent.IsValid())
+			{
+				parent.AttachChild(entity.ID());
+			}
+
+			// Transform
+			TransformComponent& transformComponent = entity.GetComponent< TransformComponent >();
+
+			float3 scale, translation, skew;
+			float4 perspective;
+			quat rotation;
+			glm::decompose(node->mTransform, scale, rotation, translation, skew, perspective);
+
+			transformComponent.transform.position = translation;
+			transformComponent.transform.rotation = glm::eulerAngles(rotation);
+			transformComponent.transform.scale    = scale;
+
+			// Process meshes
+			for (u32 meshIndex : node->meshIndices)
+			{
+				const MeshData& meshData = pLoader->GetMeshes()[meshIndex];
+
+				Entity meshEntity = CreateEntity(meshData.name);
+				entity.AttachChild(meshEntity.ID());
+
+				if (meshData.bHasSkinnedData && skeletonID != INVALID_INDEX)
+				{
+					// skinned mesh
+					auto& mesh      = meshEntity.AttachComponent< SkinnedMeshComponent >();
+					mesh.skeletonID = skeletonID;
+					mesh.meshID     = StoreMeshData(meshData);
+				}
+				else
+				{
+					// static mesh
+					auto& mesh = meshEntity.AttachComponent< StaticMeshComponent >();
+					mesh.path  = filepath.string();
+
+					mesh.numVertices  = static_cast<u32>(meshData.vertices.size());
+					mesh.numIndices   = static_cast<u32>(meshData.indices.size());
+					mesh.pVertices    = const_cast<Vertex*>(meshData.vertices.data());
+					if (mesh.numIndices > 0)
+						mesh.pIndices = const_cast<Index*>(meshData.indices.data());
+				}
+
+				// Material
+				if (meshData.materialIndex < pLoader->GetMaterials().size())
+				{
+					const MaterialData& matData = pLoader->GetMaterials()[meshData.materialIndex];
+					auto& material = meshEntity.AttachComponent< MaterialComponent >();
+
+					material.name = matData.name;
+
+					material.tint      = float4(matData.diffuse, 1.0f);
+					material.metallic  = matData.metallic;
+					material.roughness = matData.roughness;
+
+					material.albedoTex    = (matData.albedoPath.empty() ? "" : parentPath) + matData.albedoPath;
+					material.normalTex    = (matData.normalPath.empty() ? "" : parentPath) + matData.normalPath;
+					material.metallicTex  = (matData.metallicPath.empty() ? "" : parentPath) + matData.metallicPath;
+					material.roughnessTex = (matData.roughnessPath.empty() ? "" : parentPath) + matData.roughnessPath;
+					material.aoTex        = (matData.aoPath.empty() ? "" : parentPath) + matData.aoPath;
+					material.emissionTex  = (matData.emissivePath.empty() ? "" : parentPath) + matData.emissivePath;
+				}
+			}
+
+			// Process children
+			for (const auto& pChild : node->pChilds)
+			{
+				ProcessNode(pChild, entity);
+			}
+		};
+
+	ProcessNode(pRootNode, rootEntity);
+
+	m_bLoading = false;
+
+	s_ModelCache.emplace(filepath.string(), rootEntity);
 	return rootEntity;
+}
+
+u32 Scene::StoreMeshData(const MeshData& meshData)
+{
+	static u32 nextMeshID = 0;
+	u32 id = nextMeshID++;
+	m_MeshData[id] = meshData;
+	return id;
+}
+
+u32 Scene::StoreSkeletonData(const Skeleton& skeleton)
+{
+	static u32 nextSkeletonID = 0;
+	u32 id = nextSkeletonID++;
+	m_Skeletons[id] = skeleton;
+	return id;
+}
+
+u32 Scene::StoreAnimationClip(const AnimationClip& clip)
+{
+	static u32 nextClipID = 0;
+	u32 id = nextClipID++;
+	m_AnimationClips[id] = clip;
+	return id;
 }
 
 void Scene::Update(f32 dt)
@@ -194,10 +280,10 @@ SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 			StaticMeshRenderView meshView = {};
 			meshView.id     = entt::to_integral(id);
 			meshView.tag    = tagComponent.tag;
-			meshView.vData  = meshComponent.vertices.data();
-			meshView.vCount = static_cast<u32>(meshComponent.vertices.size());
-			meshView.iData  = meshComponent.indices.data();
-			meshView.iCount = static_cast<u32>(meshComponent.indices.size());
+			meshView.vData  = meshComponent.pVertices;
+			meshView.vCount = meshComponent.numVertices;
+			meshView.iData  = meshComponent.pIndices;
+			meshView.iCount = meshComponent.numIndices;
 			view.meshes.push_back(meshView);
 
 			/*if (!view.draws.contains(meshView.id))
@@ -206,17 +292,22 @@ SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 			}*/
 			assert(view.draws.contains(meshView.id));
 			auto& draw = view.draws.find(meshView.id)->second;
-			draw.mesh = static_cast<u32>(view.meshes.size()) - 1;
+			draw.mesh  = static_cast<u32>(view.meshes.size()) - 1;
 
 			MaterialRenderView materialView = {};
-			materialView.id        = entt::to_integral(id);
-			materialView.tint      = materialComponent.tint;
+			materialView.id = entt::to_integral(id);
+
+			materialView.tint     = materialComponent.tint;
+			materialView.ambient  = materialComponent.ambient;
+			materialView.specular = materialComponent.specular;
+
+			materialView.shininess = materialComponent.shininess;
 			materialView.roughness = materialComponent.roughness;
 			materialView.metallic  = materialComponent.metallic;
+			materialView.ao        = materialComponent.ao;
 
 			materialView.albedoTex    = materialComponent.albedoTex;
 			materialView.normalTex    = materialComponent.normalTex;
-			materialView.specularTex  = materialComponent.specularTex;
 			materialView.aoTex        = materialComponent.aoTex;
 			materialView.roughnessTex = materialComponent.roughnessTex;
 			materialView.metallicTex  = materialComponent.metallicTex;
@@ -231,8 +322,8 @@ SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 		});
 
 
-	view.light.data = {};
-	view.light.data.ambientColor = float3(0.0f);
+	view.light.data                  = {};
+	view.light.data.ambientColor     = float3(0.0f);
 	view.light.data.ambientIntensity = 0.0f;
 	m_Registry.view< TransformComponent, LightComponent >().each([this, &view](auto id, auto& transformComponent, auto& lightComponent)
 		{

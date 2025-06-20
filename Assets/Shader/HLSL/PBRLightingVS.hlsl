@@ -1,11 +1,6 @@
+#define _HLSL
 #define _CAMERA
 #include "Common.hlsli"
-
-struct TransformData
-{
-    float4x4 mWorldToView;
-    float4x4 mViewToWorld;
-};
 
 StructuredBuffer< TransformData > g_Transforms : register(t0, space0);
 

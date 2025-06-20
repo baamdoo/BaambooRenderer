@@ -168,7 +168,6 @@ DeviceBuilder::DeviceBuilder()
 	physicalDeviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 	physicalDevice11Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
 	physicalDevice12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-	physicalDeviceSync2Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES;
 
 	m_PhysicalRequirements.apiVersion = VK_API_VERSION_1_2;
 	m_PhysicalRequirements.deviceType = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
@@ -291,17 +290,11 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 			physicalDevice12Features.bufferDeviceAddress = VK_TRUE;
 		}
 
-		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_Sync2))
-		{
-			physicalDeviceSync2Features.synchronization2 = VK_TRUE;
-		}
-
 		physicalDeviceFeatures2.features = physicalDeviceFeatures;
 
 		featureChain.bind(physicalDeviceFeatures2);
 		featureChain.bind(physicalDevice11Features);
 		featureChain.bind(physicalDevice12Features);
-		featureChain.bind(physicalDeviceSync2Features);
 	}
 
 
@@ -328,6 +321,36 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 				featureChain.bind(IndexU8Features);
 		}
 
+		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_Sync2))
+		{
+			VkPhysicalDeviceFeatures2 features2 = {};
+			features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+
+			VkPhysicalDeviceSynchronization2Features physicalDeviceSync2Features = {};
+			physicalDeviceSync2Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES;
+			
+			features2.pNext = &physicalDeviceSync2Features;
+			vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
+
+			if (physicalDeviceSync2Features.synchronization2)
+				featureChain.bind(physicalDeviceSync2Features);
+		}
+
+		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_SwapChainMaintenance))
+		{
+			VkPhysicalDeviceFeatures2 features2 = {};
+			features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+
+			VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT swapChainMaintenance1Features = {};
+			swapChainMaintenance1Features.sType                 = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT;
+
+			features2.pNext = &swapChainMaintenance1Features;
+			vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
+
+			if (swapChainMaintenance1Features.swapchainMaintenance1)
+				featureChain.bind(swapChainMaintenance1Features);
+		}
+
 		// More extension features ...
 	}
 
@@ -335,12 +358,12 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 	// **
 	// Logical device
 	// **
-	VkDeviceCreateInfo deviceInfo = {};
-	deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-	deviceInfo.pNext = featureChain.head;
-	deviceInfo.queueCreateInfoCount = static_cast<u32>(queueInfos.size());
-	deviceInfo.pQueueCreateInfos = queueInfos.data();
-	deviceInfo.enabledExtensionCount = static_cast<u32>(m_LogicalDeviceExtensions.size());
+	VkDeviceCreateInfo deviceInfo      = {};
+	deviceInfo.sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+	deviceInfo.pNext                   = featureChain.head;
+	deviceInfo.queueCreateInfoCount    = static_cast<u32>(queueInfos.size());
+	deviceInfo.pQueueCreateInfos       = queueInfos.data();
+	deviceInfo.enabledExtensionCount   = static_cast<u32>(m_LogicalDeviceExtensions.size());
 	deviceInfo.ppEnabledExtensionNames = m_LogicalDeviceExtensions.data();
 	VK_CHECK(vkCreateDevice(physicalDevice, &deviceInfo, nullptr, &outDevice));
 

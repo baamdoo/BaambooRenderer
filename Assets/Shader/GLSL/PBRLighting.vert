@@ -1,27 +1,9 @@
 #version 460
 #extension GL_GOOGLE_include_directive: require
 
+#define _GLSL
 #define _CAMERA
 #include "Common.hg"
-
-struct TransformData
-{
-	mat4 mWorldToView;
-	mat4 mViewToWorld;
-};
-
-struct DrawData
-{
-	uint indexCount;
-    uint instanceCount;
-    uint firstIndex;
-    int  vertexOffset;
-    uint firstInstance;
-
-    uint materialID;
-	uint transformID;
-	uint transformCount;
-};
 
 layout(set = SET_STATIC, binding = 1) readonly buffer VertexBuffer 
 {

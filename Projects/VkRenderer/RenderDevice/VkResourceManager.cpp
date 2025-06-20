@@ -56,7 +56,7 @@ void ResourceManager::UploadData(VkBuffer vkBuffer, const void* pData, u64 sizeI
 	context.Execute();
 }
 
-Arc< Texture > ResourceManager::CreateFlat2DTexture(std::string_view name, u32 color)
+Arc< Texture > ResourceManager::CreateFlat2DTexture(const std::string& name, u32 color)
 {
 	auto pFlatTexture =
 		Texture::Create(

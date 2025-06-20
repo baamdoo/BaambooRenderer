@@ -177,12 +177,12 @@ u64 Texture::SizeInBytes() const
 	return m_Desc.extent.width * m_Desc.extent.height * m_Desc.extent.depth * GetFormatElementSizeInBytes(m_Desc.format);
 }
 
-Texture::Texture(RenderDevice& device, std::string_view name)
+Texture::Texture(RenderDevice& device, const std::string& name)
 	: Super(device, name, eResourceType::Texture)
 {
 }
 
-Texture::Texture(RenderDevice& device, std::string_view name, CreationInfo&& info)
+Texture::Texture(RenderDevice& device, const std::string& name, CreationInfo&& info)
 	: Super(device, name, eResourceType::Texture)
 	, m_CreationInfo(info)
 {
@@ -197,12 +197,12 @@ Texture::~Texture()
 		vmaDestroyImage(m_RenderDevice.vmaAllocator(), m_vkImage, m_vmaAllocation);
 }
 
-Arc< Texture > Texture::Create(RenderDevice& device, std::string_view name, CreationInfo&& desc)
+Arc< Texture > Texture::Create(RenderDevice& device, const std::string& name, CreationInfo&& desc)
 {
 	return MakeArc< Texture >(device, name, std::move(desc));
 }
 
-Arc<Texture> Texture::CreateEmpty(RenderDevice& device, std::string_view name)
+Arc<Texture> Texture::CreateEmpty(RenderDevice& device, const std::string& name)
 {
 	return MakeArc< Texture >(device, name);
 }

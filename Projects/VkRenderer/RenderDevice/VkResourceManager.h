@@ -1,4 +1,3 @@
-#include "Dx12ResourceManager.h"
 #pragma once
 
 namespace vk
@@ -33,7 +32,7 @@ public:
     Arc< Texture > GetFlatGrayTexture() { return m_pGrayTexture; }
 
 private:
-    Arc< Texture > CreateFlat2DTexture(std::string_view name, u32 color);
+    Arc< Texture > CreateFlat2DTexture(const std::string& name, u32 color);
     Arc< Texture > CreateFlatWhiteTexture();
     Arc< Texture > CreateFlatBlackTexture();
 

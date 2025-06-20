@@ -1,6 +1,7 @@
 #include "RendererPch.h"
 #include "VkRenderer.h"
 #include "RenderDevice/VkSwapChain.h"
+#include "RenderDevice/VkFrameManager.h"
 #include "RenderDevice/VkResourceManager.h"
 #include "RenderDevice/VkCommandContext.h"
 #include "RenderDevice/VkDescriptorSet.h"
@@ -22,6 +23,7 @@ Renderer::Renderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext)
 
 	m_pRenderDevice = new RenderDevice();
 	m_pSwapChain    = new SwapChain(*m_pRenderDevice, *pWindow);
+	m_pFrameManager = new FrameManager(*m_pRenderDevice, *m_pSwapChain);
 
 	g_FrameData.pSceneResource = new SceneResource(*m_pRenderDevice);
 
@@ -40,13 +42,14 @@ Renderer::~Renderer()
 	for (auto pModule : m_pRenderModules)
 		RELEASE(pModule);
 
+	RELEASE(m_pFrameManager);
 	RELEASE(m_pSwapChain);
 	RELEASE(m_pRenderDevice);
 
 	printf("VkRenderer destructed!\n");
 }
 
-void Renderer::Render(SceneRenderView&& renderView)
+void Renderer::Render(const SceneRenderView& renderView)
 {
 	if (!m_pSwapChain->IsRenderable())
 	{
@@ -63,8 +66,10 @@ void Renderer::Render(SceneRenderView&& renderView)
 			return mProj;
 		};
 
-	auto& context = BeginFrame();
+	auto context = m_pFrameManager->BeginFrame();
 	{
+		auto& commandContext = *context.pCommandContext;
+
 		CameraData camera = {};
 		camera.mView     = renderView.camera.mView;
 		camera.mProj     = ApplyVulkanNDC(renderView.camera.mProj);
@@ -74,9 +79,22 @@ void Renderer::Render(SceneRenderView&& renderView)
 		g_FrameData.camera = std::move(camera);
 		
 		for (auto pModule : m_pRenderModules)
-			pModule->Apply(context);
+			pModule->Apply(commandContext);
+
+		auto pBackBuffer = m_pSwapChain->GetImageToPresent();
+
+		if (g_FrameData.pColor.valid())
+		{
+			commandContext.BlitTexture(pBackBuffer, g_FrameData.pColor.lock());
+		}
+		commandContext.TransitionImageLayout(
+			pBackBuffer,
+			VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+			//VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+			VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+		commandContext.Close();
 	}
-	EndFrame(context);
+	m_pFrameManager->EndFrame(context);
 }
 
 void Renderer::NewFrame()
@@ -99,33 +117,6 @@ void Renderer::OnWindowResized(i32 width, i32 height)
 
 	for (auto pModule : m_pRenderModules)
 		pModule->Resize(width, height);
-}
-
-CommandContext& Renderer::BeginFrame()
-{
-	auto& context = m_pRenderDevice->BeginCommand(eCommandType::Graphics);
-	m_pSwapChain->AcquireImageIndex(context.vkPresentCompleteSemaphore());
-
-	return context;
-}
-
-void Renderer::EndFrame(CommandContext& context)
-{
-	auto pBackBuffer = m_pSwapChain->GetImageToPresent();
-	
-	if (g_FrameData.pColor.valid())
-	{
-		context.BlitTexture(pBackBuffer, g_FrameData.pColor.lock());
-	}
-	context.TransitionImageLayout(
-		pBackBuffer,
-		VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, 
-		//VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-		VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
-	context.Close();
-
-	context.Execute();
-	m_pSwapChain->Present(context.vkRenderCompleteSemaphore());
 }
 
 } // namespace vk

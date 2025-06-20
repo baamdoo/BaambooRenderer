@@ -46,7 +46,8 @@ CommandContext::CommandContext(RenderDevice& device, VkCommandPool vkCommandPool
     VkFenceCreateInfo fenceInfo = {};
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-    vkCreateFence(m_RenderDevice.vkDevice(), &fenceInfo, nullptr, &m_vkFence);
+    vkCreateFence(m_RenderDevice.vkDevice(), &fenceInfo, nullptr, &m_vkRenderCompleteFence);
+    vkCreateFence(m_RenderDevice.vkDevice(), &fenceInfo, nullptr, &m_vkPresentCompleteFence);
 
     VkSemaphoreCreateInfo semaphoreInfo = {};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -60,7 +61,8 @@ CommandContext::~CommandContext()
 
     vkDestroySemaphore(m_RenderDevice.vkDevice(), m_vkPresentCompleteSemaphore, nullptr);
     vkDestroySemaphore(m_RenderDevice.vkDevice(), m_vkRenderCompleteSemaphore, nullptr);
-    vkDestroyFence(m_RenderDevice.vkDevice(), m_vkFence, nullptr);
+    vkDestroyFence(m_RenderDevice.vkDevice(), m_vkPresentCompleteFence, nullptr);
+    vkDestroyFence(m_RenderDevice.vkDevice(), m_vkRenderCompleteFence, nullptr);
 
     vkFreeCommandBuffers(m_RenderDevice.vkDevice(), m_vkBelongedPool, 1, &m_vkCommandBuffer);
 }
@@ -69,8 +71,9 @@ void CommandContext::Open(VkCommandBufferUsageFlags flags)
 {
     m_CurrentContextIndex = m_RenderDevice.ContextIndex();
 
+	VkFence vkFences[2] = {m_vkRenderCompleteFence, m_vkPresentCompleteFence};
+    VK_CHECK(vkResetFences(m_RenderDevice.vkDevice(), 2, vkFences));
     VK_CHECK(vkResetCommandBuffer(m_vkCommandBuffer, 0));
-    VK_CHECK(vkResetFences(m_RenderDevice.vkDevice(), 1, &m_vkFence));
 
     VkCommandBufferBeginInfo beginInfo = {};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -106,14 +109,25 @@ void CommandContext::Execute()
 	}
 }
 
-bool CommandContext::IsFenceComplete() const
+bool CommandContext::IsReady() const
 {
-    return vkGetFenceStatus(m_RenderDevice.vkDevice(), m_vkFence) == VK_SUCCESS;
+	return IsFenceComplete(m_vkRenderCompleteFence) && IsFenceComplete(m_vkPresentCompleteFence);
 }
 
-void CommandContext::WaitForFence() const
+bool CommandContext::IsFenceComplete(VkFence vkFence) const
 {
-	VK_CHECK(vkWaitForFences(m_RenderDevice.vkDevice(), 1, &m_vkFence, VK_TRUE, UINT64_MAX));
+    return vkGetFenceStatus(m_RenderDevice.vkDevice(), vkFence) == VK_SUCCESS;
+}
+
+void CommandContext::WaitForFence(VkFence vkFence) const
+{
+	VK_CHECK(vkWaitForFences(m_RenderDevice.vkDevice(), 1, &vkFence, VK_TRUE, UINT64_MAX));
+}
+
+void CommandContext::Flush() const
+{
+	WaitForFence(m_vkRenderCompleteFence);
+	WaitForFence(m_vkPresentCompleteFence);
 }
 
 void CommandContext::CopyBuffer(
@@ -460,16 +474,16 @@ void CommandContext::SetGraphicsDynamicUniformBuffer(u32 binding, VkDeviceSize s
 	VkDescriptorBufferInfo bufferInfo = {};
 	bufferInfo.buffer = allocation.vkBuffer;
 	bufferInfo.offset = allocation.offset;
-	bufferInfo.range = allocation.size;
+	bufferInfo.range  = allocation.size;
 
 	VkWriteDescriptorSet write = {};
-	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write.dstSet = VK_NULL_HANDLE;
-	write.dstBinding = binding;
+	write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.dstSet          = VK_NULL_HANDLE;
+	write.dstBinding      = binding;
 	write.dstArrayElement = 0;
 	write.descriptorCount = 1;
-	write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	write.pBufferInfo = &bufferInfo;
+	write.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	write.pBufferInfo     = &bufferInfo;
 	
 	m_PushAllocations.push_back({ binding, bufferInfo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER });
 }
@@ -618,16 +632,16 @@ void CommandContext::DrawIndexedIndirect(const SceneResource& sceneResource)
 	for (const auto& allocation : m_PushAllocations)
 	{
 		VkWriteDescriptorSet write = {};
-		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		write.dstSet = VK_NULL_HANDLE;
-		write.dstBinding = allocation.binding;
-		write.dstArrayElement = 0;
-		write.descriptorCount = 1;
-		write.descriptorType = allocation.descriptorType;
+		write.sType                = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		write.dstSet               = VK_NULL_HANDLE;
+		write.dstBinding           = allocation.binding;
+		write.dstArrayElement      = 0;
+		write.descriptorCount      = 1;
+		write.descriptorType       = allocation.descriptorType;
 		if (allocation.descriptor.bImage)
-			write.pImageInfo = &allocation.descriptor.imageInfo;
+			write.pImageInfo       = &allocation.descriptor.imageInfo;
 		else
-			write.pBufferInfo = &allocation.descriptor.bufferInfo;
+			write.pBufferInfo      = &allocation.descriptor.bufferInfo;
 		writes.push_back(write);
 	}
 

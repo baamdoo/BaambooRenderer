@@ -4,6 +4,8 @@
 
 #include <entt/entt.hpp>
 
+#include "AnimationTypes.h"
+
 
 //-------------------------------------------------------------------------
 // TagComponent(core) : Determines whether to expose in UI panel
@@ -67,8 +69,10 @@ struct StaticMeshComponent
 {
 	std::string path;
 
-	std::vector< Vertex > vertices;
-	std::vector< Index >  indices;
+	Vertex* pVertices   = nullptr;
+	u32     numVertices = 0;
+	Index*  pIndices    = nullptr;
+	u32     numIndices  = 0;
 
 	bool bDirtyMark;
 };
@@ -88,19 +92,79 @@ struct DynamicMeshComponent
 //-------------------------------------------------------------------------
 struct MaterialComponent
 {
+	std::string name;
+
 	float3 tint;
-	float  roughness;
-	float  metallic;
+	float3 ambient;
+	float3 specular;
+
+	float shininess;
+	float metallic;
+	float roughness;
+	float ao;
 
 	std::string albedoTex;
 	std::string normalTex;
-	std::string specularTex;
 	std::string aoTex;
 	std::string roughnessTex;
 	std::string metallicTex;
 	std::string emissionTex;
 
 	bool bDirtyMark;
+};
+
+
+//-------------------------------------------------------------------------
+// AnimationComponent : Controls animation playback
+//-------------------------------------------------------------------------
+struct AnimationComponent
+{
+	u32   skeletonID;
+	u32   currentClipID;
+	float currentTime;
+	float playbackSpeed;
+	bool  bPlaying;
+	bool  bLoop;
+
+	// Animation blending
+	struct BlendLayer
+	{
+		u32   clipID = INVALID_INDEX;
+		float weight = 1.0f;
+		float time   = 0.0f;
+	};
+	std::vector< BlendLayer > blendLayers;
+
+	// Current pose
+	AnimationPose currentPose;
+
+	// Transition state
+	bool  bTransitioning;
+	float transitionDuration;
+	float transitionTime;
+	u32   transitionToClipID;
+};
+
+//-------------------------------------------------------------------------
+// SkinnedMeshComponent : Links mesh to skeleton for skinning
+//-------------------------------------------------------------------------
+struct SkinnedMeshComponent
+{
+	u32 meshID          = INVALID_INDEX;
+	u32 skeletonID      = INVALID_INDEX;
+	u32 boneTransformID = INVALID_INDEX;
+};
+
+//-------------------------------------------------------------------------
+// SkeletonComponent : Stores skeleton reference
+//-------------------------------------------------------------------------
+struct SkeletonComponent
+{
+	std::string skeletonName;
+	u32 skeletonID = INVALID_INDEX;
+
+	bool  showBones = false;
+	float boneScale = 0.1f;
 };
 
 
@@ -118,7 +182,7 @@ struct LightComponent
 {
 	eLightType type = eLightType::Directional;
 
-	float3 color         = float3(1.0f, 1.0f, 1.0f);
+	float3 color = float3(1.0f, 1.0f, 1.0f);
 	float  temperature_K = 0.0f;
 	union
 	{
@@ -126,7 +190,7 @@ struct LightComponent
 		float luminousPower_lm; // point/spot: lumens
 	};
 
-	float radius_m          = 0.01f;
+	float radius_m = 0.01f;
 	float angularRadius_rad = 0.00465f;
 
 	// spot light
@@ -140,9 +204,9 @@ struct LightComponent
 		type = eLightType::Directional;
 
 		temperature_K = 5778.0f;
-		color         = float3(1.0f, 1.0f, 1.0f);
+		color = float3(1.0f, 1.0f, 1.0f);
 
-		illuminance_lux   = 3.0f;
+		illuminance_lux = 3.0f;
 		angularRadius_rad = 0.00465f;
 	}
 
@@ -151,10 +215,10 @@ struct LightComponent
 		type = eLightType::Point;
 
 		temperature_K = 4000.0f;
-		color         = float3(1.0f, 1.0f, 1.0f);
+		color = float3(1.0f, 1.0f, 1.0f);
 
 		luminousPower_lm = 1000.0f;
-		radius_m         = 0.03f;
+		radius_m = 0.03f;
 	}
 
 	void SetDefaultSpot()
@@ -162,10 +226,10 @@ struct LightComponent
 		type = eLightType::Spot;
 
 		temperature_K = 5000.0f;
-		color         = float3(1.0f, 1.0f, 1.0f);
+		color = float3(1.0f, 1.0f, 1.0f);
 
 		luminousPower_lm = 100.0f;
-		radius_m         = 0.02f;
+		radius_m = 0.02f;
 
 		innerConeAngle_rad = PI_DIV(4.0f);
 		outerConeAngle_rad = PI_DIV(3.0f);

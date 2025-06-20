@@ -1,6 +1,5 @@
 #include "BaambooPch.h"
 #include "BaambooEngine.h"
-#include "BaambooCore/Timer.h"
 #include "BaambooCore/Window.h"
 #include "BaambooCore/EngineCore.h"
 #include "BaambooCore/Input.hpp"
@@ -125,13 +124,12 @@ i32 Engine::Run()
 	m_bRunning = true;
 	m_RunningTime = 0.0;
 
-	Timer timer{};
 	m_RenderThread = std::thread(&Engine::RenderLoop, this);
 	while (m_pWindow->PollEvent())
 	{
-		timer.Tick();
+		m_GameTimer.Tick();
 
-		auto dt = timer.GetDeltaSeconds();
+		auto dt = m_GameTimer.GetDeltaSeconds();
 		m_RunningTime += dt;
 
 		Update(static_cast<float>(dt));
@@ -213,19 +211,37 @@ void Engine::RenderLoop()
 		if (!renderView.has_value())
 			continue;
 
+		m_RenderTimer.Tick();
+
 		ImGui::DrawUI(*this);
-		m_pRendererBackend->Render(std::move(renderView.value()));
+		m_pRendererBackend->Render(renderView.value());
 	}
 }
 
 void Engine::DrawUI()
 {
 	// **
-	// basic info
+	// engine stats
 	// **
-	ImGui::Begin("Engine Profile");
+	ImGui::Begin("Engine Stats");
 	{
-		ImGui::Text("Application average %.3f ms(frame: %.1f FPS)", 1000.f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+		static double gameElapsed_ms = m_GameTimer.GetDeltaMilliseconds();
+		if (m_GameTimer.GetTotalSeconds() > 1.0f)
+		{
+			gameElapsed_ms = m_GameTimer.GetDeltaMilliseconds();
+
+			m_GameTimer.Reset();
+		}
+		ImGui::Text("GameLoop   %.3f ms(frame: %.1f FPS)", gameElapsed_ms, 1000.0f / gameElapsed_ms);
+
+		static double renderElapsed_ms = m_RenderTimer.GetDeltaMilliseconds();
+		if (m_RenderTimer.GetTotalSeconds() > 1.0f)
+		{
+			renderElapsed_ms = m_RenderTimer.GetDeltaMilliseconds();
+
+			m_RenderTimer.Reset();
+		}
+		ImGui::Text("RenderLoop %.3f ms(frame: %.1f FPS)", renderElapsed_ms, 1000.0f / renderElapsed_ms);
 	}
 	ImGui::End();
 

@@ -4,7 +4,7 @@
 namespace dx12
 {
 
-Sampler::Sampler(RenderDevice& device, std::wstring_view name, CreationInfo&& info)
+Sampler::Sampler(RenderDevice& device, const std::wstring& name, CreationInfo&& info)
 	: Super(device, name, eResourceType::Sampler)
 {
 	D3D12_SAMPLER_DESC desc = {};

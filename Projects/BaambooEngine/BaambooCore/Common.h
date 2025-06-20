@@ -16,3 +16,4 @@
 #include "Defines.h"
 #include "Primitives.h"
 #include "MathTypes.h"
+#include "Pointer.hpp"

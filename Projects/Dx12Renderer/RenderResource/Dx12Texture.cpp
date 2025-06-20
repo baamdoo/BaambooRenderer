@@ -56,12 +56,12 @@ D3D12_UNORDERED_ACCESS_VIEW_DESC GetUAVDesc(const D3D12_RESOURCE_DESC& resDesc, 
     return uavDesc;
 }
 
-Texture::Texture(RenderDevice& device, std::wstring_view name)
+Texture::Texture(RenderDevice& device, const std::wstring& name)
 	: Super(device, name, eResourceType::Texture)
 {
 }
 
-Texture::Texture(RenderDevice& device, std::wstring_view name, CreationInfo&& info)
+Texture::Texture(RenderDevice& device, const std::wstring& name, CreationInfo&& info)
     : Super(device, name, std::move(info), eResourceType::Texture)
 {
     m_Width  = static_cast<u32>(m_ResourceDesc.Width);
@@ -167,12 +167,12 @@ void Texture::CreateViews()
     }
 }
 
-Arc< Texture > Texture::Create(RenderDevice& device, std::wstring_view name, CreationInfo&& desc)
+Arc< Texture > Texture::Create(RenderDevice& device, const std::wstring& name, CreationInfo&& desc)
 {
     return MakeArc< Texture >(device, name, std::move(desc));
 }
 
-Arc<Texture> Texture::CreateEmpty(RenderDevice& device, std::wstring_view name)
+Arc<Texture> Texture::CreateEmpty(RenderDevice& device, const std::wstring& name)
 {
     return MakeArc< Texture >(device, name);
 }

@@ -5,9 +5,10 @@
 #ifdef _CAMERA
 struct CameraData
 {
-    float4x4 mProj;
     float4x4 mView;
+    float4x4 mProj;
     float4x4 mViewProj;
+
     float3   posWORLD;
     float    padding;
 }; ConstantBuffer< CameraData > g_Camera : register(b0);

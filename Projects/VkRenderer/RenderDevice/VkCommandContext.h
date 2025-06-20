@@ -130,8 +130,11 @@ public:
     }
 
     [[nodiscard]]
-    bool IsFenceComplete() const;
-    void WaitForFence() const;
+    bool IsReady() const;
+    [[nodiscard]]
+    bool IsFenceComplete(VkFence vkFence) const;
+    void WaitForFence(VkFence vkFence) const;
+    void Flush() const;
 
     [[nodiscard]]
     bool IsTransient() const { return m_bTransient; }
@@ -140,7 +143,11 @@ public:
     [[nodiscard]]
     VkCommandBuffer vkCommandBuffer() const { return m_vkCommandBuffer; }
     [[nodiscard]]
+    VkFence vkRenderCompleteFence() const { return m_vkRenderCompleteFence; }
+    [[nodiscard]]
     VkSemaphore vkRenderCompleteSemaphore() const { return m_vkRenderCompleteSemaphore; }
+    [[nodiscard]]
+    VkFence vkPresentCompleteFence() const { return m_vkPresentCompleteFence; }
     [[nodiscard]]
     VkSemaphore vkPresentCompleteSemaphore() const { return m_vkPresentCompleteSemaphore; }
     [[nodiscard]]
@@ -170,9 +177,10 @@ private:
 
     DynamicBufferAllocator* m_pUniformBufferPool = nullptr;
 
+    VkFence     m_vkRenderCompleteFence      = VK_NULL_HANDLE;
     VkSemaphore m_vkRenderCompleteSemaphore  = VK_NULL_HANDLE;
+    VkFence     m_vkPresentCompleteFence     = VK_NULL_HANDLE;
     VkSemaphore m_vkPresentCompleteSemaphore = VK_NULL_HANDLE;
-    VkFence     m_vkFence                    = VK_NULL_HANDLE;
 
     GraphicsPipeline* m_pGraphicsPipeline = nullptr;
     ComputePipeline*  m_pComputePipeline  = nullptr;

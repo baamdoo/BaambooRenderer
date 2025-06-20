@@ -18,9 +18,9 @@ public:
         VkBufferUsageFlags usage;
     };
 
-    static Arc< Buffer > Create(RenderDevice& device, std::string_view name, CreationInfo&& desc);
+    static Arc< Buffer > Create(RenderDevice& device, const std::string& name, CreationInfo&& desc);
 
-    Buffer(RenderDevice& device, std::string_view name, CreationInfo&& info);
+    Buffer(RenderDevice& device, const std::string& name, CreationInfo&& info);
     virtual ~Buffer();
 
     void Resize(u64 sizeInBytes, bool bReset = false);
@@ -43,9 +43,9 @@ class IndexBuffer : public Buffer
 using Super = Buffer;
 
 public:
-    static Arc< IndexBuffer > Create(RenderDevice& device, std::string_view name, u32 numIndices, VkIndexType type);
+    static Arc< IndexBuffer > Create(RenderDevice& device, const std::string& name, u32 numIndices, VkIndexType type);
 
-    IndexBuffer(RenderDevice& device, std::string_view name, u32 numIndices, VkIndexType type);
+    IndexBuffer(RenderDevice& device, const std::string& name, u32 numIndices, VkIndexType type);
 
     u32 GetIndexCount() const { return m_IndexCount; }
     u32 GetIndexSize() const { return m_IndexType == VK_INDEX_TYPE_UINT8_KHR ? 1 : m_IndexType == VK_INDEX_TYPE_UINT16 ? 2 : 4; }
@@ -62,9 +62,9 @@ class UniformBuffer : public Buffer
 using Super = Buffer;
 
 public:
-    static Arc< UniformBuffer > Create(RenderDevice& device, std::string_view name, u64 sizeInBytes, VkBufferUsageFlags usage = 0);
+    static Arc< UniformBuffer > Create(RenderDevice& device, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags usage = 0);
 
-    UniformBuffer(RenderDevice& device, std::string_view name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage);
+    UniformBuffer(RenderDevice& device, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage);
 
     [[nodiscard]]
     inline void* MappedMemory() const { assert(m_AllocationInfo.pMappedData); return m_AllocationInfo.pMappedData; }
@@ -75,9 +75,9 @@ class StorageBuffer : public Buffer
 using Super = Buffer;
 
 public:
-    static Arc< StorageBuffer > Create(RenderDevice& device, std::string_view name, u64 sizeInBytes, VkBufferUsageFlags usage = 0);
+    static Arc< StorageBuffer > Create(RenderDevice& device, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags usage = 0);
 
-    StorageBuffer(RenderDevice& device, std::string_view name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage);
+    StorageBuffer(RenderDevice& device, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage);
 };
 
 }

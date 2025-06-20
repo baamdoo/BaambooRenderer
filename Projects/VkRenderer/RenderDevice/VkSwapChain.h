@@ -16,8 +16,8 @@ public:
 	explicit SwapChain(RenderDevice& device, baamboo::Window& window);
 	~SwapChain();
 
-	u32 AcquireImageIndex(VkSemaphore vkPresentCompleteSemaphore);
-	void Present(VkSemaphore vkRenderCompleteSemaphore);
+	u32 AcquireNextImage(VkSemaphore vkPresentCompleteSemaphore);
+	void Present(VkSemaphore vkRenderCompleteSemaphore, VkFence vkSignalFence);
 
 	void ResizeViewport();
 
@@ -49,10 +49,15 @@ private:
 
 	u32 m_ImageCount;
 	u32 m_ImageIndex;
-	bool m_vSync = true;
-	bool m_bResized = false;
 
 	std::vector< Arc< Texture > > m_BackBuffers;
+
+	bool m_vSync    = true;
+	bool m_bResized = false;
+
+	bool m_bHasMaintenance   = false;
+	bool m_bHasPresentFence  = false;
+	bool m_bHasReleaseImages = false;
 };
 
 } // namespace vk

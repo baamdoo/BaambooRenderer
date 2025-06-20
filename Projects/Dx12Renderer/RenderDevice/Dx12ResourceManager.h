@@ -24,7 +24,7 @@ public:
     Arc< Texture > GetFlatGrayTexture();
 
 private:
-    Arc< Texture > CreateFlat2DTexture(std::wstring_view name, u32 color);
+    Arc< Texture > CreateFlat2DTexture(const std::wstring& name, u32 color);
 
 private:
     RenderDevice& m_RenderDevice;

@@ -88,7 +88,7 @@ float3 CalculateBRDF(float3 N, float3 V, float3 L, float metallic, float roughne
     kD = float3(1.0, 1.0, 1.0) - kS;
     kD *= 1.0 - metallic;
 
-    float3 numerator = D * G * F;
+    float3 numerator   = D * G * F;
     float  denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + EPSILON;
 
     return numerator / denominator;
@@ -111,7 +111,7 @@ float3 ApplyDirectionalLight(DirectionalLight light, float3 N, float3 V, float3 
     float3 kD;
     float3 specular = CalculateBRDF(N, V, L, metallic, roughness, F0, kD);
 
-    float  NoL = max(dot(N, L), 0.0);
+    float  NoL      = max(dot(N, L), 0.0);
     float3 radiance = lightColor * light.illuminance_lux;
 
     return (kD * albedo / PI + specular) * radiance * NoL;
@@ -126,8 +126,8 @@ float3 ApplyPointLight(PointLight light, float3 P, float3 N, float3 V, float3 al
     if (light.temperature_K > 0.0)
         lightColor *= ColorTemperatureToRGB(light.temperature_K);
 
-    float3 R = reflect(-V, N);
-    float3 centerToRay = dot(L, R) * R - L;
+    float3 R            = reflect(-V, N);
+    float3 centerToRay  = dot(L, R) * R - L;
     float3 closestPoint = L + centerToRay * clamp(light.radius_m / length(centerToRay), 0.0, 1.0);
     L = normalize(closestPoint);
 
@@ -136,8 +136,8 @@ float3 ApplyPointLight(PointLight light, float3 P, float3 N, float3 V, float3 al
 
     float  NdotL = max(dot(N, L), 0.0);
     float  luminousIntensity = light.luminousPower_lm / LUMENS_PER_CANDELA;
-    float  attenuation = CalculateAttenuation(distance, light.radius_m);
-    float3 radiance = lightColor * luminousIntensity * attenuation;
+    float  attenuation       = CalculateAttenuation(distance, light.radius_m);
+    float3 radiance          = lightColor * luminousIntensity * attenuation;
 
     return (kD * albedo / PI + specular) * radiance * NdotL;
 }
@@ -164,11 +164,11 @@ float3 ApplySpotLight(SpotLight light, float3 P, float3 N, float3 V, float3 albe
     float3 kD;
     float3 specular = CalculateBRDF(N, V, L, metallic, roughness, F0, kD);
 
-    float  NoL = max(dot(N, L), 0.0);
-    float  solidAngle = PI_MUL(2.0) * (1.0 - cosThetaOuter);
+    float  NoL               = max(dot(N, L), 0.0);
+    float  solidAngle        = PI_MUL(2.0) * (1.0 - cosThetaOuter);
     float  luminousIntensity = light.luminousPower_lm / solidAngle;
-    float  attenuation = CalculateAttenuation(distance, light.radius_m);
-    float3 radiance = lightColor * luminousIntensity * attenuation * spotAttenuation;
+    float  attenuation       = CalculateAttenuation(distance, light.radius_m);
+    float3 radiance          = lightColor * luminousIntensity * attenuation * spotAttenuation;
 
     return (kD * albedo / PI + specular) * radiance * NoL;
 }

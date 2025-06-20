@@ -20,6 +20,14 @@ struct FeatureChain
 		return next;
 	}
 
+	auto& tail()
+	{
+		if (count == 0)
+			std::any();
+
+		return data[count - 1];
+	}
+
 	std::array< std::any, NumElement > data;
 	u32 count;
 
@@ -88,13 +96,14 @@ enum : u8
 	ePhysicalDeviceFeature_DescriptorIndexing,
 	ePhysicalDeviceFeature_DeviceAddress,
 	ePhysicalDeviceFeature_SamplerAnistropy,
-	ePhysicalDeviceFeature_IndexTypeUint8,
-	ePhysicalDeviceFeature_Sync2,
 
 	// **
 	// 32 ~ 63 : More Extension Features
 	// **
 	ePhysicalDeviceFeature_Extension = 32,
+	ePhysicalDeviceFeature_Sync2,
+	ePhysicalDeviceFeature_IndexTypeUint8,
+	ePhysicalDeviceFeature_SwapChainMaintenance,
 };
 class DeviceBuilder
 {
@@ -109,12 +118,11 @@ public:
 	DeviceBuilder& SetPhysicalDeviceType(VkPhysicalDeviceType type);
 	DeviceBuilder& AddPhysicalDeviceFeature(u8 featureBit);
 
-	VkPhysicalDevice					     physicalDevice = VK_NULL_HANDLE;
-	VkPhysicalDeviceFeatures			     physicalDeviceFeatures = VkPhysicalDeviceFeatures();
-	VkPhysicalDeviceFeatures2			     physicalDeviceFeatures2 = VkPhysicalDeviceFeatures2();
+	VkPhysicalDevice					     physicalDevice           = VK_NULL_HANDLE;
+	VkPhysicalDeviceFeatures			     physicalDeviceFeatures   = VkPhysicalDeviceFeatures();
+	VkPhysicalDeviceFeatures2			     physicalDeviceFeatures2  = VkPhysicalDeviceFeatures2();
 	VkPhysicalDeviceVulkan11Features	     physicalDevice11Features = VkPhysicalDeviceVulkan11Features();
 	VkPhysicalDeviceVulkan12Features	     physicalDevice12Features = VkPhysicalDeviceVulkan12Features();
-	VkPhysicalDeviceSynchronization2Features physicalDeviceSync2Features = VkPhysicalDeviceSynchronization2Features();
 	VkPhysicalDeviceProperties			     physicalDeviceProperties = VkPhysicalDeviceProperties();
 
 public:

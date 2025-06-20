@@ -17,7 +17,7 @@ namespace vk
 {
 
 static ComputePipeline* s_CombineTexturesPipeline = nullptr;
-Arc< Texture > CombineTextures(RenderDevice& renderDevice, std::string_view name, Arc< Texture > pTextureR, Arc< Texture > pTextureG, Arc< Texture > pTextureB, Arc< Sampler > pSampler)
+Arc< Texture > CombineTextures(RenderDevice& renderDevice, const std::string& name, Arc< Texture > pTextureR, Arc< Texture > pTextureG, Arc< Texture > pTextureB, Arc< Sampler > pSampler)
 {
 	u32 width 
 		= std::max({ pTextureR->Desc().extent.width, pTextureG->Desc().extent.width, pTextureB->Desc().extent.width });
@@ -78,8 +78,8 @@ SceneResource::SceneResource(RenderDevice& device)
 	// **
 	// scene buffers
 	// **
-	m_pVertexAllocator       = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(Vertex) * _KB(8));
-	m_pIndexAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(Index) * 3 * _KB(8), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+	m_pVertexAllocator       = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(Vertex) * _MB(8));
+	m_pIndexAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(Index) * 3 * _MB(8), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 	m_pIndirectDrawAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(IndirectDrawData) * _KB(8), VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
 	m_pTransformAllocator    = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(TransformData) * _KB(8));
 	m_pMaterialAllocator     = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(MaterialData) * _KB(8));
@@ -156,8 +156,8 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 	for (auto& transformView : sceneView.transforms)
 	{
 		TransformData transform = {};
-		transform.mWorldToView = transformView.mWorld;
-		transform.mViewToWorld = glm::inverse(transformView.mWorld);
+		transform.mWorldToView  = transformView.mWorld;
+		transform.mViewToWorld  = glm::inverse(transformView.mWorld);
 		transforms.push_back(transform);
 	}
 	UpdateFrameBuffer(transforms.data(), (u32)transforms.size(), sizeof(TransformData), *m_pTransformAllocator);
@@ -173,9 +173,9 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 	for (auto& materialView : sceneView.materials)
 	{
 		MaterialData material = {};
-		material.tint      = materialView.tint;
-		material.roughness = materialView.roughness;
-		material.metallic  = materialView.metallic;
+		material.tint         = materialView.tint;
+		material.roughness    = materialView.roughness;
+		material.metallic     = materialView.metallic;
 
 		material.albedoID = INVALID_INDEX;
 		if (!materialView.albedoTex.empty())
@@ -209,27 +209,11 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 			}
 		}
 
-		material.specularID = INVALID_INDEX;
-		if (!materialView.specularTex.empty())
-		{
-			auto pSpecular = GetOrLoadTexture(materialView.id, materialView.specularTex);
-			if (srvIndexCache.contains(pSpecular.get()))
-			{
-				material.specularID = srvIndexCache[pSpecular.get()];
-			}
-			else
-			{
-				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pSpecular->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
-				material.specularID = (u32)imageInfos.size() - 1;
-				srvIndexCache.emplace(pSpecular.get(), material.specularID);
-			}
-		}
-
 		// combine orm
-		std::string aoStr = materialView.aoTex.data();
-		std::string roughnessStr = materialView.roughnessTex.data();
-		std::string metallicStr = materialView.metallicTex.data();
-		std::string ormStr = aoStr + roughnessStr + metallicStr;
+		std::string aoStr        = materialView.aoTex;
+		std::string roughnessStr = materialView.roughnessTex;
+		std::string metallicStr  = materialView.metallicTex;
+		std::string ormStr       = aoStr + roughnessStr + metallicStr;
 
 		material.metallicRoughnessAoID = INVALID_INDEX;
 		auto pORM = GetTexture(ormStr);
@@ -339,22 +323,21 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 	descriptorSet.StageDescriptor(m_pLightAllocator->GetDescriptorInfo(), eStaticSetBindingIndex_Lighting, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 }
 
-BufferHandle SceneResource::GetOrUpdateVertex(u32 entity, std::string_view filepath, const void* pData, u32 count)
+BufferHandle SceneResource::GetOrUpdateVertex(u32 entity, const std::string& filepath, const void* pData, u32 count)
 {
 	auto& rm = m_RenderDevice.GetResourceManager();
 
-	std::string f = filepath.data();
-	if (m_VertexCache.contains(f))
+	if (m_VertexCache.contains(filepath))
 	{
-		return m_VertexCache.find(f)->second;
+		return m_VertexCache.find(filepath)->second;
 	}
 
 	u64 sizeInBytes = sizeof(Vertex) * count;
 
 	auto allocation = m_pVertexAllocator->Allocate(count, sizeof(Vertex));
-	rm.UploadData(allocation.vkBuffer, pData, sizeInBytes, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT, allocation.offset);
+	rm.UploadData(allocation.vkBuffer, pData, sizeInBytes, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT, allocation.offset * sizeof(Vertex));
 
-	BufferHandle handle = {};
+	BufferHandle handle       = {};
 	handle.vkBuffer           = allocation.vkBuffer;
 	handle.offset             = allocation.offset;
 	handle.count              = count;
@@ -364,22 +347,21 @@ BufferHandle SceneResource::GetOrUpdateVertex(u32 entity, std::string_view filep
 	return handle;
 }
 
-BufferHandle SceneResource::GetOrUpdateIndex(u32 entity, std::string_view filepath, const void* pData, u32 count)
+BufferHandle SceneResource::GetOrUpdateIndex(u32 entity, const std::string& filepath, const void* pData, u32 count)
 {
 	auto& rm = m_RenderDevice.GetResourceManager();
 
-	std::string f = filepath.data();
-	if (m_IndexCache.contains(f))
+	if (m_IndexCache.contains(filepath))
 	{
-		return m_IndexCache.find(f)->second;
+		return m_IndexCache.find(filepath)->second;
 	}
 
 	u64 sizeInBytes = sizeof(Index) * count;
 
 	auto allocation = m_pIndexAllocator->Allocate(count, sizeof(Index));
-	rm.UploadData(allocation.vkBuffer, pData, sizeInBytes, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT, allocation.offset);
+	rm.UploadData(allocation.vkBuffer, pData, sizeInBytes, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT, allocation.offset * sizeof(Index));
 
-	BufferHandle handle = {};
+	BufferHandle handle       = {};
 	handle.vkBuffer           = allocation.vkBuffer;
 	handle.offset             = allocation.offset;
 	handle.count              = count;
@@ -389,14 +371,13 @@ BufferHandle SceneResource::GetOrUpdateIndex(u32 entity, std::string_view filepa
 	return handle;
 }
 
-Arc< Texture > SceneResource::GetOrLoadTexture(u32 entity, std::string_view filepath)
+Arc< Texture > SceneResource::GetOrLoadTexture(u32 entity, const std::string& filepath)
 {
 	auto& rm = m_RenderDevice.GetResourceManager();
 
-	std::string f = filepath.data();
-	if (m_TextureCache.contains(f))
+	if (m_TextureCache.contains(filepath))
 	{
-		return m_TextureCache.find(f)->second;
+		return m_TextureCache.find(filepath)->second;
 	}
 
 	fs::path path = filepath;
@@ -405,12 +386,7 @@ Arc< Texture > SceneResource::GetOrLoadTexture(u32 entity, std::string_view file
 	u8* pData = stbi_load(path.string().c_str(), (int*)&width, (int*)&height, (int*)&numChannels, STBI_rgb_alpha);
 	BB_ASSERT(pData, "No texture found on the path: %s", path.string().c_str());
 
-	Texture::CreationInfo texInfo = {};
-	texInfo.resolution    = { width, height, 1 };
-	texInfo.format        = VK_FORMAT_R8G8B8A8_UNORM;
-	texInfo.bGenerateMips = false;
-	texInfo.imageUsage    = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-	auto pTex = Texture::Create(m_RenderDevice, path.filename().string(), 
+	auto pTex  = Texture::Create(m_RenderDevice, path.filename().string(), 
 		{
 			.resolution = { width, height, 1 },
 			.format     = VK_FORMAT_R8G8B8A8_UNORM,
@@ -441,7 +417,7 @@ Arc< Texture > SceneResource::GetOrLoadTexture(u32 entity, std::string_view file
 	return pTex;
 }
 
-Arc< Texture > SceneResource::GetTexture(std::string_view filepath)
+Arc< Texture > SceneResource::GetTexture(const std::string& filepath)
 {
 	std::string f = filepath.data();
 	if (m_TextureCache.contains(f))

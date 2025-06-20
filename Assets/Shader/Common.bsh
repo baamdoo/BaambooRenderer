@@ -12,6 +12,9 @@
 
 #define EPSILON    0.00001
 
+//-------------------------------------------------------------------------
+// Vertex
+//-------------------------------------------------------------------------
 struct Vertex
 {
 	float posX, posY, posZ;
@@ -20,6 +23,63 @@ struct Vertex
 	float tangentX, tangentY, tangentZ;
 };
 
+struct SkinnedVertex
+{
+    float posX, posY, posZ;
+    float u, v;
+    float normalX, normalY, normalZ;
+    float tangentX, tangentY, tangentZ;
+    uint  boneIndices;  // one index per byte
+    float weight0, weight1, weight2, weight3;
+};
+
+
+//-------------------------------------------------------------------------
+// Transforms
+//-------------------------------------------------------------------------
+#ifdef _HLSL
+struct TransformData
+{
+    float4x4 mWorldToView;
+    float4x4 mViewToWorld;
+};
+
+struct BoneTransformData
+{
+    float4x4 mBoneTransform;
+};
+
+#elif defined(_GLSL)
+struct TransformData
+{
+	mat4 mWorldToView;
+	mat4 mViewToWorld;
+};
+
+struct BoneTransformData
+{
+    mat4 mBoneTransform;
+};
+
+struct DrawData
+{
+	uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int  vertexOffset;
+    uint firstInstance;
+	
+    uint materialID;
+	uint transformID;
+	uint transformCount;
+
+	uint boneTransformID;
+	uint bSkinning;
+	
+	float padding0, padding1;
+};
+
+#endif
 
 //-------------------------------------------------------------------------
 // Material
@@ -37,7 +97,7 @@ struct MaterialData
 	uint specularID;
 	uint metallicRoughnessAoID;
 	uint emissiveID;
-	uint padding3;
+	uint padding2, padding3, padding4;
 };
 
 

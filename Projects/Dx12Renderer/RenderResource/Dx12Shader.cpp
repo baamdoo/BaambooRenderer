@@ -13,7 +13,7 @@ IDxcUtils* Shader::ms_dxcUtils = nullptr;
 IDxcCompiler3* Shader::ms_dxcCompiler = nullptr;
 u32 Shader::ms_RefCount = 0;
 
-Shader::Shader(RenderDevice& device, std::wstring_view name, CreationInfo&& info)
+Shader::Shader(RenderDevice& device, const std::wstring& name, CreationInfo&& info)
 	: Super(device, name, eResourceType::Shader)
 {
     if (name != L"Dummy")
@@ -79,7 +79,7 @@ void Shader::Reflect()
     ms_dxcUtils->CreateReflection(&dxcBuffer, IID_PPV_ARGS(&m_d3d12ShaderReflection));
 }
 
-Arc< Shader > Shader::Create(RenderDevice& device, std::wstring_view name, CreationInfo&& info)
+Arc< Shader > Shader::Create(RenderDevice& device, const std::wstring& name, CreationInfo&& info)
 {
     return MakeArc< Shader >(device, name, std::move(info));
 }

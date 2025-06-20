@@ -40,7 +40,7 @@ inline bool LoadRenderer(eRendererAPI eApi, baamboo::Window* pWindow, struct ImG
 
 	hEngineDLL = LoadLibrary(enginePath.c_str());
 	if (!hEngineDLL)
-	{
+	{ 
 		dwErrCode = GetLastError();
 		//fs::path absolutePath = fs::absolute(enginePath);
 		swprintf_s(wchErrTxt, L"Fail to LoadLibrary(%s) - Error Code: %u", enginePath.c_str(), dwErrCode);

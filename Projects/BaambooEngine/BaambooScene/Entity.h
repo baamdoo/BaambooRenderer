@@ -76,31 +76,7 @@ public:
 	}
 
 	[[nodiscard]]
-	Entity Clone()
-	{
-		assert(IsValid());
-		auto newEntity = m_pScene->CreateEntity(GetComponent< TagComponent >().tag + "_clone");
-
-		const auto& transformComponent = GetComponent< TransformComponent >();
-		auto& newTransformComponent = newEntity.GetComponent< TransformComponent >();
-		newTransformComponent = transformComponent;
-
-		if (HasAll< StaticMeshComponent >())
-		{
-			const auto& component = GetComponent< StaticMeshComponent >();
-			auto& newComponent = newEntity.AttachComponent< StaticMeshComponent >();
-			newComponent = component;
-		}
-		if (HasAll< DynamicMeshComponent >())
-		{
-			const auto& component = GetComponent< DynamicMeshComponent >();
-			auto& newComponent = newEntity.AttachComponent< DynamicMeshComponent >();
-			newComponent = component;
-		}
-		// ..
-
-		return newEntity;
-	}
+	Entity Clone();
 
 private:
 	Scene* m_pScene = nullptr;

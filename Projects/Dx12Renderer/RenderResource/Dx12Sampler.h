@@ -27,7 +27,7 @@ public:
         f32                   borderColor[4];
     };
 
-    Sampler(RenderDevice& device, std::wstring_view name, CreationInfo&& info);
+    Sampler(RenderDevice& device, const std::wstring& name, CreationInfo&& info);
     virtual ~Sampler();
 
 private:

@@ -17,8 +17,8 @@ struct CameraRenderView
 
 struct StaticMeshRenderView
 {
-	u32              id;
-	std::string_view tag;
+	u32         id;
+	std::string tag;
 
 	const void* vData;
 	u32         vCount;
@@ -32,16 +32,20 @@ struct MaterialRenderView
 	u32 id;
 
 	float3 tint;
-	float  roughness;
-	float  metallic;
+	float3 ambient;
+	float3 specular;
 
-	std::string_view albedoTex;
-	std::string_view normalTex;
-	std::string_view specularTex;
-	std::string_view aoTex;
-	std::string_view roughnessTex;
-	std::string_view metallicTex;
-	std::string_view emissionTex;
+	float shininess;
+	float metallic;
+	float roughness;
+	float ao;
+
+	std::string albedoTex;
+	std::string normalTex;
+	std::string aoTex;
+	std::string roughnessTex;
+	std::string metallicTex;
+	std::string emissionTex;
 };
 
 struct DrawRenderView

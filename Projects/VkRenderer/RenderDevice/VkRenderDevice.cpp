@@ -38,7 +38,8 @@ RenderDevice::RenderDevice()
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_DeviceAddress)
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_SamplerAnistropy)
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_IndexTypeUint8)
-		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_Sync2).Build(m_vkInstance);
+		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_Sync2)
+		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_SwapChainMaintenance).Build(m_vkInstance);
 	m_vkPhysicalDevice         = deviceBuilder.physicalDevice;
 	m_PhysicalDeviceProperties = deviceBuilder.physicalDeviceProperties;
 

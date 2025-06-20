@@ -42,10 +42,10 @@ struct SceneResource
 
     void UpdateSceneResources(const SceneRenderView& sceneView);
 
-    Arc< VertexBuffer > GetOrUpdateVertex(u32 entity, std::string_view filepath, const void* pData, u32 count);
-    Arc< IndexBuffer >  GetOrUpdateIndex(u32 entity, std::string_view filepath, const void* pData, u32 count);
-    Arc< Texture >      GetOrLoadTexture(u32 entity, std::string_view filepath);
-    Arc< Texture >      GetTexture(std::string_view filepath);
+    Arc< VertexBuffer > GetOrUpdateVertex(u32 entity, const std::string& filepath, const void* pData, u32 count);
+    Arc< IndexBuffer >  GetOrUpdateIndex(u32 entity, const std::string& filepath, const void* pData, u32 count);
+    Arc< Texture >      GetOrLoadTexture(u32 entity, const std::string& filepath);
+    Arc< Texture >      GetTexture(const std::string& filepath);
 
     [[nodiscard]]
     inline RootSignature* GetSceneRootSignature() const { return m_pRootSignature; }
@@ -64,12 +64,11 @@ struct SceneResource
     [[nodiscard]]
     inline u32 NumMeshes() const { return m_NumMeshes; }
 
-    // TEMP
-    std::vector< D3D12_CPU_DESCRIPTOR_HANDLE > srvs;
+    std::vector< D3D12_CPU_DESCRIPTOR_HANDLE > sceneTexSRVs;
 
 private:
     void ResetFrameBuffers();
-    void UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator& targetBuffer);
+    void UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator& targetBuffer, D3D12_RESOURCE_STATES stateAfter);
 
     RenderDevice& m_RenderDevice;
 

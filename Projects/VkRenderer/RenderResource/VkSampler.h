@@ -22,15 +22,15 @@ public:
         VkBorderColor        borderColor   = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
 	};
 
-    static Arc< Sampler > Create(RenderDevice& device, std::string_view name, CreationInfo&& info);
+    static Arc< Sampler > Create(RenderDevice& device, const std::string& name, CreationInfo&& info);
 
-    static Arc<Sampler> CreateLinearRepeat(RenderDevice& device, std::string_view name = "LinearRepeat");
-    static Arc<Sampler> CreateLinearClamp(RenderDevice& device, std::string_view name = "LinearClamp");
-    static Arc<Sampler> CreatePointRepeat(RenderDevice& device, std::string_view name = "PointRepeat");
-    static Arc<Sampler> CreatePointClamp(RenderDevice& device, std::string_view name = "PointClamp");
-    static Arc<Sampler> CreateLinearClampCmp(RenderDevice& device, std::string_view name = "Shadow");
+    static Arc< Sampler > CreateLinearRepeat(RenderDevice& device, const std::string& name = "LinearRepeat");
+    static Arc< Sampler > CreateLinearClamp(RenderDevice& device, const std::string& name = "LinearClamp");
+    static Arc< Sampler > CreatePointRepeat(RenderDevice& device, const std::string& name = "PointRepeat");
+    static Arc< Sampler > CreatePointClamp(RenderDevice& device, const std::string& name = "PointClamp");
+    static Arc< Sampler > CreateLinearClampCmp(RenderDevice& device, const std::string& name = "Shadow");
 
-    Sampler(RenderDevice& device, std::string_view name, CreationInfo&& info);
+    Sampler(RenderDevice& device, const std::string& name, CreationInfo&& info);
     virtual ~Sampler();
 
 	[[nodiscard]]

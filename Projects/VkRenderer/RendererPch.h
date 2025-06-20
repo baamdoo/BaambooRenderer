@@ -18,7 +18,7 @@
 // Includes
 //-------------------------------------------------------------------------
 #include "Defines.h"
+#include "Pointer.hpp"
 #include "ShaderTypes.h"
-#include "RendererCommon/Pointer.hpp"
 #include "Core/VkCore.h"
 

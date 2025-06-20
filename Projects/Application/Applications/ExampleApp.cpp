@@ -4,7 +4,6 @@
 #include "BaambooCore/Input.hpp"
 #include "BaambooScene/Entity.h"
 #include "BaambooScene/Components.h"
-#include "BaambooScene/ModelLoader.h"
 
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui/backends/imgui_impl_glfw.h>
@@ -147,6 +146,7 @@ bool ExampleApp::LoadScene()
 {
 	m_pScene = new Scene("ExampleScene");
 
+	// static mesh
 	{
 		auto entity0 = m_pScene->CreateEntity("Test0");
 		auto& tc0 = entity0.GetComponent< TransformComponent >();
@@ -157,15 +157,43 @@ bool ExampleApp::LoadScene()
 
 		auto entity1 = m_pScene->CreateEntity("Test1");
 
-		MeshDescriptor meshDescriptor = {};
-		meshDescriptor.bOptimize = true;
-		meshDescriptor.rendererAPI = m_eBackendAPI;
+		MeshDescriptor descriptor = {};
+		descriptor.rootPath       = GetModelPath();
+		descriptor.bOptimize      = true;
+		descriptor.rendererAPI    = m_eBackendAPI;
 
-		auto dhEntity = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), meshDescriptor);
+		auto dhEntity = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
 		auto& tcdh = dhEntity.GetComponent< TransformComponent >();
 		tcdh.transform.position = { -1.0f, 0.0f, 0.0f };
 
-		auto dhEntity2 = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), meshDescriptor);
+		auto dhEntity2 = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
+		tcdh.transform.position = { 1.0f, 0.0f, 0.0f };
+	}
+
+	// animated mesh
+	{
+		MeshDescriptor descriptor  = {};
+		descriptor.rootPath        = GetModelPath();
+		descriptor.scale           = 10000.0f;
+		descriptor.rendererAPI     = m_eBackendAPI;
+		descriptor.bLoadAnimations = true;
+
+		fs::path animatedModelPath = MODEL_PATH.append("woman/Woman.gltf");
+		if (fs::exists(animatedModelPath))
+		{
+			Entity character = m_pScene->ImportModel(animatedModelPath, descriptor);
+
+			auto& transformComponent              = character.GetComponent< TransformComponent >();
+			transformComponent.transform.position = float3(0.0f, 0.0f, 5.0f);
+
+			if (character.HasAll< AnimationComponent >())
+			{
+				auto& animComp         = character.GetComponent< AnimationComponent >();
+				animComp.bPlaying      = true;
+				animComp.bLoop         = true;
+				animComp.playbackSpeed = 1.0f;
+			}
+		}
 	}
 
 	{
@@ -178,6 +206,9 @@ bool ExampleApp::LoadScene()
 		light.color             = float3(1.0f, 0.95f, 0.8f);
 		light.illuminance_lux   = 3.0f;
 		light.angularRadius_rad = 0.00465f;
+
+		auto& transformComponent              = sunLight.GetComponent< TransformComponent >();
+		transformComponent.transform.position = float3(0.0f, 1.0f, 0.0f);
 	}
 
 	// Create a point light

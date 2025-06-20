@@ -15,8 +15,8 @@ public:
         u64 elementSizeInBytes;
     };
 
-    Buffer(RenderDevice& device, std::wstring_view name);
-    Buffer(RenderDevice& device, std::wstring_view name, CreationInfo&& info);
+    Buffer(RenderDevice& device, const std::wstring& name);
+    Buffer(RenderDevice& device, const std::wstring& name, CreationInfo&& info);
     virtual ~Buffer() = default;
 
     [[nodiscard]]
@@ -36,7 +36,7 @@ class VertexBuffer final : public Buffer
 using Super = Buffer;
 
 public:
-    VertexBuffer(RenderDevice& device, std::wstring_view name, CreationInfo&& info);
+    VertexBuffer(RenderDevice& device, const std::wstring& name, CreationInfo&& info);
     virtual ~VertexBuffer() = default;
 
     [[nodiscard]]
@@ -51,7 +51,7 @@ class IndexBuffer final : public Buffer
 using Super = Buffer;
 
 public:
-    IndexBuffer(RenderDevice& device, std::wstring_view name, CreationInfo&& info);
+    IndexBuffer(RenderDevice& device, const std::wstring& name, CreationInfo&& info);
     virtual ~IndexBuffer() = default;
 
     [[nodiscard]]
@@ -66,7 +66,7 @@ class ConstantBuffer : public Buffer
 using Super = Buffer;
 
 public:
-    ConstantBuffer(RenderDevice& device, std::wstring_view name, CreationInfo&& info);
+    ConstantBuffer(RenderDevice& device, const std::wstring& name, CreationInfo&& info);
     virtual ~ConstantBuffer();
 
     [[nodiscard]]
@@ -84,7 +84,7 @@ class StructuredBuffer : public Buffer
 using Super = Buffer;
 
 public:
-    StructuredBuffer(RenderDevice& device, std::wstring_view name, CreationInfo&& info);
+    StructuredBuffer(RenderDevice& device, const std::wstring& name, CreationInfo&& info);
     virtual ~StructuredBuffer();
 
     [[nodiscard]]

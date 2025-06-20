@@ -7,6 +7,11 @@ struct TransformData
     mat4 mViewToWorld;
 };
 
+struct BoneTransformData
+{
+    mat4 mBones[MAX_BONES];
+};
+
 
 struct MaterialData
 {
@@ -21,7 +26,8 @@ struct MaterialData
     u32 specularID;
     u32 metallicRoughnessAoID;
     u32 emissionID;
-    u32 padding1;
+
+    float3 padding1;
 };
 
 

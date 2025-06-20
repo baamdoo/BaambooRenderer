@@ -51,7 +51,7 @@ void Renderer::NewFrame()
 	ImGui_ImplDX12_NewFrame();
 }
 
-void Renderer::Render(SceneRenderView&& renderView)
+void Renderer::Render(const SceneRenderView& renderView)
 {
 	assert(g_FrameData.pSceneResource);
 	g_FrameData.pSceneResource->UpdateSceneResources(renderView);
