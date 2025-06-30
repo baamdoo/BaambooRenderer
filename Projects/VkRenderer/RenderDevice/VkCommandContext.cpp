@@ -240,7 +240,7 @@ void CommandContext::CopyTexture(Arc< Texture > pDstTexture, Arc< Texture > pSrc
 	vkCmdCopyImage(m_vkCommandBuffer, pSrcTexture->vkImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, pDstTexture->vkImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 }
 
-void CommandContext::BlitTexture(Arc<Texture> pDstTexture, Arc<Texture> pSrcTexture)
+void CommandContext::BlitTexture(Arc< Texture > pDstTexture, Arc< Texture > pSrcTexture)
 {
 	VkImageAspectFlags format = 
 		pSrcTexture->Desc().format < VK_FORMAT_D16_UNORM ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
@@ -357,6 +357,8 @@ void CommandContext::TransitionImageLayout(
 	bool bFlushImmediate, 
 	bool bFlatten)
 {
+	assert(pTexture);
+
 	Texture::State oldState = pTexture->GetState().GetSubresourceState(subresourceRange);
 	if (oldState.layout == newLayout)
 	{
@@ -364,17 +366,17 @@ void CommandContext::TransitionImageLayout(
 	}
 
 	VkImageMemoryBarrier2 imageMemoryBarrier = {};
-	imageMemoryBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-	imageMemoryBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	imageMemoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	imageMemoryBarrier.srcAccessMask = oldState.access;
-	imageMemoryBarrier.dstAccessMask = 0;
-	imageMemoryBarrier.srcStageMask = oldState.stage;
-	imageMemoryBarrier.dstStageMask = dstStageMask;
-	imageMemoryBarrier.oldLayout = oldState.layout;
-	imageMemoryBarrier.newLayout = newLayout;
-	imageMemoryBarrier.image = pTexture->vkImage();
-	imageMemoryBarrier.subresourceRange = subresourceRange;
+	imageMemoryBarrier.sType                 = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+	imageMemoryBarrier.srcQueueFamilyIndex   = VK_QUEUE_FAMILY_IGNORED;
+	imageMemoryBarrier.dstQueueFamilyIndex   = VK_QUEUE_FAMILY_IGNORED;
+	imageMemoryBarrier.srcAccessMask         = oldState.access;
+	imageMemoryBarrier.dstAccessMask         = 0;
+	imageMemoryBarrier.srcStageMask          = oldState.stage;
+	imageMemoryBarrier.dstStageMask          = dstStageMask;
+	imageMemoryBarrier.oldLayout             = oldState.layout;
+	imageMemoryBarrier.newLayout             = newLayout;
+	imageMemoryBarrier.image                 = pTexture->vkImage();
+	imageMemoryBarrier.subresourceRange      = subresourceRange;
 
 	// Destination access mask controls the dependency for the new image layout
 	switch (newLayout)
@@ -516,6 +518,28 @@ void CommandContext::PushDescriptors(u32 binding, const VkDescriptorBufferInfo& 
 	m_PushAllocations.push_back({ binding, bufferInfo, descriptorType });
 }
 
+void CommandContext::BindSceneDescriptors(const SceneResource& sceneResource)
+{
+	auto vkDescriptorSet = sceneResource.GetSceneDescriptorSet();
+	if (m_pGraphicsPipeline == nullptr)
+	{
+		assert(m_pComputePipeline);
+		vkCmdBindDescriptorSets(
+			m_vkCommandBuffer,
+			VK_PIPELINE_BIND_POINT_COMPUTE,
+			m_pComputePipeline->vkPipelineLayout(),
+			eDescriptorSet_Static, 1, &vkDescriptorSet, 0, nullptr);
+	}
+	else
+	{
+		vkCmdBindDescriptorSets(
+			m_vkCommandBuffer,
+			VK_PIPELINE_BIND_POINT_GRAPHICS,
+			m_pGraphicsPipeline->vkPipelineLayout(),
+			eDescriptorSet_Static, 1, &vkDescriptorSet, 0, nullptr);
+	}
+}
+
 void CommandContext::SetRenderPipeline(GraphicsPipeline* pRenderPipeline)
 {
 	m_pComputePipeline = nullptr;
@@ -555,6 +579,16 @@ void CommandContext::BeginRenderPass(const RenderTarget& renderTarget)
 void CommandContext::EndRenderPass()
 {
 	vkCmdEndRenderPass(m_vkCommandBuffer);
+}
+
+void CommandContext::BeginRendering(const VkRenderingInfo& renderInfo)
+{
+	vkCmdBeginRendering(m_vkCommandBuffer, &renderInfo);
+}
+
+void CommandContext::EndRendering()
+{
+	vkCmdEndRendering(m_vkCommandBuffer);
 }
 
 void CommandContext::Draw(u32 vertexCount, u32 instanceCount, u32 firstVertex, u32 firstInstance)
@@ -620,13 +654,7 @@ void CommandContext::DrawIndexed(u32 indexCount, u32 instanceCount, u32 firstInd
 void CommandContext::DrawIndexedIndirect(const SceneResource& sceneResource)
 {
 	FlushBarriers();
-
-	auto vkDescriptorSet = sceneResource.GetSceneDescriptorSet();
-	vkCmdBindDescriptorSets(
-		m_vkCommandBuffer,
-		VK_PIPELINE_BIND_POINT_GRAPHICS,
-		m_pGraphicsPipeline->vkPipelineLayout(),
-		eDescriptorSet_Static, 1, &vkDescriptorSet, 0, nullptr);
+	BindSceneDescriptors(sceneResource);
 
 	std::vector< VkWriteDescriptorSet > writes;
 	for (const auto& allocation : m_PushAllocations)

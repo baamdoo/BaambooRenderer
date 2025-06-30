@@ -169,6 +169,12 @@ void RenderDevice::CreateDevice(bool bEnableGBV)
 	DWORD dwCreateFactoryFlags = 0;
 
 #if defined(_DEBUG)
+	/*ID3D12DeviceRemovedExtendedDataSettings2* pDredSettings;
+	DX_CHECK(D3D12GetDebugInterface(IID_PPV_ARGS(&pDredSettings)));
+
+	pDredSettings->SetAutoBreadcrumbsEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);
+	pDredSettings->SetPageFaultEnablement(D3D12_DRED_ENABLEMENT_FORCED_ON);*/
+
 	if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&d3d12DebugController))))
 	{
 		d3d12DebugController->EnableDebugLayer();

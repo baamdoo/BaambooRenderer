@@ -15,36 +15,28 @@ static const float3 COLOR_TEMPERATURE_LUT[] =
     float3(0.726, 0.742, 1.000),  // 10000K
 };
 
-static const float MIN_ROUGHNESS = 0.045;
-
-Texture2D                        g_SceneTextures[] : register(t0, space100);
-StructuredBuffer< MaterialData > g_Materials       : register(t0, space0);
-
-SamplerState g_Sampler : register(s0, space0);
-
 ConstantBuffer< LightingData > g_Lights : register(b1, space0);
-cbuffer RootConstants                   : register(b2, space0)
-{
-    uint MaterialIndex;
-};
 
+Texture2D< float4 > g_GBuffer0    : register(t0); // Albedo.rgb + AO.a
+Texture2D< float4 > g_GBuffer1    : register(t1); // Normal.rgb + MaterialID.a
+Texture2D< float3 > g_GBuffer2    : register(t2); // Emissive.rgb
+Texture2D< float4 > g_GBuffer3    : register(t3); // MotionVectors.rg + Roughness.b + Metallic.a
+Texture2D< float >  g_DepthBuffer : register(t4);
 
-struct PSInput
-{
-    float4 posCLIP      : SV_Position;
-    float3 posWORLD     : POSITION;
-    float2 uv           : TEXCOORD0;
-    float3 normalWORLD  : TEXCOORD1;
-    float3 tangentWORLD : TEXCOORD2;
-};
+StructuredBuffer< MaterialData > g_Materials : register(t5);
+
+SamplerState g_LinearSampler : register(s0, space0);
+
+RWTexture2D< float4 > g_OutputTexture : register(u0);
+
 
 float3 ColorTemperatureToRGB(float temperature_K)
 {
     float T     = clamp(temperature_K, 1000.0, 10000.0);
     float index = (T - 1000.0) / 1000.0;
     return lerp(COLOR_TEMPERATURE_LUT[(uint)index],
-                COLOR_TEMPERATURE_LUT[(uint)index + 1],
-                frac(index));
+        COLOR_TEMPERATURE_LUT[(uint)index + 1],
+        frac(index));
 }
 
 float3 FresnelSchlick(float cosTheta, float3 F0)
@@ -119,7 +111,7 @@ float3 ApplyDirectionalLight(DirectionalLight light, float3 N, float3 V, float3 
 
 float3 ApplyPointLight(PointLight light, float3 P, float3 N, float3 V, float3 albedo, float metallic, float roughness, float3 F0)
 {
-    float3 L = float3(light.posX, light.posY, light.posZ) - P;
+    float3 L        = float3(light.posX, light.posY, light.posZ) - P;
     float  distance = length(L);
 
     float3 lightColor = float3(light.colorR, light.colorG, light.colorB);
@@ -134,7 +126,7 @@ float3 ApplyPointLight(PointLight light, float3 P, float3 N, float3 V, float3 al
     float3 kD;
     float3 specular = CalculateBRDF(N, V, L, metallic, roughness, F0, kD);
 
-    float  NdotL = max(dot(N, L), 0.0);
+    float  NdotL             = max(dot(N, L), 0.0);
     float  luminousIntensity = light.luminousPower_lm / LUMENS_PER_CANDELA;
     float  attenuation       = CalculateAttenuation(distance, light.radius_m);
     float3 radiance          = lightColor * luminousIntensity * attenuation;
@@ -173,58 +165,50 @@ float3 ApplySpotLight(SpotLight light, float3 P, float3 N, float3 V, float3 albe
     return (kD * albedo / PI + specular) * radiance * NoL;
 }
 
-float4 main(PSInput input) : SV_Target
+[numthreads(16, 16, 1)]
+void main(uint3 tID : SV_DispatchThreadID)
 {
-    if (MaterialIndex == INVALID_INDEX)
+    int2 texCoords = tID.xy;
+
+    uint width, height;
+    g_OutputTexture.GetDimensions(width, height);
+
+    float2 uv = (float2(texCoords.xy) + 0.5) / float2(width, height);
+
+    float4 gbuffer0 = g_GBuffer0.SampleLevel(g_LinearSampler, uv, 0);
+    float4 gbuffer1 = g_GBuffer1.SampleLevel(g_LinearSampler, uv, 0);
+    float3 gbuffer2 = g_GBuffer2.SampleLevel(g_LinearSampler, uv, 0);
+    float4 gbuffer3 = g_GBuffer3.SampleLevel(g_LinearSampler, uv, 0);
+    float  depth    = g_DepthBuffer.SampleLevel(g_LinearSampler, uv, 0);
+    if (depth == 0.0) 
     {
-        return float4(1.0, 0.0, 0.0, 1.0);
+        g_OutputTexture[texCoords] = float4(0, 0, 0, 1);
+        return;
     }
 
-    MaterialData material = g_Materials[MaterialIndex];
+    float3 albedo = gbuffer0.rgb;
+    float  ao     = gbuffer0.a;
 
-    float3 albedo = float3(1.0, 1.0, 1.0);
-    if (material.albedoID != INVALID_INDEX) 
-    {
-        albedo = g_SceneTextures[NonUniformResourceIndex(material.albedoID)].Sample(g_Sampler, input.uv).rgb;
-        albedo = pow(albedo, 2.2);
-    }
-    albedo *= float3(material.tintR, material.tintG, material.tintB);
+    float3 N          = gbuffer1.xyz;
+    uint   materialID = (uint)(gbuffer1.w * 255.0);
+    float3 emissive   = gbuffer2.rgb;
 
-    float metallic  = material.metallic;
-    float roughness = material.roughness;
-    float ao        = 1.0;
-    if (material.metallicRoughnessAoID != INVALID_INDEX)
-    {
-        float3 metallicRoughnessAoSample 
-            = g_SceneTextures[NonUniformResourceIndex(material.metallicRoughnessAoID)].Sample(g_Sampler, input.uv).rgb;
+    float roughness = max(gbuffer3.z, MIN_ROUGHNESS);
+    float metallic  = gbuffer3.w;
 
-        metallic  *= metallicRoughnessAoSample.b;
-        roughness *= metallicRoughnessAoSample.g;
-        ao        *= metallicRoughnessAoSample.r;
-    }
-    roughness = max(roughness, MIN_ROUGHNESS);
+    float3 posWORLD = ReconstructWorldPos(uv, depth, g_Camera.mViewProjInv);
 
-    float3 N = normalize(input.normalWORLD);
-    if (material.normalID != INVALID_INDEX)
-    {
-        float3 tangentNormal 
-            = g_SceneTextures[NonUniformResourceIndex(material.normalID)].Sample(g_Sampler, input.uv).rgb * 2.0 - 1.0;
-
-        float3   T   = normalize(input.tangentWORLD);
-        float3   B   = cross(N, T);
-        float3x3 TBN = float3x3(T, B, N);
-
-        N = normalize(mul(tangentNormal, TBN));
-    }
-
-    float3 V  = normalize(g_Camera.posWORLD - input.posWORLD);
+    float3 V  = normalize(g_Camera.posWORLD - posWORLD);
     float3 F0 = lerp(float3(0.04, 0.04, 0.04), albedo, metallic);
 
-    if (material.ior > 1.0)
+    if (materialID != INVALID_INDEX && materialID < 256) 
     {
-        float ior = material.ior;
-        float f0 = pow((ior - 1.0) / (ior + 1.0), 2.0);
-        F0       = float3(f0, f0, f0);
+        MaterialData material = g_Materials[materialID];
+        if (material.ior > 1.0) 
+        {
+            float f0 = pow((material.ior - 1.0) / (material.ior + 1.0), 2.0);
+            F0       = float3(f0, f0, f0);
+        }
     }
 
     float3 Lo = float3(0.0, 0.0, 0.0);
@@ -235,29 +219,22 @@ float4 main(PSInput input) : SV_Target
 
     for (uint i = 0; i < g_Lights.numPoints; ++i)
     {
-        Lo += ApplyPointLight(g_Lights.points[i], input.posWORLD, N, V, albedo, metallic, roughness, F0);
+        Lo += ApplyPointLight(g_Lights.points[i], posWORLD, N, V, albedo, metallic, roughness, F0);
     }
 
     for (uint i = 0; i < g_Lights.numSpots; ++i)
     {
-        Lo += ApplySpotLight(g_Lights.spots[i], input.posWORLD, N, V, albedo, metallic, roughness, F0);
+        Lo += ApplySpotLight(g_Lights.spots[i], posWORLD, N, V, albedo, metallic, roughness, F0);
     }
 
     float3 ambientColor = float3(g_Lights.ambientColorR, g_Lights.ambientColorG, g_Lights.ambientColorB);
     float3 ambient      = ambientColor * g_Lights.ambientIntensity * albedo * ao;
-    float3 emissive     = float3(0.0, 0.0, 0.0);
-    if (material.emissiveID != INVALID_INDEX)
-    {
-        emissive = g_SceneTextures[NonUniformResourceIndex(material.emissiveID)].Sample(g_Sampler, input.uv).rgb;
-        emissive = pow(emissive, 2.2); // convert from sRGB to linear
-        emissive *= 10.0;
-    }
 
     float3 color = ambient + Lo + emissive;
 
     float ev100    = g_Lights.exposure;
     float exposure = 1.0 / (1.2 * pow(2.0, ev100));
-    color         *= exposure;
+    color *= exposure;
 
     // tone mapping (ACES filmic)
     float3 x = color;
@@ -271,5 +248,5 @@ float4 main(PSInput input) : SV_Target
     // gamma correction
     color = pow(color, (1.0 / 2.2));
 
-    return float4(color, 1.0);
+    g_OutputTexture[texCoords] = float4(color, 1.0);
 }

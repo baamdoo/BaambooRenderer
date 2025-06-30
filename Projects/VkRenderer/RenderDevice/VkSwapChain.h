@@ -30,6 +30,8 @@ public:
 	inline Arc< Texture > GetImageToPresent() const { return m_BackBuffers[m_ImageIndex]; }
 
 	[[nodiscard]]
+	inline VkFormat ImageFormat() const { return m_ImageFormat; }
+	[[nodiscard]]
 	inline u32 ImageCount() const { return m_ImageCount; }
 	[[nodiscard]]
 	inline bool IsRenderable() const { return m_vkSwapChain != VK_NULL_HANDLE; }

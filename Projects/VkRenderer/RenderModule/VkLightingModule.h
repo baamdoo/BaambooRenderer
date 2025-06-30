@@ -4,17 +4,20 @@
 namespace vk
 {
 
-class ForwardModule : public RenderModule
+class LightingModule : public RenderModule
 {
 using Super = RenderModule;
 public:
-	ForwardModule(RenderDevice& device);
-	virtual ~ForwardModule();
+	LightingModule(RenderDevice& device);
+	virtual ~LightingModule();
 
 	virtual void Apply(CommandContext& context) override;
 	virtual void Resize(u32 width, u32 height, u32 depth = 1) override;
 
 private:
+	Arc< Texture >   m_pOutTexture;
+	Arc< Sampler >   m_pSampler;
+	ComputePipeline* m_pLightingPSO = nullptr;
 };
 
 } // namespace vk

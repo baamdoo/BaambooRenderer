@@ -19,9 +19,10 @@ using Super = Resource;
 public:
     struct CreationInfo
     {
-        eTextureType type       = eTextureType::Texture2D;
-        VkExtent3D   resolution = {};
-        VkFormat     format     = VK_FORMAT_R8G8B8A8_UNORM;
+        eTextureType  type          = eTextureType::Texture2D;
+        VkExtent3D    resolution    = {};
+        VkFormat      format        = VK_FORMAT_R8G8B8A8_UNORM;
+		VkImageLayout initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
 		VkClearColorValue        colorClearValue = { 0, 0, 0, 0 };
 		VkClearDepthStencilValue depthClearValue = { 1.0f, 0 };

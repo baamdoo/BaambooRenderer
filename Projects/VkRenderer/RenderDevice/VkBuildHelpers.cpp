@@ -52,12 +52,12 @@ InstanceBuilder::InstanceBuilder()
 #endif
 	};
 
-	m_AppInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-	m_AppInfo.pApplicationName = "VkRenderer";
+	m_AppInfo.sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+	m_AppInfo.pApplicationName   = "VkRenderer";
 	m_AppInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-	m_AppInfo.pEngineName = "VkRenderer";
-	m_AppInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-	m_AppInfo.apiVersion = VK_API_VERSION_1_3;
+	m_AppInfo.pEngineName        = "VkRenderer";
+	m_AppInfo.engineVersion      = VK_MAKE_VERSION(1, 0, 0);
+	m_AppInfo.apiVersion         = VK_API_VERSION_1_3;
 }
 
 InstanceBuilder& InstanceBuilder::AddValidationLayer(const char* layerString)
@@ -80,12 +80,12 @@ InstanceBuilder& InstanceBuilder::SetApiVersion(u32 version)
 
 InstanceBuilder& InstanceBuilder::SetValidationFeatureEnable(const std::vector< VkValidationFeatureEnableEXT >& features)
 {
-	VkValidationFeaturesEXT validationFeatures = {};
-	validationFeatures.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
-	validationFeatures.enabledValidationFeatureCount = static_cast<u32>(features.size());
-	validationFeatures.pEnabledValidationFeatures = features.data();
+	VkValidationFeaturesEXT validationFeatures        = {};
+	validationFeatures.sType                          = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
+	validationFeatures.enabledValidationFeatureCount  = static_cast<u32>(features.size());
+	validationFeatures.pEnabledValidationFeatures     = features.data();
 	validationFeatures.disabledValidationFeatureCount = 0;
-	validationFeatures.pDisabledValidationFeatures = nullptr;
+	validationFeatures.pDisabledValidationFeatures    = nullptr;
 
 	m_ValidationFeatures = validationFeatures;
 	return *this;
@@ -96,14 +96,14 @@ VkInstance InstanceBuilder::Build()
 	VkInstance instance = VK_NULL_HANDLE;
 
 	VkInstanceCreateInfo instanceInfo = {};
-	instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-	instanceInfo.pNext = m_ValidationFeatures.enabledValidationFeatureCount > 0 ? &m_ValidationFeatures.enabledValidationFeatureCount : nullptr;
-	instanceInfo.flags = 0; //VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
-	instanceInfo.pApplicationInfo = &m_AppInfo;
-	instanceInfo.enabledExtensionCount = static_cast<u32>(m_ExtensionLayers.size());
+	instanceInfo.sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+	instanceInfo.pNext                   = m_ValidationFeatures.enabledValidationFeatureCount > 0 ? &m_ValidationFeatures.enabledValidationFeatureCount : nullptr;
+	instanceInfo.flags                   = 0; //VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+	instanceInfo.pApplicationInfo        = &m_AppInfo;
+	instanceInfo.enabledExtensionCount   = static_cast<u32>(m_ExtensionLayers.size());
 	instanceInfo.ppEnabledExtensionNames = m_ExtensionLayers.data();
 #ifdef _DEBUG
-	instanceInfo.enabledLayerCount = static_cast<u32>(m_ValidationLayers.size());
+	instanceInfo.enabledLayerCount   = static_cast<u32>(m_ValidationLayers.size());
 	instanceInfo.ppEnabledLayerNames = m_ValidationLayers.data();
 #endif
 
@@ -165,12 +165,13 @@ DeviceBuilder::DeviceBuilder()
 	// **
 	// Set default values
 	// **
-	physicalDeviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+	physicalDeviceFeatures2.sType  = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 	physicalDevice11Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
 	physicalDevice12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+	physicalDevice13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
 
-	m_PhysicalRequirements.apiVersion = VK_API_VERSION_1_2;
-	m_PhysicalRequirements.deviceType = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+	m_PhysicalRequirements.apiVersion  = VK_API_VERSION_1_3;
+	m_PhysicalRequirements.deviceType  = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
 	m_PhysicalRequirements.featureBits = 0LL;
 
 	m_LogicalDeviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
@@ -224,29 +225,29 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 	std::vector< VkDeviceQueueCreateInfo > queueInfos;
 
 	VkDeviceQueueCreateInfo graphicsQueueInfo = {};
-	graphicsQueueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-	graphicsQueueInfo.queueFamilyIndex = queueFamilyIndices.graphicsQueueIndex;
-	graphicsQueueInfo.queueCount = 1;
-	graphicsQueueInfo.pQueuePriorities = &queuePriority;
+	graphicsQueueInfo.sType                   = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+	graphicsQueueInfo.queueFamilyIndex        = queueFamilyIndices.graphicsQueueIndex;
+	graphicsQueueInfo.queueCount              = 1;
+	graphicsQueueInfo.pQueuePriorities        = &queuePriority;
 
 	queueInfos.push_back(graphicsQueueInfo);
 
 	if (queueFamilyIndices.graphicsQueueIndex != queueFamilyIndices.computeQueueIndex) 
 	{
 		VkDeviceQueueCreateInfo computeQueueInfo = {};
-		computeQueueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-		computeQueueInfo.queueFamilyIndex = queueFamilyIndices.computeQueueIndex;
-		computeQueueInfo.queueCount = 1;
-		computeQueueInfo.pQueuePriorities = &queuePriority;
+		computeQueueInfo.sType                   = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+		computeQueueInfo.queueFamilyIndex        = queueFamilyIndices.computeQueueIndex;
+		computeQueueInfo.queueCount              = 1;
+		computeQueueInfo.pQueuePriorities        = &queuePriority;
 
 		queueInfos.push_back(computeQueueInfo);
 	}
 
 	VkDeviceQueueCreateInfo transferQueueInfo = {};
-	transferQueueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-	transferQueueInfo.queueFamilyIndex = queueFamilyIndices.transferQueueIndex;
-	transferQueueInfo.queueCount = 1;
-	transferQueueInfo.pQueuePriorities = &queuePriority;
+	transferQueueInfo.sType                   = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+	transferQueueInfo.queueFamilyIndex        = queueFamilyIndices.transferQueueIndex;
+	transferQueueInfo.queueCount              = 1;
+	transferQueueInfo.pQueuePriorities        = &queuePriority;
 
 	queueInfos.push_back(transferQueueInfo);
 
@@ -259,14 +260,14 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 	{
 		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_IndirectRendering))
 		{
-			physicalDevice11Features.shaderDrawParameters = VK_TRUE;
-			physicalDevice12Features.drawIndirectCount = VK_TRUE;
-			physicalDevice12Features.runtimeDescriptorArray = VK_TRUE;
-			physicalDeviceFeatures.multiDrawIndirect = VK_TRUE;
-			physicalDeviceFeatures.drawIndirectFirstInstance = VK_TRUE;
+			physicalDevice11Features.shaderDrawParameters                          = VK_TRUE;
+			physicalDevice12Features.drawIndirectCount                             = VK_TRUE;
+			physicalDevice12Features.runtimeDescriptorArray                        = VK_TRUE;
+			physicalDeviceFeatures.multiDrawIndirect                               = VK_TRUE;
+			physicalDeviceFeatures.drawIndirectFirstInstance                       = VK_TRUE;
 			physicalDevice12Features.descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE;
-			physicalDevice12Features.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
-			physicalDevice12Features.descriptorBindingPartiallyBound = VK_TRUE;
+			physicalDevice12Features.descriptorBindingSampledImageUpdateAfterBind  = VK_TRUE;
+			physicalDevice12Features.descriptorBindingPartiallyBound               = VK_TRUE;
 		}
 
 		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_DescriptorIndexing))
@@ -290,11 +291,22 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 			physicalDevice12Features.bufferDeviceAddress = VK_TRUE;
 		}
 
+		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_DynamicRendering))
+		{
+			physicalDevice13Features.dynamicRendering = VK_TRUE;
+		}
+
+		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_Sync2))
+		{
+			physicalDevice13Features.synchronization2 = VK_TRUE;
+		}
+
 		physicalDeviceFeatures2.features = physicalDeviceFeatures;
 
 		featureChain.bind(physicalDeviceFeatures2);
 		featureChain.bind(physicalDevice11Features);
 		featureChain.bind(physicalDevice12Features);
+		featureChain.bind(physicalDevice13Features);
 	}
 
 
@@ -319,21 +331,6 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 
 			if (IndexU8Features.indexTypeUint8)
 				featureChain.bind(IndexU8Features);
-		}
-
-		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_Sync2))
-		{
-			VkPhysicalDeviceFeatures2 features2 = {};
-			features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-
-			VkPhysicalDeviceSynchronization2Features physicalDeviceSync2Features = {};
-			physicalDeviceSync2Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES;
-			
-			features2.pNext = &physicalDeviceSync2Features;
-			vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
-
-			if (physicalDeviceSync2Features.synchronization2)
-				featureChain.bind(physicalDeviceSync2Features);
 		}
 
 		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_SwapChainMaintenance))

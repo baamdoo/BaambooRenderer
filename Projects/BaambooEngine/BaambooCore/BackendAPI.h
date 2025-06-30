@@ -30,7 +30,7 @@ struct RendererAPI
 
 	virtual void SetRendererType(eRendererType type) = 0;
 	virtual void NewFrame() = 0;
-	virtual void Render(const SceneRenderView& renderView) = 0;
+	virtual void Render(SceneRenderView&& renderView) = 0;
 
 	virtual void OnWindowResized(int width, int height) = 0;
 };

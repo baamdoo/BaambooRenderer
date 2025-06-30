@@ -7,7 +7,8 @@
 #include "RenderDevice/VkDescriptorSet.h"
 #include "RenderResource/VkTexture.h"
 #include "RenderResource/VkSceneResource.h"
-#include "RenderModule/VkForwardModule.h"
+#include "RenderModule/VkGBufferModule.h"
+#include "RenderModule/VkLightingModule.h"
 #include "RenderModule/VkImGuiModule.h"
 #include "SceneRenderView.h"
 
@@ -27,7 +28,8 @@ Renderer::Renderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext)
 
 	g_FrameData.pSceneResource = new SceneResource(*m_pRenderDevice);
 
-	m_pRenderModules.push_back(new ForwardModule(*m_pRenderDevice));
+	m_pRenderModules.push_back(new GBufferModule(*m_pRenderDevice));
+	m_pRenderModules.push_back(new LightingModule(*m_pRenderDevice));
 	m_pRenderModules.push_back(new ImGuiModule(*m_pRenderDevice, *m_pSwapChain, pImGuiContext));
 
 	printf("VkRenderer constructed!\n");
@@ -49,7 +51,7 @@ Renderer::~Renderer()
 	printf("VkRenderer destructed!\n");
 }
 
-void Renderer::Render(const SceneRenderView& renderView)
+void Renderer::Render(SceneRenderView&& renderView)
 {
 	if (!m_pSwapChain->IsRenderable())
 	{
@@ -70,23 +72,23 @@ void Renderer::Render(const SceneRenderView& renderView)
 	{
 		auto& commandContext = *context.pCommandContext;
 
-		CameraData camera = {};
-		camera.mView     = renderView.camera.mView;
-		camera.mProj     = ApplyVulkanNDC(renderView.camera.mProj);
-		camera.mViewProj = camera.mProj * camera.mView;
-		camera.position  = renderView.camera.pos;
-
-		g_FrameData.camera = std::move(camera);
+		CameraData camera   = {};
+		camera.mView        = renderView.camera.mView;
+		camera.mProj        = ApplyVulkanNDC(renderView.camera.mProj);
+		camera.mViewProj    = camera.mProj * camera.mView;
+		camera.mViewProjInv = glm::inverse(camera.mViewProj);
+		camera.position     = renderView.camera.pos;
+		g_FrameData.camera  = std::move(camera);
 		
 		for (auto pModule : m_pRenderModules)
 			pModule->Apply(commandContext);
 
 		auto pBackBuffer = m_pSwapChain->GetImageToPresent();
-
 		if (g_FrameData.pColor.valid())
 		{
 			commandContext.BlitTexture(pBackBuffer, g_FrameData.pColor.lock());
 		}
+
 		commandContext.TransitionImageLayout(
 			pBackBuffer,
 			VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,

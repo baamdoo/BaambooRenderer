@@ -4,6 +4,11 @@ namespace dx12
 {
 
 class CommandContext;
+class RootSignature;
+class GraphicsPipeline;
+class ComputePipeline;
+class Texture;
+class Sampler;
 
 class RenderModule
 {

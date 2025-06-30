@@ -214,7 +214,7 @@ void Engine::RenderLoop()
 		m_RenderTimer.Tick();
 
 		ImGui::DrawUI(*this);
-		m_pRendererBackend->Render(renderView.value());
+		m_pRendererBackend->Render(std::move(renderView.value()));
 	}
 }
 

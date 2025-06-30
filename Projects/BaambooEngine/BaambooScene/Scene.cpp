@@ -173,10 +173,10 @@ Entity Scene::ImportModel(Entity rootEntity, const fs::path& filepath, MeshDescr
 				}
 
 				// Material
+				auto& material = meshEntity.AttachComponent< MaterialComponent >();
 				if (meshData.materialIndex < pLoader->GetMaterials().size())
 				{
 					const MaterialData& matData = pLoader->GetMaterials()[meshData.materialIndex];
-					auto& material = meshEntity.AttachComponent< MaterialComponent >();
 
 					material.name = matData.name;
 
@@ -299,12 +299,12 @@ SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 
 			materialView.tint     = materialComponent.tint;
 			materialView.ambient  = materialComponent.ambient;
-			materialView.specular = materialComponent.specular;
 
-			materialView.shininess = materialComponent.shininess;
-			materialView.roughness = materialComponent.roughness;
-			materialView.metallic  = materialComponent.metallic;
-			materialView.ao        = materialComponent.ao;
+			materialView.shininess     = materialComponent.shininess;
+			materialView.roughness     = materialComponent.roughness;
+			materialView.metallic      = materialComponent.metallic;
+			materialView.ior           = materialComponent.ior;
+			materialView.emissivePower = materialComponent.emissivePower;
 
 			materialView.albedoTex    = materialComponent.albedoTex;
 			materialView.normalTex    = materialComponent.normalTex;

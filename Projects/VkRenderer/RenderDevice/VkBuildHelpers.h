@@ -96,6 +96,7 @@ enum : u8
 	ePhysicalDeviceFeature_DescriptorIndexing,
 	ePhysicalDeviceFeature_DeviceAddress,
 	ePhysicalDeviceFeature_SamplerAnistropy,
+	ePhysicalDeviceFeature_DynamicRendering,
 
 	// **
 	// 32 ~ 63 : More Extension Features
@@ -123,6 +124,7 @@ public:
 	VkPhysicalDeviceFeatures2			     physicalDeviceFeatures2  = VkPhysicalDeviceFeatures2();
 	VkPhysicalDeviceVulkan11Features	     physicalDevice11Features = VkPhysicalDeviceVulkan11Features();
 	VkPhysicalDeviceVulkan12Features	     physicalDevice12Features = VkPhysicalDeviceVulkan12Features();
+	VkPhysicalDeviceVulkan13Features	     physicalDevice13Features = VkPhysicalDeviceVulkan13Features();
 	VkPhysicalDeviceProperties			     physicalDeviceProperties = VkPhysicalDeviceProperties();
 
 public:

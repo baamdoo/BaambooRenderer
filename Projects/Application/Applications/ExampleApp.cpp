@@ -148,26 +148,23 @@ bool ExampleApp::LoadScene()
 
 	// static mesh
 	{
-		auto entity0 = m_pScene->CreateEntity("Test0");
-		auto& tc0 = entity0.GetComponent< TransformComponent >();
-		tc0.transform.position = { 0.0f, 1.0f, 0.0f };
-
-		auto entity00 = m_pScene->CreateEntity("Test00");
-		entity0.AttachChild(entity00);
-
-		auto entity1 = m_pScene->CreateEntity("Test1");
-
 		MeshDescriptor descriptor = {};
 		descriptor.rootPath       = GetModelPath();
 		descriptor.bOptimize      = true;
 		descriptor.rendererAPI    = m_eBackendAPI;
+		descriptor.bWindingCW     = true;
 
-		auto dhEntity = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
+		auto entity = m_pScene->ImportModel(MODEL_PATH.append("kitten.obj"), descriptor);
+		auto& entitytc = entity.GetComponent< TransformComponent >();
+		entitytc.transform.position = { 0.0f, 0.0f, 10.0f };
+		entitytc.transform.scale    = { 5.0f, 5.0f, 5.0f };
+
+		/*auto dhEntity = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
 		auto& tcdh = dhEntity.GetComponent< TransformComponent >();
 		tcdh.transform.position = { -1.0f, 0.0f, 0.0f };
 
 		auto dhEntity2 = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
-		tcdh.transform.position = { 1.0f, 0.0f, 0.0f };
+		tcdh.transform.position = { 1.0f, 0.0f, 0.0f };*/
 	}
 
 	// animated mesh

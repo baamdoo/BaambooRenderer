@@ -146,21 +146,21 @@ void CommandContext::CopyBuffer(ID3D12Resource* d3d12DstBuffer, ID3D12Resource* 
 
 void CommandContext::CopyTexture(const Arc< Texture >& pDstTexture, const Arc< Texture >& pSrcTexture)
 {
-	TransitionBarrier(pDstTexture, D3D12_RESOURCE_STATE_COPY_DEST);
+	TransitionBarrier(pDstTexture, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, false);
 	TransitionBarrier(pSrcTexture, D3D12_RESOURCE_STATE_COPY_SOURCE);
 
 	D3D12_RESOURCE_DESC Desc = pDstTexture->Desc();
 	for (u16 i = 0; i < Desc.MipLevels; i++)
 	{
 		D3D12_TEXTURE_COPY_LOCATION	dstLocation = {};
-		dstLocation.pResource = pDstTexture->GetD3D12Resource();
+		dstLocation.pResource        = pDstTexture->GetD3D12Resource();
 		dstLocation.SubresourceIndex = i;
-		dstLocation.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+		dstLocation.Type             = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
 
 		D3D12_TEXTURE_COPY_LOCATION	srcLocation = {};
-		srcLocation.pResource = pSrcTexture->GetD3D12Resource();
+		srcLocation.pResource        = pSrcTexture->GetD3D12Resource();
 		srcLocation.SubresourceIndex = i;
-		srcLocation.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+		srcLocation.Type             = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
 
 		m_d3d12CommandList->CopyTextureRegion(&dstLocation, 0, 0, 0, &srcLocation, nullptr);
 	}
@@ -182,6 +182,8 @@ void CommandContext::ResolveSubresource(const Arc< Resource >& pDstResource, con
 
 void CommandContext::SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY primitiveTopology)
 {
+	assert(m_pGraphicsPipeline);
+
 	if (m_PrimitiveTopology != primitiveTopology)
 	{
 		m_PrimitiveTopology = primitiveTopology;
@@ -289,6 +291,18 @@ void CommandContext::SetDescriptorHeaps(const std::vector< ID3D12DescriptorHeap*
 	m_d3d12CommandList->SetDescriptorHeaps(static_cast<u32>(d3d12DescriptorHeaps.size()), d3d12DescriptorHeaps.data());
 }
 
+void CommandContext::SetRenderTarget(u32 numRenderTargets, D3D12_CPU_DESCRIPTOR_HANDLE rtv, D3D12_CPU_DESCRIPTOR_HANDLE dsv)
+{
+	if (dsv.ptr == 0)
+	{
+		m_d3d12CommandList->OMSetRenderTargets(numRenderTargets, &rtv, FALSE, nullptr);
+	}
+	else
+	{
+		m_d3d12CommandList->OMSetRenderTargets(numRenderTargets, &rtv, FALSE, &dsv);
+	}
+}
+
 void CommandContext::SetRenderTarget(const RenderTarget& renderTarget)
 {
 	std::vector< D3D12_CPU_DESCRIPTOR_HANDLE > d3d12RenderTargetDescriptors;
@@ -328,17 +342,25 @@ void CommandContext::SetGraphics32BitConstant(u32 rootIndex, u32 srcValue, u32 d
 
 void CommandContext::SetGraphics32BitConstants(u32 rootIndex, u32 srcSizeInBytes, void* srcData, u32 dstOffsetInBytes)
 {
-	u32 size = srcSizeInBytes / 4;
+	u32 size      = srcSizeInBytes / 4;
 	u32 dstOffset = dstOffsetInBytes / 4;
 	m_d3d12CommandList->SetGraphicsRoot32BitConstants(rootIndex, size, srcData, dstOffset);
 }
 
-void CommandContext::SetGraphicsDynamicConstantBuffer(u32 rootIndex, size_t sizeInBytes, const void* bufferData)
+void CommandContext::SetGraphicsDynamicConstantBuffer(u32 rootIndex, size_t sizeInBytes, const void* pData)
 {
 	auto allocation = m_pDynamicBufferAllocator->Allocate(sizeInBytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
-	memcpy(allocation.CPUHandle, bufferData, sizeInBytes);
+	memcpy(allocation.CPUHandle, pData, sizeInBytes);
 
 	m_d3d12CommandList->SetGraphicsRootConstantBufferView(rootIndex, allocation.GPUHandle);
+}
+
+void CommandContext::SetComputeDynamicConstantBuffer(u32 rootIndex, size_t sizeInBytes, const void* pData)
+{
+	auto allocation = m_pDynamicBufferAllocator->Allocate(sizeInBytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
+	memcpy(allocation.CPUHandle, pData, sizeInBytes);
+
+	m_d3d12CommandList->SetComputeRootConstantBufferView(rootIndex, allocation.GPUHandle);
 }
 
 void CommandContext::SetGraphicsConstantBufferView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle)
@@ -349,6 +371,11 @@ void CommandContext::SetGraphicsConstantBufferView(u32 rootIndex, D3D12_GPU_VIRT
 void CommandContext::SetGraphicsShaderResourceView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle)
 {
 	m_d3d12CommandList->SetGraphicsRootShaderResourceView(rootIndex, gpuHandle);
+}
+
+void CommandContext::SetComputeConstantBufferView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle)
+{
+	m_d3d12CommandList->SetComputeRootConstantBufferView(rootIndex, gpuHandle);
 }
 
 void CommandContext::SetComputeShaderResourceView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle)
@@ -380,7 +407,7 @@ void CommandContext::StageDescriptors(
 	m_pDescriptorHeaps[heapType]->StageDescriptors(rootIndex, offset, std::move(srcHandles));
 }
 
-void CommandContext::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t startVertex, uint32_t startInstance)
+void CommandContext::Draw(u32 vertexCount, u32 instanceCount, u32 startVertex, u32 startInstance)
 {
 	FlushResourceBarriers();
 
@@ -392,7 +419,7 @@ void CommandContext::Draw(uint32_t vertexCount, uint32_t instanceCount, uint32_t
 	m_d3d12CommandList->DrawInstanced(vertexCount, instanceCount, startVertex, startInstance);
 }
 
-void CommandContext::DrawIndexed(uint32_t indexCount, uint32_t instanceCount, uint32_t startIndex, int32_t baseVertex, uint32_t startInstance)
+void CommandContext::DrawIndexed(u32 indexCount, u32 instanceCount, u32 startIndex, u32 baseVertex, u32 startInstance)
 {
 	FlushResourceBarriers();
 
@@ -425,7 +452,7 @@ void CommandContext::DrawIndexedIndirect(const SceneResource& sceneResource)
 		0);
 }
 
-void CommandContext::Dispatch(uint32_t numGroupsX, uint32_t numGroupsY, uint32_t numGroupsZ)
+void CommandContext::Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ)
 {
 	FlushResourceBarriers();
 

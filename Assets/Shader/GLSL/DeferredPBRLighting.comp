@@ -5,6 +5,8 @@
 #define _CAMERA
 #include "Common.hg"
 
+layout (local_size_x = 16, local_size_y = 16) in;
+
 const vec3 COLOR_TEMPERATURE_LUT[] = 
 {
     vec3(1.000, 0.180, 0.000),  // 1000K
@@ -19,8 +21,7 @@ const vec3 COLOR_TEMPERATURE_LUT[] =
     vec3(0.726, 0.742, 1.000),  // 10000K
 };
 
-layout(set = SET_STATIC, binding = 0) uniform sampler2D g_SceneTextures[];
-layout(set = SET_STATIC, binding = 4) readonly buffer   MaterialBuffer 
+layout(set = SET_STATIC, binding = 4) readonly buffer MaterialBuffer 
 {
 	MaterialData materials[];
 } g_MaterialBuffer;
@@ -30,15 +31,31 @@ layout(set = SET_STATIC, binding = 5) readonly buffer LightBuffer
 	LightingData lightingData;
 } g_LightBuffer;
 
-layout(location = 0) in vec3 inPosWORLD;
-layout(location = 1) in vec2 inUv;
-layout(location = 2) in vec3 inNormalWORLD;
-layout(location = 3) in vec3 inTangentWORLD;
-layout(location = 4) in flat uint inMaterialID;
+layout(set = SET_PUSH, binding = 1) uniform sampler2D g_GBuffer0;    // Albedo.rgb + AO.a
+layout(set = SET_PUSH, binding = 2) uniform sampler2D g_GBuffer1;    // Normal.rgb + MaterialID.a
+layout(set = SET_PUSH, binding = 3) uniform sampler2D g_GBuffer2;    // Emissive.rgb
+layout(set = SET_PUSH, binding = 4) uniform sampler2D g_GBuffer3;    // MotionVectors.rg + Roughness.b + Metallic.a
+layout(set = SET_PUSH, binding = 5) uniform sampler2D g_DepthBuffer;
 
-layout(location = 0) out vec4 outColor;
+layout(set = SET_PUSH, binding = 6, rgba8) writeonly uniform image2D g_OutputTexture;
+
 
 const float MIN_ROUGHNESS = 0.045;
+
+//** Deprecated **//
+// Octahedron normal decoding [Reference : https://www.shadertoy.com/view/cljGD1]
+// vec3 OctDecode(vec2 f)
+// {
+//     f = f * 2.0 - 1.0;
+// 
+//     // https://twitter.com/Stubbesaurus/status/937994790553227264
+//     vec3  n = vec3( f.x, f.y, 1.0 - abs( f.x ) - abs( f.y ) );
+//     float t = max( -n.z, 0.0 );
+// 
+//     n.x += n.x >= 0.0 ? -t : t;
+//     n.y += n.y >= 0.0 ? -t : t;
+//     return normalize(n);
+// }
 
 vec3 ColorTemperatureToRGB(float temperature_K)
 {
@@ -189,50 +206,44 @@ vec3 ApplySpotLight(SpotLight light, vec3 P, vec3 N, vec3 V, vec3 albedo, float 
 
 void main() 
 {
-	MaterialData material = g_MaterialBuffer.materials[inMaterialID];
+    ivec2 texCoords = ivec2(gl_GlobalInvocationID.xy);
+    vec2  uv        = (vec2(texCoords) + 0.5) / vec2(imageSize(g_OutputTexture));
 
-    vec3 albedo = vec3(1.0);
-    if (material.albedoID != INVALID_INDEX)
+    vec4  gbuffer0 = texture(g_GBuffer0, uv);
+    vec4  gbuffer1 = texture(g_GBuffer1, uv);
+    vec4  gbuffer2 = texture(g_GBuffer2, uv);
+    vec4  gbuffer3 = texture(g_GBuffer3, uv);
+    float depth    = texture(g_DepthBuffer, uv).r;
+    if (depth == 0.0)
     {
-        vec4 albedoSample = texture(g_SceneTextures[nonuniformEXT(material.albedoID)], inUv);
-
-        albedo = pow(albedoSample.rgb, vec3(2.2)); // convert from sRGB to linear
-    }
-    albedo *= vec3(material.tintR, material.tintG, material.tintB);
-
-    float metallic  = material.metallic;
-    float roughness = material.roughness;
-    float ao        = 1.0;
-    if (material.metallicRoughnessAoID != INVALID_INDEX)
-    {
-        vec4 metallicRoughnessAoSample = texture(g_SceneTextures[nonuniformEXT(material.metallicRoughnessAoID)], inUv);
-
-        metallic  *= metallicRoughnessAoSample.b;
-        roughness *= metallicRoughnessAoSample.g;
-        ao        *= metallicRoughnessAoSample.r;
-    }
-    roughness = max(roughness, MIN_ROUGHNESS);
-
-    vec3 N = normalize(inNormalWORLD);
-    if (material.normalID != INVALID_INDEX)
-    {
-        vec3 tangentNormal = texture(g_SceneTextures[nonuniformEXT(material.normalID)], inUv).xyz * 2.0 - 1.0;
-
-        vec3 T   = normalize(inTangentWORLD);
-        vec3 B   = cross(N, T);
-        mat3 TBN = mat3(T, B, N);
-
-        N = normalize(TBN * tangentNormal);
+        imageStore(g_OutputTexture, texCoords, vec4(0.0, 0.0, 0.0, 1.0));
+        return;
     }
 
-    vec3 V  = normalize(g_Camera.posWORLD - inPosWORLD);
+    vec3  albedo = gbuffer0.rgb;
+    float ao     = gbuffer0.a;
+
+    vec3 N          = gbuffer1.xyz;
+    uint materialID = uint(gbuffer1.w * 255.0);
+    vec3 emissive   = gbuffer2.rgb;
+
+    float roughness = max(gbuffer3.z, MIN_ROUGHNESS);
+    float metallic  = gbuffer3.w;
+
+    vec3 posWORLD = ReconstructWorldPos(uv, depth, g_Camera.mViewProjInv);
+
+    vec3 V  = normalize(g_Camera.posWORLD - posWORLD);
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
-    if (material.ior > 1.0)
+    if (materialID != INVALID_INDEX && materialID < 256)
     {
-        float ior = material.ior;
-        float f0  = pow((ior - 1.0) / (ior + 1.0), 2.0);
-        F0        = vec3(f0);
+        MaterialData material = g_MaterialBuffer.materials[materialID];
+        if (material.ior > 1.0)
+        {
+            float ior = material.ior;
+            float f0  = pow((ior - 1.0) / (ior + 1.0), 2.0);
+            F0        = vec3(f0);
+        }
     }
 
     vec3 Lo = vec3(0.0);
@@ -243,23 +254,18 @@ void main()
     
     for (uint i = 0; i < g_LightBuffer.lightingData.numPoints; ++i)
     {
-        Lo += ApplyPointLight(g_LightBuffer.lightingData.points[i], inPosWORLD, N, V, albedo, metallic, roughness, F0);
+        Lo += ApplyPointLight(g_LightBuffer.lightingData.points[i], posWORLD, N, V, albedo, metallic, roughness, F0);
     }
     
     for (uint i = 0; i < g_LightBuffer.lightingData.numSpots; ++i)
     {
-        Lo += ApplySpotLight(g_LightBuffer.lightingData.spots[i], inPosWORLD, N, V, albedo, metallic, roughness, F0);
+        Lo += ApplySpotLight(g_LightBuffer.lightingData.spots[i], posWORLD, N, V, albedo, metallic, roughness, F0);
     }
 
-    vec3 ambientColor = vec3(g_LightBuffer.lightingData.ambientColorR, g_LightBuffer.lightingData.ambientColorG, g_LightBuffer.lightingData.ambientColorB);
+    vec3 ambientColor = vec3(g_LightBuffer.lightingData.ambientColorR, 
+                             g_LightBuffer.lightingData.ambientColorG, 
+                             g_LightBuffer.lightingData.ambientColorB);
     vec3 ambient      = ambientColor * g_LightBuffer.lightingData.ambientIntensity * albedo * ao;
-    vec3 emissive     = vec3(0.0);
-    if (material.emissiveID != INVALID_INDEX)
-    {
-        emissive  = texture(g_SceneTextures[nonuniformEXT(material.emissiveID)], inUv).rgb;
-        emissive  = pow(emissive.rgb, vec3(2.2)); // convert from sRGB to linear
-        emissive *= 10.0;
-    }
 
     vec3 color = ambient + Lo + emissive;
 
@@ -275,10 +281,10 @@ void main()
     float c = 2.43;
     float d = 0.59;
     float e = 0.14;
-    color = clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+    color   = clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
     
     // gamma correction
     color = pow(color, vec3(1.0 / 2.2));
     
-    outColor = vec4(color, 1.0);
+    imageStore(g_OutputTexture, texCoords, vec4(color, 1.0));
 }

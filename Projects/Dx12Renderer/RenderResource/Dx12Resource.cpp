@@ -39,7 +39,7 @@ Resource::Resource(RenderDevice& device, const std::wstring& name, ResourceCreat
 		m_pClearValue = nullptr;
 		if (info.clearValue.Format != DXGI_FORMAT_UNKNOWN)
 		{
-			assert(info.clearValue.Format == info.desc.Format);
+			//assert(info.clearValue.Format == info.desc.Format);
 
 			m_pClearValue = new D3D12_CLEAR_VALUE();
 			m_pClearValue->Format = info.clearValue.Format;

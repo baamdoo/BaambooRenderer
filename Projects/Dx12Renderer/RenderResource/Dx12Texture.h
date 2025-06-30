@@ -34,7 +34,7 @@ public:
 
     inline u32 GetWidth() const { return m_Width; }
     inline u32 GetHeight() const { return m_Height; }
-    inline DXGI_FORMAT GetFormat() const { return m_Format; }
+    DXGI_FORMAT GetFormat(bool bSRV = false) const;
 
     const D3D12_CLEAR_VALUE* GetClearValue() const { return m_pClearValue; }
 
@@ -43,17 +43,19 @@ public:
     D3D12_CPU_DESCRIPTOR_HANDLE GetShaderResourceView() const { return m_ShaderResourceView.GetCPUHandle(); }
     D3D12_CPU_DESCRIPTOR_HANDLE GetUnorderedAccessView(u32 mip) const { return m_UnorderedAccessView.GetCPUHandle(mip); }
 
+    void CreateShaderResourceView(const D3D12_SHADER_RESOURCE_VIEW_DESC& desc);
+
 protected:
     void CreateViews();
 
 private:
-    u32 m_Width = 0;
+    u32 m_Width  = 0;
     u32 m_Height = 0;
     DXGI_FORMAT m_Format = DXGI_FORMAT::DXGI_FORMAT_UNKNOWN;
 
-    DescriptorAllocation m_RenderTargetView = {};
-    DescriptorAllocation m_DepthStencilView = {};
-    DescriptorAllocation m_ShaderResourceView = {};
+    DescriptorAllocation m_RenderTargetView    = {};
+    DescriptorAllocation m_DepthStencilView    = {};
+    DescriptorAllocation m_ShaderResourceView  = {};
     DescriptorAllocation m_UnorderedAccessView = {};
 };
 

@@ -29,7 +29,11 @@ struct FrameData
     // scene-resource
     struct SceneResource* pSceneResource = nullptr;
 
-    // render-target
+    // render-targets
+    Weak< Texture > pGBuffer0;
+    Weak< Texture > pGBuffer1;
+    Weak< Texture > pGBuffer2;
+    Weak< Texture > pGBuffer3;
     Weak< Texture > pColor;
     Weak< Texture > pDepth;
 };

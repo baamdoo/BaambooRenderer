@@ -66,20 +66,28 @@ public:
 
 	void SetDescriptorHeaps(const std::vector< ID3D12DescriptorHeap* >& d3d12DescriptorHeaps);
 
+	void SetRenderTarget(u32 numRenderTargets, D3D12_CPU_DESCRIPTOR_HANDLE rtv, D3D12_CPU_DESCRIPTOR_HANDLE dsv = D3D12_CPU_DESCRIPTOR_HANDLE());
 	void SetRenderTarget(const RenderTarget& renderTarget);
 
 	void SetGraphics32BitConstant(u32 rootIndex, u32 srcValue, u32 dstOffset = 0);
 	void SetGraphics32BitConstants(u32 rootIndex, u32 srcSizeInBytes, void* srcData, u32 dstOffsetInBytes = 0);
 
-	void SetGraphicsDynamicConstantBuffer(u32 rootIndex, size_t sizeInBytes, const void* bufferData);
+	void SetGraphicsDynamicConstantBuffer(u32 rootIndex, size_t sizeInBytes, const void* pData);
 	template< typename T >
 	void SetGraphicsDynamicConstantBuffer(u32 rootIndex, const T& data)
 	{
 		SetGraphicsDynamicConstantBuffer(rootIndex, sizeof(T), &data);
 	}
+	void SetComputeDynamicConstantBuffer(u32 rootIndex, size_t sizeInBytes, const void* pData);
+	template< typename T >
+	void SetComputeDynamicConstantBuffer(u32 rootIndex, const T& data)
+	{
+		SetComputeDynamicConstantBuffer(rootIndex, sizeof(T), &data);
+	}
 
 	void SetGraphicsConstantBufferView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle);
 	void SetGraphicsShaderResourceView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle);
+	void SetComputeConstantBufferView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle);
 	void SetComputeShaderResourceView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle);
 	void SetComputeUnorderedAccessView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle);
 
@@ -96,8 +104,8 @@ public:
 		std::vector< D3D12_CPU_DESCRIPTOR_HANDLE >&& srcHandles,
 		D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-	void Draw(uint32_t vertexCount, uint32_t instanceCount = 1, uint32_t startVertex = 0, uint32_t startInstance = 0);
-	void DrawIndexed(uint32_t indexCount, uint32_t instanceCount = 1, uint32_t startIndex = 0, int32_t baseVertex = 0, uint32_t startInstance = 0);
+	void Draw(u32 vertexCount, u32 instanceCount = 1, u32 startVertex = 0, u32 startInstance = 0);
+	void DrawIndexed(u32 indexCount, u32 instanceCount = 1, u32 startIndex = 0, u32 baseVertex = 0, u32 startInstance = 0);
 	void DrawIndexedIndirect(const SceneResource& sceneResource);
 
 	void Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ);

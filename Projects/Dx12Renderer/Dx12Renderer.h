@@ -20,7 +20,7 @@ public:
 	virtual ~Renderer() override;
 
 	virtual void NewFrame() override;
-	virtual void Render(const SceneRenderView& renderView) override;
+	virtual void Render(SceneRenderView&& renderView) override;
 
 	virtual void OnWindowResized(i32 width, i32 height) override;
 

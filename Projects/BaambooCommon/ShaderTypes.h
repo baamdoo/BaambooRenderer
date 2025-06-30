@@ -19,7 +19,8 @@ struct MaterialData
     float  metallic;
     float  roughness;
     float  ior;
-    float2 padding0;
+    float  emissivePower;
+    float  padding0;
 
     u32 albedoID;
     u32 normalID;
@@ -36,6 +37,7 @@ struct CameraData
     mat4 mView;
     mat4 mProj;
     mat4 mViewProj;
+    mat4 mViewProjInv;
 
     float3 position;
     float  padding0;

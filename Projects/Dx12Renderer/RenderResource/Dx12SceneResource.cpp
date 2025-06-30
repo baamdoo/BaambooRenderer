@@ -20,9 +20,9 @@ static ComputePipeline* s_CombineTexturesPSO = nullptr;
 Arc< Texture > CombineTextures(RenderDevice& renderDevice, const std::wstring& name, Arc< Texture > pTextureR, Arc< Texture > pTextureG, Arc< Texture > pTextureB)
 {
     u32 width
-        = std::max({ pTextureR->Desc().Width, pTextureG->Desc().Width, pTextureB->Desc().Width });
+        = (u32)std::max({ pTextureR->Desc().Width, pTextureG->Desc().Width, pTextureB->Desc().Width });
     u32 height
-        = std::max({ pTextureR->Desc().Height, pTextureG->Desc().Height, pTextureB->Desc().Height });
+        = (u32)std::max({ pTextureR->Desc().Height, pTextureG->Desc().Height, pTextureB->Desc().Height });
     auto pCombinedTexture =
         Texture::Create(
             renderDevice,
@@ -82,9 +82,8 @@ SceneResource::SceneResource(RenderDevice& device)
     m_pRootSignature = new RootSignature(m_RenderDevice);
 
     const u32 transformRootIdx = m_pRootSignature->AddConstants(1, 0, 1, D3D12_SHADER_VISIBILITY_VERTEX);
-    const u32 materialRootIdx  = m_pRootSignature->AddConstants(2, 0, 1, D3D12_SHADER_VISIBILITY_PIXEL);
+    const u32 materialRootIdx  = m_pRootSignature->AddConstants(1, 0, 1, D3D12_SHADER_VISIBILITY_PIXEL);
     m_pRootSignature->AddCBV(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_ALL);    // g_Camera
-    m_pRootSignature->AddCBV(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);  // g_Lights
     m_pRootSignature->AddSRV(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX); // g_Transforms
     m_pRootSignature->AddSRV(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);  // g_Materials
     m_pRootSignature->AddDescriptorTable(
@@ -142,10 +141,12 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
     std::unordered_map< Texture*, u32 > srvIndexCache;
     for (auto& materialView : sceneView.materials)
     {
-        MaterialData material = {};
-        material.tint         = materialView.tint;
-        material.roughness    = materialView.roughness;
-        material.metallic     = materialView.metallic;
+        MaterialData material  = {};
+        material.tint          = materialView.tint;
+        material.roughness     = materialView.roughness;
+        material.metallic      = materialView.metallic;
+        material.ior           = materialView.ior;
+        material.emissivePower = materialView.emissivePower;
 
         material.albedoID = INVALID_INDEX;
         if (!materialView.albedoTex.empty())
@@ -219,12 +220,12 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
             if (!materialView.roughnessTex.empty())
                 pCombiningTextures[1] = GetOrLoadTexture(materialView.id, materialView.roughnessTex);
             else
-                pCombiningTextures[1] = rm.GetFlatGrayTexture();
+                pCombiningTextures[1] = rm.GetFlatWhiteTexture();
 
             if (!materialView.metallicTex.empty())
                 pCombiningTextures[2] = GetOrLoadTexture(materialView.id, materialView.metallicTex);
             else
-                pCombiningTextures[2] = rm.GetFlatBlackTexture();
+                pCombiningTextures[2] = rm.GetFlatWhiteTexture();
 
             pORM = CombineTextures(m_RenderDevice, L"ORM", pCombiningTextures[0], pCombiningTextures[1], pCombiningTextures[2]);
             m_TextureCache.emplace(ormStr, pORM);
@@ -240,21 +241,6 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
             material.metallicRoughnessAoID = (u32)sceneTexSRVs.size() - 1;
             srvIndexCache.emplace(pORM.get(), material.metallicRoughnessAoID);
         }
-
-        /*if (!materialView.metallicTex.empty())
-        {
-            auto pTemp = GetOrLoadTexture(materialView.id, materialView.metallicTex);
-            if (srvIndexCache.contains(pTemp.get()))
-            {
-                material.metallicRoughnessAoID = srvIndexCache[pTemp.get()];
-            }
-            else
-            {
-                sceneTexSRVs.push_back(pTemp->GetShaderResourceView());
-                material.metallicRoughnessAoID = (u32)sceneTexSRVs.size() - 1;
-                srvIndexCache.emplace(pTemp.get(), material.metallicRoughnessAoID);
-            }
-        }*/
 
         material.emissionID = INVALID_INDEX;
         if (!materialView.emissionTex.empty())
@@ -274,7 +260,7 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 
         materials.push_back(material);
     }
-    UpdateFrameBuffer(materials.data(), (u32)materials.size(), sizeof(MaterialData), *m_pMaterialAllocator, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    UpdateFrameBuffer(materials.data(), (u32)materials.size(), sizeof(MaterialData), *m_pMaterialAllocator, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
 
     std::vector< IndirectDrawData > indirects;
     for (auto& [id, data] : sceneView.draws)

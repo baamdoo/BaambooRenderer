@@ -33,12 +33,12 @@ struct MaterialRenderView
 
 	float3 tint;
 	float3 ambient;
-	float3 specular;
 
 	float shininess;
 	float metallic;
 	float roughness;
-	float ao;
+	float ior;
+	float emissivePower;
 
 	std::string albedoTex;
 	std::string normalTex;

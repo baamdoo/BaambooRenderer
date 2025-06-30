@@ -44,15 +44,18 @@ GraphicsPipeline::GraphicsPipeline(RenderDevice& device, const std::wstring& nam
 {
     // Default desc values
     m_PipelineDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-    m_PipelineDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+
+    m_PipelineDesc.RasterizerState                   = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
     m_PipelineDesc.RasterizerState.MultisampleEnable = FALSE;
-    m_PipelineDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-    m_PipelineDesc.DepthStencilState.DepthEnable = FALSE;
-    m_PipelineDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+
+    m_PipelineDesc.DepthStencilState               = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    m_PipelineDesc.DepthStencilState.DepthEnable   = FALSE;
+    m_PipelineDesc.DepthStencilState.DepthFunc     = D3D12_COMPARISON_FUNC_LESS_EQUAL;
     m_PipelineDesc.DepthStencilState.StencilEnable = FALSE;
-    m_PipelineDesc.SampleMask = UINT_MAX;
+
+    m_PipelineDesc.SampleMask            = UINT_MAX;
     m_PipelineDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    m_PipelineDesc.SampleDesc.Count = 1;
+    m_PipelineDesc.SampleDesc.Count      = 1;
 }
 
 GraphicsPipeline::~GraphicsPipeline()
@@ -105,7 +108,7 @@ GraphicsPipeline& GraphicsPipeline::SetRootSignature(RootSignature* pRootSignatu
 
 GraphicsPipeline& GraphicsPipeline::SetRenderTargetFormats(const RenderTarget& renderTarget)
 {
-    u32 numSampling = 0;
+    u32 numSampling    = 0;
     u32 numAttachments = 0;
 
     const auto& pAttachments = renderTarget.GetAttachments();

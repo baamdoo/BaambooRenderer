@@ -6,7 +6,7 @@ StructuredBuffer< TransformData > g_Transforms : register(t0, space0);
 
 cbuffer RootConstants : register(b1, space0)
 {
-    uint TransformIndex;
+    uint g_TransformIndex;
 };
 
 struct VSInput 
@@ -19,27 +19,33 @@ struct VSInput
 
 struct VSOutput
 {
-    float4 posCLIP      : SV_Position;
-    float3 posWORLD     : POSITION;
+    float4 position     : SV_Position;
+    float4 posCurrCLIP  : POSITION0;
+    float4 posPrevCLIP  : POSITION1;
+    float3 posWORLD     : POSITION2;
     float2 uv           : TEXCOORD0;
     float3 normalWORLD  : TEXCOORD1;
     float3 tangentWORLD : TEXCOORD2;
 };
 
-VSOutput main(VSInput IN, uint vid : SV_VertexID)
+VSOutput main(VSInput IN)
 {
     VSOutput output = (VSOutput)0;
 
-    TransformData transform = g_Transforms[TransformIndex];
+    TransformData transform = g_Transforms[g_TransformIndex];
 
     float4 posWORLD     = mul(transform.mWorldToView, float4(IN.position, 1.0));
-    float4 normalWORLD  = mul(transpose(transform.mViewToWorld), float4(IN.normal, 1.0));
+    float4 normalWORLD  = mul(transform.mWorldToView, float4(IN.normal, 0.0));
     float4 tangentWORLD = mul(transform.mWorldToView, float4(IN.tangent, 0.0));
 
     output.posWORLD     = posWORLD.xyz;
     output.uv           = IN.uv;
     output.normalWORLD  = normalize(normalWORLD.xyz);
     output.tangentWORLD = tangentWORLD.xyz;
-    output.posCLIP      = mul(g_Camera.mViewProj, posWORLD);
+    output.position     = mul(g_Camera.mViewProj, posWORLD);
+
+    // TODO
+    output.posCurrCLIP = output.position;
+    output.posPrevCLIP = output.position;
     return output;
 }

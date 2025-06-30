@@ -16,6 +16,17 @@
 namespace vk
 {
 
+enum
+{
+	eStaticSetBindingIndex_CombinedImage2D = 0,
+	eStaticSetBindingIndex_Vertex          = 1,
+	eStaticSetBindingIndex_IndirectDraw    = 2,
+	eStaticSetBindingIndex_Transform       = 3,
+
+	eStaticSetBindingIndex_Material = 4,
+	eStaticSetBindingIndex_Lighting = 5,
+};
+
 static ComputePipeline* s_CombineTexturesPipeline = nullptr;
 Arc< Texture > CombineTextures(RenderDevice& renderDevice, const std::string& name, Arc< Texture > pTextureR, Arc< Texture > pTextureG, Arc< Texture > pTextureB, Arc< Sampler > pSampler)
 {
@@ -101,8 +112,8 @@ SceneResource::SceneResource(RenderDevice& device)
 		{ eStaticSetBindingIndex_Vertex, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT },
 		{ eStaticSetBindingIndex_IndirectDraw, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT },
 		{ eStaticSetBindingIndex_Transform, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT },
-		{ eStaticSetBindingIndex_Material, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT },
-		{ eStaticSetBindingIndex_Lighting, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT },
+		{ eStaticSetBindingIndex_Material, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT },
+		{ eStaticSetBindingIndex_Lighting, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT },
 	};
 
 	std::vector < VkDescriptorBindingFlags > flags =
@@ -172,10 +183,12 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 	std::unordered_map< Texture*, u32 > srvIndexCache;
 	for (auto& materialView : sceneView.materials)
 	{
-		MaterialData material = {};
-		material.tint         = materialView.tint;
-		material.roughness    = materialView.roughness;
-		material.metallic     = materialView.metallic;
+		MaterialData material  = {};
+		material.tint          = materialView.tint;
+		material.roughness     = materialView.roughness;
+		material.metallic      = materialView.metallic;
+		material.ior           = materialView.ior;
+		material.emissivePower = materialView.emissivePower;
 
 		material.albedoID = INVALID_INDEX;
 		if (!materialView.albedoTex.empty())
@@ -236,12 +249,12 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 			if (!materialView.roughnessTex.empty())
 				pCombiningTextures[1] = GetOrLoadTexture(materialView.id, materialView.roughnessTex);
 			else
-				pCombiningTextures[1] = rm.GetFlatGrayTexture();
+				pCombiningTextures[1] = rm.GetFlatWhiteTexture();
 
 			if (!materialView.metallicTex.empty())
 				pCombiningTextures[2] = GetOrLoadTexture(materialView.id, materialView.metallicTex);
 			else
-				pCombiningTextures[2] = rm.GetFlatBlackTexture();
+				pCombiningTextures[2] = rm.GetFlatWhiteTexture();
 
 			pORM = CombineTextures(m_RenderDevice, "ORM", pCombiningTextures[0], pCombiningTextures[1], pCombiningTextures[2], m_pDefaultSampler);
 			m_TextureCache.emplace(ormStr, pORM);

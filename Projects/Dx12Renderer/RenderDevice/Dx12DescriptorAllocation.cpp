@@ -26,10 +26,10 @@ DescriptorAllocation::DescriptorAllocation(DescriptorAllocation&& other) noexcep
 	, m_NumDescriptors(other.m_NumDescriptors)
 	, m_DescriptorBaseIndex(other.m_DescriptorBaseIndex)
 {
-	other.m_pDescriptorPool = nullptr;
-	other.m_CPUHandle = {};
-	other.m_GPUHandle = {};
-	other.m_NumDescriptors = 0;
+	other.m_pDescriptorPool     = nullptr;
+	other.m_CPUHandle           = {};
+	other.m_GPUHandle           = {};
+	other.m_NumDescriptors      = 0;
 	other.m_DescriptorBaseIndex = 0;
 }
 
@@ -39,16 +39,16 @@ DescriptorAllocation& DescriptorAllocation::operator=(DescriptorAllocation&& oth
 	{
 		Free();
 
-		m_pDescriptorPool = other.m_pDescriptorPool;
-		m_CPUHandle = other.m_CPUHandle;
-		m_GPUHandle = other.m_GPUHandle;
-		m_NumDescriptors = other.m_NumDescriptors;
+		m_pDescriptorPool     = other.m_pDescriptorPool;
+		m_CPUHandle           = other.m_CPUHandle;
+		m_GPUHandle           = other.m_GPUHandle;
+		m_NumDescriptors      = other.m_NumDescriptors;
 		m_DescriptorBaseIndex = other.m_DescriptorBaseIndex;
 
-		other.m_pDescriptorPool = nullptr;
-		other.m_CPUHandle = {};
-		other.m_GPUHandle = {};
-		other.m_NumDescriptors = 0;
+		other.m_pDescriptorPool     = nullptr;
+		other.m_CPUHandle           = {};
+		other.m_GPUHandle           = {};
+		other.m_NumDescriptors      = 0;
 		other.m_DescriptorBaseIndex = 0;
 	}
 
@@ -62,14 +62,14 @@ DescriptorAllocation::~DescriptorAllocation()
 
 void DescriptorAllocation::Free()
 {
-	if (m_pDescriptorPool)
+	if (m_pDescriptorPool && m_NumDescriptors > 0)
 	{
 		m_pDescriptorPool->Free(*this);
 
-		m_pDescriptorPool = nullptr;
-		m_CPUHandle = {};
-		m_GPUHandle = {};
-		m_NumDescriptors = 0;
+		m_pDescriptorPool     = nullptr;
+		m_CPUHandle           = {};
+		m_GPUHandle           = {};
+		m_NumDescriptors      = 0;
 		m_DescriptorBaseIndex = 0;
 	}
 }

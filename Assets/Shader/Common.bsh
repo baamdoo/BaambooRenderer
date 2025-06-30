@@ -90,7 +90,8 @@ struct MaterialData
 	float metallic; 
 	float roughness;
 	float ior;
-	float padding0, padding1;
+	float emissivePower;
+	float padding0;
 
 	uint albedoID;
 	uint normalID;

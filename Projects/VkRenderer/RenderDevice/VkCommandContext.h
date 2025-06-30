@@ -93,11 +93,15 @@ public:
     void PushDescriptors(u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType);
     void PushDescriptors(u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType);
 
+    void BindSceneDescriptors(const SceneResource& sceneResource);
+
     void SetRenderPipeline(GraphicsPipeline* pRenderPipeline);
     void SetRenderPipeline(ComputePipeline* pRenderPipeline);
 
     void BeginRenderPass(const RenderTarget& renderTarget);
     void EndRenderPass();
+    void BeginRendering(const VkRenderingInfo& renderInfo);
+    void EndRendering();
 
     void Draw(u32 vertexCount, u32 instanceCount = 1, u32 firstVertex = 0, u32 firstInstance = 0);
     void DrawIndexed(u32 indexCount, u32 instanceCount = 1, u32 firstIndex = 0, i32 vertexOffset = 0, u32 firstInstance = 0);

@@ -67,15 +67,13 @@ SwapChain::~SwapChain()
 	COM_RELEASE(m_dxgiSwapChain);
 }
 
-void SwapChain::Present()
+HRESULT SwapChain::Present()
 {
-	HRESULT hr = m_dxgiSwapChain->Present(m_Window.Desc().bVSync, m_Window.Desc().bVSync ? 0 : DXGI_PRESENT_ALLOW_TEARING);
-	if (DXGI_ERROR_DEVICE_REMOVED == hr)
-	{
-		__debugbreak();
-	}
+	auto hr = m_dxgiSwapChain->Present(m_Window.Desc().bVSync, m_Window.Desc().bVSync ? 0 : DXGI_PRESENT_ALLOW_TEARING);
 
 	m_ImageIndex = m_dxgiSwapChain->GetCurrentBackBufferIndex();
+
+	return hr;
 }
 
 void SwapChain::ResizeViewport(u32 width, u32 height)

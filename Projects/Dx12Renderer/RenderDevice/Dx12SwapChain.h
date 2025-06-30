@@ -16,7 +16,7 @@ public:
 	SwapChain(RenderDevice& device, baamboo::Window& window);
 	~SwapChain();
 
-	void Present();
+	HRESULT Present();
 
 	void ResizeViewport(u32 width, u32 height);
 

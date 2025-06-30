@@ -18,7 +18,8 @@ public:
 	void Apply(CommandContext& context) override;
 
 private:
-	VkDescriptorPool m_vkImGuiPool = nullptr;
+	RenderTarget*    m_pRenderTarget = nullptr;
+	VkDescriptorPool m_vkImGuiPool   = VK_NULL_HANDLE;
 };
 
 } // namespace vk

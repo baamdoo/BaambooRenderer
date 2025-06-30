@@ -4,6 +4,13 @@ namespace vk
 {
 
 class CommandContext;
+class Texture;
+class Sampler;
+class RenderTarget;
+class GraphicsPipeline;
+class ComputePipeline;
+
+enum eAttachmentPoint : u8;
 
 class RenderModule
 {
