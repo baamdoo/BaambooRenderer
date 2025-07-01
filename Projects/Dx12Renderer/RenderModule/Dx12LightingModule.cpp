@@ -30,7 +30,7 @@ LightingModule::LightingModule(RenderDevice& device)
 				.initialState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS
 			});
 
-	m_pLightingRS = new RootSignature(m_RenderDevice);
+	m_pLightingRS = new RootSignature(m_RenderDevice, L"PBRLightingRS");
 	m_Indices.camera   = m_pLightingRS->AddCBV(0, 0); // g_Camera
 	m_Indices.light    = m_pLightingRS->AddCBV(1, 0); // g_Lights
 	m_Indices.textures = m_pLightingRS->AddDescriptorTable(

@@ -4,8 +4,9 @@
 namespace dx12
 {
 
-RootSignature::RootSignature(RenderDevice& device)
+RootSignature::RootSignature(RenderDevice& device, const std::wstring& name)
 	: m_RenderDevice(device)
+	, m_Name(name)
 {
 }
 
@@ -132,9 +133,16 @@ void RootSignature::Build()
 	ThrowIfFailed(d3d12Device->CreateRootSignature(
 		0, d3dSignature->GetBufferPointer(), d3dSignature->GetBufferSize(), IID_PPV_ARGS(&m_d3d12RootSignature))
 	);
+	m_d3d12RootSignature->SetName(m_Name.c_str());
 
 	COM_RELEASE(d3dSignature);
 	COM_RELEASE(d3dError);
+}
+
+void RootSignature::CopySignatureParams(RootSignature& srcSignature)
+{
+	m_RootParameters = srcSignature.m_RootParameters;
+	m_StaticSamplers = srcSignature.m_StaticSamplers;
 }
 
 u32 RootSignature::GetNumDescriptors(u32 rootIndex) const

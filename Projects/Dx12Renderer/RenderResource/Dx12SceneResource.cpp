@@ -79,7 +79,7 @@ SceneResource::SceneResource(RenderDevice& device)
     // **
     // root signature for scene draw
     // **
-    m_pRootSignature = new RootSignature(m_RenderDevice);
+    m_pRootSignature = new RootSignature(m_RenderDevice, L"SceneResourceRS");
 
     const u32 transformRootIdx = m_pRootSignature->AddConstants(1, 0, 1, D3D12_SHADER_VISIBILITY_VERTEX);
     const u32 materialRootIdx  = m_pRootSignature->AddConstants(1, 0, 1, D3D12_SHADER_VISIBILITY_PIXEL);
@@ -101,11 +101,11 @@ SceneResource::SceneResource(RenderDevice& device)
     m_pCommandSignature = new CommandSignature(
         m_RenderDevice,
         CommandSignatureDesc(5, sizeof(IndirectDrawData))
-            .AddConstant(transformRootIdx, 0, 1)
-            .AddConstant(materialRootIdx, 0, 1)
             .AddVertexBufferView(0)
             .AddIndexBufferView()
-            .AddDrawIndexed(),
+            .AddDrawIndexed()
+            .AddConstant(transformRootIdx, 0, 1)
+            .AddConstant(materialRootIdx, 0, 1),
         m_pRootSignature->GetD3D12RootSignature());
 }
 
@@ -192,7 +192,7 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
         {
             if (s_CombineTexturesPSO == nullptr)
             {
-                s_CombineTexturesRS = new RootSignature(m_RenderDevice);
+                s_CombineTexturesRS = new RootSignature(m_RenderDevice, L"CombineTexturesRS");
 
                 s_CombineTexturesRS->AddDescriptorTable(
                     DescriptorTable()
@@ -272,7 +272,7 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
             auto& meshView = sceneView.meshes[data.mesh];
 
             auto pVB = GetOrUpdateVertex(meshView.id, meshView.tag, meshView.vData, meshView.vCount);
-            auto pIB  = GetOrUpdateIndex(meshView.id, meshView.tag, meshView.iData, meshView.iCount);
+            auto pIB = GetOrUpdateIndex(meshView.id, meshView.tag, meshView.iData, meshView.iCount);
 
             indirect.draws.IndexCountPerInstance = pIB->GetBufferCount();
             indirect.draws.InstanceCount         = 1;

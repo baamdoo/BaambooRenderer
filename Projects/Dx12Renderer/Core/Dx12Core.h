@@ -113,15 +113,15 @@ constexpr u32 MAX_NUM_DESCRIPTOR_PER_POOL[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES] 
 //#pragma pack(push, 4)
 struct IndirectDrawData
 {
-    u32 transformID;
-    u32 materialID;
-    /*u32 boneTransformID;
-    u32 bSkinning;*/
-
     D3D12_VERTEX_BUFFER_VIEW vbv;
     D3D12_INDEX_BUFFER_VIEW  ibv;
 
     D3D12_DRAW_INDEXED_ARGUMENTS draws;
+
+    u32 transformID;
+    u32 materialID;
+    /*u32 boneTransformID;
+    u32 bSkinning;*/
 };
 //#pragma pack(pop)
 

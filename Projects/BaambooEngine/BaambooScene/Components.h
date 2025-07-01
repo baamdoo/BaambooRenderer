@@ -94,7 +94,7 @@ struct MaterialComponent
 {
 	std::string name;
 
-	float3 tint;
+	float4 tint;
 	float3 ambient;
 
 	float shininess;

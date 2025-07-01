@@ -6,6 +6,7 @@
 #include "RenderDevice/Dx12CommandContext.h"
 #include "RenderModule/Dx12GBufferModule.h"
 #include "RenderModule/Dx12LightingModule.h"
+#include "RenderModule/Dx12ForwardModule.h"
 #include "RenderModule/Dx12ImGuiModule.h"
 #include "RenderResource/Dx12Texture.h"
 #include "RenderResource/Dx12SceneResource.h"
@@ -69,6 +70,7 @@ Renderer::Renderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext)
 
 	m_pRenderModules.push_back(new GBufferModule(*m_pRenderDevice));
 	m_pRenderModules.push_back(new LightingModule(*m_pRenderDevice));
+	m_pRenderModules.push_back(new ForwardModule(*m_pRenderDevice));
 	m_pRenderModules.push_back(new ImGuiModule(*m_pRenderDevice, pImGuiContext));
 
 	printf("D3D12Renderer constructed!\n");

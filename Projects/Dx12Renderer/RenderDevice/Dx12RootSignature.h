@@ -48,7 +48,7 @@ class RootSignatureDesc
 class RootSignature
 {
 public:
-	RootSignature(RenderDevice& device);
+	RootSignature(RenderDevice& device, const std::wstring& name);
 	~RootSignature();
 
 	u32 AddConstants(u32 reg, u32 space, u32 numConstants, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
@@ -68,6 +68,8 @@ public:
 	void Build();
 
 public:
+	void CopySignatureParams(RootSignature& srcSignature);
+
 	ID3D12RootSignature* GetD3D12RootSignature() const { return m_d3d12RootSignature; }
 
 	u32 GetNumDescriptors(u32 rootIndex) const;
@@ -81,6 +83,7 @@ protected:
 
 private:
 	RenderDevice& m_RenderDevice;
+	std::wstring  m_Name;
 
 	ID3D12RootSignature* m_d3d12RootSignature = nullptr;
 
@@ -91,7 +94,7 @@ private:
 	std::vector< DescriptorTable > m_DescriptorTables;
 
 	u32	m_NumDescriptorsPerTable[MAX_ROOT_INDEX] = {};
-	u64	m_SamplerTableBitMask = 0;
+	u64	m_SamplerTableBitMask    = 0;
 	u64	m_DescriptorTableBitMask = 0;
 };
 
