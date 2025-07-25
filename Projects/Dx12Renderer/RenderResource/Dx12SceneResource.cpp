@@ -101,11 +101,11 @@ SceneResource::SceneResource(RenderDevice& device)
     m_pCommandSignature = new CommandSignature(
         m_RenderDevice,
         CommandSignatureDesc(5, sizeof(IndirectDrawData))
+            .AddConstant(transformRootIdx, 0, 1)
+            .AddConstant(materialRootIdx, 0, 1)
             .AddVertexBufferView(0)
             .AddIndexBufferView()
-            .AddDrawIndexed()
-            .AddConstant(transformRootIdx, 0, 1)
-            .AddConstant(materialRootIdx, 0, 1),
+            .AddDrawIndexed(),
         m_pRootSignature->GetD3D12RootSignature());
 }
 
@@ -299,10 +299,10 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
     }
     UpdateFrameBuffer(indirects.data(), (u32)indirects.size(), sizeof(IndirectDrawData), *m_pIndirectDrawAllocator, D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
 
-    UpdateFrameBuffer(&sceneView.light.data, 1, sizeof(LightData), *m_pLightAllocator, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
+    UpdateFrameBuffer(&sceneView.light, 1, sizeof(LightData), *m_pLightAllocator, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
 }
 
-Arc< VertexBuffer > SceneResource::GetOrUpdateVertex(u32 entity, const std::string& filepath, const void* pData, u32 count)
+Arc< VertexBuffer > SceneResource::GetOrUpdateVertex(u64 entity, const std::string& filepath, const void* pData, u32 count)
 {
     auto& commandQueue = m_RenderDevice.GraphicsQueue();
 
@@ -357,7 +357,7 @@ Arc< VertexBuffer > SceneResource::GetOrUpdateVertex(u32 entity, const std::stri
     return pVB;
 }
 
-Arc< IndexBuffer > SceneResource::GetOrUpdateIndex(u32 entity, const std::string& filepath, const void* pData, u32 count)
+Arc< IndexBuffer > SceneResource::GetOrUpdateIndex(u64 entity, const std::string& filepath, const void* pData, u32 count)
 {
     auto& commandQueue = m_RenderDevice.GraphicsQueue();
 
@@ -416,7 +416,7 @@ Arc< IndexBuffer > SceneResource::GetOrUpdateIndex(u32 entity, const std::string
     return pIB;
 }
 
-Arc< Texture > SceneResource::GetOrLoadTexture(u32 entity, const std::string& filepath)
+Arc< Texture > SceneResource::GetOrLoadTexture(u64 entity, const std::string& filepath)
 {
     if (m_TextureCache.contains(filepath))
     {

@@ -40,7 +40,9 @@ struct CameraData
     mat4 mViewProjInv;
 
     float3 position;
-    float  padding0;
+    float  zNear;
+    float  zFar;
+    float3 padding0;
 };
 
 
@@ -57,7 +59,7 @@ struct DirectionalLight
 struct PointLight
 {
     float3 position;
-    float  luminousPower_lm;
+    float  luminousFlux_lm;
     float3 color;
     float  radius_m;
     float  temperature_K;
@@ -67,7 +69,7 @@ struct PointLight
 struct SpotLight
 {
     float3 position;
-    float  luminousPower_lm;
+    float  luminousFlux_lm;
     float3 direction;
     float  radius_m;
     float3 color;
@@ -89,8 +91,33 @@ struct LightData
     u32   numDirectionals;
     u32   numPoints;
     u32   numSpots;
+    float ev100;
 
     float  ambientIntensity;
     float3 ambientColor;
     float  padding0;
+};
+
+
+struct AtmosphereData
+{
+    DirectionalLight light;
+
+    float  planetRadius_km;
+    float  atmosphereRadius_km;
+    float2 padding0;
+
+    float3 rayleighScattering;
+    float  rayleighDensityH_km;
+
+    float mieScattering;
+    float mieAbsorption;
+    float mieDensityH_km;
+    float miePhaseG;
+
+    float3 ozoneAbsorption;
+    float  ozoneCenter_km;
+    float  ozoneWidth_km;
+
+    float3 groundAlbedo;
 };

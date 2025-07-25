@@ -83,12 +83,12 @@ public:
         VkPipelineStageFlags2 dstStageMask,
         u32 baseMip = 0, u32 numMips = 1, u32 baseArray = 0, u32 numArrays = 1);
     
-    void SetGraphicsPushConstants(u32 sizeInBytes, void* data, VkShaderStageFlags stages, u32 offsetInBytes = 0);
-    void SetGraphicsDynamicUniformBuffer(u32 binding, VkDeviceSize sizeInBytes, const void* bufferData);
+    void SetPushConstants(u32 sizeInBytes, void* data, VkShaderStageFlags stages, u32 offsetInBytes = 0);
+    void SetDynamicUniformBuffer(u32 binding, VkDeviceSize sizeInBytes, const void* bufferData);
     template< typename T >
-    void SetGraphicsDynamicUniformBuffer(u32 binding, const T& data)
+    void SetDynamicUniformBuffer(u32 binding, const T& data)
     {
-        SetGraphicsDynamicUniformBuffer(binding, sizeof(T), &data);
+        SetDynamicUniformBuffer(binding, sizeof(T), &data);
     }
     void PushDescriptors(u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType);
     void PushDescriptors(u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType);

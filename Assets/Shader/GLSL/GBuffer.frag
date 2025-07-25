@@ -46,7 +46,7 @@ void main()
     {
         albedo = texture(g_SceneTextures[nonuniformEXT(material.albedoID)], inUv).rgb;
     }
-    albedo *= vec3(material.tintR, material.tintG, material.tintB);
+    albedo *= material.tint;
     
     float metallic  = material.metallic;
     float roughness = material.roughness;

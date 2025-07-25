@@ -4,22 +4,9 @@
 
 #define _CAMERA
 #include "Common.hg"
+#include "AtmosphereCommon.hg"
 
 layout (local_size_x = 16, local_size_y = 16) in;
-
-const vec3 COLOR_TEMPERATURE_LUT[] = 
-{
-    vec3(1.000, 0.180, 0.000),  // 1000K
-    vec3(1.000, 0.390, 0.000),  // 2000K
-    vec3(1.000, 0.588, 0.275),  // 3000K
-    vec3(1.000, 0.707, 0.518),  // 4000K
-    vec3(1.000, 0.792, 0.681),  // 5000K
-    vec3(1.000, 0.849, 0.818),  // 6000K
-    vec3(0.949, 0.867, 1.000),  // 7000K
-    vec3(0.827, 0.808, 1.000),  // 8000K
-    vec3(0.765, 0.769, 1.000),  // 9000K
-    vec3(0.726, 0.742, 1.000),  // 10000K
-};
 
 layout(set = SET_STATIC, binding = 4) readonly buffer MaterialBuffer 
 {
@@ -36,9 +23,15 @@ layout(set = SET_PUSH, binding = 2) uniform sampler2D g_GBuffer1;    // Normal.r
 layout(set = SET_PUSH, binding = 3) uniform sampler2D g_GBuffer2;    // Emissive.rgb
 layout(set = SET_PUSH, binding = 4) uniform sampler2D g_GBuffer3;    // MotionVectors.rg + Roughness.b + Metallic.a
 layout(set = SET_PUSH, binding = 5) uniform sampler2D g_DepthBuffer;
+layout(set = SET_PUSH, binding = 6) uniform sampler2D g_SkyViewLUT;
+layout(set = SET_PUSH, binding = 7) uniform sampler3D g_AerialPerspectiveLUT;
 
-layout(set = SET_PUSH, binding = 6, rgba8) writeonly uniform image2D g_OutputTexture;
+layout(set = SET_PUSH, binding = 8, rgba8) writeonly uniform image2D g_OutputTexture;
 
+layout(push_constant) uniform PushConstants
+{
+    float planetRadius_km;
+} g_Push;
 
 const float MIN_ROUGHNESS = 0.045;
 
@@ -56,16 +49,6 @@ const float MIN_ROUGHNESS = 0.045;
 //     n.y += n.y >= 0.0 ? -t : t;
 //     return normalize(n);
 // }
-
-vec3 ColorTemperatureToRGB(float temperature_K)
-{
-    float T = clamp(temperature_K, 1000.0, 10000.0);
-
-    float index = (T - 1000.0) / 1000.0;
-    return mix(COLOR_TEMPERATURE_LUT[int(index)], 
-               COLOR_TEMPERATURE_LUT[int(index) + 1], 
-               fract(index));
-}
 
 vec3 FresnelSchlick(float cosTheta, vec3 F0)
 {
@@ -133,27 +116,27 @@ float CalculateAttenuation(float distance, float lightRadius)
 
 vec3 ApplyDirectionalLight(DirectionalLight light, vec3 N, vec3 V, vec3 albedo, float metallic, float roughness, vec3 F0)
 {
-    vec3 L = normalize(vec3(-light.dirX, -light.dirY, -light.dirZ));
+    vec3 L = normalize(-light.dir);
     
-    vec3 lightColor = vec3(light.colorR, light.colorG, light.colorB);
+    vec3 lightColor = light.color;
     if (light.temperature_K > 0.0)
         lightColor *= ColorTemperatureToRGB(light.temperature_K);
     
     vec3 kD;
     vec3 specular = CalculateBRDF(N, V, L, metallic, roughness, F0, kD);
     
-    float NoL      = max(dot(N, L), 0.0);
-    vec3  radiance = lightColor * light.illuminance_lux;
+    float NoL       = max(dot(N, L), 0.0);
+    vec3  luminance = lightColor * light.illuminance_lux;
 
-    return (kD * albedo / PI + specular) * radiance * NoL;
+    return (kD * albedo / PI + specular) * luminance * NoL;
 }
 
 vec3 ApplyPointLight(PointLight light, vec3 P, vec3 N, vec3 V, vec3 albedo, float metallic, float roughness, vec3 F0)
 {
-    vec3  L        = vec3(light.posX, light.posY, light.posZ) - P;
+    vec3  L        = light.pos - P;
     float distance = length(L);
     
-    vec3 lightColor = vec3(light.colorR, light.colorG, light.colorB);
+    vec3 lightColor = light.color;
     if (light.temperature_K > 0.0)
         lightColor *= ColorTemperatureToRGB(light.temperature_K);
     
@@ -165,22 +148,22 @@ vec3 ApplyPointLight(PointLight light, vec3 P, vec3 N, vec3 V, vec3 albedo, floa
     vec3 kD;
     vec3 specular = CalculateBRDF(N, V, L, metallic, roughness, F0, kD);
 
-    float NdotL             = max(dot(N, L), 0.0);
-    float luminousIntensity = light.luminousPower_lm / LUMENS_PER_CANDELA;
+    float NoL             = max(dot(N, L), 0.0);
+    float luminousIntensity = light.luminousFlux_lm / (light.radius_m * light.radius_m * PI_MUL(4.0));
     float attenuation       = CalculateAttenuation(distance, light.radius_m);
-    vec3  radiance          = lightColor * luminousIntensity * attenuation;
+    vec3  luminance         = lightColor * luminousIntensity * attenuation;
     
-    return (kD * albedo / PI + specular) * radiance * NdotL;
+    return (kD * albedo / PI + specular) * luminance * NoL;
 }
 
 vec3 ApplySpotLight(SpotLight light, vec3 P, vec3 N, vec3 V, vec3 albedo, float metallic, float roughness, vec3 F0)
 {
-    vec3 L         = vec3(light.posX, light.posY, light.posZ) - P;
+    vec3 L         = light.pos - P;
     float distance = length(L);
     L             /= distance;
     
     // cone attenuation
-    float cosTheta        = dot(L, normalize(vec3(-light.dirX, -light.dirY, -light.dirZ)));
+    float cosTheta        = dot(L, normalize(-light.dir));
     float cosThetaInner   = cos(light.innerConeAngle_rad);
     float cosThetaOuter   = cos(light.outerConeAngle_rad);
     float spotAttenuation = clamp((cosTheta - cosThetaOuter) / (cosThetaInner - cosThetaOuter), 0.0, 1.0);
@@ -188,7 +171,7 @@ vec3 ApplySpotLight(SpotLight light, vec3 P, vec3 N, vec3 V, vec3 albedo, float 
     if (spotAttenuation == 0.0)
         return vec3(0.0);
     
-    vec3 lightColor = vec3(light.colorR, light.colorG, light.colorB);
+    vec3 lightColor = light.color;
     if (light.temperature_K > 0.0)
         lightColor *= ColorTemperatureToRGB(light.temperature_K);
     
@@ -197,11 +180,57 @@ vec3 ApplySpotLight(SpotLight light, vec3 P, vec3 N, vec3 V, vec3 albedo, float 
     
     float NoL               = max(dot(N, L), 0.0);
     float solidAngle        = PI_MUL(2.0) * (1.0 - cosThetaOuter);
-    float luminousIntensity = light.luminousPower_lm / solidAngle;
+    float luminousIntensity = light.luminousFlux_lm / solidAngle;
     float attenuation       = CalculateAttenuation(distance, light.radius_m);
-    vec3  radiance          = lightColor * luminousIntensity * attenuation * spotAttenuation;
+    vec3  luminance         = lightColor * luminousIntensity * attenuation * spotAttenuation;
     
-    return (kD * albedo / PI + specular) * radiance * NoL;
+    return (kD * albedo / PI + specular) * luminance * NoL;
+}
+
+vec2 GetUvFromSkyViewRayDirection(float longitude, float latitude, float viewHeight, bool bIntersectGround)
+{
+    vec2 uv;
+
+	float Vhorizon           = sqrt(viewHeight * viewHeight - g_Push.planetRadius_km * g_Push.planetRadius_km);
+	float cosBeta            = Vhorizon / viewHeight;				
+	float beta               = acosFast4(cosBeta);
+	float zenithHorizonAngle = PI - beta;
+
+	if (!bIntersectGround)
+	{
+        float coord = latitude / zenithHorizonAngle;
+		coord       = 1.0 - coord;
+        coord       = 1.0 - safeSqrt(coord);
+
+        uv.y = 0.5 * coord;
+	}
+	else
+	{
+		float coord = (latitude - zenithHorizonAngle) / beta;
+		coord       = safeSqrt(coord);
+
+        uv.y = 0.5 + 0.5 * coord;
+	}
+
+    {
+	    uv.x = 0.5 * (longitude + PI) / PI;
+    }
+
+    return uv;
+}
+
+vec3 GetSunLuminance(vec3 rayDir, bool bIntersectGround)
+{
+    if (dot(rayDir, -g_LightBuffer.lightingData.directionals[0].dir) > cos(0.5 * 0.505 * PI / 180.0))
+	{
+        if (!bIntersectGround)
+		{
+			const vec3 SunLuminance = vec3(1000000.0);
+			return SunLuminance;
+		}
+	}
+    
+    return vec3(0.0);
 }
 
 void main() 
@@ -213,10 +242,52 @@ void main()
     vec4  gbuffer1 = texture(g_GBuffer1, uv);
     vec4  gbuffer2 = texture(g_GBuffer2, uv);
     vec4  gbuffer3 = texture(g_GBuffer3, uv);
-    float depth    = texture(g_DepthBuffer, uv).r;
-    if (depth == 0.0)
+
+    float depth = texture(g_DepthBuffer, uv).r;
+    if (depth == 1.0)
     {
-        imageStore(g_OutputTexture, texCoords, vec4(0.0, 0.0, 0.0, 1.0));
+        // sky view
+        vec2 texSize = vec2(textureSize(g_SkyViewLUT, 0));
+
+        vec3 cameraPos =
+            vec3(g_Camera.posWORLD.x, max(g_Camera.posWORLD.y, MIN_VIEW_HEIGHT_ABOVE_GROUND), g_Camera.posWORLD.z);
+        vec3 cameraPosAbovePlanet =
+            cameraPos * DISTANCE_SCALE + vec3(0.0, g_Push.planetRadius_km, 0.0);
+        float viewHeight = length(cameraPosAbovePlanet);
+
+        vec3 rayDir    = normalize(ReconstructWorldPos(uv, 1.0, g_Camera.mViewProjInv));
+        vec3 rayOrigin = cameraPosAbovePlanet;
+
+        vec3  upVec       = normalize(rayOrigin);
+        float cosLatitude = dot(rayDir, upVec);
+        float longitude   = atan2Fast(rayDir.z, rayDir.x);
+
+        vec2 groundIntersection = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, g_Push.planetRadius_km);
+        bool bIntersectGround   = groundIntersection.x > 0.0;
+
+        vec2 skyUV = GetUvFromSkyViewRayDirection(longitude, acosFast4(cosLatitude), viewHeight, bIntersectGround);
+        skyUV      = GetUnstretchedTextureUV(skyUV, texSize);
+        vec4 skyColor = texture(g_SkyViewLUT, skyUV);
+        vec3 color    = skyColor.rgb + GetSunLuminance(rayDir, bIntersectGround) * skyColor.a;
+
+        // exposure correction
+        float ev100    = g_LightBuffer.lightingData.ev100;
+        float exposure = 1.0 / (1.2 * pow(2.0, ev100));
+        color *= exposure;
+
+        // tone mapping (ACES filmic)
+        vec3  x = color;
+        float a = 2.51;
+        float b = 0.03;
+        float c = 2.43;
+        float d = 0.59;
+        float e = 0.14;
+        color   = clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+        
+        // gamma correction
+        color = pow(color, vec3(1.0 / 2.2));
+
+        imageStore(g_OutputTexture, texCoords, vec4(color, 1.0));
         return;
     }
 
@@ -269,8 +340,32 @@ void main()
 
     vec3 color = ambient + Lo + emissive;
 
+    // Aerial perspective
+    {
+        float viewDistance = max(0.0, length(posWORLD - g_Camera.posWORLD));
+
+        ivec3 texSize = textureSize(g_AerialPerspectiveLUT, 0);
+        float slice   = viewDistance * (1.0 / AP_KM_PER_SLICE) * DISTANCE_SCALE;
+        float w       = sqrt(slice / float(texSize.z));
+        slice         = w * texSize.z;
+
+        vec4 ap = texture(g_AerialPerspectiveLUT, vec3(uv, w));
+
+        // prevents an abrupt appearance of fog on objects close to the camera
+        float weight = 1.0;
+        if (slice < sqrt(0.5))
+        {
+            weight = clamp((slice * slice * 2.0), 0.0, 1.0); 
+        }
+        ap.rgb *= weight;
+        ap.a    = 1.0 - weight * (1.0 - ap.a);
+
+        // FinalColor = (SurfaceColor * Transmittance) + InScatteredLight
+        color = color * ap.a + ap.rgb;
+    }
+
     // exposure correction
-    float ev100    = g_LightBuffer.lightingData.exposure;
+    float ev100    = g_LightBuffer.lightingData.ev100;
     float exposure = 1.0 / (1.2 * pow(2.0, ev100));
     color *= exposure;
 

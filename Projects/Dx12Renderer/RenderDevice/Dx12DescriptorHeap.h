@@ -14,7 +14,7 @@ public:
 	~DescriptorHeap();
 
 	void Reset();
-	void ParseRootSignature(const RootSignature* pRootsignature);
+	void ParseRootSignature(RootSignature* pRootsignature);
 
 	u32 StageDescriptors(u32 rootIndex, u32 numDescriptors, u32 offset, D3D12_CPU_DESCRIPTOR_HANDLE srcHandle);
 	u32 StageDescriptors(u32 rootIndex, u32 offset, std::vector< D3D12_CPU_DESCRIPTOR_HANDLE >&& srcHandles);
@@ -38,9 +38,11 @@ private:
 
 	DescriptorPool* m_pDescriptorPool = nullptr;
 
-	u64 m_DescriptorTableBitMask = 0;
+	u64 m_DescriptorTableBitMask    = 0;
 	u64 m_DescriptorTableDirtyFlags = 0;
-	DescriptorAllocation m_CachedDescriptorAllocations[MAX_ROOT_INDEX] = {};
+	std::unordered_map< RootSignature*, std::array< DescriptorAllocation, MAX_ROOT_INDEX > > m_CachedDescriptorAllocations = {};
+
+	RootSignature* m_pCurrentRS = nullptr;
 };
 
 }

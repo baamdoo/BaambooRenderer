@@ -16,7 +16,8 @@ public:
 
 private:
 	Arc< Texture >   m_pOutTexture;
-	Arc< Sampler >   m_pSampler;
+	Arc< Sampler >   m_pLinearClampSampler;
+	Arc< Sampler >   m_pLinearRepeatSampler;
 	ComputePipeline* m_pLightingPSO = nullptr;
 };
 

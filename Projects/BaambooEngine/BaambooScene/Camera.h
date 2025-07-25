@@ -36,15 +36,15 @@ public:
 	mat4 GetProj() const 
 	{ 
 		return m_type == eType::Perspective ? 
-			glm::perspectiveFovLH_ZO(glm::radians(fov), (float)m_ViewportWidth, (float)m_ViewportHeight, cNear, cFar) :
-			glm::orthoLH_ZO(0.0f, (float)m_ViewportWidth, 0.0f, (float)m_ViewportHeight, cNear, cFar);
+			glm::perspectiveFovLH_ZO(glm::radians(fov), (float)m_ViewportWidth, (float)m_ViewportHeight, zNear, zFar) :
+			glm::orthoLH_ZO(0.0f, (float)m_ViewportWidth, 0.0f, (float)m_ViewportHeight, zNear, zFar);
 	}
 	[[nodiscard]]
 	float3 GetPosition() const { return m_Controller.GetPosition(); }
 
-	float cNear = 0.1f;
-	float cFar = 1000.0f;
-	float fov = 45.0f;
+	float zNear = 0.1f;
+	float zFar  = 1000.0f;
+	float fov   = 45.0f;
 
 private:
 	CameraController& m_Controller;
@@ -81,14 +81,14 @@ public:
 	struct
 	{
 		float rotationAcceleration = 100.0f;
-		float rotationDamping = 5.0f;
-		float maxRotationSpeed = 1.0f;
+		float rotationDamping      = 5.0f;
+		float maxRotationSpeed     = 1.0f;
 
 		float moveAcceleration = 100.0f;
-		float moveDamping = 5.0f;
-		float maxMoveSpeed = 10.0f;
-		float movementScale = 1.0f; // cm
-		float boostingSpeed = 10.0f;
+		float moveDamping      = 5.0f;
+		float maxMoveSpeed     = 10.0f;
+		float movementScale    = 1.0f; // cm
+		float boostingSpeed    = 10.0f;
 	} config;
 
 private:

@@ -31,7 +31,6 @@ struct TransformComponent
 	} hierarchy;
 
 	unsigned world;
-	bool     bDirtyMark;
 };
 
 
@@ -73,8 +72,6 @@ struct StaticMeshComponent
 	u32     numVertices = 0;
 	Index*  pIndices    = nullptr;
 	u32     numIndices  = 0;
-
-	bool bDirtyMark;
 };
 
 //-------------------------------------------------------------------------
@@ -109,8 +106,6 @@ struct MaterialComponent
 	std::string roughnessTex;
 	std::string metallicTex;
 	std::string emissionTex;
-
-	bool bDirtyMark;
 };
 
 
@@ -182,12 +177,12 @@ struct LightComponent
 {
 	eLightType type = eLightType::Directional;
 
-	float3 color = float3(1.0f, 1.0f, 1.0f);
+	float3 color         = float3(1.0f, 1.0f, 1.0f);
 	float  temperature_K = 0.0f;
 	union
 	{
-		float illuminance_lux;  // directional: lux (lm/m©÷)
-		float luminousPower_lm; // point/spot: lumens
+		float illuminance_lux; // directional: lux (lm/m©÷)
+		float luminousFlux_lm; // point/spot: lumens
 	};
 
 	float radius_m = 0.01f;
@@ -217,7 +212,7 @@ struct LightComponent
 		temperature_K = 4000.0f;
 		color = float3(1.0f, 1.0f, 1.0f);
 
-		luminousPower_lm = 1000.0f;
+		luminousFlux_lm = 1000.0f;
 		radius_m = 0.03f;
 	}
 
@@ -228,7 +223,7 @@ struct LightComponent
 		temperature_K = 5000.0f;
 		color = float3(1.0f, 1.0f, 1.0f);
 
-		luminousPower_lm = 100.0f;
+		luminousFlux_lm = 100.0f;
 		radius_m = 0.02f;
 
 		innerConeAngle_rad = PI_DIV(4.0f);
@@ -245,3 +240,34 @@ inline std::string_view GetLightTypeString(eLightType type)
 	default: return "Unknown";
 	}
 }
+
+
+//-------------------------------------------------------------------------
+// Atmosphere : Render sky by simulating scattering
+//-------------------------------------------------------------------------
+enum class eRaymarchResolution
+{
+	Low,
+	Middle,
+	High,
+};
+
+struct AtmosphereComponent
+{
+	float planetRadius_km     = 6360.0f;
+	float atmosphereRadius_km = 6460.0f;
+
+	float3 rayleighScattering  = { 5.802e-3f, 13.558e-3f, 33.1e-3f };
+	float  rayleighDensityH_km = 8.0f;
+
+	float mieScattering  = 3.996e-3f;
+	float mieAbsorption  = 4.4e-3f;
+	float mieDensityH_km = 1.2f;
+	float miePhaseG      = 0.80f;
+
+	float3 ozoneAbsorption = { 0.650e-3f, 1.881e-3f, 0.085e-3f };
+	float  ozoneCenter_km  = 25.0f;
+	float  ozoneWidth_km   = 30.0f;
+
+	eRaymarchResolution raymarchResolution = eRaymarchResolution::Middle;
+};

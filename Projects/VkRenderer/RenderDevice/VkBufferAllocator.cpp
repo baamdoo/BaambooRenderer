@@ -148,7 +148,7 @@ StaticBufferAllocator::Allocation StaticBufferAllocator::Allocate(u32 numElement
 {
 	auto sizeInBytes = numElements * elementSizeInBytes;
 
-	VkDeviceSize alignedSize = baamboo::math::AlignUp(sizeInBytes, m_Alignment);
+	//VkDeviceSize alignedSize = baamboo::math::AlignUp(sizeInBytes, m_Alignment);
 	//m_Offset = baamboo::math::AlignUp(m_Offset, m_Alignment);
 
 	if (m_Offset + sizeInBytes > m_Size)

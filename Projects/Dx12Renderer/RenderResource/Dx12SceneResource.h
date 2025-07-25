@@ -25,9 +25,23 @@ struct FrameData
 {
     // data
     CameraData camera = {};
+    struct
+    {
+        AtmosphereData data = {};
+
+        u32  msIsoSampleCount = 0;
+        u32  msNumRaySteps    = 0;
+        u32  svMinRaySteps    = 0;
+        u32  svMaxRaySteps    = 0;
+        bool bMark = false;
+    } atmosphere;
 
     // scene-resource
     struct SceneResource* pSceneResource = nullptr;
+
+    // LUTs
+    Weak< Texture > pSkyViewLUT;
+    Weak< Texture > pAerialPerspectiveLUT;
 
     // render-targets
     Weak< Texture > pGBuffer0;
@@ -46,9 +60,9 @@ struct SceneResource
 
     void UpdateSceneResources(const SceneRenderView& sceneView);
 
-    Arc< VertexBuffer > GetOrUpdateVertex(u32 entity, const std::string& filepath, const void* pData, u32 count);
-    Arc< IndexBuffer >  GetOrUpdateIndex(u32 entity, const std::string& filepath, const void* pData, u32 count);
-    Arc< Texture >      GetOrLoadTexture(u32 entity, const std::string& filepath);
+    Arc< VertexBuffer > GetOrUpdateVertex(u64 entity, const std::string& filepath, const void* pData, u32 count);
+    Arc< IndexBuffer >  GetOrUpdateIndex(u64 entity, const std::string& filepath, const void* pData, u32 count);
+    Arc< Texture >      GetOrLoadTexture(u64 entity, const std::string& filepath);
     Arc< Texture >      GetTexture(const std::string& filepath);
 
     [[nodiscard]]

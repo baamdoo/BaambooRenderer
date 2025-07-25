@@ -325,7 +325,7 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 	}
 	UpdateFrameBuffer(indirects.data(), (u32)indirects.size(), sizeof(IndirectDrawData), *m_pIndirectDrawAllocator);
 	
-	UpdateFrameBuffer(&sceneView.light.data, 1, sizeof(LightData), *m_pLightAllocator);
+	UpdateFrameBuffer(&sceneView.light, 1, sizeof(LightData), *m_pLightAllocator);
 
 	auto& descriptorSet = m_pDescriptorPool->AllocateSet(m_vkSetLayout);
 	descriptorSet.StageDescriptors(imageInfos, eStaticSetBindingIndex_CombinedImage2D, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);

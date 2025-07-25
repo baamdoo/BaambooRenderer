@@ -1,0 +1,85 @@
+#ifndef _GLSL_ATMOSPHERE_COMMON_HEADER
+#define _GLSL_ATMOSPHERE_COMMON_HEADER
+
+#extension GL_GOOGLE_include_directive : require
+#include "../Common.bsh"
+#include "HelperFunctions.hg"
+
+const float DISTANCE_SCALE               = 0.00001;       // cm-km
+const vec3  PLANET_CENTER                = vec3(0, 0, 0); // km
+const float AP_KM_PER_SLICE              = 4.0;           // km
+const float MIN_VIEW_HEIGHT_ABOVE_GROUND = 0.0005 * (1.0 / DISTANCE_SCALE); // km
+
+#ifdef _ATMOSPHERE
+layout(set = SET_PUSH, binding = 1) uniform AtmosphereData
+{
+    DirectionalLight light;
+
+    float planetRadius_km;
+    float atmosphereRadius_km;
+    vec2  padding0;
+
+    vec3  rayleighScattering;
+    float rayleighDensityH_km;
+    
+    float mieScattering;
+    float mieAbsorption;
+    float mieDensityH_km;
+    float miePhaseG;
+    
+    vec3  ozoneAbsorption;
+    float ozoneCenter_km;
+    float ozoneWidth_km;
+
+    vec3  groundAlbedo;
+} g_Atmosphere;
+
+// Reference: https://github.com/sebh/UnrealEngineSkyAtmosphere
+float GetAltitude(vec3 position) 
+{
+    return length(position) - g_Atmosphere.planetRadius_km;
+}
+
+float RayleighPhase(float cosTheta) 
+{
+    return 3.0 / (16.0 * PI) * (1.0 + cosTheta * cosTheta);
+}
+
+// Cornette-Shanks
+float MiePhase(float cosTheta, float g) 
+{
+    float g2    = g * g;
+    float num   = 3.0 * (1.0 - g2) * (1.0 + cosTheta * cosTheta);
+    float denom = 8.0 * PI * (2.0 + g2) * pow(1.0 + g2 - 2.0 * g * cosTheta, 1.5);
+    return num / denom;
+}
+
+float GetDensityAtHeight(float altitude, float H) 
+{
+    return exp(-altitude / H);
+}
+
+float GetDensityOzoneAtHeight(float altitude) 
+{
+    float relativeAlt = abs(altitude - g_Atmosphere.ozoneCenter_km) / (g_Atmosphere.ozoneWidth_km * 0.5);
+    return max(0.0, 1.0 - relativeAlt);
+}
+
+vec3 SampleTransmittanceLUT(sampler2D transmittanceLUT, float height, float cosTheta, float bottomRadius, float topRadius) 
+{
+    float H            = safeSqrt(topRadius * topRadius - bottomRadius * bottomRadius);
+    float rho          = safeSqrt(height * height - bottomRadius * bottomRadius);
+    float discriminant = height * height * (cosTheta * cosTheta - 1.0) + topRadius * topRadius;
+
+    float d     = max(0.0, (-height * cosTheta + safeSqrt(discriminant)));
+    float d_min = topRadius - height;
+    float d_max = rho + H;
+    
+    float u = inverseLerp(d, d_min, d_max);
+    float v = rho / H;
+    
+    return texture(transmittanceLUT, vec2(u, v)).rgb;
+}
+#endif // _ATMOSPHERE
+
+#endif // _GLSL_ATMOSPHERE_COMMON_HEADER

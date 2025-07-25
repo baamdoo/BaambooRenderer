@@ -14,7 +14,7 @@ void ExampleApp::Initialize(eRendererAPI api)
 {
 	Super::Initialize(api);
 
-	m_CameraController.SetLookAt(float3(0.0f, 0.0f, -5.0f), float3(0.0f));
+	m_CameraController.SetLookAt(float3(0.0f, 0.0f, 0.0f), float3(0.0f));
 	m_pCamera = new EditorCamera(m_CameraController, m_pWindow->Width(), m_pWindow->Height());
 }
 
@@ -156,8 +156,8 @@ bool ExampleApp::LoadScene()
 
 		auto entity = m_pScene->ImportModel(MODEL_PATH.append("kitten.obj"), descriptor);
 		auto& entitytc = entity.GetComponent< TransformComponent >();
-		entitytc.transform.position = { 0.0f, 0.0f, 10.0f };
-		entitytc.transform.scale    = { 5.0f, 5.0f, 5.0f };
+		entitytc.transform.position = { 0.0f, 0.0f, 500.0f };
+		entitytc.transform.scale    = { 100.0f, 100.0f, 100.0f };
 
 		/*auto dhEntity = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
 		auto& tcdh = dhEntity.GetComponent< TransformComponent >();
@@ -196,16 +196,21 @@ bool ExampleApp::LoadScene()
 	{
 		auto sunLight = m_pScene->CreateEntity("Sun Light");
 		sunLight.AttachComponent< LightComponent >();
+		sunLight.AttachComponent< AtmosphereComponent >();
 
-		auto& light             = sunLight.GetComponent< LightComponent >();
+		auto& light = sunLight.GetComponent< LightComponent >();
 		light.type              = eLightType::Directional;
 		light.temperature_K     = 10000.0f;
 		light.color             = float3(1.0f, 0.95f, 0.8f);
-		light.illuminance_lux   = 3.0f;
+		light.illuminance_lux   = 6.0f;
 		light.angularRadius_rad = 0.00465f;
 
-		auto& transformComponent              = sunLight.GetComponent< TransformComponent >();
+		auto& transformComponent = sunLight.GetComponent< TransformComponent >();
+		//transformComponent.transform.position = float3(-0.46144, 0.76831, -0.44359);
 		transformComponent.transform.position = float3(0.0f, 1.0f, 0.0f);
+
+		auto& atmosphere = sunLight.GetComponent< AtmosphereComponent >();
+		atmosphere.atmosphereRadius_km = 6420.0f;
 	}
 
 	// Create a point light
@@ -268,11 +273,11 @@ void ExampleApp::DrawUI()
 
 			ImGui::PushItemWidth(width * 0.3f);
 			ImGui::Text("ClippingRange");
-			ImGui::InputFloat("##ClipNear", &m_pCamera->cNear, 0, 0, "%.2f");
+			ImGui::InputFloat("##ClipNear", &m_pCamera->zNear, 0, 0, "%.2f");
 
 			ImGui::PushItemWidth(width * 0.7f);
 			ImGui::SameLine();
-			ImGui::InputFloat("##ClipFar", &m_pCamera->cFar, 0, 0, "%.2f");
+			ImGui::InputFloat("##ClipFar", &m_pCamera->zFar, 0, 0, "%.2f");
 
 			ImGui::Text("FoV");
 			ImGui::DragFloat("##FoV", &m_pCamera->fov, 0.1f, 1.0f, 90.0f, "%.1f");

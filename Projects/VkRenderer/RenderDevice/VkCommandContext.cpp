@@ -462,13 +462,13 @@ void CommandContext::ClearTexture(
 	}
 }
 
-void CommandContext::SetGraphicsPushConstants(u32 sizeInBytes, void* data, VkShaderStageFlags stages, u32 offsetInBytes)
+void CommandContext::SetPushConstants(u32 sizeInBytes, void* data, VkShaderStageFlags stages, u32 offsetInBytes)
 {
-	assert(m_pGraphicsPipeline);
-	vkCmdPushConstants(m_vkCommandBuffer, m_pGraphicsPipeline->vkPipelineLayout(), stages, offsetInBytes, sizeInBytes, data);
+	assert(m_pGraphicsPipeline || m_pComputePipeline);
+	vkCmdPushConstants(m_vkCommandBuffer, m_pGraphicsPipeline ? m_pGraphicsPipeline->vkPipelineLayout() : m_pComputePipeline->vkPipelineLayout(), stages, offsetInBytes, sizeInBytes, data);
 }
 
-void CommandContext::SetGraphicsDynamicUniformBuffer(u32 binding, VkDeviceSize sizeInBytes, const void* bufferData)
+void CommandContext::SetDynamicUniformBuffer(u32 binding, VkDeviceSize sizeInBytes, const void* bufferData)
 {
 	auto allocation = m_pUniformBufferPool->Allocate(sizeInBytes);
 	memcpy(allocation.cpuHandle, bufferData, sizeInBytes);
@@ -493,13 +493,13 @@ void CommandContext::SetGraphicsDynamicUniformBuffer(u32 binding, VkDeviceSize s
 void CommandContext::PushDescriptors(u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType)
 {
 	VkWriteDescriptorSet write = {};
-	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write.dstSet = VK_NULL_HANDLE;
-	write.dstBinding = binding;
+	write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.dstSet          = VK_NULL_HANDLE;
+	write.dstBinding      = binding;
 	write.dstArrayElement = 0;
 	write.descriptorCount = 1;
-	write.descriptorType = descriptorType;
-	write.pImageInfo = &imageInfo;
+	write.descriptorType  = descriptorType;
+	write.pImageInfo      = &imageInfo;
 
 	m_PushAllocations.push_back({ binding, imageInfo, descriptorType });
 }
@@ -507,13 +507,13 @@ void CommandContext::PushDescriptors(u32 binding, const VkDescriptorImageInfo& i
 void CommandContext::PushDescriptors(u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType)
 {
 	VkWriteDescriptorSet write = {};
-	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write.dstSet = VK_NULL_HANDLE;
-	write.dstBinding = binding;
+	write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.dstSet          = VK_NULL_HANDLE;
+	write.dstBinding      = binding;
 	write.dstArrayElement = 0;
 	write.descriptorCount = 1;
-	write.descriptorType = descriptorType;
-	write.pBufferInfo = &bufferInfo;
+	write.descriptorType  = descriptorType;
+	write.pBufferInfo     = &bufferInfo;
 
 	m_PushAllocations.push_back({ binding, bufferInfo, descriptorType });
 }
@@ -599,14 +599,14 @@ void CommandContext::Draw(u32 vertexCount, u32 instanceCount, u32 firstVertex, u
 	for (const auto& allocation : m_PushAllocations)
 	{
 		VkWriteDescriptorSet write = {};
-		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		write.dstSet = VK_NULL_HANDLE;
-		write.dstBinding = allocation.binding;
+		write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		write.dstSet          = VK_NULL_HANDLE;
+		write.dstBinding      = allocation.binding;
 		write.dstArrayElement = 0;
 		write.descriptorCount = 1;
-		write.descriptorType = allocation.descriptorType;
+		write.descriptorType  = allocation.descriptorType;
 		if (allocation.descriptor.bImage)
-			write.pImageInfo = &allocation.descriptor.imageInfo;
+			write.pImageInfo  = &allocation.descriptor.imageInfo;
 		else
 			write.pBufferInfo = &allocation.descriptor.bufferInfo;
 		writes.push_back(write);		
@@ -629,14 +629,14 @@ void CommandContext::DrawIndexed(u32 indexCount, u32 instanceCount, u32 firstInd
 	for (const auto& allocation : m_PushAllocations)
 	{
 		VkWriteDescriptorSet write = {};
-		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		write.dstSet = VK_NULL_HANDLE;
-		write.dstBinding = allocation.binding;
+		write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		write.dstSet          = VK_NULL_HANDLE;
+		write.dstBinding      = allocation.binding;
 		write.dstArrayElement = 0;
 		write.descriptorCount = 1;
-		write.descriptorType = allocation.descriptorType;
+		write.descriptorType  = allocation.descriptorType;
 		if (allocation.descriptor.bImage)
-			write.pImageInfo = &allocation.descriptor.imageInfo;
+			write.pImageInfo  = &allocation.descriptor.imageInfo;
 		else
 			write.pBufferInfo = &allocation.descriptor.bufferInfo;
 		writes.push_back(write);
@@ -660,16 +660,16 @@ void CommandContext::DrawIndexedIndirect(const SceneResource& sceneResource)
 	for (const auto& allocation : m_PushAllocations)
 	{
 		VkWriteDescriptorSet write = {};
-		write.sType                = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		write.dstSet               = VK_NULL_HANDLE;
-		write.dstBinding           = allocation.binding;
-		write.dstArrayElement      = 0;
-		write.descriptorCount      = 1;
-		write.descriptorType       = allocation.descriptorType;
+		write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		write.dstSet          = VK_NULL_HANDLE;
+		write.dstBinding      = allocation.binding;
+		write.dstArrayElement = 0;
+		write.descriptorCount = 1;
+		write.descriptorType  = allocation.descriptorType;
 		if (allocation.descriptor.bImage)
-			write.pImageInfo       = &allocation.descriptor.imageInfo;
+			write.pImageInfo  = &allocation.descriptor.imageInfo;
 		else
-			write.pBufferInfo      = &allocation.descriptor.bufferInfo;
+			write.pBufferInfo = &allocation.descriptor.bufferInfo;
 		writes.push_back(write);
 	}
 
@@ -692,14 +692,14 @@ void CommandContext::Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ)
 	for (const auto& allocation : m_PushAllocations)
 	{
 		VkWriteDescriptorSet write = {};
-		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		write.dstSet = VK_NULL_HANDLE;
-		write.dstBinding = allocation.binding;
+		write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		write.dstSet          = VK_NULL_HANDLE;
+		write.dstBinding      = allocation.binding;
 		write.dstArrayElement = 0;
 		write.descriptorCount = 1;
-		write.descriptorType = allocation.descriptorType;
+		write.descriptorType  = allocation.descriptorType;
 		if (allocation.descriptor.bImage)
-		    write.pImageInfo = &allocation.descriptor.imageInfo;
+		    write.pImageInfo  = &allocation.descriptor.imageInfo;
 		else
 			write.pBufferInfo = &allocation.descriptor.bufferInfo;
 		writes.push_back(write);
@@ -738,10 +738,10 @@ void CommandContext::FlushBarriers()
 {
 	if (m_NumBufferBarriersToFlush > 0)
 	{
-		VkDependencyInfo dependency = {};
-		dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		VkDependencyInfo dependency         = {};
+		dependency.sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
 		dependency.bufferMemoryBarrierCount = m_NumBufferBarriersToFlush;
-		dependency.pBufferMemoryBarriers = m_BufferBarriers;
+		dependency.pBufferMemoryBarriers    = m_BufferBarriers;
 		vkCmdPipelineBarrier2(m_vkCommandBuffer, &dependency);
 
 		m_NumBufferBarriersToFlush = 0;
@@ -749,10 +749,10 @@ void CommandContext::FlushBarriers()
 
 	if (m_NumImageBarriersToFlush > 0)
 	{
-		VkDependencyInfo dependency = {};
-		dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+		VkDependencyInfo dependency        = {};
+		dependency.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
 		dependency.imageMemoryBarrierCount = m_NumImageBarriersToFlush;
-		dependency.pImageMemoryBarriers = m_ImageBarriers;
+		dependency.pImageMemoryBarriers    = m_ImageBarriers;
 		vkCmdPipelineBarrier2(m_vkCommandBuffer, &dependency);
 
 		m_NumImageBarriersToFlush = 0;

@@ -12,44 +12,45 @@
 
 #define EPSILON    0.00001
 
+
+//-------------------------------------------------------------------------
+// Primitives
+//-------------------------------------------------------------------------
+#ifdef _HLSL
+using vec2 = float2;
+using vec3 = float3;
+using vec4 = float4;
+using mat2 = float2x2;
+using mat3 = float3x3;
+using mat4 = float4x4;
+#elif defined(_GLSL)
+#endif
+
 //-------------------------------------------------------------------------
 // Vertex
 //-------------------------------------------------------------------------
 struct Vertex
 {
-	float posX, posY, posZ;
-	float u, v;
-	float normalX, normalY, normalZ;
-	float tangentX, tangentY, tangentZ;
+	vec3 pos;
+	vec2 uv;
+	vec3 normal;
+	vec3 tangent;
 };
 
 struct SkinnedVertex
 {
-    float posX, posY, posZ;
-    float u, v;
-    float normalX, normalY, normalZ;
-    float tangentX, tangentY, tangentZ;
-    uint  boneIndices;  // one index per byte
-    float weight0, weight1, weight2, weight3;
+    vec3 pos;
+	vec2 uv;
+	vec3 normal;
+	vec3 tangent;
+    uint boneIndices;  // one index per byte
+    vec4 weight0, weight1, weight2, weight3;
 };
 
 
 //-------------------------------------------------------------------------
 // Transforms
 //-------------------------------------------------------------------------
-#ifdef _HLSL
-struct TransformData
-{
-    float4x4 mWorldToView;
-    float4x4 mViewToWorld;
-};
-
-struct BoneTransformData
-{
-    float4x4 mBoneTransform;
-};
-
-#elif defined(_GLSL)
 struct TransformData
 {
 	mat4 mWorldToView;
@@ -79,14 +80,12 @@ struct DrawData
 	float padding0, padding1;
 };
 
-#endif
-
 //-------------------------------------------------------------------------
 // Material
 //-------------------------------------------------------------------------
 struct MaterialData 
 {
-	float tintR, tintG, tintB; 
+	vec3  tint; 
 	float metallic; 
 	float roughness;
 	float ior;
@@ -105,13 +104,11 @@ struct MaterialData
 //-------------------------------------------------------------------------
 // Light
 //-------------------------------------------------------------------------
-#define LUMENS_PER_CANDELA 4.0 * PI
-
 struct DirectionalLight
 {
-	float dirX, dirY, dirZ;
+	vec3  dir;
 	float illuminance_lux; // lm/m^2
-	float colorR, colorG, colorB;
+	vec3  color;
 	float angularRadius_rad;
 	float temperature_K;
 	float padding0, padding1, padding2;
@@ -119,9 +116,9 @@ struct DirectionalLight
 
 struct PointLight
 {
-	float posX, posY, posZ;
-	float luminousPower_lm;
-	float colorR, colorG, colorB;
+	vec3  pos;
+	float luminousFlux_lm;
+	vec3  color;
 	float radius_m;
 	float temperature_K;
 	float padding0, padding1, padding2;
@@ -129,11 +126,11 @@ struct PointLight
 
 struct SpotLight
 {
-	float posX, posY, posZ;
-	float luminousPower_lm;
-	float dirX, dirY, dirZ;
+	vec3  pos;
+	float luminousFlux_lm;
+	vec3  dir;
 	float radius_m;
-	float colorR, colorG, colorB;
+	vec3  color;
 	float innerConeAngle_rad;
 	float outerConeAngle_rad;
 	float temperature_K;
@@ -152,7 +149,7 @@ struct LightingData
 	uint  numDirectionals;
 	uint  numPoints;
 	uint  numSpots;
-	float exposure;
+	float ev100;
 
 	float ambientIntensity;
 	float ambientColorR, ambientColorG, ambientColorB;

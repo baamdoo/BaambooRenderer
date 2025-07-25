@@ -73,15 +73,15 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 		{
 			const std::string& name = resource.name;
 			const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
-			u32 set = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
-			u32 binding = compiler.get_decoration(resource.id, spv::DecorationBinding);
+			u32 set       = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
+			u32 binding   = compiler.get_decoration(resource.id, spv::DecorationBinding);
 			// u32 size = (u32)compiler.get_declared_struct_size(type);
 			u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_DYNAMIC_ARRAY_SIZE : type.array[0]; // assume utilize only 1d-array for now
 
 			Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
-			descriptorInfo.binding = binding;
-			descriptorInfo.name = name;
-			descriptorInfo.arraySize = arraySize;
+			descriptorInfo.binding        = binding;
+			descriptorInfo.name           = name;
+			descriptorInfo.arraySize      = arraySize;
 			descriptorInfo.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		}
 	}
@@ -93,14 +93,14 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 		{
 			const std::string& name = resource.name;
 			const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
-			u32 set = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
-			u32 binding = compiler.get_decoration(resource.id, spv::DecorationBinding);
+			u32 set       = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
+			u32 binding   = compiler.get_decoration(resource.id, spv::DecorationBinding);
 			u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_DYNAMIC_ARRAY_SIZE : type.array[0]; // assume utilize only 1d-array for now
 
 			Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
-			descriptorInfo.binding = binding;
-			descriptorInfo.name = name;
-			descriptorInfo.arraySize = arraySize;
+			descriptorInfo.binding        = binding;
+			descriptorInfo.name           = name;
+			descriptorInfo.arraySize      = arraySize;
 			descriptorInfo.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 		}
 	}
@@ -109,14 +109,14 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 	{
 		const std::string& name = resource.name;
 		const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
-		u32 set = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
-		u32 binding = compiler.get_decoration(resource.id, spv::DecorationBinding);
+		u32 set       = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
+		u32 binding   = compiler.get_decoration(resource.id, spv::DecorationBinding);
 		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_DYNAMIC_ARRAY_SIZE : type.array[0]; // assume utilize only 1d-array for now
 
 		Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
-		descriptorInfo.binding = binding;
-		descriptorInfo.name = name;
-		descriptorInfo.arraySize = arraySize;
+		descriptorInfo.binding        = binding;
+		descriptorInfo.name           = name;
+		descriptorInfo.arraySize      = arraySize;
 		descriptorInfo.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	}
 
@@ -129,9 +129,9 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_DYNAMIC_ARRAY_SIZE : type.array[0]; // assume utilize only 1d-array for now
 
 		Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
-		descriptorInfo.binding = binding;
-		descriptorInfo.name = name;
-		descriptorInfo.arraySize = arraySize;
+		descriptorInfo.binding        = binding;
+		descriptorInfo.name           = name;
+		descriptorInfo.arraySize      = arraySize;
 		descriptorInfo.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 	}
 
@@ -145,9 +145,10 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 		if (!reflection.pushConstants.empty())
 			offset = reflection.pushConstants.back().offset + reflection.pushConstants.back().size;
 
-		auto& pushConstant = reflection.pushConstants.emplace_back();
-		pushConstant.size = size - offset;
-		pushConstant.offset = offset;
+		auto& pushConstant      = reflection.pushConstants.emplace_back();
+		pushConstant.stageFlags = stage;
+		pushConstant.size       = size - offset;
+		pushConstant.offset     = offset;
 	}
 
 	return stage;

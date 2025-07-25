@@ -14,16 +14,10 @@ layout(set = SET_PUSH, binding = 0) uniform Camera
 	mat4 mViewProjInv;
 
 	vec3  posWORLD;
-	float padding0;
+	float zNear;
+	float zFar;
+	vec3  padding0;
 } g_Camera;
 #endif
-
-vec3 ReconstructWorldPos(vec2 uv, float depth, mat4 mViewProjInv)
-{
-    vec4 clipPos  = vec4(uv * 2.0 - 1.0, depth, 1.0);
-    vec4 worldPos = mViewProjInv * clipPos;
-
-    return worldPos.xyz / worldPos.w;
-}
 
 #endif // _GLSL_COMMON_HEADER

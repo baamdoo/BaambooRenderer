@@ -69,8 +69,10 @@ public:
 	void SetRenderTarget(u32 numRenderTargets, D3D12_CPU_DESCRIPTOR_HANDLE rtv, D3D12_CPU_DESCRIPTOR_HANDLE dsv = D3D12_CPU_DESCRIPTOR_HANDLE());
 	void SetRenderTarget(const RenderTarget& renderTarget);
 
-	void SetGraphics32BitConstant(u32 rootIndex, u32 srcValue, u32 dstOffset = 0);
-	void SetGraphics32BitConstants(u32 rootIndex, u32 srcSizeInBytes, void* srcData, u32 dstOffsetInBytes = 0);
+	void SetGraphicsRootConstant(u32 rootIndex, u32 srcValue, u32 dstOffset = 0);
+	void SetGraphicsRootConstants(u32 rootIndex, u32 srcSizeInBytes, void* srcData, u32 dstOffsetInBytes = 0);
+	void SetComputeRootConstant(u32 rootIndex, u32 srcValue, u32 dstOffset = 0);
+	void SetComputeRootConstants(u32 rootIndex, u32 srcSizeInBytes, void* srcData, u32 dstOffsetInBytes = 0);
 
 	void SetGraphicsDynamicConstantBuffer(u32 rootIndex, size_t sizeInBytes, const void* pData);
 	template< typename T >
@@ -156,20 +158,20 @@ private:
 	
 	DynamicBufferAllocator* m_pDynamicBufferAllocator = nullptr;
 
-	ID3D12GraphicsCommandList2* m_d3d12CommandList = nullptr;
-	ID3D12CommandAllocator* m_d3d12CommandAllocator = nullptr;
+	ID3D12GraphicsCommandList2* m_d3d12CommandList      = nullptr;
+	ID3D12CommandAllocator*     m_d3d12CommandAllocator = nullptr;
 
 	RootSignature* m_pRootSignature = nullptr;
 
 	GraphicsPipeline* m_pGraphicsPipeline = nullptr;
-	ComputePipeline* m_pComputePipeline = nullptr;
+	ComputePipeline*  m_pComputePipeline = nullptr;
 
 	D3D_PRIMITIVE_TOPOLOGY m_PrimitiveTopology = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
 
-	DescriptorHeap* m_pDescriptorHeaps[NUM_RESOURCE_DESCRIPTOR_TYPE] = {};
+	DescriptorHeap*       m_pDescriptorHeaps[NUM_RESOURCE_DESCRIPTOR_TYPE]               = {};
 	ID3D12DescriptorHeap* m_CurrentDescriptorHeaps[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES] = {};
 
-	u32 m_NumBarriersToFlush = 0;
+	u32                    m_NumBarriersToFlush                         = 0;
 	D3D12_RESOURCE_BARRIER m_ResourceBarriers[MAX_NUM_PENDING_BARRIERS] = {};
 };
 

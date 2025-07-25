@@ -5,17 +5,13 @@ namespace baamboo
 {
 
 TransformSystem::TransformSystem(entt::registry& registry)
-	: m_Registry(registry)
+	: Super(registry)
 {
-	m_Registry.on_construct< TransformComponent >().connect< &TransformSystem::OnTransformConstructed >(this);
-	m_Registry.on_update< TransformComponent >().connect< &TransformSystem::OnTransformUpdated >(this);
-    m_Registry.on_destroy< TransformComponent >().connect< &TransformSystem::OnTransformDestroyed >(this);
-
     m_mWorlds.resize(1024);
     m_IndexAllocator.reserve(1024);
 }
 
-void TransformSystem::OnTransformConstructed(entt::registry& registry, entt::entity entity)
+void TransformSystem::OnComponentConstructed(entt::registry& registry, entt::entity entity)
 {
 	MarkDirty(entity);
 
@@ -29,18 +25,18 @@ void TransformSystem::OnTransformConstructed(entt::registry& registry, entt::ent
     m_mWorlds[index] = mat4(1.0f);
 }
 
-void TransformSystem::OnTransformUpdated(entt::registry& registry, entt::entity entity)
+void TransformSystem::OnComponentUpdated(entt::registry& registry, entt::entity entity)
 {
-	MarkDirty(entity);
+    MarkDirty(entity);
 }
 
-void TransformSystem::OnTransformDestroyed(entt::registry& registry, entt::entity entity)
+void TransformSystem::OnComponentDestroyed(entt::registry& registry, entt::entity entity)
 {
     auto& transform = registry.get< TransformComponent >(entity);
     m_IndexAllocator.release(transform.world);
 }
 
-std::vector< entt::entity > TransformSystem::Update()
+std::vector< u64 > TransformSystem::Update()
 {
     // Sort by depth to ensure parents are processed before children
     m_Registry.sort< TransformComponent >([](const auto& lhs, const auto& rhs)
@@ -48,16 +44,16 @@ std::vector< entt::entity > TransformSystem::Update()
             return lhs.hierarchy.depth < rhs.hierarchy.depth;
         });
 
-    std::vector< entt::entity > markedEntities;
+    std::vector< u64 > markedEntities;
     m_Registry.view< TransformComponent >().each([&](auto entity, auto& transformComponent)
         {
-            if (transformComponent.bDirtyMark)
+            if (m_DirtyEntities.contains(entity))
             {
                 transformComponent.transform.Update();
                 UpdateWorldTransform(entity);
 
-                markedEntities.push_back(entity);
-                transformComponent.bDirtyMark = false;
+                m_DirtyEntities.erase(entity);
+                markedEntities.push_back(entt::to_integral(entity));
             }
         });
 
@@ -66,8 +62,9 @@ std::vector< entt::entity > TransformSystem::Update()
 
 void TransformSystem::MarkDirty(entt::entity entity)
 {
+    Super::MarkDirty(entity);
+
     auto& transform = m_Registry.get< TransformComponent >(entity);
-    transform.bDirtyMark = true;
 
     auto child = transform.hierarchy.firstChild;
     while (child != entt::null) 

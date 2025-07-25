@@ -10,6 +10,7 @@ class EditorCamera;
 class TransformSystem;
 class StaticMeshSystem;
 class MaterialSystem;
+class AtmosphereSystem;
 
 class Scene
 {
@@ -25,6 +26,7 @@ public:
 	class Entity ImportModel(Entity rootEntity, const fs::path& filepath, MeshDescriptor descriptor);
 
 	void Update(float dt);
+	void ResetMarks() { m_bFetchMarks = false; }
 
 	[[nodiscard]]
 	SceneRenderView RenderView(const EditorCamera& camera) const;
@@ -60,13 +62,15 @@ private:
 	std::string m_Name;
 	bool m_bLoading = false;
 
+	bool m_bFetchMarks = false;
 	// [entity, dirty-components]
-	std::unordered_map< entt::entity, u64 > m_EntityDirtyMasks;
+	std::unordered_map< u64, u64 > m_EntityDirtyMasks;
 
 	// systems
 	TransformSystem*  m_pTransformSystem  = nullptr;
 	StaticMeshSystem* m_pStaticMeshSystem = nullptr;
 	MaterialSystem*   m_pMaterialSystem   = nullptr;
+	AtmosphereSystem* m_pAtmosphereSystem = nullptr;
 
 	// animations
 	std::unordered_map< u32, MeshData >      m_MeshData;

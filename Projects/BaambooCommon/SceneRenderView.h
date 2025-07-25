@@ -1,9 +1,22 @@
 #pragma once
 #include "ShaderTypes.h"
 
+enum eComponentType
+{
+	CTransform = 0,
+	CStaticMesh = 1,
+	CDynamicMesh = 2,
+	CMaterial = 3,
+	CLight = 4,
+	CAtmosphere = 5,
+
+	// ...
+	NumComponents
+};
+
 struct TransformRenderView
 {
-	u32 id;
+	u64 id;
 
 	mat4 mWorld;
 };
@@ -12,12 +25,15 @@ struct CameraRenderView
 {
 	mat4 mView;
 	mat4 mProj;
+
 	float3 pos;
+	float  zNear;
+	float  zFar;
 };
 
 struct StaticMeshRenderView
 {
-	u32         id;
+	u64         id;
 	std::string tag;
 
 	const void* vData;
@@ -29,7 +45,7 @@ struct StaticMeshRenderView
 
 struct MaterialRenderView
 {
-	u32 id;
+	u64 id;
 
 	float3 tint;
 	float3 ambient;
@@ -55,9 +71,17 @@ struct DrawRenderView
 	u32 material  = INVALID_INDEX;
 };
 
-struct LightRenderView
+using LightRenderView = LightData;
+
+struct AtmosphereRenderView
 {
-	LightData data;
+	u64            id;
+	AtmosphereData data;
+
+	u32  msIsoSampleCount;
+	u32  msNumRaySteps;
+	u32  svMinRaySteps;
+	u32  svMaxRaySteps;
 };
 
 //-------------------------------------------------------------------------
@@ -72,6 +96,9 @@ struct SceneRenderView
 
 	std::unordered_map< u32, DrawRenderView > draws;
 
-	CameraRenderView camera;
-	LightRenderView  light;
+	CameraRenderView     camera;
+	LightRenderView      light;
+	AtmosphereRenderView atmosphere;
+
+	std::unordered_map< u64, u64 >* pEntityDirtyMarks;
 };

@@ -4,7 +4,6 @@
 #include "BaambooCore/EngineCore.h"
 #include "BaambooCore/Input.hpp"
 #include "BaambooScene/Entity.h"
-#include "BaambooScene/TransformSystem.h"
 #include "ThreadQueue.hpp"
 
 #include <filesystem>
@@ -191,6 +190,8 @@ void Engine::GameLoop(float dt)
 		m_RenderViewQueue.replace(m_pScene->RenderView(*m_pCamera));
 	else
 		m_RenderViewQueue.push(m_pScene->RenderView(*m_pCamera));
+
+	m_pScene->ResetMarks();
 }
 
 void Engine::RenderLoop()
@@ -499,7 +500,7 @@ void Engine::DrawUI()
 					}
 					case eLightType::Point:
 					{
-						ImGui::DragFloat("Power (lm)", &component.luminousPower_lm, 10.0f, 0.0f, 10000.0f, "%.0f");
+						ImGui::DragFloat("Power (lm)", &component.luminousFlux_lm, 10.0f, 0.0f, 10000.0f, "%.0f");
 						if (ImGui::IsItemHovered())
 						{
 							ImGui::BeginTooltip();
@@ -510,7 +511,7 @@ void Engine::DrawUI()
 					}
 					case eLightType::Spot:
 					{
-						ImGui::DragFloat("Power (lumens)", &component.luminousPower_lm, 10.0f, 0.0f, 10000.0f, "%.0f");
+						ImGui::DragFloat("Power (lumens)", &component.luminousFlux_lm, 10.0f, 0.0f, 10000.0f, "%.0f");
 						ImGui::DragFloat("Source Radius (m)", &component.radius_m, 0.001f, 0.001f, 1.0f, "%.3f");
 
 						float innerAngle = glm::degrees(component.innerConeAngle_rad);
@@ -535,6 +536,145 @@ void Engine::DrawUI()
 					}
 
 					}
+				}
+			}
+
+			if (ImGui::SelectedEntity.HasAll< AtmosphereComponent >())
+			{
+				bool bMark = false;
+				if (ImGui::CollapsingHeader("Atmosphere"))
+				{
+					ImGui::Indent();
+					{
+						auto& component = ImGui::SelectedEntity.GetComponent< AtmosphereComponent >();
+
+						// planet
+						if (ImGui::CollapsingHeader("Planet"))
+						{
+							float height = component.atmosphereRadius_km - component.planetRadius_km;
+							if (ImGui::DragFloat("Atmosphere Height (km)", &height, 1.0f, 1.0f, 200.0f, "%.1f"))
+							{
+								component.atmosphereRadius_km = component.planetRadius_km + height;
+
+								bMark = true;
+							}
+						}
+
+						// rayleigh
+						if (ImGui::CollapsingHeader("Rayleigh"))
+						{
+							float3 rayleighScattering = component.rayleighScattering * 1e3f;
+							if (ImGui::DragFloat3("Rayleigh Scattering Coefficient", glm::value_ptr(rayleighScattering), 0.01f, 0.0f, 1000.0f, "%.3f"))
+							{
+								component.rayleighScattering = rayleighScattering * 1e-3f;
+
+								bMark = true;
+							}
+							if (ImGui::IsItemHovered())
+							{
+								ImGui::BeginTooltip();
+								ImGui::Text("Rayleigh Scattering Scale : 0.001");
+								ImGui::EndTooltip();
+							}
+							bMark |= ImGui::DragFloat("Rayleigh Density (km)", &component.rayleighDensityH_km, 0.1f, 0.1f, 20.0f, "%.3f");
+							if (ImGui::IsItemHovered())
+							{
+								ImGui::BeginTooltip();
+								ImGui::Text("Reduce 40%% of scattering effect per Km");
+								ImGui::EndTooltip();
+							}
+						}
+
+						// mie
+						if (ImGui::CollapsingHeader("Mie"))
+						{
+							float mieScattering = component.mieScattering * 1e3f;
+							if (ImGui::DragFloat("Mie Scattering Coefficient", &mieScattering, 0.01f, 0.0f, 1000.0f, "%.3f"))
+							{
+								component.mieScattering = mieScattering * 1e-3f;
+
+								bMark = true;
+							}
+							if (ImGui::IsItemHovered())
+							{
+								ImGui::BeginTooltip();
+								ImGui::Text("Mie Scattering Scale : 0.001");
+								ImGui::EndTooltip();
+							}
+							float mieAbsorption = component.mieAbsorption * 1e3f;
+							if (ImGui::DragFloat("Mie Absorption Coefficient", &mieAbsorption, 0.01f, 0.0f, 1000.0f, "%.3f"))
+							{
+								component.mieAbsorption = mieAbsorption * 1e-3f;
+
+								bMark = true;
+							}
+							if (ImGui::IsItemHovered())
+							{
+								ImGui::BeginTooltip();
+								ImGui::Text("Mie Absorption Scale : 0.001");
+								ImGui::EndTooltip();
+							}
+							bMark |= ImGui::DragFloat("Mie Density (km)", &component.mieDensityH_km, 0.01f, 0.01f, 10.0f, "%.3f");
+							if (ImGui::IsItemHovered())
+							{
+								ImGui::BeginTooltip();
+								ImGui::Text("Reduce 40%% of mie effect per Km");
+								ImGui::EndTooltip();
+							}
+							bMark |= ImGui::DragFloat("Mie Phase", &component.miePhaseG, 0.01f, 0.0f, 1.0f, "%.3f");
+						}
+
+						// ozone
+						if (ImGui::CollapsingHeader("Ozone"))
+						{
+							float3 ozoneAbsorption = component.ozoneAbsorption * 1e3f;
+							if (ImGui::DragFloat3("Ozone Absorption Coefficient", glm::value_ptr(ozoneAbsorption), 0.01f, 0.0f, 1000.0f, "%.3f"))
+							{
+								component.ozoneAbsorption = ozoneAbsorption * 1e-3f;
+
+								bMark = true;
+							}
+							if (ImGui::IsItemHovered())
+							{
+								ImGui::BeginTooltip();
+								ImGui::Text("Ozone Absorption Scale : 0.001");
+								ImGui::EndTooltip();
+							}
+							bMark |= ImGui::DragFloat("Ozone Center (km)", &component.ozoneCenter_km, 1.0f, 1.0f, 60.0f, "%.1f");
+							bMark |= ImGui::DragFloat("Ozone Width (km)", &component.ozoneWidth_km, 1.0f, 1.0f, 20.0f, "%.1f");
+
+							if (ImGui::BeginCombo("##Resolution", "Raymarch Resolution"))
+							{
+								if (ImGui::Selectable("Low", component.raymarchResolution == eRaymarchResolution::Low))
+								{
+									component.raymarchResolution = eRaymarchResolution::Low;
+
+									bMark = true;
+								}
+								if (ImGui::Selectable("Middle", component.raymarchResolution == eRaymarchResolution::Middle))
+								{
+									component.raymarchResolution = eRaymarchResolution::Middle;
+
+									bMark = true;
+								}
+								if (ImGui::Selectable("High", component.raymarchResolution == eRaymarchResolution::High))
+								{
+									component.raymarchResolution = eRaymarchResolution::High;
+
+									bMark = true;
+								}
+
+								ImGui::EndCombo();
+							}
+						}
+					}
+
+					ImGui::Unindent();
+				}
+
+				if (bMark)
+				{
+					m_pScene->Registry().patch< AtmosphereComponent >(ImGui::SelectedEntity.ID(), [](auto&) {});
 				}
 			}
 

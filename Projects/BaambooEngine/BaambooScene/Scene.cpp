@@ -3,9 +3,10 @@
 #include "Entity.h"
 #include "Components.h"
 #include "Camera.h"
-#include "TransformSystem.h"
-#include "MeshSystem.h"
-#include "MaterialSystem.h"
+#include "Systems/TransformSystem.h"
+#include "Systems/MeshSystem.h"
+#include "Systems/MaterialSystem.h"
+#include "Systems/AtmosphereSystem.h"
 
 #include <queue>
 #include <glm/gtx/matrix_decompose.hpp>
@@ -21,6 +22,7 @@ Scene::Scene(const std::string& name)
 	m_pTransformSystem  = new TransformSystem(m_Registry);
 	m_pStaticMeshSystem = new StaticMeshSystem(m_Registry);
 	m_pMaterialSystem   = new MaterialSystem(m_Registry);
+	m_pAtmosphereSystem = new AtmosphereSystem(m_Registry);
 }
 
 Scene::~Scene()
@@ -28,6 +30,7 @@ Scene::~Scene()
 	for (auto& [_, pLoader] : m_ModelLoaderCache)
 		RELEASE(pLoader);
 
+	RELEASE(m_pAtmosphereSystem);
 	RELEASE(m_pMaterialSystem);
 	RELEASE(m_pStaticMeshSystem);
 	RELEASE(m_pTransformSystem);
@@ -41,7 +44,7 @@ Entity Scene::CreateEntity(const std::string& tag)
 
 	printf("create entity_%d\n", newEntity.id());
 
-	m_EntityDirtyMasks.emplace(std::make_pair(newEntity.ID(), 0));
+	m_EntityDirtyMasks.emplace(std::make_pair(newEntity.id(), 0));
 	return newEntity;
 }
 
@@ -64,7 +67,7 @@ void Scene::RemoveEntity(Entity entity)
 	}
 
 	m_Registry.destroy(entity.ID());
-	m_EntityDirtyMasks.erase(entity.ID());
+	m_EntityDirtyMasks.erase(entity.id());
 }
 
 Entity Scene::ImportModel(const fs::path& filepath, MeshDescriptor descriptor)
@@ -234,34 +237,49 @@ u32 Scene::StoreAnimationClip(const AnimationClip& clip)
 
 void Scene::Update(f32 dt)
 {
-	auto markedEntities = m_pTransformSystem->Update();
-	for (auto entity : markedEntities)
+	for (auto entity : m_pTransformSystem->Update())
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
 		dirtyMarks |= (1 << eComponentType::CTransform);
+
+		m_bFetchMarks |= dirtyMarks;
 	}
 
-	markedEntities = m_pStaticMeshSystem->Update();
-	for (auto entity : markedEntities)
+	for (auto entity : m_pStaticMeshSystem->Update())
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
 		dirtyMarks |= (1 << eComponentType::CStaticMesh);
+
+		m_bFetchMarks |= dirtyMarks;
 	}
 
-	markedEntities = m_pMaterialSystem->Update();
-	for (auto entity : markedEntities)
+	for (auto entity : m_pMaterialSystem->Update())
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
 		dirtyMarks |= (1 << eComponentType::CMaterial);
+
+		m_bFetchMarks |= dirtyMarks;
+	}
+
+	for (auto entity : m_pAtmosphereSystem->Update())
+	{
+		u64& dirtyMarks = m_EntityDirtyMasks[entity];
+		dirtyMarks |= (1 << eComponentType::CAtmosphere);
+
+		m_bFetchMarks |= dirtyMarks;
 	}
 }
 
 SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 {
 	SceneRenderView view{};
+	view.pEntityDirtyMarks = m_bFetchMarks ? const_cast<std::unordered_map< u64, u64 >*>(&m_EntityDirtyMasks) : nullptr;
+
 	view.camera.mView = camera.GetView();
 	view.camera.mProj = camera.GetProj();
 	view.camera.pos   = camera.GetPosition();
+	view.camera.zNear = camera.zNear;
+	view.camera.zFar  = camera.zFar;
 
 	m_Registry.view< TransformComponent >().each([this, &view](auto id, auto& transformComponent)
 		{
@@ -322,9 +340,9 @@ SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 		});
 
 
-	view.light.data                  = {};
-	view.light.data.ambientColor     = float3(0.0f);
-	view.light.data.ambientIntensity = 0.0f;
+	view.light                  = {};
+	view.light.ambientColor     = float3(0.0f);
+	view.light.ambientIntensity = 0.0f;
 	m_Registry.view< TransformComponent, LightComponent >().each([this, &view](auto id, auto& transformComponent, auto& lightComponent)
 		{
 			mat4   mWorld    = m_pTransformSystem->WorldMatrix(transformComponent.world);
@@ -334,38 +352,80 @@ SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 			switch (lightComponent.type)
 			{
 			case eLightType::Directional:
-				if (view.light.data.numDirectionals < MAX_DIRECTIONAL_LIGHT)
+				if (view.light.numDirectionals < MAX_DIRECTIONAL_LIGHT)
 				{
-					auto& dirLight             = view.light.data.directionals[view.light.data.numDirectionals++];
-					dirLight.direction         = -position; // target to origin
+					auto& dirLight             = view.light.directionals[view.light.numDirectionals++];
+					dirLight.direction         = glm::normalize(-position); // target to origin
 					dirLight.color             = lightComponent.color;
 					dirLight.temperature_K     = lightComponent.temperature_K;
 					dirLight.illuminance_lux   = lightComponent.illuminance_lux;
 					dirLight.angularRadius_rad = lightComponent.angularRadius_rad;
+
+					if (m_Registry.any_of< AtmosphereComponent >(id))
+					{
+						auto& atmosphereComponent  = m_Registry.get< AtmosphereComponent >(id);
+
+						view.atmosphere.data.light               = dirLight;
+						view.atmosphere.data.planetRadius_km     = atmosphereComponent.planetRadius_km;
+						view.atmosphere.data.atmosphereRadius_km = atmosphereComponent.atmosphereRadius_km;
+						view.atmosphere.data.rayleighScattering  = atmosphereComponent.rayleighScattering;
+						view.atmosphere.data.rayleighDensityH_km = atmosphereComponent.rayleighDensityH_km;
+						view.atmosphere.data.mieScattering       = atmosphereComponent.mieScattering;
+						view.atmosphere.data.mieAbsorption       = atmosphereComponent.mieAbsorption;
+						view.atmosphere.data.mieDensityH_km      = atmosphereComponent.mieDensityH_km;
+						view.atmosphere.data.miePhaseG           = atmosphereComponent.miePhaseG;
+						view.atmosphere.data.ozoneAbsorption     = atmosphereComponent.ozoneAbsorption;
+						view.atmosphere.data.ozoneCenter_km      = atmosphereComponent.ozoneCenter_km;
+						view.atmosphere.data.ozoneWidth_km       = atmosphereComponent.ozoneWidth_km;
+						// TODO
+						view.atmosphere.data.groundAlbedo        = float3(0.40198f, 0.40198f, 0.40198f);
+
+						switch(atmosphereComponent.raymarchResolution)
+						{
+						case eRaymarchResolution::Low:
+							view.atmosphere.msIsoSampleCount = 2;
+							view.atmosphere.msNumRaySteps    = 10;
+							view.atmosphere.svMinRaySteps    = 4;
+							view.atmosphere.svMaxRaySteps    = 16;
+							break;
+						case eRaymarchResolution::Middle:
+							view.atmosphere.msIsoSampleCount = 64;
+							view.atmosphere.msNumRaySteps    = 20;
+							view.atmosphere.svMinRaySteps    = 4;
+							view.atmosphere.svMaxRaySteps    = 32;
+							break;
+						case eRaymarchResolution::High:
+							view.atmosphere.msIsoSampleCount = 128;
+							view.atmosphere.msNumRaySteps    = 40;
+							view.atmosphere.svMinRaySteps    = 8;
+							view.atmosphere.svMaxRaySteps    = 64;
+							break;
+						}
+					}
 				}
 				break;
 
 			case eLightType::Point:
-				if (view.light.data.numPoints < MAX_POINT_LIGHT)
+				if (view.light.numPoints < MAX_POINT_LIGHT)
 				{
-					PointLight& pointLight      = view.light.data.points[view.light.data.numPoints++];
+					PointLight& pointLight      = view.light.points[view.light.numPoints++];
 					pointLight.position         = position;
 					pointLight.color            = lightComponent.color;
 					pointLight.temperature_K    = lightComponent.temperature_K;
-					pointLight.luminousPower_lm = lightComponent.luminousPower_lm;
+					pointLight.luminousFlux_lm  = lightComponent.luminousFlux_lm;
 					pointLight.radius_m         = lightComponent.radius_m;
 				}
 				break;
 
 			case eLightType::Spot:
-				if (view.light.data.numSpots < MAX_SPOT_LIGHT)
+				if (view.light.numSpots < MAX_SPOT_LIGHT)
 				{
-					auto& spotLight              = view.light.data.spots[view.light.data.numSpots++];
+					auto& spotLight              = view.light.spots[view.light.numSpots++];
 					spotLight.position           = position;
 					spotLight.direction          = direction;
 					spotLight.color              = lightComponent.color;
 					spotLight.temperature_K      = lightComponent.temperature_K;
-					spotLight.luminousPower_lm   = lightComponent.luminousPower_lm;
+					spotLight.luminousFlux_lm    = lightComponent.luminousFlux_lm;
 					spotLight.radius_m           = lightComponent.radius_m;
 					spotLight.innerConeAngle_rad = lightComponent.innerConeAngle_rad;
 					spotLight.outerConeAngle_rad = lightComponent.outerConeAngle_rad;

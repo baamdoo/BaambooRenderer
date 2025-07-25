@@ -4,6 +4,7 @@
 #include "RenderDevice/Dx12DescriptorPool.h"
 #include "RenderDevice/Dx12CommandQueue.h"
 #include "RenderDevice/Dx12CommandContext.h"
+#include "RenderModule/Dx12AtmosphereModule.h"
 #include "RenderModule/Dx12GBufferModule.h"
 #include "RenderModule/Dx12LightingModule.h"
 #include "RenderModule/Dx12ForwardModule.h"
@@ -68,9 +69,10 @@ Renderer::Renderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext)
 
 	g_FrameData.pSceneResource = new SceneResource(*m_pRenderDevice);
 
+	m_pRenderModules.push_back(new AtmosphereModule(*m_pRenderDevice));
 	m_pRenderModules.push_back(new GBufferModule(*m_pRenderDevice));
 	m_pRenderModules.push_back(new LightingModule(*m_pRenderDevice));
-	m_pRenderModules.push_back(new ForwardModule(*m_pRenderDevice));
+	// m_pRenderModules.push_back(new ForwardModule(*m_pRenderDevice));
 	m_pRenderModules.push_back(new ImGuiModule(*m_pRenderDevice, pImGuiContext));
 
 	printf("D3D12Renderer constructed!\n");
@@ -109,7 +111,27 @@ void Renderer::Render(SceneRenderView&& renderView)
 		camera.mViewProj    = camera.mProj * camera.mView;
 		camera.mViewProjInv = glm::inverse(camera.mViewProj);
 		camera.position     = renderView.camera.pos;
+		camera.zNear        = renderView.camera.zNear;
+		camera.zFar         = renderView.camera.zFar;
 		g_FrameData.camera  = std::move(camera);
+
+		g_FrameData.atmosphere.data             = std::move(renderView.atmosphere.data);
+		g_FrameData.atmosphere.msIsoSampleCount = renderView.atmosphere.msIsoSampleCount;
+		g_FrameData.atmosphere.msNumRaySteps    = renderView.atmosphere.msNumRaySteps;
+		g_FrameData.atmosphere.svMinRaySteps    = renderView.atmosphere.svMinRaySteps;
+		g_FrameData.atmosphere.svMaxRaySteps    = renderView.atmosphere.svMaxRaySteps;
+
+		if (renderView.pEntityDirtyMarks)
+		{
+			g_FrameData.atmosphere.bMark = (*renderView.pEntityDirtyMarks)[renderView.atmosphere.id] & (1 << eComponentType::CAtmosphere);
+			// .. process other markers if needed
+
+			// reset marks once it is consumed by renderer
+			for (auto& mark : (*renderView.pEntityDirtyMarks))
+			{
+				mark.second = 0;
+			}
+		}
 
 		for (auto pModule : m_pRenderModules)
 			pModule->Apply(context);

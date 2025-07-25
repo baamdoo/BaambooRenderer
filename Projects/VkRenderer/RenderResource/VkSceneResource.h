@@ -21,11 +21,25 @@ struct BufferHandle
 
 struct FrameData
 {
-    // data
-    CameraData camera = {};
+    // frame static data
+    CameraData     camera     = {};
+    struct
+    {
+        AtmosphereData data = {};
+
+        u32  msIsoSampleCount = 0;
+        u32  msNumRaySteps    = 0;
+        u32  svMinRaySteps    = 0;
+        u32  svMaxRaySteps    = 0;
+        bool bMark = false;
+    } atmosphere;
 
     // scene-resource
     struct SceneResource* pSceneResource = nullptr;
+
+    // LUTs
+    Weak< Texture > pSkyViewLUT;
+    Weak< Texture > pAerialPerspectiveLUT;
 
     // framebuffers
     Weak< Texture > pGBuffer0;

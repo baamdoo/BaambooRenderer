@@ -83,7 +83,7 @@ void GBufferModule::Apply(CommandContext& context)
 	context.BeginRenderPass(*m_pRenderTarget);
 	context.SetRenderPipeline(m_pGraphicsPipeline);
 
-	context.SetGraphicsDynamicUniformBuffer(0, g_FrameData.camera);
+	context.SetDynamicUniformBuffer(0, g_FrameData.camera);
 
 	context.DrawIndexedIndirect(*g_FrameData.pSceneResource);
 

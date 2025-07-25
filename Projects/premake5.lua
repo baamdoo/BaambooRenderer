@@ -247,13 +247,14 @@ project "Dx12Renderer"
 		}
 
 		nuget { 
-			"Microsoft.Direct3D.D3D12:1.616.1",
+			"Microsoft.Direct3D.D3D12:1.614.1",
 			"directxtk12_desktop_2019:2024.9.5.1",
+			"Microsoft.Direct3D.DXC:1.8.2502.8",
 		 }
     	-- Copy Agility SDK DLLs to output directory
     	postbuildcommands {
 			'{MKDIR} "%{cfg.buildtarget.directory}D3D12"',
-    	    '{COPYDIR} "%{_WORKING_DIR}//packages/Microsoft.Direct3D.D3D12.1.616.1/build/native/bin/" "%{cfg.buildtarget.directory}//D3D12"',
+    	    '{COPYDIR} "%{_WORKING_DIR}//packages/Microsoft.Direct3D.D3D12.1.614.1/build/native/bin/" "%{cfg.buildtarget.directory}//D3D12"',
     	}
 
 	filter "system:linux"
@@ -279,7 +280,7 @@ rule "VkShaderCompile"
 	fileextension { ".vert", ".frag", ".geom", ".hull", ".domain", ".task", ".mesh", ".comp" }
 
 	buildmessage 'Compiling %(Filename)%(Extension) to Spv'
-	buildcommands '$(VULKAN_SDK)/Bin/glslangValidator %(FullPath) -V -o %{Path.Spv}/%(Filename)%(Extension).spv'
+	buildcommands '$(VULKAN_SDK)/Bin/glslangValidator %(FullPath) -V -gVS -o %{Path.Spv}/%(Filename)%(Extension).spv'
 	buildoutputs '%{Path.Spv}/%(Filename)%(Extension).spv'
 project "VkRenderer"
 	location "VkRenderer"

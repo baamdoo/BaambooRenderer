@@ -95,19 +95,19 @@ VkImageViewCreateInfo Texture::GetViewDesc(const VkImageCreateInfo& imageInfo)
 		aspectFlags |= VK_IMAGE_ASPECT_STENCIL_BIT;
 
 	VkImageViewCreateInfo imageViewInfo{};
-	imageViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-	imageViewInfo.image = m_vkImage;
-	imageViewInfo.format = imageInfo.format;
+	imageViewInfo.sType      = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	imageViewInfo.image      = m_vkImage;
+	imageViewInfo.format     = imageInfo.format;
 	imageViewInfo.components = {
 		VK_COMPONENT_SWIZZLE_R,
 		VK_COMPONENT_SWIZZLE_G,
 		VK_COMPONENT_SWIZZLE_B,
 		VK_COMPONENT_SWIZZLE_A
 	};
-	imageViewInfo.subresourceRange.baseMipLevel = 0;
+	imageViewInfo.subresourceRange.baseMipLevel   = 0;
 	imageViewInfo.subresourceRange.baseArrayLayer = 0;
-	imageViewInfo.subresourceRange.aspectMask = aspectFlags;
-	imageViewInfo.subresourceRange.levelCount = imageInfo.mipLevels;
+	imageViewInfo.subresourceRange.aspectMask     = aspectFlags;
+	imageViewInfo.subresourceRange.levelCount     = imageInfo.mipLevels;
 
 	switch (imageInfo.imageType)
 	{
@@ -115,12 +115,12 @@ VkImageViewCreateInfo Texture::GetViewDesc(const VkImageCreateInfo& imageInfo)
 	{
 		if (imageInfo.arrayLayers > 1)
 		{
-			imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_1D_ARRAY;
+			imageViewInfo.viewType                    = VK_IMAGE_VIEW_TYPE_1D_ARRAY;
 			imageViewInfo.subresourceRange.layerCount = imageInfo.arrayLayers;
 		}
 		else
 		{
-			imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_1D;
+			imageViewInfo.viewType                    = VK_IMAGE_VIEW_TYPE_1D;
 			imageViewInfo.subresourceRange.layerCount = 1;
 		}
 		break;
@@ -131,12 +131,12 @@ VkImageViewCreateInfo Texture::GetViewDesc(const VkImageCreateInfo& imageInfo)
 		{
 			if (m_CreationInfo.type == eTextureType::TextureCube)
 			{
-				imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
+				imageViewInfo.viewType                    = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
 				imageViewInfo.subresourceRange.layerCount = imageInfo.arrayLayers * 6;
 			}
 			else
 			{
-				imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+				imageViewInfo.viewType                    = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
 				imageViewInfo.subresourceRange.layerCount = 1;
 			}
 		}
@@ -144,12 +144,12 @@ VkImageViewCreateInfo Texture::GetViewDesc(const VkImageCreateInfo& imageInfo)
 		{
 			if (m_CreationInfo.type == eTextureType::TextureCube)
 			{
-				imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+				imageViewInfo.viewType                    = VK_IMAGE_VIEW_TYPE_CUBE;
 				imageViewInfo.subresourceRange.layerCount = 6;
 			}
 			else
 			{
-				imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+				imageViewInfo.viewType                    = VK_IMAGE_VIEW_TYPE_2D;
 				imageViewInfo.subresourceRange.layerCount = 1;
 			}
 		}
@@ -159,7 +159,7 @@ VkImageViewCreateInfo Texture::GetViewDesc(const VkImageCreateInfo& imageInfo)
 	{
 		assert(imageInfo.arrayLayers == 1);
 		{
-			imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_3D;
+			imageViewInfo.viewType                    = VK_IMAGE_VIEW_TYPE_3D;
 			imageViewInfo.subresourceRange.layerCount = 1;
 		}
 		break;

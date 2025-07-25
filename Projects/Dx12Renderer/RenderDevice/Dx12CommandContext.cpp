@@ -335,16 +335,28 @@ void CommandContext::SetRenderTarget(const RenderTarget& renderTarget)
 		d3d12RenderTargetDescriptors.data(), FALSE, d3d12DSV);
 }
 
-void CommandContext::SetGraphics32BitConstant(u32 rootIndex, u32 srcValue, u32 dstOffset)
+void CommandContext::SetGraphicsRootConstant(u32 rootIndex, u32 srcValue, u32 dstOffset)
 {
 	m_d3d12CommandList->SetGraphicsRoot32BitConstant(rootIndex, srcValue, dstOffset);
 }
 
-void CommandContext::SetGraphics32BitConstants(u32 rootIndex, u32 srcSizeInBytes, void* srcData, u32 dstOffsetInBytes)
+void CommandContext::SetGraphicsRootConstants(u32 rootIndex, u32 srcSizeInBytes, void* srcData, u32 dstOffsetInBytes)
 {
 	u32 size      = srcSizeInBytes / 4;
 	u32 dstOffset = dstOffsetInBytes / 4;
 	m_d3d12CommandList->SetGraphicsRoot32BitConstants(rootIndex, size, srcData, dstOffset);
+}
+
+void CommandContext::SetComputeRootConstant(u32 rootIndex, u32 srcValue, u32 dstOffset)
+{
+	m_d3d12CommandList->SetComputeRoot32BitConstant(rootIndex, srcValue, dstOffset);
+}
+
+void CommandContext::SetComputeRootConstants(u32 rootIndex, u32 srcSizeInBytes, void* srcData, u32 dstOffsetInBytes)
+{
+	u32 size      = srcSizeInBytes / 4;
+	u32 dstOffset = dstOffsetInBytes / 4;
+	m_d3d12CommandList->SetComputeRoot32BitConstants(rootIndex, size, srcData, dstOffset);
 }
 
 void CommandContext::SetGraphicsDynamicConstantBuffer(u32 rootIndex, size_t sizeInBytes, const void* pData)

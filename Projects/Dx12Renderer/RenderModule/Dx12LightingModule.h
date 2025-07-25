@@ -21,6 +21,7 @@ private:
 
 	struct
 	{
+		u32 push     = INVALID_INDEX;
 		u32 camera   = INVALID_INDEX;
 		u32 light    = INVALID_INDEX;
 		u32 textures = INVALID_INDEX;

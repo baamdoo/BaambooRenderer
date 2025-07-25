@@ -46,7 +46,7 @@ PSOutput main(PSInput input)
         albedo = g_SceneTextures[NonUniformResourceIndex(material.albedoID)].Sample(g_LinearSampler, input.uv).rgb;
         //albedo = pow(albedo, 2.2);
     }
-    albedo *= float3(material.tintR, material.tintG, material.tintB);
+    albedo *= material.tint;
 
     float metallic  = material.metallic;
     float roughness = material.roughness;
@@ -60,7 +60,6 @@ PSOutput main(PSInput input)
         roughness *= orm.g;
         ao        *= orm.r;
     }
-    roughness = max(roughness, MIN_ROUGHNESS);
 
     float3 N = normalize(input.normalWORLD);
     if (material.normalID != INVALID_INDEX)

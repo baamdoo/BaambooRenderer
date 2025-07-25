@@ -422,7 +422,7 @@ void Texture::CreateViews()
             }
         }
         // Create UAV for each mip (only supported for 1D and 2D textures).
-        if ((desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS) != 0 && IsUAVSupported() && desc.DepthOrArraySize == 1)
+        if ((desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS) != 0 && IsUAVSupported())
         {
             m_UnorderedAccessView =
                 rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, desc.MipLevels);
