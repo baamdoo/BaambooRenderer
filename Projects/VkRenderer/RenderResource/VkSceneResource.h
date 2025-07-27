@@ -58,9 +58,9 @@ struct SceneResource
 
     void UpdateSceneResources(const SceneRenderView& sceneView);
 
-    BufferHandle GetOrUpdateVertex(u32 entity, const std::string& filepath, const void* pData, u32 count);
-    BufferHandle GetOrUpdateIndex(u32 entity, const std::string& filepath, const void* pData, u32 count);
-    Arc< Texture > GetOrLoadTexture(u32 entity, const std::string& filepath);
+    BufferHandle GetOrUpdateVertex(u64 entity, const std::string& filepath, const void* pData, u32 count);
+    BufferHandle GetOrUpdateIndex(u64 entity, const std::string& filepath, const void* pData, u32 count);
+    Arc< Texture > GetOrLoadTexture(u64 entity, const std::string& filepath);
     Arc< Texture > GetTexture(const std::string& filepath);
 
     [[nodiscard]]

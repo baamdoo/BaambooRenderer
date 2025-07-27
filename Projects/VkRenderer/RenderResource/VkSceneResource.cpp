@@ -336,7 +336,7 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 	descriptorSet.StageDescriptor(m_pLightAllocator->GetDescriptorInfo(), eStaticSetBindingIndex_Lighting, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 }
 
-BufferHandle SceneResource::GetOrUpdateVertex(u32 entity, const std::string& filepath, const void* pData, u32 count)
+BufferHandle SceneResource::GetOrUpdateVertex(u64 entity, const std::string& filepath, const void* pData, u32 count)
 {
 	auto& rm = m_RenderDevice.GetResourceManager();
 
@@ -360,7 +360,7 @@ BufferHandle SceneResource::GetOrUpdateVertex(u32 entity, const std::string& fil
 	return handle;
 }
 
-BufferHandle SceneResource::GetOrUpdateIndex(u32 entity, const std::string& filepath, const void* pData, u32 count)
+BufferHandle SceneResource::GetOrUpdateIndex(u64 entity, const std::string& filepath, const void* pData, u32 count)
 {
 	auto& rm = m_RenderDevice.GetResourceManager();
 
@@ -384,7 +384,7 @@ BufferHandle SceneResource::GetOrUpdateIndex(u32 entity, const std::string& file
 	return handle;
 }
 
-Arc< Texture > SceneResource::GetOrLoadTexture(u32 entity, const std::string& filepath)
+Arc< Texture > SceneResource::GetOrLoadTexture(u64 entity, const std::string& filepath)
 {
 	auto& rm = m_RenderDevice.GetResourceManager();
 

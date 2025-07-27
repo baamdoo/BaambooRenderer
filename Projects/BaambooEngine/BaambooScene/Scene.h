@@ -26,7 +26,6 @@ public:
 	class Entity ImportModel(Entity rootEntity, const fs::path& filepath, MeshDescriptor descriptor);
 
 	void Update(float dt);
-	void ResetMarks() { m_bFetchMarks = false; }
 
 	[[nodiscard]]
 	SceneRenderView RenderView(const EditorCamera& camera) const;
@@ -62,7 +61,6 @@ private:
 	std::string m_Name;
 	bool m_bLoading = false;
 
-	bool m_bFetchMarks = false;
 	// [entity, dirty-components]
 	std::unordered_map< u64, u64 > m_EntityDirtyMasks;
 

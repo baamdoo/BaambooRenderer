@@ -4,7 +4,7 @@
 #define _CAMERA
 #include "Common.hg"
 
-layout(set = SET_STATIC, binding = 1, std430) readonly buffer VertexBuffer 
+layout(set = SET_STATIC, binding = 1) readonly buffer VertexBuffer 
 {
     Vertex vertices[];
 } g_VertexBuffer;
@@ -34,12 +34,12 @@ void main()
     Vertex vertex           = g_VertexBuffer.vertices[gl_VertexIndex];
     TransformData transform = g_TransformBuffer.transforms[drawData.transformID];
     
-    vec4 posWORLD     = transform.mWorldToView * vec4(vertex.pos, 1.0);
-    vec4 normalWORLD  = transform.mWorldToView * vec4(vertex.normal, 0.0);
-    vec4 tangentWORLD = transform.mWorldToView * vec4(vertex.tangent, 0.0);
+    vec4 posWORLD     = transform.mWorldToView * vec4(vertex.posX, vertex.posY, vertex.posZ, 1.0);
+    vec4 normalWORLD  = transform.mWorldToView * vec4(vertex.normalX, vertex.normalY, vertex.normalZ, 0.0);
+    vec4 tangentWORLD = transform.mWorldToView * vec4(vertex.tangentX, vertex.tangentY, vertex.tangentZ, 0.0);
     
     outPosWORLD     = posWORLD.xyz;
-    outUv           = vertex.uv;
+    outUv           = vec2(vertex.u, vertex.v);
     outNormalWORLD  = normalize(normalWORLD.xyz);
     outTangentWORLD = normalize(tangentWORLD.xyz);
     outMaterialID   = drawData.materialID;

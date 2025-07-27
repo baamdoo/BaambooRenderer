@@ -1,4 +1,3 @@
-#define _HLSL
 #define _CAMERA
 #include "Common.hlsli"
 
@@ -41,7 +40,7 @@ VSOutput main(VSInput IN)
     output.posWORLD     = posWORLD.xyz;
     output.uv           = IN.uv;
     output.normalWORLD  = normalize(normalWORLD.xyz);
-    output.tangentWORLD = tangentWORLD.xyz;
+    output.tangentWORLD = normalize(tangentWORLD.xyz);
     output.position     = mul(g_Camera.mViewProj, posWORLD);
 
     // TODO

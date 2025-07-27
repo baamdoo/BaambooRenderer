@@ -81,9 +81,9 @@ float CalculateAttenuation(float distance, float lightRadius)
 
 float3 ApplyDirectionalLight(DirectionalLight light, float3 N, float3 V, float3 albedo, float metallic, float roughness, float3 F0)
 {
-    float3 L = normalize(-light.dir);
+    float3 L = normalize(float3(-light.dirX, -light.dirY, -light.dirZ));
 
-    float3 lightColor = light.color;
+    float3 lightColor = float3(light.colorR, light.colorG, light.colorB);
     if (light.temperature_K > 0.0)
         lightColor *= ColorTemperatureToRGB(light.temperature_K);
 
@@ -98,10 +98,10 @@ float3 ApplyDirectionalLight(DirectionalLight light, float3 N, float3 V, float3 
 
 float3 ApplyPointLight(PointLight light, float3 P, float3 N, float3 V, float3 albedo, float metallic, float roughness, float3 F0)
 {
-    float3 L        = light.pos - P;
+    float3 L        = float3(light.posX, light.posY, light.posZ) - P;
     float  distance = length(L);
 
-    float3 lightColor = light.color;
+    float3 lightColor = float3(light.colorR, light.colorG, light.colorB);
     if (light.temperature_K > 0.0)
         lightColor *= ColorTemperatureToRGB(light.temperature_K);
 
@@ -123,12 +123,12 @@ float3 ApplyPointLight(PointLight light, float3 P, float3 N, float3 V, float3 al
 
 float3 ApplySpotLight(SpotLight light, float3 P, float3 N, float3 V, float3 albedo, float metallic, float roughness, float3 F0)
 {
-    float3 L       = light.pos - P;
+    float3 L       = float3(light.posX, light.posY, light.posZ) - P;
     float distance = length(L);
     L             /= distance;
 
     // cone attenuation
-    float cosTheta        = dot(L, normalize(-light.dir));
+    float cosTheta        = dot(L, normalize(float3(-light.dirX, -light.dirY, -light.dirZ)));
     float cosThetaInner   = cos(light.innerConeAngle_rad);
     float cosThetaOuter   = cos(light.outerConeAngle_rad);
     float spotAttenuation = clamp((cosTheta - cosThetaOuter) / (cosThetaInner - cosThetaOuter), 0.0, 1.0);
@@ -136,7 +136,7 @@ float3 ApplySpotLight(SpotLight light, float3 P, float3 N, float3 V, float3 albe
     if (spotAttenuation == 0.0)
         return float3(0.0, 0.0, 0.0);
 
-    float3 lightColor = light.color;
+    float3 lightColor = float3(light.colorR, light.colorG, light.colorB);
     if (light.temperature_K > 0.0)
         lightColor *= ColorTemperatureToRGB(light.temperature_K);
 
@@ -186,7 +186,8 @@ float2 GetUvFromSkyViewRayDirection(float longitude, float latitude, float viewH
 
 float3 GetSunLuminance(float3 rayDir, bool bIntersectGround)
 {
-    if (dot(rayDir, -g_Lights.directionals[0].dir) > cos(0.5 * 0.505 * PI / 180.0))
+    float3 L = float3(-g_Lights.directionals[0].dirX, -g_Lights.directionals[0].dirY, -g_Lights.directionals[0].dirZ);
+    if (dot(rayDir, L) > cos(0.5 * 0.505 * PI / 180.0))
     {
         if (!bIntersectGround)
         {

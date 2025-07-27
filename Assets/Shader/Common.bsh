@@ -31,26 +31,39 @@ using mat4 = float4x4;
 //-------------------------------------------------------------------------
 struct Vertex
 {
-	vec3 pos;
-	vec2 uv;
-	vec3 normal;
-	vec3 tangent;
+	float posX, posY, posZ;
+	float u, v;
+	float normalX, normalY, normalZ;
+	float tangentX, tangentY, tangentZ;
 };
 
 struct SkinnedVertex
 {
-    vec3 pos;
-	vec2 uv;
-	vec3 normal;
-	vec3 tangent;
-    uint boneIndices;  // one index per byte
-    vec4 weight0, weight1, weight2, weight3;
+    float posX, posY, posZ;
+    float u, v;
+    float normalX, normalY, normalZ;
+    float tangentX, tangentY, tangentZ;
+    uint  boneIndices;  // one index per byte
+    float weight0, weight1, weight2, weight3;
 };
 
 
 //-------------------------------------------------------------------------
 // Transforms
 //-------------------------------------------------------------------------
+#ifdef _HLSL
+struct TransformData
+{
+    float4x4 mWorldToView;
+    float4x4 mViewToWorld;
+};
+
+struct BoneTransformData
+{
+    float4x4 mBoneTransform;
+};
+
+#elif defined(_GLSL)
 struct TransformData
 {
 	mat4 mWorldToView;
@@ -79,13 +92,14 @@ struct DrawData
 	
 	float padding0, padding1;
 };
+#endif
 
 //-------------------------------------------------------------------------
 // Material
 //-------------------------------------------------------------------------
 struct MaterialData 
 {
-	vec3  tint; 
+	float tintR, tintG, tintB; 
 	float metallic; 
 	float roughness;
 	float ior;
@@ -106,9 +120,9 @@ struct MaterialData
 //-------------------------------------------------------------------------
 struct DirectionalLight
 {
-	vec3  dir;
+	float dirX, dirY, dirZ;
 	float illuminance_lux; // lm/m^2
-	vec3  color;
+	float colorR, colorG, colorB;
 	float angularRadius_rad;
 	float temperature_K;
 	float padding0, padding1, padding2;
@@ -116,9 +130,9 @@ struct DirectionalLight
 
 struct PointLight
 {
-	vec3  pos;
+	float posX, posY, posZ;
 	float luminousFlux_lm;
-	vec3  color;
+	float colorR, colorG, colorB;
 	float radius_m;
 	float temperature_K;
 	float padding0, padding1, padding2;
@@ -126,11 +140,11 @@ struct PointLight
 
 struct SpotLight
 {
-	vec3  pos;
+	float posX, posY, posZ;
 	float luminousFlux_lm;
-	vec3  dir;
+	float dirX, dirY, dirZ;
 	float radius_m;
-	vec3  color;
+	float colorR, colorG, colorB;
 	float innerConeAngle_rad;
 	float outerConeAngle_rad;
 	float temperature_K;

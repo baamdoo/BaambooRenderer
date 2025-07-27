@@ -190,8 +190,6 @@ void Engine::GameLoop(float dt)
 		m_RenderViewQueue.replace(m_pScene->RenderView(*m_pCamera));
 	else
 		m_RenderViewQueue.push(m_pScene->RenderView(*m_pCamera));
-
-	m_pScene->ResetMarks();
 }
 
 void Engine::RenderLoop()

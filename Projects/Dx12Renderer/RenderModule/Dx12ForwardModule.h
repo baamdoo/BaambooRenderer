@@ -15,6 +15,8 @@ public:
 	virtual void Apply(CommandContext& context) override;
 
 private:
+	RootSignature*    m_pForwardRS = nullptr;
+	GraphicsPipeline* m_pForwardPSO = nullptr;
 };
 
 } // namespace dx12

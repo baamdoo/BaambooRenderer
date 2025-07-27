@@ -241,39 +241,37 @@ void Scene::Update(f32 dt)
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
 		dirtyMarks |= (1 << eComponentType::CTransform);
-
-		m_bFetchMarks |= dirtyMarks;
 	}
 
 	for (auto entity : m_pStaticMeshSystem->Update())
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
 		dirtyMarks |= (1 << eComponentType::CStaticMesh);
-
-		m_bFetchMarks |= dirtyMarks;
 	}
 
 	for (auto entity : m_pMaterialSystem->Update())
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
 		dirtyMarks |= (1 << eComponentType::CMaterial);
-
-		m_bFetchMarks |= dirtyMarks;
 	}
 
 	for (auto entity : m_pAtmosphereSystem->Update())
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
 		dirtyMarks |= (1 << eComponentType::CAtmosphere);
-
-		m_bFetchMarks |= dirtyMarks;
 	}
 }
 
 SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 {
+	bool bMarkedAny = false;
+	for (const auto& pair : m_EntityDirtyMasks)
+	{
+		bMarkedAny |= pair.second;
+	}
+
 	SceneRenderView view{};
-	view.pEntityDirtyMarks = m_bFetchMarks ? const_cast<std::unordered_map< u64, u64 >*>(&m_EntityDirtyMasks) : nullptr;
+	view.pEntityDirtyMarks = bMarkedAny ? const_cast<std::unordered_map< u64, u64 >*>(&m_EntityDirtyMasks) : nullptr;
 
 	view.camera.mView = camera.GetView();
 	view.camera.mProj = camera.GetProj();
@@ -364,7 +362,7 @@ SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 					if (m_Registry.any_of< AtmosphereComponent >(id))
 					{
 						auto& atmosphereComponent  = m_Registry.get< AtmosphereComponent >(id);
-
+						view.atmosphere.id                       = entt::to_integral(id);
 						view.atmosphere.data.light               = dirLight;
 						view.atmosphere.data.planetRadius_km     = atmosphereComponent.planetRadius_km;
 						view.atmosphere.data.atmosphereRadius_km = atmosphereComponent.atmosphereRadius_km;

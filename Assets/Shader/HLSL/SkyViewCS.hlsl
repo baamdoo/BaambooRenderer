@@ -69,14 +69,14 @@ float4 RayMarchScattering(float3 rayOrigin, float3 rayDir, float maxDistance)
         return 0.0;
 
     // light illuminance
-    float3 lightColor = g_Atmosphere.light.color;
+    float3 lightColor = float3(g_Atmosphere.light.colorR, g_Atmosphere.light.colorG, g_Atmosphere.light.colorB);
     if (g_Atmosphere.light.temperature_K > 0.0)
         lightColor *= ColorTemperatureToRGB(g_Atmosphere.light.temperature_K);
 
     float3 E = g_Atmosphere.light.illuminance_lux * lightColor;
 
     // phase functions
-    float cosTheta      = dot(rayDir, -g_Atmosphere.light.dir);
+    float cosTheta      = dot(rayDir, float3(-g_Atmosphere.light.dirX, -g_Atmosphere.light.dirY, -g_Atmosphere.light.dirZ));
     float phaseRayleigh = RayleighPhase(cosTheta);
     float phaseMie      = MiePhase(cosTheta, g_Atmosphere.miePhaseG);
 
@@ -119,7 +119,7 @@ float4 RayMarchScattering(float3 rayOrigin, float3 rayDir, float maxDistance)
         
         // transmittance from sample point to sun
         float  sampleHeight       = viewHeight;
-        float  sampleTheta        = dot(normalize(pos), -g_Atmosphere.light.dir);
+        float  sampleTheta        = dot(normalize(pos), float3(-g_Atmosphere.light.dirX, -g_Atmosphere.light.dirY, -g_Atmosphere.light.dirZ));
         float3 transmittanceToSun = SampleTransmittanceLUT(g_TransmittanceLUT, g_LinearClampSampler, sampleHeight, sampleTheta, g_Atmosphere.planetRadius_km, g_Atmosphere.atmosphereRadius_km);
 
         // multi-scattering
@@ -129,7 +129,7 @@ float4 RayMarchScattering(float3 rayOrigin, float3 rayDir, float maxDistance)
         float3 multiScattering = g_MultiScatteringLUT.SampleLevel(g_LinearClampSampler, msUV, 0).rgb;
         
         // planet shadow
-        float2  planetIntersection = RaySphereIntersection(pos, -g_Atmosphere.light.dir, PLANET_CENTER, g_Atmosphere.planetRadius_km);
+        float2  planetIntersection = RaySphereIntersection(pos, float3(-g_Atmosphere.light.dirX, -g_Atmosphere.light.dirY, -g_Atmosphere.light.dirZ), PLANET_CENTER, g_Atmosphere.planetRadius_km);
         float planetShadow       = planetIntersection.x < 0.0 ? 1.0 : 0.0;
 
         {
