@@ -155,9 +155,12 @@ bool ExampleApp::LoadScene()
 		descriptor.bWindingCW     = true;
 
 		auto entity = m_pScene->ImportModel(MODEL_PATH.append("kitten.obj"), descriptor);
+		entity.AttachComponent< ScriptComponent >();
+
 		auto& entitytc = entity.GetComponent< TransformComponent >();
 		entitytc.transform.position = { 0.0f, 0.0f, 500.0f };
 		entitytc.transform.scale    = { 100.0f, 100.0f, 100.0f };
+
 
 		/*auto dhEntity = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
 		auto& tcdh = dhEntity.GetComponent< TransformComponent >();
@@ -169,7 +172,7 @@ bool ExampleApp::LoadScene()
 
 	// animated mesh
 	{
-		MeshDescriptor descriptor  = {};
+		/*MeshDescriptor descriptor  = {};
 		descriptor.rootPath        = GetModelPath();
 		descriptor.scale           = 10000.0f;
 		descriptor.rendererAPI     = m_eBackendAPI;
@@ -190,7 +193,7 @@ bool ExampleApp::LoadScene()
 				animComp.bLoop         = true;
 				animComp.playbackSpeed = 1.0f;
 			}
-		}
+		}*/
 	}
 
 	{
@@ -245,6 +248,12 @@ bool ExampleApp::LoadScene()
 		//auto& transform              = spotLight.GetComponent< TransformComponent >();
 		//transform.transform.position = float3(0.0f, 10.0f, 0.0f);
 		//transform.transform.rotation = float3(90.0f, 0.0f, 0.0f); // Point down
+	}
+
+	// post-process volume
+	{
+		auto volume = m_pScene->CreateEntity("PostProcessVolume");
+		volume.AttachComponent< PostProcessComponent >();
 	}
 
 	return true;

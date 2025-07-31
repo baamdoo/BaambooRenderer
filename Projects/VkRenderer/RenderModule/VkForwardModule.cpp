@@ -22,7 +22,7 @@ ForwardModule::~ForwardModule()
 	
 }
 
-void ForwardModule::Apply(CommandContext& context)
+void ForwardModule::Apply(CommandContext& context, const SceneRenderView& renderView)
 {
 	
 }

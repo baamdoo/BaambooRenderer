@@ -10,6 +10,7 @@
 #include <imgui/imgui.h>
 #include <imgui/misc/cpp/imgui_stdlib.h>
 #include <glm/gtc/type_ptr.hpp>
+#include <magic_enum/magic_enum.hpp>
 
 namespace ImGui
 {
@@ -325,6 +326,7 @@ void Engine::DrawUI()
 			if (ImGui::SelectedEntity.HasAll< TransformComponent >())
 			{
 				bool bMark = false;
+
 				if (ImGui::CollapsingHeader("Transform"))
 				{
 					auto& transformComponent = ImGui::SelectedEntity.GetComponent< TransformComponent >();
@@ -473,9 +475,9 @@ void Engine::DrawUI()
 					if (ImGui::IsItemHovered())
 					{
 						ImGui::BeginTooltip();
+						ImGui::Text("Use RGB color if temperature is 0");
 						ImGui::EndTooltip();
 					}
-
 
 					switch (component.type)
 					{
@@ -534,6 +536,8 @@ void Engine::DrawUI()
 					}
 
 					}
+
+					ImGui::DragFloat("EV100", &component.ev100, 0.01f, -10.0f, 10.0f, "%.2f");
 				}
 			}
 
@@ -676,6 +680,120 @@ void Engine::DrawUI()
 				}
 			}
 
+			if (ImGui::SelectedEntity.HasAll< PostProcessComponent >())
+			{
+				if (ImGui::CollapsingHeader("PostProcess"))
+				{
+					bool bMark = false;
+					ImGui::Indent();
+					{
+						auto& component = ImGui::SelectedEntity.GetComponent< PostProcessComponent >();
+						if (ImGui::CollapsingHeader("Height Fog(TODO)"))
+						{
+							bool bApply = component.effectBits & ePostProcess::HeightFog;
+							bMark |= ImGui::Checkbox("Apply HeightFog", &bApply);
+							component.effectBits =
+								(component.effectBits & ~(1 << ePostProcess::AntiAliasing)) | (bApply << ePostProcess::HeightFog);
+
+							ImGui::DragFloat("ExponentialFactor", &component.heightFog.exponentialFactor, 0.1f, 0.0f, 20.0f, "%.1f");
+						}
+
+						if (ImGui::CollapsingHeader("Bloom(TODO)"))
+						{
+							bool bApply = component.effectBits & ePostProcess::Bloom;
+							bMark |= ImGui::Checkbox("Apply Bloom", &bApply);
+							component.effectBits =
+								(component.effectBits & ~(1 << ePostProcess::AntiAliasing)) | (bApply << ePostProcess::Bloom);
+
+							ImGui::DragInt("FilterSize", &component.bloom.filterSize, 1, 1, 16);
+						}
+
+						if (ImGui::CollapsingHeader("AntiAliasing"))
+						{
+							bool bApply = component.effectBits & (1 << ePostProcess::AntiAliasing);
+							bMark |= ImGui::Checkbox("Apply Anti-Aliasing", &bApply);
+							component.effectBits =
+								(component.effectBits & ~(1 << ePostProcess::AntiAliasing)) | (bApply << ePostProcess::AntiAliasing);
+
+							auto svCurrentType = magic_enum::enum_name(component.aa.type);
+							if (ImGui::BeginCombo("AntiAliasing Type", svCurrentType.data()))
+							{
+								if (ImGui::Selectable("TAA", component.aa.type == eAntiAliasingType::TAA))
+								{
+									component.aa.type = eAntiAliasingType::TAA;
+
+									bMark = true;
+								}
+								if (ImGui::Selectable("FXAA", component.aa.type == eAntiAliasingType::FXAA))
+								{
+									component.aa.type = eAntiAliasingType::FXAA;
+
+									bMark = true;
+								}
+
+								ImGui::EndCombo();
+							}
+
+							if (component.aa.type == eAntiAliasingType::TAA)
+							{
+								bMark |= ImGui::DragFloat("Blend Factor", &component.aa.blendFactor, 0.01f, 0.0f, 1.0f, "%.2f");
+								bMark |= ImGui::DragFloat("Sharpness", &component.aa.sharpness, 0.01f, 0.0f, 1.0f, "%.2f");
+							}
+						}
+
+						if (ImGui::CollapsingHeader("ToneMapping"))
+						{
+							auto svCurrentOp = magic_enum::enum_name(component.tonemap.op);
+							if (ImGui::BeginCombo("ToneMap Operation", svCurrentOp.data()))
+							{
+								if (ImGui::Selectable("Reinhard", component.tonemap.op == eToneMappingOp::Reinhard))
+								{
+									component.tonemap.op = eToneMappingOp::Reinhard;
+
+									bMark = true;
+								}
+								if (ImGui::Selectable("ACES", component.tonemap.op == eToneMappingOp::ACES))
+								{
+									component.tonemap.op = eToneMappingOp::ACES;
+
+									bMark = true;
+								}
+								if (ImGui::Selectable("Uncharted2", component.tonemap.op == eToneMappingOp::Uncharted2))
+								{
+									component.tonemap.op = eToneMappingOp::Uncharted2;
+
+									bMark = true;
+								}
+
+								ImGui::EndCombo();
+							}
+
+							bMark |= ImGui::DragFloat("Gamma", &component.tonemap.gamma, 0.1f, 0.1f, 10.0f, "%.1f");
+						}
+					}
+					ImGui::Unindent();
+
+					if (bMark)
+					{
+						m_pScene->Registry().patch< PostProcessComponent >(ImGui::SelectedEntity.ID(), [](auto&) {});
+					}
+				}
+			}
+
+			if (ImGui::SelectedEntity.HasAll< ScriptComponent >())
+			{
+				if (ImGui::CollapsingHeader("Behaviour"))
+				{
+					auto& scriptComponent = ImGui::SelectedEntity.GetComponent< ScriptComponent >();
+
+					ImGui::Checkbox("Move", &scriptComponent.bMove);
+					ImGui::DragFloat3("MoveVelocity", glm::value_ptr(scriptComponent.moveVelocity), 0.1f, -10.0f, 10.0f);
+
+					ImGui::Checkbox("Rotate", &scriptComponent.bRotate);
+					ImGui::DragFloat3("RotationVelocity", glm::value_ptr(scriptComponent.rotationVelocity), 0.01f, -1.0f, 1.0f);
+				}
+			}
+
 			if (ImGui::Button("Add Component"))
 				ImGui::OpenPopup("AddComponentPopup");
 
@@ -721,6 +839,24 @@ void Engine::DrawUI()
 		}
 		ImGui::End();
 	}
+
+	// apply script behaviour
+	m_pScene->Registry().view< TransformComponent, ScriptComponent >().each([this](auto id, auto& transformComponent, auto& scriptComponent)
+		{
+			if (scriptComponent.bMove)
+			{
+				transformComponent.transform.position += scriptComponent.moveVelocity;
+
+				m_pScene->Registry().patch< TransformComponent >(ImGui::SelectedEntity.ID(), [](auto&) {});
+			}
+
+			if (scriptComponent.bRotate)
+			{
+				transformComponent.transform.Rotate(scriptComponent.rotationVelocity.y, scriptComponent.rotationVelocity.x, scriptComponent.rotationVelocity.z);
+
+				m_pScene->Registry().patch< TransformComponent >(ImGui::SelectedEntity.ID(), [](auto&) {});
+			}
+		});
 
 
 	// **

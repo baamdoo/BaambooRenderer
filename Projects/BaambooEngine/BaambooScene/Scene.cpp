@@ -7,6 +7,7 @@
 #include "Systems/MeshSystem.h"
 #include "Systems/MaterialSystem.h"
 #include "Systems/AtmosphereSystem.h"
+#include "Systems/PostProcessSystem.h"
 
 #include <queue>
 #include <glm/gtx/matrix_decompose.hpp>
@@ -19,10 +20,11 @@ static std::unordered_map< std::string, Entity > s_ModelCache;
 Scene::Scene(const std::string& name)
 	: m_Name(name)
 {
-	m_pTransformSystem  = new TransformSystem(m_Registry);
-	m_pStaticMeshSystem = new StaticMeshSystem(m_Registry);
-	m_pMaterialSystem   = new MaterialSystem(m_Registry);
-	m_pAtmosphereSystem = new AtmosphereSystem(m_Registry);
+	m_pTransformSystem   = new TransformSystem(m_Registry);
+	m_pStaticMeshSystem  = new StaticMeshSystem(m_Registry);
+	m_pMaterialSystem    = new MaterialSystem(m_Registry);
+	m_pAtmosphereSystem  = new AtmosphereSystem(m_Registry);
+	m_pPostProcessSystem = new PostProcessSystem(m_Registry);
 }
 
 Scene::~Scene()
@@ -30,6 +32,7 @@ Scene::~Scene()
 	for (auto& [_, pLoader] : m_ModelLoaderCache)
 		RELEASE(pLoader);
 
+	RELEASE(m_pPostProcessSystem);
 	RELEASE(m_pAtmosphereSystem);
 	RELEASE(m_pMaterialSystem);
 	RELEASE(m_pStaticMeshSystem);
@@ -237,6 +240,8 @@ u32 Scene::StoreAnimationClip(const AnimationClip& clip)
 
 void Scene::Update(f32 dt)
 {
+	std::lock_guard< std::mutex > lock(m_SceneMutex);
+
 	for (auto entity : m_pTransformSystem->Update())
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
@@ -260,6 +265,12 @@ void Scene::Update(f32 dt)
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
 		dirtyMarks |= (1 << eComponentType::CAtmosphere);
 	}
+
+	for (auto entity : m_pPostProcessSystem->Update())
+	{
+		u64& dirtyMarks = m_EntityDirtyMasks[entity];
+		dirtyMarks |= (1 << eComponentType::CPostProcess);
+	}
 }
 
 SceneRenderView Scene::RenderView(const EditorCamera& camera) const
@@ -271,7 +282,8 @@ SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 	}
 
 	SceneRenderView view{};
-	view.pEntityDirtyMarks = bMarkedAny ? const_cast<std::unordered_map< u64, u64 >*>(&m_EntityDirtyMasks) : nullptr;
+	view.pSceneMutex       = &m_SceneMutex;
+	view.pEntityDirtyMarks = bMarkedAny ? &m_EntityDirtyMasks : nullptr;
 
 	view.camera.mView = camera.GetView();
 	view.camera.mProj = camera.GetProj();
@@ -430,6 +442,24 @@ SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 				}
 				break;
 			}
+
+			view.light.ev100 = lightComponent.ev100;
+		});
+
+	m_Registry.view< PostProcessComponent >().each([this, &view](auto id, auto& postProcessComponent)
+		{
+			PostProcessRenderView postProcessView = {};
+			postProcessView.id         = entt::to_integral(id);
+			postProcessView.effectBits = postProcessComponent.effectBits;
+
+			postProcessView.aa.type        = postProcessComponent.aa.type;
+			postProcessView.aa.blendFactor = postProcessComponent.aa.blendFactor;
+			postProcessView.aa.sharpness   = postProcessComponent.aa.sharpness;
+
+			postProcessView.tonemap.op    = postProcessComponent.tonemap.op;
+			postProcessView.tonemap.gamma = postProcessComponent.tonemap.gamma;
+
+			view.postProcess = postProcessView;
 		});
 
 	return view;

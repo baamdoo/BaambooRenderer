@@ -34,6 +34,7 @@ project "Application"
 		"%{Path.Solution}Projects/ThirdParties/imgui",
 		"%{Path.Solution}Projects/ThirdParties/entt/single_include",
 		"%{Path.Solution}Projects/ThirdParties/assimp/include",
+		"%{Path.Solution}Projects/ThirdParties/magic_enum/include",
 	}
 
 	links {
@@ -108,6 +109,7 @@ project "BaambooEngine"
 		"%{Path.Solution}Projects/ThirdParties/imgui",
 		"%{Path.Solution}Projects/ThirdParties/entt/single_include",
 		"%{Path.Solution}Projects/ThirdParties/assimp/include",
+		"%{Path.Solution}Projects/ThirdParties/magic_enum/include",
 	}
 
 	libdirs {

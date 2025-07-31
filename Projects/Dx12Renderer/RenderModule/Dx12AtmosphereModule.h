@@ -11,7 +11,7 @@ public:
 	AtmosphereModule(RenderDevice& device);
 	virtual ~AtmosphereModule();
 
-	virtual void Apply(CommandContext& context) override;
+	virtual void Apply(CommandContext& context, const SceneRenderView& renderView) override;
 
 private:
 	Arc< Texture > m_pTransmittanceLUT;

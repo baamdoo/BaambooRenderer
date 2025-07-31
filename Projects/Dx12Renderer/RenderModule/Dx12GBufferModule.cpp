@@ -120,8 +120,10 @@ GBufferModule::~GBufferModule()
 	RELEASE(m_pGraphicsPipeline);
 }
 
-void GBufferModule::Apply(CommandContext& context)
+void GBufferModule::Apply(CommandContext& context, const SceneRenderView& renderView)
 {
+	UNUSED(renderView);
+
 	m_RenderTarget.ClearTexture(context, eAttachmentPoint::All);
 	context.SetRenderTarget(m_RenderTarget);
 

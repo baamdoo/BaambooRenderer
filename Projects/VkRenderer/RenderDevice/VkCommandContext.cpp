@@ -418,7 +418,7 @@ void CommandContext::TransitionImageLayout(
 
 	Texture::State newState = { 
 		.access = imageMemoryBarrier.dstAccessMask, 
-		.stage = dstStageMask, 
+		.stage  = dstStageMask, 
 		.layout = newLayout 
 	};
 	if (pTexture)
@@ -462,7 +462,7 @@ void CommandContext::ClearTexture(
 	}
 }
 
-void CommandContext::SetPushConstants(u32 sizeInBytes, void* data, VkShaderStageFlags stages, u32 offsetInBytes)
+void CommandContext::SetPushConstants(u32 sizeInBytes, const void* data, VkShaderStageFlags stages, u32 offsetInBytes)
 {
 	assert(m_pGraphicsPipeline || m_pComputePipeline);
 	vkCmdPushConstants(m_vkCommandBuffer, m_pGraphicsPipeline ? m_pGraphicsPipeline->vkPipelineLayout() : m_pComputePipeline->vkPipelineLayout(), stages, offsetInBytes, sizeInBytes, data);

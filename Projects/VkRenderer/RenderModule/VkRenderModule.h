@@ -1,4 +1,5 @@
 #pragma once
+#include "SceneRenderView.h"
 
 namespace vk
 {
@@ -18,7 +19,7 @@ public:
 	RenderModule(RenderDevice& device) : m_RenderDevice(device) {}
 	virtual ~RenderModule() = default;
 
-	virtual void Apply(CommandContext& context) { UNUSED(context); }
+	virtual void Apply(CommandContext& context, const SceneRenderView& renderView) { UNUSED(context); UNUSED(renderView); }
 	virtual void Resize(u32 width, u32 height, u32 depth = 1) { UNUSED(width); UNUSED(height); UNUSED(depth); }
 
 protected:

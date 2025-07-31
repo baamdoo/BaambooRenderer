@@ -5,7 +5,7 @@ namespace vk
 
 class CommandQueue;
 class CommandContext;
-class SceneResource;
+struct SceneResource;
 class ResourceManager;
 class DescriptorSet;
 class DescriptorPool;

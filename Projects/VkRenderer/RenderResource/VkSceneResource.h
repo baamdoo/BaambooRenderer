@@ -21,18 +21,12 @@ struct BufferHandle
 
 struct FrameData
 {
-    // frame static data
-    CameraData     camera     = {};
-    struct
-    {
-        AtmosphereData data = {};
+    u64 frameCounter;
 
-        u32  msIsoSampleCount = 0;
-        u32  msNumRaySteps    = 0;
-        u32  svMinRaySteps    = 0;
-        u32  svMaxRaySteps    = 0;
-        bool bMark = false;
-    } atmosphere;
+    // frame static data
+    CameraData camera;
+
+    u64 componentMarker;
 
     // scene-resource
     struct SceneResource* pSceneResource = nullptr;
@@ -48,6 +42,10 @@ struct FrameData
     Weak< Texture > pGBuffer3;
     Weak< Texture > pColor;
     Weak< Texture > pDepth;
+
+    // samplers
+    Arc< Sampler > pLinearClamp;
+    Arc< Sampler > pPointClamp;
 };
 inline FrameData g_FrameData;
 

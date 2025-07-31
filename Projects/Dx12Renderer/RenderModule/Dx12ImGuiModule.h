@@ -17,7 +17,7 @@ public:
 	ImGuiModule(RenderDevice& device, ImGuiContext* pImGuiContext);
 	virtual ~ImGuiModule();
 
-	virtual void Apply(CommandContext& context) override;
+	virtual void Apply(CommandContext& context, const SceneRenderView& renderView) override;
 
 private:
 	RenderTarget m_RenderTarget;

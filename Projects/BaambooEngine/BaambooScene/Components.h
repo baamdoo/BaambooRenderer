@@ -1,10 +1,10 @@
 #pragma once
 #include "Transform.hpp"
 #include "Boundings.h"
+#include "ComponentTypes.h"
+#include "AnimationTypes.h"
 
 #include <entt/entt.hpp>
-
-#include "AnimationTypes.h"
 
 
 //-------------------------------------------------------------------------
@@ -192,6 +192,8 @@ struct LightComponent
 	float innerConeAngle_rad = PI_DIV(4.0f);
 	float outerConeAngle_rad = PI_DIV(3.0f);
 
+	float ev100 = 0.0f;
+
 	bool bDirtyMark;
 
 	void SetDefaultDirectionalLight()
@@ -230,20 +232,10 @@ struct LightComponent
 		outerConeAngle_rad = PI_DIV(3.0f);
 	}
 };
-inline std::string_view GetLightTypeString(eLightType type)
-{
-	switch (type)
-	{
-	case eLightType::Directional: return "Directional";
-	case eLightType::Point: return "Point";
-	case eLightType::Spot: return "Spot";
-	default: return "Unknown";
-	}
-}
 
 
 //-------------------------------------------------------------------------
-// Atmosphere : Render sky by simulating scattering
+// AtmosphereComponent : Render sky by simulating scattering
 //-------------------------------------------------------------------------
 enum class eRaymarchResolution
 {
@@ -270,4 +262,64 @@ struct AtmosphereComponent
 	float  ozoneWidth_km   = 30.0f;
 
 	eRaymarchResolution raymarchResolution = eRaymarchResolution::Middle;
+};
+
+
+//-------------------------------------------------------------------------
+// PostProcessComponent : Determines PostProcess Effects
+//-------------------------------------------------------------------------
+struct PostProcessComponent
+{
+	u64 effectBits = 0;
+
+	// height fog (TODO)
+	struct
+	{
+		float exponentialFactor;
+	} heightFog;
+
+	// bloom (TODO)
+	struct
+	{
+		i32 filterSize;
+	} bloom;
+
+	// anti-aliasing
+	struct
+	{
+		eAntiAliasingType type;
+
+		// TAA
+		float blendFactor;
+		float sharpness;
+	} aa;
+
+	// tone-mapping
+	struct
+	{
+		eToneMappingOp op;
+
+		float gamma;
+	} tonemap;
+};
+
+
+//-------------------------------------------------------------------------
+// ScriptComponent : Determines behaviour
+//-------------------------------------------------------------------------
+enum eRotationAxis
+{
+	Pitch = 0,
+	Yaw   = 1,
+	Roll  = 2
+};
+
+// TODO: test-only for now
+struct ScriptComponent
+{
+	bool   bMove        = false;
+	float3 moveVelocity = float3(0.1f, 0.0f, 0.0f);
+
+	bool   bRotate          = false;
+	float3 rotationVelocity = float3(0.0f, 0.01f, 0.0f);
 };

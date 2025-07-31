@@ -56,7 +56,6 @@ AtmosphereModule::AtmosphereModule(RenderDevice& device)
 				.format     = VK_FORMAT_R16G16B16A16_SFLOAT,
 				.imageUsage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
 			});
-	m_pLinearClampSampler  = Sampler::CreateLinearClamp(m_RenderDevice);
 
 	m_pTransmittancePSO = MakeBox< ComputePipeline >(m_RenderDevice, "TransmittancePSO");
 	m_pTransmittancePSO->SetComputeShader(
@@ -91,23 +90,23 @@ AtmosphereModule::~AtmosphereModule()
 {
 }
 
-void AtmosphereModule::Apply(CommandContext& context)
+void AtmosphereModule::Apply(CommandContext& context, const SceneRenderView& renderView)
 {
-	if (g_FrameData.atmosphere.bMark)
+	if (g_FrameData.componentMarker & (1 << eComponentType::CAtmosphere))
 	{
 		context.SetRenderPipeline(m_pTransmittancePSO.get());
 		context.TransitionImageLayout(m_pTransmittanceLUT, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
-		context.SetDynamicUniformBuffer(1, g_FrameData.atmosphere.data);
+		context.SetDynamicUniformBuffer(1, renderView.atmosphere.data);
 		context.PushDescriptors(2, { VK_NULL_HANDLE, m_pTransmittanceLUT->vkView(), VK_IMAGE_LAYOUT_GENERAL}, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 		context.Dispatch2D< 8, 8 >(TRANSMITTANCE_LUT_RESOLUTION.width, TRANSMITTANCE_LUT_RESOLUTION.height);
 
 		context.SetRenderPipeline(m_pMultiScatteringPSO.get());
 		context.TransitionImageLayout(m_pTransmittanceLUT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 		context.TransitionImageLayout(m_pMultiScatteringLUT, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
-		context.SetPushConstants(sizeof(u32), &g_FrameData.atmosphere.msIsoSampleCount, VK_SHADER_STAGE_COMPUTE_BIT, 0);
-		context.SetPushConstants(sizeof(u32), &g_FrameData.atmosphere.msNumRaySteps, VK_SHADER_STAGE_COMPUTE_BIT, sizeof(u32));
-		context.SetDynamicUniformBuffer(1, g_FrameData.atmosphere.data);
-		context.PushDescriptors(2, { m_pLinearClampSampler->vkSampler(), m_pTransmittanceLUT->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+		context.SetPushConstants(sizeof(u32), &renderView.atmosphere.msIsoSampleCount, VK_SHADER_STAGE_COMPUTE_BIT, 0);
+		context.SetPushConstants(sizeof(u32), &renderView.atmosphere.msNumRaySteps, VK_SHADER_STAGE_COMPUTE_BIT, sizeof(u32));
+		context.SetDynamicUniformBuffer(1, renderView.atmosphere.data);
+		context.PushDescriptors(2, { g_FrameData.pLinearClamp->vkSampler(), m_pTransmittanceLUT->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 		context.PushDescriptors(3, { VK_NULL_HANDLE, m_pMultiScatteringLUT->vkView(), VK_IMAGE_LAYOUT_GENERAL }, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 		context.Dispatch2D< 8, 8 >(MULTISCATTERING_LUT_RESOLUTION.width, MULTISCATTERING_LUT_RESOLUTION.height);
 	}
@@ -117,20 +116,20 @@ void AtmosphereModule::Apply(CommandContext& context)
 	context.SetRenderPipeline(m_pSkyViewPSO.get());
 	context.TransitionImageLayout(m_pSkyViewLUT, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 	context.SetDynamicUniformBuffer(0, g_FrameData.camera);
-	context.SetDynamicUniformBuffer(1, g_FrameData.atmosphere.data);
-	context.SetPushConstants(sizeof(u32), &g_FrameData.atmosphere.svMinRaySteps, VK_SHADER_STAGE_COMPUTE_BIT, 0);
-	context.SetPushConstants(sizeof(u32), &g_FrameData.atmosphere.svMaxRaySteps, VK_SHADER_STAGE_COMPUTE_BIT, sizeof(u32));
-	context.PushDescriptors(2, { m_pLinearClampSampler->vkSampler(), m_pTransmittanceLUT->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-	context.PushDescriptors(3, { m_pLinearClampSampler->vkSampler(), m_pMultiScatteringLUT->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+	context.SetDynamicUniformBuffer(1, renderView.atmosphere.data);
+	context.SetPushConstants(sizeof(u32), &renderView.atmosphere.svMinRaySteps, VK_SHADER_STAGE_COMPUTE_BIT, 0);
+	context.SetPushConstants(sizeof(u32), &renderView.atmosphere.svMaxRaySteps, VK_SHADER_STAGE_COMPUTE_BIT, sizeof(u32));
+	context.PushDescriptors(2, { g_FrameData.pLinearClamp->vkSampler(), m_pTransmittanceLUT->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+	context.PushDescriptors(3, { g_FrameData.pLinearClamp->vkSampler(), m_pMultiScatteringLUT->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 	context.PushDescriptors(4, { VK_NULL_HANDLE, m_pSkyViewLUT->vkView(), VK_IMAGE_LAYOUT_GENERAL }, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 	context.Dispatch2D< 8, 8 >(SKYVIEW_LUT_RESOLUTION.width, SKYVIEW_LUT_RESOLUTION.height);
 
 	context.SetRenderPipeline(m_pAerialPerspectivePSO.get());
 	context.TransitionImageLayout(m_pAerialPerspectiveLUT, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 	context.SetDynamicUniformBuffer(0, g_FrameData.camera);
-	context.SetDynamicUniformBuffer(1, g_FrameData.atmosphere.data);
-	context.PushDescriptors(2, { m_pLinearClampSampler->vkSampler(), m_pTransmittanceLUT->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-	context.PushDescriptors(3, { m_pLinearClampSampler->vkSampler(), m_pMultiScatteringLUT->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+	context.SetDynamicUniformBuffer(1, renderView.atmosphere.data);
+	context.PushDescriptors(2, { g_FrameData.pLinearClamp->vkSampler(), m_pTransmittanceLUT->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+	context.PushDescriptors(3, { g_FrameData.pLinearClamp->vkSampler(), m_pMultiScatteringLUT->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 	context.PushDescriptors(4, { VK_NULL_HANDLE, m_pAerialPerspectiveLUT->vkView(), VK_IMAGE_LAYOUT_GENERAL }, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 	context.Dispatch3D< 4, 4, 4 >(AERIALPERSPECTIVE_LUT_RESOLUTION.width, AERIALPERSPECTIVE_LUT_RESOLUTION.height, AERIALPERSPECTIVE_LUT_RESOLUTION.depth);
 

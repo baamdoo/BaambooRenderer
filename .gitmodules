@@ -25,3 +25,6 @@
 [submodule "Projects/ThirdParties/stb"]
 	path = Projects/ThirdParties/stb
 	url = https://github.com/nothings/stb.git
+[submodule "Projects/ThirdParties/magic_enum"]
+	path = Projects/ThirdParties/magic_enum
+	url = https://github.com/Neargye/magic_enum.git

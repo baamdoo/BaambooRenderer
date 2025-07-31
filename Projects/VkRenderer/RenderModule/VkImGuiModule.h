@@ -15,7 +15,7 @@ public:
 	ImGuiModule(RenderDevice& device, vk::SwapChain& swapChain, ImGuiContext* pImGuiContext);
 	~ImGuiModule();
 
-	void Apply(CommandContext& context) override;
+	void Apply(CommandContext& context, const SceneRenderView& renderView) override;
 
 private:
 	RenderTarget*    m_pRenderTarget = nullptr;

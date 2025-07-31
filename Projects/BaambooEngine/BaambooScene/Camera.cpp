@@ -57,6 +57,11 @@ void CameraController_FirstPerson::Update(f32 dt)
 		m_MoveVelocity = glm::zero< float3 >();
 	}
 
+	/*m_MoveVelocity = float3(100.0f, 0.0f, 0.0f);
+	if (m_Transform.position.x > 1000.0f)
+	{
+		Reset();
+	}*/
 	m_Transform.position += m_MoveVelocity * dt;
 }
 

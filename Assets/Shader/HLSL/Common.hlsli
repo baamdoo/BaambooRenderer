@@ -11,6 +11,8 @@ struct CameraData
     float4x4 mProj;
     float4x4 mViewProj;
     float4x4 mViewProjInv;
+    float4x4 mViewProjUnjittered;
+	float4x4 mViewProjUnjitteredPrev;
 
     float3   posWORLD;
     float    zNear;

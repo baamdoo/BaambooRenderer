@@ -86,9 +86,9 @@ PSOutput main(PSInput input)
     output.GBuffer1 = float4(N, g_MaterialIndex / 255.0);
     output.GBuffer2 = emissive;
 
-    float2 posPrevSCREEN = (input.posPrevCLIP.xy / input.posPrevCLIP.w) * 0.5 + 0.5;
-    float2 posCurrSCREEN = (input.posCurrCLIP.xy / input.posCurrCLIP.w) * 0.5 + 0.5;
-    output.GBuffer3 = float4(posCurrSCREEN - posPrevSCREEN, roughness, metallic);
+    float2 posPrevUV = (input.posPrevCLIP.xy / input.posPrevCLIP.w) * 0.5 + 0.5;
+    float2 posCurrUV = (input.posCurrCLIP.xy / input.posCurrCLIP.w) * 0.5 + 0.5;
+    output.GBuffer3 = float4(posCurrUV - posPrevUV, roughness, metallic);
 
     return output;
 }

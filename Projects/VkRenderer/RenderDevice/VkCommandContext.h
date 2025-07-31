@@ -83,7 +83,7 @@ public:
         VkPipelineStageFlags2 dstStageMask,
         u32 baseMip = 0, u32 numMips = 1, u32 baseArray = 0, u32 numArrays = 1);
     
-    void SetPushConstants(u32 sizeInBytes, void* data, VkShaderStageFlags stages, u32 offsetInBytes = 0);
+    void SetPushConstants(u32 sizeInBytes, const void* data, VkShaderStageFlags stages, u32 offsetInBytes = 0);
     void SetDynamicUniformBuffer(u32 binding, VkDeviceSize sizeInBytes, const void* bufferData);
     template< typename T >
     void SetDynamicUniformBuffer(u32 binding, const T& data)

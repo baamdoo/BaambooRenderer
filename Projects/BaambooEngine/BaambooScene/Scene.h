@@ -11,6 +11,7 @@ class TransformSystem;
 class StaticMeshSystem;
 class MaterialSystem;
 class AtmosphereSystem;
+class PostProcessSystem;
 
 class Scene
 {
@@ -62,13 +63,14 @@ private:
 	bool m_bLoading = false;
 
 	// [entity, dirty-components]
-	std::unordered_map< u64, u64 > m_EntityDirtyMasks;
+	mutable std::unordered_map< u64, u64 > m_EntityDirtyMasks;
 
 	// systems
-	TransformSystem*  m_pTransformSystem  = nullptr;
-	StaticMeshSystem* m_pStaticMeshSystem = nullptr;
-	MaterialSystem*   m_pMaterialSystem   = nullptr;
-	AtmosphereSystem* m_pAtmosphereSystem = nullptr;
+	TransformSystem*   m_pTransformSystem   = nullptr;
+	StaticMeshSystem*  m_pStaticMeshSystem  = nullptr;
+	MaterialSystem*    m_pMaterialSystem    = nullptr;
+	AtmosphereSystem*  m_pAtmosphereSystem  = nullptr;
+	PostProcessSystem* m_pPostProcessSystem = nullptr;
 
 	// animations
 	std::unordered_map< u32, MeshData >      m_MeshData;
@@ -76,6 +78,8 @@ private:
 	std::unordered_map< u32, AnimationClip > m_AnimationClips;
 
 	std::unordered_map< std::string, ModelLoader* > m_ModelLoaderCache;
+
+	mutable std::mutex m_SceneMutex;
 };
 
 } // namespace baamboo 

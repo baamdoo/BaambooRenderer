@@ -20,10 +20,9 @@ LightingModule::LightingModule(RenderDevice& device)
 			"LightingPass::Out",
 			{
 				.resolution = { m_RenderDevice.WindowWidth(), m_RenderDevice.WindowHeight(), 1 },
-				.format     = VK_FORMAT_R8G8B8A8_UNORM,
-				.imageUsage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+				.format     = VK_FORMAT_R16G16B16A16_SFLOAT,
+				.imageUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
 			});
-	m_pLinearClampSampler  = Sampler::CreateLinearClamp(m_RenderDevice, "LightingLinearClampSampler");
 	m_pLinearRepeatSampler = Sampler::CreateLinearRepeat(m_RenderDevice, "LightingLinearRepeatSampler");
 
 	auto pCS = Shader::Create(m_RenderDevice, "DeferredPBRLightingCS", { .filepath = SPIRV_PATH.string() + "DeferredPBRLighting.comp.spv" });
@@ -36,7 +35,7 @@ LightingModule::~LightingModule()
 	RELEASE(m_pLightingPSO);
 }
 
-void LightingModule::Apply(CommandContext& context)
+void LightingModule::Apply(CommandContext& context, const SceneRenderView& renderView)
 {
 	context.SetRenderPipeline(m_pLightingPSO);
 
@@ -55,53 +54,54 @@ void LightingModule::Apply(CommandContext& context)
 	context.TransitionImageLayout(m_pOutTexture, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, subresourceRange);
 
 	context.BindSceneDescriptors(*g_FrameData.pSceneResource);
+	context.SetPushConstants(sizeof(float), &renderView.atmosphere.data.planetRadius_km, VK_SHADER_STAGE_COMPUTE_BIT);
 	context.SetDynamicUniformBuffer(0, g_FrameData.camera);
 	context.PushDescriptors(
 		1, 
 		{ 
-			m_pLinearClampSampler->vkSampler(),
+			g_FrameData.pLinearClamp->vkSampler(),
 			g_FrameData.pGBuffer0->vkView(), 
 			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 		}, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 	context.PushDescriptors(
 		2,
 		{
-			m_pLinearClampSampler->vkSampler(),
+			g_FrameData.pLinearClamp->vkSampler(),
 			g_FrameData.pGBuffer1->vkView(),
 			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 		}, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 	context.PushDescriptors(
 		3,
 		{
-			m_pLinearClampSampler->vkSampler(),
+			g_FrameData.pLinearClamp->vkSampler(),
 			g_FrameData.pGBuffer2->vkView(),
 			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 		}, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 	context.PushDescriptors(
 		4,
 		{
-			m_pLinearClampSampler->vkSampler(),
+			g_FrameData.pLinearClamp->vkSampler(),
 			g_FrameData.pGBuffer3->vkView(),
 			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 		}, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 	context.PushDescriptors(
 		5,
 		{
-			m_pLinearClampSampler->vkSampler(),
+			g_FrameData.pLinearClamp->vkSampler(),
 			g_FrameData.pDepth->vkView(),
 			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 		}, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 	context.PushDescriptors(
 		6,
 		{
-			m_pLinearClampSampler->vkSampler(),
+			g_FrameData.pLinearClamp->vkSampler(),
 			g_FrameData.pSkyViewLUT->vkView(),
 			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 		}, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 	context.PushDescriptors(
 		7,
 		{
-			m_pLinearClampSampler->vkSampler(),
+			g_FrameData.pLinearClamp->vkSampler(),
 			g_FrameData.pAerialPerspectiveLUT->vkView(),
 			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 		}, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
@@ -112,8 +112,6 @@ void LightingModule::Apply(CommandContext& context)
 			m_pOutTexture->vkView(),
 			VK_IMAGE_LAYOUT_GENERAL
 		}, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-	context.SetPushConstants(sizeof(float), &g_FrameData.atmosphere.data.planetRadius_km, VK_SHADER_STAGE_COMPUTE_BIT);
-
 	context.Dispatch2D< 16, 16 >(m_pOutTexture->Desc().extent.width, m_pOutTexture->Desc().extent.height);
 
 	g_FrameData.pColor = m_pOutTexture;

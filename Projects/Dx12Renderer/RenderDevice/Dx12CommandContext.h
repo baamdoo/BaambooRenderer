@@ -15,7 +15,7 @@ class ComputePipeline;
 class DynamicBufferAllocator;
 class Buffer;
 class Texture;
-class SceneResource;
+struct SceneResource;
 
 class SyncObject
 {
@@ -72,7 +72,7 @@ public:
 	void SetGraphicsRootConstant(u32 rootIndex, u32 srcValue, u32 dstOffset = 0);
 	void SetGraphicsRootConstants(u32 rootIndex, u32 srcSizeInBytes, void* srcData, u32 dstOffsetInBytes = 0);
 	void SetComputeRootConstant(u32 rootIndex, u32 srcValue, u32 dstOffset = 0);
-	void SetComputeRootConstants(u32 rootIndex, u32 srcSizeInBytes, void* srcData, u32 dstOffsetInBytes = 0);
+	void SetComputeRootConstants(u32 rootIndex, u32 srcSizeInBytes, const void* srcData, u32 dstOffsetInBytes = 0);
 
 	void SetGraphicsDynamicConstantBuffer(u32 rootIndex, size_t sizeInBytes, const void* pData);
 	template< typename T >

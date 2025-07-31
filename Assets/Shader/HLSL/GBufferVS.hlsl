@@ -44,7 +44,7 @@ VSOutput main(VSInput IN)
     output.position     = mul(g_Camera.mViewProj, posWORLD);
 
     // TODO
-    output.posCurrCLIP = output.position;
-    output.posPrevCLIP = output.position;
+    output.posPrevCLIP = mul(g_Camera.mViewProjUnjitteredPrev, posWORLD);
+    output.posCurrCLIP = mul(g_Camera.mViewProjUnjittered, posWORLD);
     return output;
 }

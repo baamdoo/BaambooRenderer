@@ -38,6 +38,8 @@ struct CameraData
     mat4 mProj;
     mat4 mViewProj;
     mat4 mViewProjInv;
+    mat4 mViewProjUnjittered;
+    mat4 mViewProjUnjitteredPrev;
 
     float3 position;
     float  zNear;

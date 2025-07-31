@@ -297,7 +297,7 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 		IndirectDrawData indirect = {};
 		if (data.mesh != INVALID_INDEX)
 		{
-			assert(data.mesh < sceneView.meshes.size());
+			assert(data.mesh < sceneView.meshes.size() && "Mesh idx_%d should less than mesh size %d", data.mesh, (u32)sceneView.meshes.size());
 			auto& meshView = sceneView.meshes[data.mesh];
 
 			auto vertex = GetOrUpdateVertex(meshView.id, meshView.tag, meshView.vData, meshView.vCount);

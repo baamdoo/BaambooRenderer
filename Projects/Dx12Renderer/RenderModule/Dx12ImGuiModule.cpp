@@ -39,8 +39,10 @@ ImGuiModule::~ImGuiModule()
 	COM_RELEASE(m_d3d12SrvDescHeap);
 }
 
-void ImGuiModule::Apply(CommandContext& context)
+void ImGuiModule::Apply(CommandContext& context, const SceneRenderView& renderView)
 {
+	UNUSED(renderView);
+
 	if (ImGui::GetDrawData() && g_FrameData.pColor.valid())
 	{
 		context.TransitionBarrier(g_FrameData.pColor.lock(), D3D12_RESOURCE_STATE_RENDER_TARGET);

@@ -84,7 +84,7 @@ void main()
     outGBuffer1 = vec4(N, float(inMaterialID) / 255.0);
     outGBuffer2 = vec4(emissive, 1.0);
     
-    vec2 posPrevSCREEN = (inPosCLIP_prev.xy / inPosCLIP_prev.w) * 0.5 + 0.5;
-    vec2 posCurrSCREEN = (inPosCLIP_curr.xy / inPosCLIP_curr.w) * 0.5 + 0.5;
-    outGBuffer3        = vec4(posCurrSCREEN - posPrevSCREEN, roughness, metallic);
+    vec2 posPrevUV = (inPosCLIP_prev.xy / inPosCLIP_prev.w) * 0.5 + 0.5;
+    vec2 posCurrUV = (inPosCLIP_curr.xy / inPosCLIP_curr.w) * 0.5 + 0.5;
+    outGBuffer3    = vec4(posCurrUV - posPrevUV, roughness, metallic);
 }

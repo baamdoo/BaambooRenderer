@@ -11,7 +11,7 @@ public:
 	LightingModule(RenderDevice& device);
 	virtual ~LightingModule();
 
-	virtual void Apply(CommandContext& context) override;
+	virtual void Apply(CommandContext& context, const SceneRenderView& renderView) override;
 
 private:
 	Arc< Texture >   m_pOutTexture;

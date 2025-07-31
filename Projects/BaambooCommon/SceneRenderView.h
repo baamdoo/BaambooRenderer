@@ -1,14 +1,16 @@
 #pragma once
 #include "ShaderTypes.h"
+#include "ComponentTypes.h"
 
 enum eComponentType
 {
-	CTransform = 0,
-	CStaticMesh = 1,
+	CTransform   = 0,
+	CStaticMesh  = 1,
 	CDynamicMesh = 2,
-	CMaterial = 3,
-	CLight = 4,
-	CAtmosphere = 5,
+	CMaterial    = 3,
+	CLight       = 4,
+	CAtmosphere  = 5,
+	CPostProcess = 6,
 
 	// ...
 	NumComponents
@@ -84,6 +86,42 @@ struct AtmosphereRenderView
 	u32  svMaxRaySteps;
 };
 
+struct PostProcessRenderView
+{
+	u64 id;
+	u64 effectBits;
+
+	// height fog (TODO)
+	struct
+	{
+		float exponentialFactor;
+	} heightFog;
+
+	// bloom (TODO)
+	struct
+	{
+		i32 filterSize;
+	} bloom;
+
+	// anti-aliasing
+	struct
+	{
+		eAntiAliasingType type;
+
+		// TAA
+		float blendFactor;
+		float sharpness;
+	} aa;
+
+	// tone-mapping
+	struct
+	{
+		eToneMappingOp op;
+
+		float gamma;
+	} tonemap;
+};
+
 //-------------------------------------------------------------------------
 // SceneRenderView : Holds all the scene data
 //                   required for rendering in a refined state.
@@ -96,9 +134,13 @@ struct SceneRenderView
 
 	std::unordered_map< u32, DrawRenderView > draws;
 
-	CameraRenderView     camera;
-	LightRenderView      light;
-	AtmosphereRenderView atmosphere;
+	CameraRenderView      camera;
+	LightRenderView       light;
+	AtmosphereRenderView  atmosphere;
+	PostProcessRenderView postProcess;
+
+	// for sync producer(SceneRenderView)-consumer(Renderer)
+	std::mutex* pSceneMutex;
 
 	std::unordered_map< u64, u64 >* pEntityDirtyMarks;
 };

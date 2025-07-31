@@ -12,7 +12,7 @@ public:
 	ForwardModule(RenderDevice& device);
 	virtual ~ForwardModule();
 
-	virtual void Apply(CommandContext& context) override;
+	virtual void Apply(CommandContext& context, const SceneRenderView& renderView) override;
 
 private:
 	RootSignature*    m_pForwardRS = nullptr;

@@ -26,7 +26,7 @@ layout(set = SET_PUSH, binding = 5) uniform sampler2D g_DepthBuffer;
 layout(set = SET_PUSH, binding = 6) uniform sampler2D g_SkyViewLUT;
 layout(set = SET_PUSH, binding = 7) uniform sampler3D g_AerialPerspectiveLUT;
 
-layout(set = SET_PUSH, binding = 8, rgba8) writeonly uniform image2D g_OutputTexture;
+layout(set = SET_PUSH, binding = 8, rgba16f) writeonly uniform image2D g_OutputTexture;
 
 layout(push_constant) uniform PushConstants
 {
@@ -236,8 +236,11 @@ vec3 GetSunLuminance(vec3 rayDir, bool bIntersectGround)
 
 void main() 
 {
-    ivec2 texCoords = ivec2(gl_GlobalInvocationID.xy);
-    vec2  uv        = (vec2(texCoords) + 0.5) / vec2(imageSize(g_OutputTexture));
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pixelCoord, imageSize(g_OutputTexture))))
+        return;
+
+    vec2  uv         = (vec2(pixelCoord) + 0.5) / vec2(imageSize(g_OutputTexture));
 
     vec4  gbuffer0 = texture(g_GBuffer0, uv);
     vec4  gbuffer1 = texture(g_GBuffer1, uv);
@@ -276,19 +279,7 @@ void main()
         float exposure = 1.0 / (1.2 * pow(2.0, ev100));
         color *= exposure;
 
-        // tone mapping (ACES filmic)
-        vec3  x = color;
-        float a = 2.51;
-        float b = 0.03;
-        float c = 2.43;
-        float d = 0.59;
-        float e = 0.14;
-        color   = clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
-        
-        // gamma correction
-        color = pow(color, vec3(1.0 / 2.2));
-
-        imageStore(g_OutputTexture, texCoords, vec4(color, 1.0));
+        imageStore(g_OutputTexture, pixelCoord, vec4(color, 1.0));
         return;
     }
 
@@ -369,18 +360,6 @@ void main()
     float ev100    = g_LightBuffer.lightingData.ev100;
     float exposure = 1.0 / (1.2 * pow(2.0, ev100));
     color *= exposure;
-
-    // tone mapping (ACES filmic)
-    vec3  x = color;
-    float a = 2.51;
-    float b = 0.03;
-    float c = 2.43;
-    float d = 0.59;
-    float e = 0.14;
-    color   = clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
     
-    // gamma correction
-    color = pow(color, vec3(1.0 / 2.2));
-    
-    imageStore(g_OutputTexture, texCoords, vec4(color, 1.0));
+    imageStore(g_OutputTexture, pixelCoord, vec4(color, 1.0));
 }

@@ -59,8 +59,10 @@ ImGuiModule::~ImGuiModule()
 	vkDestroyDescriptorPool(m_RenderDevice.vkDevice(), m_vkImGuiPool, nullptr);
 }
 
-void ImGuiModule::Apply(CommandContext& context)
+void ImGuiModule::Apply(CommandContext& context, const SceneRenderView& renderView)
 {
+	UNUSED(renderView);
+
 	context.TransitionImageLayout(
 		g_FrameData.pColor.lock(),
 		VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,

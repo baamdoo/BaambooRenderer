@@ -44,10 +44,8 @@ void main()
     outTangentWORLD = normalize(tangentWORLD.xyz);
     outMaterialID   = drawData.materialID;
     
-    vec4 posCLIP = g_Camera.mViewProj * posWORLD;
-    gl_Position  = posCLIP;
-    
-    // TODO
-    outPosCLIP_prev = posCLIP;
-    outPosCLIP_curr = posCLIP;
+    outPosCLIP_prev = g_Camera.mViewProjUnjitteredPrev * posWORLD;
+    outPosCLIP_curr = g_Camera.mViewProjUnjittered * posWORLD;
+
+    gl_Position  = g_Camera.mViewProj * posWORLD;
 }

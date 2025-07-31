@@ -12,12 +12,12 @@ public:
 	GBufferModule(RenderDevice& device);
 	virtual ~GBufferModule();
 
-	virtual void Apply(CommandContext& context) override;
+	virtual void Apply(CommandContext& context, const SceneRenderView& renderView) override;
 	virtual void Resize(u32 width, u32 height, u32 depth = 1) override;
 
 private:
 	RenderTarget      m_RenderTarget;
-	RootSignature*    m_pRootSignature = nullptr;
+	RootSignature*    m_pRootSignature    = nullptr;
 	GraphicsPipeline* m_pGraphicsPipeline = nullptr;
 };
 

@@ -45,7 +45,7 @@ ForwardModule::~ForwardModule()
     RELEASE(m_pForwardRS);
 }
 
-void ForwardModule::Apply(CommandContext& context)
+void ForwardModule::Apply(CommandContext& context, const SceneRenderView& renderView)
 {
     if (!g_FrameData.pColor.valid() || !g_FrameData.pDepth.valid())
         return;

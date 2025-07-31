@@ -147,14 +147,14 @@ AtmosphereModule::~AtmosphereModule()
 {
 }
 
-void AtmosphereModule::Apply(CommandContext& context)
+void AtmosphereModule::Apply(CommandContext& context, const SceneRenderView& renderView)
 {
-	if (g_FrameData.atmosphere.bMark)
+	if (g_FrameData.componentMarker & (1 << eComponentType::CAtmosphere))
 	{
 		context.SetRenderPipeline(m_pTransmittancePSO.get());
 		context.SetComputeRootSignature(m_pTransmittanceRS.get());
 		context.TransitionBarrier(m_pTransmittanceLUT, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, false);
-		context.SetComputeDynamicConstantBuffer(0, g_FrameData.atmosphere.data);
+		context.SetComputeDynamicConstantBuffer(0, renderView.atmosphere.data);
 		context.StageDescriptors(1, 0, 
 			{
 				m_pTransmittanceLUT->GetUnorderedAccessView(0)
@@ -165,9 +165,9 @@ void AtmosphereModule::Apply(CommandContext& context)
 		context.SetComputeRootSignature(m_pMultiScatteringRS.get());
 		context.TransitionBarrier(m_pTransmittanceLUT, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, false);
 		context.TransitionBarrier(m_pMultiScatteringLUT, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, false);
-		context.SetComputeRootConstant(0, g_FrameData.atmosphere.msIsoSampleCount, 0);
-		context.SetComputeRootConstant(0, g_FrameData.atmosphere.msNumRaySteps, 1);
-		context.SetComputeDynamicConstantBuffer(1, g_FrameData.atmosphere.data);
+		context.SetComputeRootConstant(0, renderView.atmosphere.msIsoSampleCount, 0);
+		context.SetComputeRootConstant(0, renderView.atmosphere.msNumRaySteps, 1);
+		context.SetComputeDynamicConstantBuffer(1, renderView.atmosphere.data);
 		context.StageDescriptors(2, 0,
 			{
 				m_pTransmittanceLUT->GetShaderResourceView(),
@@ -181,10 +181,10 @@ void AtmosphereModule::Apply(CommandContext& context)
 	context.SetRenderPipeline(m_pSkyViewPSO.get());
 	context.SetComputeRootSignature(m_pSkyViewRS.get());
 	context.TransitionBarrier(m_pSkyViewLUT, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, false);
-	context.SetComputeRootConstant(0, g_FrameData.atmosphere.svMinRaySteps, 0);
-	context.SetComputeRootConstant(0, g_FrameData.atmosphere.svMaxRaySteps, 1);
+	context.SetComputeRootConstant(0, renderView.atmosphere.svMinRaySteps, 0);
+	context.SetComputeRootConstant(0, renderView.atmosphere.svMaxRaySteps, 1);
 	context.SetComputeDynamicConstantBuffer(1, g_FrameData.camera);
-	context.SetComputeDynamicConstantBuffer(2, g_FrameData.atmosphere.data);
+	context.SetComputeDynamicConstantBuffer(2, renderView.atmosphere.data);
 	context.StageDescriptors(3, 0,
 		{
 			m_pTransmittanceLUT->GetShaderResourceView(),
@@ -197,7 +197,7 @@ void AtmosphereModule::Apply(CommandContext& context)
 	context.SetComputeRootSignature(m_pAerialPerspectiveRS.get());
 	context.TransitionBarrier(m_pAerialPerspectiveLUT, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, false);
 	context.SetComputeDynamicConstantBuffer(0, g_FrameData.camera);
-	context.SetComputeDynamicConstantBuffer(1, g_FrameData.atmosphere.data);
+	context.SetComputeDynamicConstantBuffer(1, renderView.atmosphere.data);
 	context.StageDescriptors(2, 0,
 		{
 			m_pTransmittanceLUT->GetShaderResourceView(),

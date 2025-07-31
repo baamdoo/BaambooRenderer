@@ -8,6 +8,7 @@
 #include "RenderModule/Dx12GBufferModule.h"
 #include "RenderModule/Dx12LightingModule.h"
 #include "RenderModule/Dx12ForwardModule.h"
+#include "RenderModule/Dx12PostProcessModule.h"
 #include "RenderModule/Dx12ImGuiModule.h"
 #include "RenderResource/Dx12Texture.h"
 #include "RenderResource/Dx12SceneResource.h"
@@ -16,6 +17,7 @@
 #include <shlobj.h>
 #include <imgui/imgui.h>
 #include <imgui/backends/imgui_impl_dx12.h>
+#include <Utils/Math.hpp>
 
 namespace dx12
 {
@@ -68,10 +70,11 @@ Renderer::Renderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext)
 	m_pSwapChain    = new SwapChain(*m_pRenderDevice, *pWindow);
 
 	g_FrameData.pSceneResource = new SceneResource(*m_pRenderDevice);
-
+	
 	m_pRenderModules.push_back(new AtmosphereModule(*m_pRenderDevice));
 	m_pRenderModules.push_back(new GBufferModule(*m_pRenderDevice));
 	m_pRenderModules.push_back(new LightingModule(*m_pRenderDevice));
+	m_pRenderModules.push_back(new PostProcessModule(*m_pRenderDevice));
 	// m_pRenderModules.push_back(new ForwardModule(*m_pRenderDevice));
 	m_pRenderModules.push_back(new ImGuiModule(*m_pRenderDevice, pImGuiContext));
 
@@ -102,39 +105,53 @@ void Renderer::Render(SceneRenderView&& renderView)
 {
 	assert(g_FrameData.pSceneResource);
 	g_FrameData.pSceneResource->UpdateSceneResources(renderView);
+	g_FrameData.frameCounter++;
+	g_FrameData.componentMarker = 0;
+
+	auto ApplyJittering = [viewport = float2(m_pRenderDevice->WindowWidth(), m_pRenderDevice->WindowHeight())](const mat4& m_, float2 jitter)
+		{
+			mat4 m = m_;
+			m[2][0] += (jitter.x * 2.0f - 1.0f) / viewport.x;
+			m[2][1] += (jitter.y * 2.0f - 1.0f) / viewport.y;
+
+			return m;
+		};
+
+	if (renderView.pEntityDirtyMarks)
+	{
+		assert(renderView.pSceneMutex);
+		std::lock_guard< std::mutex > lock(*renderView.pSceneMutex);
+
+		g_FrameData.componentMarker |= (*renderView.pEntityDirtyMarks)[renderView.atmosphere.id] & (1 << eComponentType::CAtmosphere);
+		// .. process other markers if needed
+
+		// reset marks once it is consumed by renderer
+		for (auto& mark : (*renderView.pEntityDirtyMarks))
+		{
+			mark.second = 0;
+		}
+	}
 
 	auto& context = BeginFrame();
 	{
-		CameraData camera   = {};
-		camera.mView        = renderView.camera.mView;
-		camera.mProj        = renderView.camera.mProj;
-		camera.mViewProj    = camera.mProj * camera.mView;
-		camera.mViewProjInv = glm::inverse(camera.mViewProj);
-		camera.position     = renderView.camera.pos;
-		camera.zNear        = renderView.camera.zNear;
-		camera.zFar         = renderView.camera.zFar;
-		g_FrameData.camera  = std::move(camera);
-
-		g_FrameData.atmosphere.data             = std::move(renderView.atmosphere.data);
-		g_FrameData.atmosphere.msIsoSampleCount = renderView.atmosphere.msIsoSampleCount;
-		g_FrameData.atmosphere.msNumRaySteps    = renderView.atmosphere.msNumRaySteps;
-		g_FrameData.atmosphere.svMinRaySteps    = renderView.atmosphere.svMinRaySteps;
-		g_FrameData.atmosphere.svMaxRaySteps    = renderView.atmosphere.svMaxRaySteps;
-
-		if (renderView.pEntityDirtyMarks)
-		{
-			g_FrameData.atmosphere.bMark = (*renderView.pEntityDirtyMarks)[renderView.atmosphere.id] & (1 << eComponentType::CAtmosphere);
-			// .. process other markers if needed
-
-			// reset marks once it is consumed by renderer
-			for (auto& mark : (*renderView.pEntityDirtyMarks))
-			{
-				mark.second = 0;
-			}
-		}
+		CameraData camera              = {};
+		camera.mView                   = renderView.camera.mView;
+		camera.mProj                   = renderView.postProcess.effectBits & (1 << ePostProcess::AntiAliasing) ?
+			ApplyJittering(renderView.camera.mProj, baamboo::math::GetHaltonSequence((u32)g_FrameData.frameCounter)) : renderView.camera.mProj;
+		camera.mViewProj               = camera.mProj * camera.mView;
+		camera.mViewProjInv            = glm::inverse(camera.mViewProj);
+		camera.mViewProjUnjittered     = renderView.camera.mProj * camera.mView;
+		camera.mViewProjUnjitteredPrev =
+			g_FrameData.camera.mViewProjUnjittered == glm::identity< mat4 >() ? camera.mViewProjUnjittered : g_FrameData.camera.mViewProjUnjittered;
+		camera.position                = renderView.camera.pos;
+		camera.zNear                   = renderView.camera.zNear;
+		camera.zFar                    = renderView.camera.zFar;
+		g_FrameData.camera = std::move(camera);
 
 		for (auto pModule : m_pRenderModules)
-			pModule->Apply(context);
+		{
+			pModule->Apply(context, renderView);
+		}
 	}
 	EndFrame(context);
 }
@@ -155,6 +172,8 @@ void Renderer::OnWindowResized(i32 width, i32 height)
 	m_pRenderDevice->SetWindowHeight(height);
 
 	m_pSwapChain->ResizeViewport(width, height);
+
+	g_FrameData.frameCounter = 0;
 
 	for (auto pModule : m_pRenderModules)
 		pModule->Resize(width, height);

@@ -58,7 +58,7 @@ LightingModule::~LightingModule()
 	RELEASE(m_pLightingRS);
 }
 
-void LightingModule::Apply(CommandContext& context)
+void LightingModule::Apply(CommandContext& context, const SceneRenderView& renderView)
 {
 	auto& rm = m_RenderDevice.GetResourceManager();
 
@@ -77,7 +77,7 @@ void LightingModule::Apply(CommandContext& context)
 	auto pMaterial = g_FrameData.pSceneResource->GetMaterialBuffer();
 	assert(pLight && pMaterial);
 
-	context.SetComputeRootConstants(m_Indices.push, sizeof(float), &g_FrameData.atmosphere.data.planetRadius_km);
+	context.SetComputeRootConstants(m_Indices.push, sizeof(float), &renderView.atmosphere.data.planetRadius_km);
 	context.SetComputeDynamicConstantBuffer(m_Indices.camera, g_FrameData.camera);
 	context.SetComputeConstantBufferView(m_Indices.light, pLight->GpuAddress());
 	context.StageDescriptors(m_Indices.textures, 0,

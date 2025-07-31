@@ -247,18 +247,6 @@ void main(uint3 tID : SV_DispatchThreadID)
         float exposure = 1.0 / (1.2 * pow(2.0, ev100));
         color *= exposure;
 
-        // tone mapping (ACES filmic)
-        float3 x = color;
-        float  a = 2.51;
-        float  b = 0.03;
-        float  c = 2.43;
-        float  d = 0.59;
-        float  e = 0.14;
-        color = clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
-
-        // gamma correction
-        color = pow(color, 1.0 / 2.2);
-
         g_OutputTexture[texCoords] = vec4(color, 1.0);
         return;
     }
@@ -338,18 +326,6 @@ void main(uint3 tID : SV_DispatchThreadID)
     float ev100    = g_Lights.ev100;
     float exposure = 1.0 / (1.2 * pow(2.0, ev100));
     color *= exposure;
-
-    // tone mapping (ACES filmic)
-    float3 x = color;
-    float  a = 2.51;
-    float  b = 0.03;
-    float  c = 2.43;
-    float  d = 0.59;
-    float  e = 0.14;
-    color = clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
-
-    // gamma correction
-    color = pow(color, (1.0 / 2.2));
 
     g_OutputTexture[texCoords] = float4(color, 1.0);
 }

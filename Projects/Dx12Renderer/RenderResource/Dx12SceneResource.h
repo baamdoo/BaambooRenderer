@@ -23,18 +23,12 @@ struct BufferHandle
 
 struct FrameData
 {
+    u64 frameCounter;
+
     // data
     CameraData camera = {};
-    struct
-    {
-        AtmosphereData data = {};
 
-        u32  msIsoSampleCount = 0;
-        u32  msNumRaySteps    = 0;
-        u32  svMinRaySteps    = 0;
-        u32  svMaxRaySteps    = 0;
-        bool bMark = false;
-    } atmosphere;
+    u64 componentMarker;
 
     // scene-resource
     struct SceneResource* pSceneResource = nullptr;

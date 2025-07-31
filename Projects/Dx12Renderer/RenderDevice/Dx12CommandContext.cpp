@@ -352,7 +352,7 @@ void CommandContext::SetComputeRootConstant(u32 rootIndex, u32 srcValue, u32 dst
 	m_d3d12CommandList->SetComputeRoot32BitConstant(rootIndex, srcValue, dstOffset);
 }
 
-void CommandContext::SetComputeRootConstants(u32 rootIndex, u32 srcSizeInBytes, void* srcData, u32 dstOffsetInBytes)
+void CommandContext::SetComputeRootConstants(u32 rootIndex, u32 srcSizeInBytes, const void* srcData, u32 dstOffsetInBytes)
 {
 	u32 size      = srcSizeInBytes / 4;
 	u32 dstOffset = dstOffsetInBytes / 4;

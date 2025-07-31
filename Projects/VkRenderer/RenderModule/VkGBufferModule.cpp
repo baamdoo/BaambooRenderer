@@ -47,7 +47,7 @@ GBufferModule::GBufferModule(RenderDevice& device)
 			"GBufferPass::Attachment3/RG_Velocity/B_Roughness/A_Metallic",
 			{
 				.resolution = { m_RenderDevice.WindowWidth(), m_RenderDevice.WindowHeight(), 1 },
-				.format     = VK_FORMAT_R8G8B8A8_SNORM,
+				.format     = VK_FORMAT_R16G16B16A16_SFLOAT,
 				.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
 			});
 	auto pAttachmentDepth =
@@ -78,8 +78,10 @@ GBufferModule::~GBufferModule()
 	RELEASE(m_pRenderTarget);
 }
 
-void GBufferModule::Apply(CommandContext& context)
+void GBufferModule::Apply(CommandContext& context, const SceneRenderView& renderView)
 {
+	UNUSED(renderView);
+
 	context.BeginRenderPass(*m_pRenderTarget);
 	context.SetRenderPipeline(m_pGraphicsPipeline);
 
