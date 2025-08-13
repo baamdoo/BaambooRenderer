@@ -680,6 +680,38 @@ void Engine::DrawUI()
 				}
 			}
 
+			if (ImGui::SelectedEntity.HasAll< CloudComponent >())
+			{
+				bool bMark = false;
+				if (ImGui::CollapsingHeader("Cloud"))
+				{
+					ImGui::Indent();
+					{
+						auto& component = ImGui::SelectedEntity.GetComponent< CloudComponent >();
+
+						if (ImGui::CollapsingHeader("Shape"))
+						{
+							bMark |= ImGui::DragFloat("Cloud Coverage", &component.coverage, 0.01f, 0.0f, 1.0f, "%.2f");
+							bMark |= ImGui::DragFloat("Cloud Density", &component.density, 0.01f, 0.0f, 1.0f, "%.2f");
+							bMark |= ImGui::DragFloat("Cloud Precipitation", &component.precipitation, 0.01f, 0.0f, 1.0f, "%.2f");
+							bMark |= ImGui::DragFloat("Cloud Bottom Height (km)", &component.cloudBaseHeight_km, 0.1f, 0.0f, 10.0f, "%.1f");
+							bMark |= ImGui::DragFloat("Cloud Thickness (km)", &component.cloudLayerThickness_km, 0.1f, 0.1f, 10.0f, "%.1f");
+
+							// noise
+							bMark |= ImGui::DragFloat("Base Noise", &component.shapeNoiseScale, 0.1f, 1.0f, 10.0f, "%.1f");
+							bMark |= ImGui::DragFloat("Detail Noise", &component.detailNoiseScale, 1.0f, 0.0f, 100.0f, "%.1f");
+						}
+					}
+
+					ImGui::Unindent();
+				}
+
+				if (bMark)
+				{
+					m_pScene->Registry().patch< CloudComponent >(ImGui::SelectedEntity.ID(), [](auto&) {});
+				}
+			}
+
 			if (ImGui::SelectedEntity.HasAll< PostProcessComponent >())
 			{
 				if (ImGui::CollapsingHeader("PostProcess"))

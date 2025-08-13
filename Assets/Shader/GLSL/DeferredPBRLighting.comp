@@ -236,11 +236,12 @@ vec3 GetSunLuminance(vec3 rayDir, bool bIntersectGround)
 
 void main() 
 {
-    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
-    if (any(greaterThanEqual(pixelCoord, imageSize(g_OutputTexture))))
+    ivec2 imgSize   = imageSize(g_OutputTexture);
+    ivec2 pixCoords = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pixCoords, imgSize)))
         return;
 
-    vec2  uv         = (vec2(pixelCoord) + 0.5) / vec2(imageSize(g_OutputTexture));
+    vec2  uv        = (vec2(pixCoords) + 0.5) / vec2(imgSize);
 
     vec4  gbuffer0 = texture(g_GBuffer0, uv);
     vec4  gbuffer1 = texture(g_GBuffer1, uv);
@@ -279,7 +280,7 @@ void main()
         float exposure = 1.0 / (1.2 * pow(2.0, ev100));
         color *= exposure;
 
-        imageStore(g_OutputTexture, pixelCoord, vec4(color, 1.0));
+        imageStore(g_OutputTexture, pixCoords, vec4(color, 1.0));
         return;
     }
 
@@ -361,5 +362,5 @@ void main()
     float exposure = 1.0 / (1.2 * pow(2.0, ev100));
     color *= exposure;
     
-    imageStore(g_OutputTexture, pixelCoord, vec4(color, 1.0));
+    imageStore(g_OutputTexture, pixCoords, vec4(color, 1.0));
 }

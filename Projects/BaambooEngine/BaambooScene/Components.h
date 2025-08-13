@@ -264,6 +264,26 @@ struct AtmosphereComponent
 	eRaymarchResolution raymarchResolution = eRaymarchResolution::Middle;
 };
 
+//-------------------------------------------------------------------------
+// CloudComponent : Determines cloud shapes and effect
+//-------------------------------------------------------------------------
+struct CloudComponent
+{
+	float coverage      = 0.5f;
+	float density       = 0.2f;
+	float precipitation = 0.1f;
+
+	float cloudBaseHeight_km     = 2.0f;
+	float cloudLayerThickness_km = 4.0f;
+
+	float shapeNoiseScale  = 1.0f;
+	float detailNoiseScale = 8.0f;
+
+	float windSpeed_mps = 1.0f;
+
+	bool bDirtyMark = true;
+};
+
 
 //-------------------------------------------------------------------------
 // PostProcessComponent : Determines PostProcess Effects

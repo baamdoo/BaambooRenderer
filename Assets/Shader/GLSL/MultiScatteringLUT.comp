@@ -131,11 +131,12 @@ vec3 ComputeMultiScattering(float viewHeight, float cosZenithAngle)
 
 void main() 
 {
-    ivec2 texSize = imageSize(g_MultiScatteringLUT);
-    vec2  uv      = vec2(gl_GlobalInvocationID.xy + 0.5) / vec2(texSize);
-
-    if (gl_GlobalInvocationID.x >= texSize.x || gl_GlobalInvocationID.y >= texSize.y)
+    ivec2 imgSize   = imageSize(g_MultiScatteringLUT);
+    ivec2 pixCoords = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pixCoords, imgSize)))
         return;
+
+    vec2  uv        = (vec2(pixCoords) + 0.5) / vec2(imgSize);
     
     float cosZenithAngle = 2.0 * uv.x - 1.0;
     float viewHeight     = mix(g_Atmosphere.planetRadius_km, g_Atmosphere.atmosphereRadius_km, uv.y);

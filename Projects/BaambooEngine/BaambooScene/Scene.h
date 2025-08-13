@@ -11,6 +11,7 @@ class TransformSystem;
 class StaticMeshSystem;
 class MaterialSystem;
 class AtmosphereSystem;
+class CloudSystem;
 class PostProcessSystem;
 
 class Scene
@@ -70,6 +71,7 @@ private:
 	StaticMeshSystem*  m_pStaticMeshSystem  = nullptr;
 	MaterialSystem*    m_pMaterialSystem    = nullptr;
 	AtmosphereSystem*  m_pAtmosphereSystem  = nullptr;
+	CloudSystem*       m_pCloudSystem       = nullptr;
 	PostProcessSystem* m_pPostProcessSystem = nullptr;
 
 	// animations

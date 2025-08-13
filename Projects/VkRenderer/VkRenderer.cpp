@@ -7,6 +7,7 @@
 #include "RenderDevice/VkDescriptorSet.h"
 #include "RenderResource/VkTexture.h"
 #include "RenderResource/VkSceneResource.h"
+#include "RenderModule/VkCloudModule.h"
 #include "RenderModule/VkAtmosphereModule.h"
 #include "RenderModule/VkGBufferModule.h"
 #include "RenderModule/VkLightingModule.h"
@@ -36,6 +37,7 @@ Renderer::Renderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext)
 	g_FrameData.pLinearClamp   = Sampler::CreateLinearClamp(*m_pRenderDevice);
 	g_FrameData.pPointClamp    = Sampler::CreatePointClamp(*m_pRenderDevice);
 
+	m_pRenderModules.push_back(new CloudModule(*m_pRenderDevice));
 	m_pRenderModules.push_back(new AtmosphereModule(*m_pRenderDevice));
 	m_pRenderModules.push_back(new GBufferModule(*m_pRenderDevice));
 	m_pRenderModules.push_back(new LightingModule(*m_pRenderDevice));
@@ -44,7 +46,6 @@ Renderer::Renderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext)
 
 	printf("VkRenderer constructed!\n");
 }
-
 Renderer::~Renderer()
 {
 	m_pRenderDevice->Flush();
@@ -123,7 +124,7 @@ void Renderer::Render(SceneRenderView&& renderView)
 		camera.zNear                   = renderView.camera.zNear;
 		camera.zFar                    = renderView.camera.zFar;
 		g_FrameData.camera             = std::move(camera);
-		
+
 		for (auto pModule : m_pRenderModules)
 		{
 			pModule->Apply(commandContext, renderView);
@@ -132,7 +133,8 @@ void Renderer::Render(SceneRenderView&& renderView)
 		auto pBackBuffer = m_pSwapChain->GetImageToPresent();
 		if (g_FrameData.pColor.valid())
 		{
-			commandContext.BlitTexture(pBackBuffer, g_FrameData.pColor.lock());
+			commandContext.BlitTexture(pBackBuffer, g_FrameData.pCloudLUT_BaseNoise.lock());
+			//commandContext.BlitTexture(pBackBuffer, g_FrameData.pColor.lock());
 		}
 
 		commandContext.TransitionImageLayout(

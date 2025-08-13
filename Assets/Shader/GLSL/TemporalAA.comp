@@ -98,12 +98,12 @@ vec3 ClipAABB(vec3 aabbMin, vec3 aabbMax, vec3 history, vec3 current)
 
 void main() 
 {
-    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
-    ivec2 texSize    = textureSize(g_SceneTexture, 0);
-    if (any(greaterThanEqual(pixelCoord, texSize)))
+    ivec2 imgSize   = textureSize(g_SceneTexture, 0);
+    ivec2 pixCoords = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pixCoords, imgSize)))
         return;
 
-    vec2  uv         = vec2(pixelCoord + 0.5) / vec2(texSize);
+    vec2  uv        = (vec2(pixCoords) + 0.5) / vec2(imgSize);
 
     vec2 velocity      = texture(g_VelocityTexture, uv).xy;
     vec2 historyUV     = uv - velocity;
@@ -113,7 +113,7 @@ void main()
     vec3 historyColor = vec3(0.0);
     if (bValidHistory && g_Push.bFirstFrame == 0)
     {
-        historyColor = TextureCatmullRom(g_HistoryTexture, historyUV, texSize).rgb;
+        historyColor = TextureCatmullRom(g_HistoryTexture, historyUV, imgSize).rgb;
     }
     else
     {
@@ -134,7 +134,7 @@ void main()
     {
         for (float y = -1.0; y <= 1.0; y += 1.0) 
         {
-            vec2 sampleUV      = uv + vec2(x, y) / texSize;
+            vec2 sampleUV      = uv + vec2(x, y) / vec2(imgSize);
             vec3 neighborColor = texture(g_SceneTexture, sampleUV).rgb;
             vec3 neighborYCoCg = RGB2YCoCg(neighborColor);
 
@@ -156,12 +156,12 @@ void main()
     vec3 clampedHistory      = YCoCg2RGB(clampedHistoryYCoCg);
 
     // velocity-based weight adjustment
-    float velocityMagnitude = length(velocity * texSize);
+    float velocityMagnitude = length(velocity * vec2(imgSize));
     float velocityWeight    = 1.0 / (1.0 + velocityMagnitude * 0.1);
 
     float blendAlpha = bValidHistory ? g_Push.blendFactor * velocityWeight : 1.0;
 
     vec3 finalColor = mix(clampedHistory, currentColor, blendAlpha);
 
-    imageStore(g_OutputImage, pixelCoord, vec4(finalColor, 1.0));
+    imageStore(g_OutputImage, pixCoords, vec4(finalColor, 1.0));
 }

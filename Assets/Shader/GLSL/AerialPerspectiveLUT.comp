@@ -105,11 +105,12 @@ vec4 ComputeAerialPerspective(vec3 rayOrigin, vec3 rayDir, float maxDistance, ui
 
 void main() 
 {
-    ivec3 texSize = imageSize(g_AerialPerspectiveLUT);
-    vec3  uvw     = vec3(gl_GlobalInvocationID.xyz + 0.5) / vec3(texSize);
-
-    if (gl_GlobalInvocationID.x >= texSize.x || gl_GlobalInvocationID.y >= texSize.y || gl_GlobalInvocationID.z >= texSize.z)
+    ivec3 imgSize   = imageSize(g_AerialPerspectiveLUT);
+    ivec3 pixCoords = ivec3(gl_GlobalInvocationID.xyz);
+    if (any(greaterThanEqual(pixCoords, imgSize)))
         return;
+
+    vec3  uvw     = (vec3(pixCoords) + 0.5) / vec3(imgSize);
     
     vec3 cameraPos =
         vec3(g_Camera.posWORLD.x, max(g_Camera.posWORLD.y, MIN_VIEW_HEIGHT_ABOVE_GROUND), g_Camera.posWORLD.z);
@@ -118,7 +119,7 @@ void main()
 
     float slice = uvw.z;
     slice *= slice;
-    slice *= float(texSize.z);
+    slice *= float(imgSize.z);
 
     float maxDistance = AP_KM_PER_SLICE * slice;
     vec3  rayDir      = normalize(ReconstructWorldPos(uvw.xy, 0.5, g_Camera.mViewProjInv));

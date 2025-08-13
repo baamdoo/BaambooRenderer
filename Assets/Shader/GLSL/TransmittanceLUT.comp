@@ -52,11 +52,12 @@ vec3 ComputeExtinction(vec3 rayOrigin, vec3 rayDir, float rayLength, int numSamp
 
 void main() 
 {
-    ivec2 texSize = imageSize(g_TransmittanceLUT);
-    vec2  uv      = vec2(gl_GlobalInvocationID.xy + 0.5) / vec2(texSize);
-
-    if (gl_GlobalInvocationID.x >= texSize.x || gl_GlobalInvocationID.y >= texSize.y)
+    ivec2 imgSize   = imageSize(g_TransmittanceLUT);
+    ivec2 pixCoords = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pixCoords, imgSize)))
         return;
+
+    vec2  uv        = (vec2(pixCoords) + 0.5) / vec2(imgSize);
     
     float cosZenithAngle, viewHeight;
     GenerateTransmittanceCoordsFromUV(

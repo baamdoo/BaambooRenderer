@@ -10,7 +10,8 @@ enum eComponentType
 	CMaterial    = 3,
 	CLight       = 4,
 	CAtmosphere  = 5,
-	CPostProcess = 6,
+	CCloud       = 6,
+	CPostProcess = 7,
 
 	// ...
 	NumComponents
@@ -86,6 +87,8 @@ struct AtmosphereRenderView
 	u32  svMaxRaySteps;
 };
 
+using CloudRenderView = CloudData;
+
 struct PostProcessRenderView
 {
 	u64 id;
@@ -137,6 +140,7 @@ struct SceneRenderView
 	CameraRenderView      camera;
 	LightRenderView       light;
 	AtmosphereRenderView  atmosphere;
+	CloudRenderView       cloud;
 	PostProcessRenderView postProcess;
 
 	// for sync producer(SceneRenderView)-consumer(Renderer)

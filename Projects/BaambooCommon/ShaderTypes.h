@@ -123,3 +123,23 @@ struct AtmosphereData
 
     float3 groundAlbedo;
 };
+
+struct CloudData
+{
+    float coverage;
+    float density;
+    float precipitation;
+    float padding0;
+
+    float  cloudBaseHeight_km;
+    float  cloudLayerThickness_km;
+    float2 padding1;
+
+    float3 shapeNoiseScale;
+    float  shapeNoiseIntensity;
+    float3 detailNoiseScale;
+    float  detailNoiseIntensity;
+
+    float  windSpeed_mps;
+    float3 padding2;
+};

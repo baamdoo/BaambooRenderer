@@ -34,6 +34,9 @@ struct FrameData
     // LUTs
     Weak< Texture > pSkyViewLUT;
     Weak< Texture > pAerialPerspectiveLUT;
+    Weak< Texture > pCloudLUT_BaseNoise;
+    Weak< Texture > pCloudLUT_DetailNoise;
+    Weak< Texture > pCloudLUT_CurlNoise;
 
     // framebuffers
     Weak< Texture > pGBuffer0;

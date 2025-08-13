@@ -215,6 +215,10 @@ bool ExampleApp::LoadScene()
 		auto& atmosphere = sunLight.GetComponent< AtmosphereComponent >();
 		atmosphere.atmosphereRadius_km = 6420.0f;
 	}
+	{
+		auto cloud = m_pScene->CreateEntity("Cloud");
+		cloud.AttachComponent< CloudComponent >();
+	}
 
 	// Create a point light
 	{

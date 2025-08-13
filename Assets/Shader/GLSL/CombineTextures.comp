@@ -11,12 +11,16 @@ layout(set = 1, binding = 3, rgba8) writeonly uniform image2D g_CombinedTexture;
 
 void main() 
 {
-    ivec2 texSize  = imageSize(g_CombinedTexture);
-    vec2 texCoords = ivec2(gl_GlobalInvocationID.xy) / vec2(texSize);
+    ivec2 imgSize     = imageSize(g_CombinedTexture);
+    ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pixelCoords, imgSize)))
+        return;
 
-    float R = texture(g_TextureR, texCoords).r;
-    float G = texture(g_TextureG, texCoords).g;
-    float B = texture(g_TextureB, texCoords).b;
+    vec2  uv         = ivec2(gl_GlobalInvocationID.xy) / vec2(imgSize);
+
+    float R = texture(g_TextureR, uv).r;
+    float G = texture(g_TextureG, uv).g;
+    float B = texture(g_TextureB, uv).b;
 
     vec4 value = vec4(R, G, B, 1.0);
 

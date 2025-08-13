@@ -42,11 +42,11 @@ vec3 Uncharted2Tonemap(vec3 x)
 
 void main()
 {
-    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
-    if (any(greaterThanEqual(pixelCoord, imageSize(g_OutputImage))))
+    ivec2 pixCoords = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pixCoords, imageSize(g_OutputImage))))
         return;
 
-    vec2 uv       = (vec2(pixelCoord) + 0.5) / vec2(imageSize(g_OutputImage));
+    vec2 uv       = (vec2(pixCoords) + 0.5) / vec2(imageSize(g_OutputImage));
     vec3 hdrColor = texture(g_SceneTexture, uv).rgb;
     
     vec3 toneMapped;
@@ -76,5 +76,5 @@ void main()
     
     vec3 gammaCorrected = pow(toneMapped, vec3(1.0 / g_Push.gamma));
     
-    imageStore(g_OutputImage, pixelCoord, vec4(gammaCorrected, 1.0));
+    imageStore(g_OutputImage, pixCoords, vec4(gammaCorrected, 1.0));
 }

@@ -7,6 +7,7 @@
 #include "Systems/MeshSystem.h"
 #include "Systems/MaterialSystem.h"
 #include "Systems/AtmosphereSystem.h"
+#include "Systems/CloudSystem.h"
 #include "Systems/PostProcessSystem.h"
 
 #include <queue>
@@ -24,6 +25,7 @@ Scene::Scene(const std::string& name)
 	m_pStaticMeshSystem  = new StaticMeshSystem(m_Registry);
 	m_pMaterialSystem    = new MaterialSystem(m_Registry);
 	m_pAtmosphereSystem  = new AtmosphereSystem(m_Registry);
+	m_pCloudSystem       = new CloudSystem(m_Registry);
 	m_pPostProcessSystem = new PostProcessSystem(m_Registry);
 }
 
@@ -33,6 +35,7 @@ Scene::~Scene()
 		RELEASE(pLoader);
 
 	RELEASE(m_pPostProcessSystem);
+	RELEASE(m_pCloudSystem);
 	RELEASE(m_pAtmosphereSystem);
 	RELEASE(m_pMaterialSystem);
 	RELEASE(m_pStaticMeshSystem);
@@ -266,6 +269,12 @@ void Scene::Update(f32 dt)
 		dirtyMarks |= (1 << eComponentType::CAtmosphere);
 	}
 
+	for (auto entity : m_pCloudSystem->Update())
+	{
+		u64& dirtyMarks = m_EntityDirtyMasks[entity];
+		dirtyMarks |= (1 << eComponentType::CCloud);
+	}
+
 	for (auto entity : m_pPostProcessSystem->Update())
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
@@ -444,6 +453,21 @@ SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 			}
 
 			view.light.ev100 = lightComponent.ev100;
+		});
+
+	m_Registry.view< TransformComponent, CloudComponent >().each([this, &view](auto id, auto& transformComponent, auto& cloudComponent)
+		{
+			CloudRenderView cloudView = {};
+			cloudView.coverage               = cloudComponent.coverage;
+			cloudView.density                = cloudComponent.density;
+			cloudView.precipitation          = cloudComponent.precipitation;
+			cloudView.cloudBaseHeight_km     = cloudComponent.cloudBaseHeight_km;
+			cloudView.cloudLayerThickness_km = cloudComponent.cloudLayerThickness_km;
+			cloudView.shapeNoiseScale        = float3(cloudComponent.shapeNoiseScale);
+			cloudView.detailNoiseScale       = float3(cloudComponent.detailNoiseScale);
+			cloudView.windSpeed_mps          = cloudComponent.windSpeed_mps;
+
+			view.cloud = cloudView;
 		});
 
 	m_Registry.view< PostProcessComponent >().each([this, &view](auto id, auto& postProcessComponent)

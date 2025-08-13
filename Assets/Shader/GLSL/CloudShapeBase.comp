@@ -1,0 +1,55 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_nonuniform_qualifier : enable
+
+#include "Common.hg"
+#include "HelperFunctions.hg"
+#include "Noise.hg"
+
+layout(set = SET_PUSH, binding = 0) uniform CloudShapeData
+{
+    float coverage;
+    float density;
+    float precipitation;
+    float padding0;
+
+    float cloudBaseHeight_km;
+    float cloudLayerThickness_km;
+    vec2  padding1;
+
+    vec3  shapeNoiseScale;
+    float shapeNoiseIntensity;
+    vec3  detailNoiseScale;
+    float detailNoiseIntensity;
+
+    float windSpeed_mps;
+    vec3  padding2;
+} g_CloudShape;
+layout(set = SET_PUSH, binding = 1, rgba16f) writeonly uniform image3D g_BaseNoise;
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+void main() 
+{
+    ivec3 imgSize   = imageSize(g_BaseNoise);
+    ivec3 pixCoords = ivec3(gl_GlobalInvocationID.xyz);
+    if (any(greaterThanEqual(pixCoords, imgSize)))
+        return;
+
+    vec3  uvw       = vec3(pixCoords + 0.5) / vec3(imgSize);
+
+    // float noise = remap(perlinNoise3D(uvw * 10.0), -1.0, 1.0, 0.0, 1.0);
+    // float noise = ridgedFBM(uvw * 10.0, 4, 0.5, 2.0);
+    // float noise = turbulenceFBM(uvw * 10.0, 4, 0.5, 2.0);
+    // float noise = worleyNoise3D(uvw, 10.0);
+    // float noise = 1.0 - worleyNoise3D(uvw, 10.0);
+    // float noise = perlinWorley3D(uvw, 10.0);
+    // noise = steppedNoise(noise);
+    float perlin = fbm(uvw, 4, 0.5, 2.0);
+    float worley = worleyNoise3D(uvw, 10.0);
+
+    float noise = clamp(perlin * (1.0 - 0.6 * worley), 0.0, 1.0);
+
+    vec4 value = vec4(noise, noise, noise, g_CloudShape.detailNoiseIntensity);
+
+    imageStore(g_BaseNoise, pixCoords, value);
+}
