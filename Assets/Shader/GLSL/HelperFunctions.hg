@@ -6,6 +6,11 @@
 #define _GLSL
 #include "../Common.bsh"
 
+float saturate(float v)
+{
+    return clamp(v, 0.0, 1.0);
+}
+
 float inverseLerp(float v, float minValue, float maxValue) 
 {
 	return (v - minValue) / (maxValue - minValue);
@@ -17,9 +22,24 @@ float remap(float v, float inMin, float inMax, float outMin, float outMax)
 	return mix(outMin, outMax, t);
 }
 
+float safeRemap(float value, float oldMin, float oldMax, float newMin, float newMax) 
+{
+    return clamp(remap(value, oldMin, oldMax, newMin, newMax), newMin, newMax);
+}
+
+float clampedRemap(float value, float oldMin, float oldMax, float newMin, float newMax)
+{
+    return clamp((value - oldMin) / (oldMax - oldMin), 0.0, 1.0) * (newMax - newMin) + newMin;
+}
+
 float safeSqrt(float a)
 {
     return sqrt(max(a, 0.0));
+}
+
+float linearstep(float s, float e, float v) 
+{
+    return saturate((v - s) * (10.0 / (e - s)));
 }
 
 // Reference: https://github.com/EpicGames/UnrealEngine/blob/release/Engine/Shaders/Private/FastMath.ush
@@ -127,5 +147,12 @@ vec2 RaySphereIntersection(vec3 rayOrigin, vec3 rayDir, vec3 sphereCenter, float
     float root1 = (-b + sqrt(discriminant)) / (2.0 * a);
     return vec2(root0, root1);
 }
+
+vec3 RayPlaneIntersection(vec3 rayOrigin, vec3 rayDir, vec4 plane) 
+{
+    float t = (plane.a - dot(rayOrigin, plane.xyz)) / max(dot(rayDir, plane.xyz), EPSILON);
+    return rayOrigin + t * rayDir;
+}
+
 
 #endif // _GLSL_HELPER_FUNCTION_HEADER

@@ -36,7 +36,8 @@ struct FrameData
     Weak< Texture > pAerialPerspectiveLUT;
     Weak< Texture > pCloudLUT_BaseNoise;
     Weak< Texture > pCloudLUT_DetailNoise;
-    Weak< Texture > pCloudLUT_CurlNoise;
+    Weak< Texture > pWeatherMapLUT;
+    Weak< Texture > pCloudScatteringLUT;
 
     // framebuffers
     Weak< Texture > pGBuffer0;
@@ -47,8 +48,9 @@ struct FrameData
     Weak< Texture > pDepth;
 
     // samplers
-    Arc< Sampler > pLinearClamp;
     Arc< Sampler > pPointClamp;
+    Arc< Sampler > pLinearClamp;
+    Arc< Sampler > pLinearWrap;
 };
 inline FrameData g_FrameData;
 

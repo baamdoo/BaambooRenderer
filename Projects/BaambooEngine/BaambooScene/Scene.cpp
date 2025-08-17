@@ -16,6 +16,8 @@
 namespace baamboo
 {
 
+static float s_SceneRunningTime = 0.0f;
+
 static std::unordered_map< std::string, Entity > s_ModelCache;
 
 Scene::Scene(const std::string& name)
@@ -245,6 +247,8 @@ void Scene::Update(f32 dt)
 {
 	std::lock_guard< std::mutex > lock(m_SceneMutex);
 
+	s_SceneRunningTime += dt;
+
 	for (auto entity : m_pTransformSystem->Update())
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
@@ -291,6 +295,7 @@ SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 	}
 
 	SceneRenderView view{};
+	view.time              = s_SceneRunningTime;
 	view.pSceneMutex       = &m_SceneMutex;
 	view.pEntityDirtyMarks = bMarkedAny ? &m_EntityDirtyMasks : nullptr;
 

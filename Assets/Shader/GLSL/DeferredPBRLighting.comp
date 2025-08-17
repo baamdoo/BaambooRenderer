@@ -25,8 +25,9 @@ layout(set = SET_PUSH, binding = 4) uniform sampler2D g_GBuffer3;    // MotionVe
 layout(set = SET_PUSH, binding = 5) uniform sampler2D g_DepthBuffer;
 layout(set = SET_PUSH, binding = 6) uniform sampler2D g_SkyViewLUT;
 layout(set = SET_PUSH, binding = 7) uniform sampler3D g_AerialPerspectiveLUT;
+layout(set = SET_PUSH, binding = 8) uniform sampler2D g_CloudScatteringLUT;
 
-layout(set = SET_PUSH, binding = 8, rgba16f) writeonly uniform image2D g_OutputTexture;
+layout(set = SET_PUSH, binding = 9, rgba16f) writeonly uniform image2D g_OutputTexture;
 
 layout(push_constant) uniform PushConstants
 {
@@ -271,14 +272,19 @@ void main()
         bool bIntersectGround   = groundIntersection.x > 0.0;
 
         vec2 skyUV = GetUvFromSkyViewRayDirection(longitude, acosFast4(cosLatitude), viewHeight, bIntersectGround);
-        skyUV      = GetUnstretchedTextureUV(skyUV, texSize);
-        vec4 skyColor = texture(g_SkyViewLUT, skyUV);
-        vec3 color    = skyColor.rgb + GetSunLuminance(rayDir, bIntersectGround) * skyColor.a;
+             skyUV = GetUnstretchedTextureUV(skyUV, texSize);
+
+        vec4 skyColor   = texture(g_SkyViewLUT, skyUV);
+        vec4 cloudColor = texture(g_CloudScatteringLUT, skyUV);
+        vec3 color      = skyColor.rgb + GetSunLuminance(rayDir, bIntersectGround) * skyColor.a;
+             color      = mix(cloudColor.rgb, color, cloudColor.a);
 
         // exposure correction
         float ev100    = g_LightBuffer.lightingData.ev100;
         float exposure = 1.0 / (1.2 * pow(2.0, ev100));
         color *= exposure;
+
+
 
         imageStore(g_OutputTexture, pixCoords, vec4(color, 1.0));
         return;

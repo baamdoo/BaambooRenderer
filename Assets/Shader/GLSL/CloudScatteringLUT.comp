@@ -1,0 +1,253 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : require
+
+#define _CAMERA
+#include "Common.hg"
+#define _ATMOSPHERE
+#include "AtmosphereCommon.hg"
+#include "HelperFunctions.hg"
+
+layout(set = SET_PUSH, binding = 2) uniform sampler3D g_CloudBaseNoise;
+layout(set = SET_PUSH, binding = 3) uniform sampler3D g_CloudDetailNoise;
+layout(set = SET_PUSH, binding = 4) uniform sampler2D g_WeatherMap;
+
+layout(set = SET_PUSH, binding = 5, rgba16f) writeonly uniform image2D g_CloudScatteringLUT;
+
+// Reference: https://www.shadertoy.com/view/MdGfzh#
+const float CLOUD_DENSITY_SCALE = 0.5;
+const float CLOUD_ABSORPTION = 0.9;
+const float CLOUD_SCATTERING = 1.0;
+const float CLOUD_FORWARD_SCATTERING_G = 0.8;  // Henyey-Greenstein phase function parameter
+const float CLOUD_BACKWARD_SCATTERING_G = -0.2;
+const float CLOUD_FORWARD_SCATTERING_BLEND = 0.5;
+
+const uint  CLOUD_RAYMARCH_STEPS = 12;
+#define CLOUDS_DETAIL_STRENGTH (.225)
+#define CLOUDS_AMBIENT_COLOR_TOP (vec3(149., 167., 200.)*(1.5/255.))
+#define CLOUDS_AMBIENT_COLOR_BOTTOM (vec3(39., 67., 87.)*(1.5/255.))
+
+#define STRATUS_GRADIENT vec4(0.0, 0.1, 0.2, 0.3)
+#define STRATOCUMULUS_GRADIENT vec4(0.02, 0.2, 0.48, 0.625)
+#define CUMULUS_GRADIENT vec4(0.00, 0.1625, 0.88, 0.98)
+
+layout(push_constant) uniform Push 
+{
+    float bottomLayer_km;
+    float topLayer_km;
+
+    float time_s;
+} g_Push;
+
+vec3 GetSkyViewRayDirectionFromUV(vec2 uv, float viewHeight)
+{
+	float Vhorizon           = sqrt(viewHeight * viewHeight - g_Atmosphere.planetRadius_km * g_Atmosphere.planetRadius_km);
+	float cosBeta            = Vhorizon / viewHeight;				
+	float beta               = acosFast4(cosBeta);
+	float zenithHorizonAngle = PI - beta;
+
+	float latitude;
+	if (uv.y < 0.5)
+	{
+		float coord = 1.0 - 2.0 * uv.y;
+		coord      *= coord;
+		coord       = 1.0 - coord;
+
+		latitude = zenithHorizonAngle * coord;
+	}
+	else
+	{
+		float coord = uv.y * 2.0 - 1.0;
+		coord      *= coord;
+
+		latitude = zenithHorizonAngle + beta * coord;
+	}
+
+	float longitude = uv.x * 2.0 * PI + PI; // '+PI' to resolve 180 degrees mis-unligned between texture coordinate and spheric coordinate
+
+	float cosLatitude  = cos(latitude);
+    float sinLatitude  = sin(latitude);
+	float cosLongitude = cos(longitude);
+    float sinLongitude = sin(longitude);
+	vec3 viewDir = vec3(
+		    sinLatitude * cosLongitude,
+		    cosLatitude,
+		    sinLatitude * sinLongitude
+		);
+
+    return viewDir;
+}
+
+float phase_HG(float cosTheta, float g)
+{
+    float g2    = g * g;
+    float num   = 1.0 - g2;
+    float denom = pow(1.0 + g2 - 2.0 * g * cosTheta, 1.5);
+    return num / denom;
+}
+
+float CloudGradient(float hNorm) 
+{
+    return linearstep(0.0, 0.05, hNorm) - linearstep(0.8, 1.2, hNorm);
+}
+
+float SampleCloudDensity(vec3 pos, float lod, float hNorm)
+{
+    float altitude       = length(pos) - g_Atmosphere.planetRadius_km;
+    float heightFraction = inverseLerp(altitude, g_Push.bottomLayer_km, g_Push.topLayer_km);
+    if (heightFraction <= 0.0 || heightFraction >= 1.0)
+        return 0.0;
+
+    // vec2 uw = pos.xz / (g_Push.bottamLayer_km + g_Atmosphere.planetRadius_km) + 0.5;
+
+    vec2 weatherUV = pos.xz * 0.00001;
+    vec3 weather   = texture(g_WeatherMap, weatherUV).rgb;
+
+    float coverage     = weather.r;
+    float cloudType    = weather.g;
+    float typeGradient = clamp(clampedRemap(heightFraction, 0.0, 0.2, 0.0, 1.0) * 
+                               clampedRemap(heightFraction, 0.7, 1.0, 1.0, 0.0), 0.0, 1.0);
+
+    vec3  baseUVW    = vec3(pos.xz, heightFraction) * 0.0001;
+    vec4  baseNoise  = texture(g_CloudBaseNoise, baseUVW);
+    float baseShape  = hNorm * hNorm * baseNoise.b + pow(1.0 - hNorm, 16.0);
+          baseShape  = inverseLerp(baseNoise.r, baseNoise.g, 1.0);
+          baseShape *= CloudGradient(hNorm);
+    
+    float detailStrength = smoothstep(1.0, 0.5, baseShape);
+    if (detailStrength > 0.0)
+    {
+        pos = abs(pos) * 0.05;
+
+        float yi     = mod(pos.y, 32.0);
+        ivec2 offset = ivec2(mod(yi, 8.0), mod(floor(yi / 8.0), 4.0)) * 34 + 1;
+
+        vec3  detailUVW   = abs(pos) * 0.05;
+        vec3  detailNoise = texture(g_CloudDetailNoise, detailUVW).rgb;
+        float detailShape = dot(detailNoise, vec3(0.625, 0.25, 0.125));
+        
+        float detailStrength = mix(detailShape, 1.0 - detailShape, heightFraction);
+
+        baseShape -= detailShape * detailStrength * CLOUDS_DETAIL_STRENGTH;
+    }
+
+    float density = smoothstep(0.0, 0.1, baseShape);
+    return density;
+}
+
+vec4 RaymarchClouds(vec3 rayOrigin, vec3 rayDir, float maxDistance)
+{
+    float rBottomLayer = g_Atmosphere.planetRadius_km + g_Push.bottomLayer_km;
+    float rTopLayer    = g_Atmosphere.planetRadius_km + g_Push.topLayer_km;
+    
+    vec2 bottomIntersection = 
+            RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, rBottomLayer);
+    vec2 topIntersection    = 
+        RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, rTopLayer);
+    if (topIntersection.y <= 0.0 || topIntersection.y > 60.0)
+    {
+        return vec4(0.0, 0.0, 0.0, 1.0);
+    }
+
+    float rayStart = bottomIntersection.y > 0.0 ? bottomIntersection.y : 0.0;
+    float rayEnd   = topIntersection.y;
+    
+    if (length(rayOrigin) >= rBottomLayer && length(rayOrigin) <= rTopLayer)
+    {
+        // camera in-between cloud layers
+        rayStart = 0.0;
+        rayEnd   = topIntersection.y > 0.0 ? min(topIntersection.y, maxDistance) : maxDistance;
+    }
+    else if (bottomIntersection.y > 0.0)
+    {
+        // camera in-below cloud bottom layer
+        rayStart = min(bottomIntersection.y, maxDistance);
+        rayEnd   = min(topIntersection.y, maxDistance);
+    }
+    else if (topIntersection.x > 0.0 && topIntersection.x < maxDistance)
+    {
+        // camera in-above cloud top layer
+        rayStart = topIntersection.x;
+        rayEnd   = min(bottomIntersection.y, maxDistance);
+    }
+    else
+    {
+        // no cloud intersection
+        return vec4(0.0, 0.0, 0.0, 1.0);
+    }
+    
+    float rayLength = rayEnd - rayStart;
+    if (rayLength <= 0.0)
+        return vec4(0.0, 0.0, 0.0, 1.0);
+    
+    // light illuminance
+    vec3 lightColor = vec3(g_Atmosphere.light.colorR, g_Atmosphere.light.colorG, g_Atmosphere.light.colorB);
+    if (g_Atmosphere.light.temperature_K > 0.0)
+        lightColor *= ColorTemperatureToRGB(g_Atmosphere.light.temperature_K);
+
+    vec3 E = g_Atmosphere.light.illuminance_lux * lightColor;
+    
+    // phase function
+    float cosTheta      = dot(rayDir, vec3(-g_Atmosphere.light.dirX, -g_Atmosphere.light.dirY, -g_Atmosphere.light.dirZ));
+    float forwardPhase  = phase_HG(cosTheta, CLOUD_FORWARD_SCATTERING_G);
+    float backwardPhase = phase_HG(cosTheta, CLOUD_BACKWARD_SCATTERING_G);
+    float phase         = mix(forwardPhase, backwardPhase, CLOUD_FORWARD_SCATTERING_BLEND);
+
+    float stepSize = rayLength / float(CLOUD_RAYMARCH_STEPS);
+    
+    vec3  L          = vec3(0.0);
+    float throughput = 1.0;
+    for (uint i = 0u; i < CLOUD_RAYMARCH_STEPS; ++i)
+    {
+        float t   = rayStart + (float(i) + 0.5) * stepSize;
+        vec3  pos = rayOrigin + t * rayDir;
+        
+        // Sample cloud density with LOD based on distance
+        float altitude = length(pos) - g_Atmosphere.planetRadius_km;
+        float hNorm    = inverseLerp(altitude, g_Push.bottomLayer_km, g_Push.topLayer_km);
+        float lod      = smoothstep(0.0, 100.0, t * 0.1);
+        float density  = SampleCloudDensity(pos, lod, hNorm);
+        if (density > 0.0)
+        {
+            float stepTransmittance = exp(-density * stepSize);
+
+            vec3 ambientLight = mix(CLOUDS_AMBIENT_COLOR_BOTTOM, CLOUDS_AMBIENT_COLOR_TOP, hNorm);
+
+            vec3 S      = (ambientLight + E * phase) * density;
+            vec3 Sint   = (S - S * stepTransmittance) / density;
+            L          += throughput * Sint;
+            throughput *= stepTransmittance;
+        }
+    }
+
+    return vec4(L, throughput);
+}
+
+
+layout (local_size_x = 8, local_size_y = 8) in;
+void main()
+{
+    ivec2 imgSize   = imageSize(g_CloudScatteringLUT);
+    ivec2 pixCoords = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pixCoords, imgSize)))
+        return;
+
+    vec2  uv        = (vec2(pixCoords) + 0.5) / vec2(imgSize) * 2.0; // up-scale factor 2
+
+    vec3 cameraPos =
+        vec3(g_Camera.posWORLD.x, max(g_Camera.posWORLD.y, MIN_VIEW_HEIGHT_ABOVE_GROUND), g_Camera.posWORLD.z);
+    vec3 cameraPosAbovePlanet =
+        cameraPos * DISTANCE_SCALE + vec3(0.0, g_Atmosphere.planetRadius_km, 0.0);
+
+    float viewHeightWORLD = length(cameraPosAbovePlanet);
+
+    vec3 rayDir    = normalize(ReconstructWorldPos(uv, 0.5, g_Camera.mViewProjInv));
+    vec3 rayOrigin = cameraPosAbovePlanet;
+
+    vec2  groundIntersection = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, g_Atmosphere.planetRadius_km);
+    float maxDistance        = groundIntersection.x > 0.0 ? groundIntersection.x : RAY_MARCHING_MAX_DISTANCE;
+    
+    vec4 clouds = RaymarchClouds(rayOrigin, rayDir, maxDistance);
+    
+    imageStore(g_CloudScatteringLUT, ivec2(gl_GlobalInvocationID.xy), clouds);
+}

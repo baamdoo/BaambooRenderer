@@ -19,8 +19,6 @@ layout(push_constant) uniform PushConstants
     uint maxRaySteps;
 } g_Push;
 
-const float RAY_MARCHING_MAX_DISTANCE = 1e6;
-
 vec3 GetSkyViewRayDirectionFromUV(vec2 uv, float viewHeight)
 {
 	float Vhorizon           = sqrt(viewHeight * viewHeight - g_Atmosphere.planetRadius_km * g_Atmosphere.planetRadius_km);

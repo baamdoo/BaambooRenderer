@@ -6,26 +6,23 @@
 #include "HelperFunctions.hg"
 #include "Noise.hg"
 
-layout(set = SET_PUSH, binding = 0) uniform CloudShapeData
+layout(set = SET_PUSH, binding = 0, rgba16f) writeonly uniform image3D g_BaseNoise;
+
+layout(push_constant) uniform PushConstants
 {
-    float coverage;
-    float density;
-    float precipitation;
-    float padding0;
+    // Perlin
+    float fPerlin;
+    uint  octaves;
+    float persistence;
+    float lacunarityPerlin;
 
-    float cloudBaseHeight_km;
-    float cloudLayerThickness_km;
-    vec2  padding1;
+    // Worley
+    float fWorley;
+    float lacunarityWorley;
 
-    vec3  shapeNoiseScale;
-    float shapeNoiseIntensity;
-    vec3  detailNoiseScale;
-    float detailNoiseIntensity;
-
-    float windSpeed_mps;
-    vec3  padding2;
-} g_CloudShape;
-layout(set = SET_PUSH, binding = 1, rgba16f) writeonly uniform image3D g_BaseNoise;
+    // misc
+    float time_s;
+} g_Push;
 
 layout (local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 void main() 
@@ -34,8 +31,9 @@ void main()
     ivec3 pixCoords = ivec3(gl_GlobalInvocationID.xyz);
     if (any(greaterThanEqual(pixCoords, imgSize)))
         return;
-
+    
     vec3  uvw       = vec3(pixCoords + 0.5) / vec3(imgSize);
+          uvw.xy   += g_Push.time_s * 0.02;
 
     // float noise = remap(perlinNoise3D(uvw * 10.0), -1.0, 1.0, 0.0, 1.0);
     // float noise = ridgedFBM(uvw * 10.0, 4, 0.5, 2.0);
@@ -44,12 +42,15 @@ void main()
     // float noise = 1.0 - worleyNoise3D(uvw, 10.0);
     // float noise = perlinWorley3D(uvw, 10.0);
     // noise = steppedNoise(noise);
-    float perlin = fbm(uvw, 4, 0.5, 2.0);
-    float worley = worleyNoise3D(uvw, 10.0);
+    
+    float perlin       = perlinFBM(uvw, g_Push.fPerlin, int(g_Push.octaves), g_Push.persistence, g_Push.lacunarityPerlin);
+          perlin       = perlin * 0.5 + 0.5;
+    float worley0      = worleyFBM(uvw, g_Push.fWorley);
+    float worley1      = worleyFBM(uvw, g_Push.fWorley * g_Push.lacunarityWorley);
+    float worley2      = worleyFBM(uvw, g_Push.fWorley * g_Push.lacunarityWorley * g_Push.lacunarityWorley);
+    float perlinWorley = remap(perlin, 0.0, 1.0, worley0, 1.0);
 
-    float noise = clamp(perlin * (1.0 - 0.6 * worley), 0.0, 1.0);
-
-    vec4 value = vec4(noise, noise, noise, g_CloudShape.detailNoiseIntensity);
+    vec4 value = vec4(perlinWorley, worley0, worley1, worley2);
 
     imageStore(g_BaseNoise, pixCoords, value);
 }

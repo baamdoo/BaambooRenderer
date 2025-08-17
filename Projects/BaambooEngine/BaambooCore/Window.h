@@ -33,7 +33,7 @@ struct WindowDescriptor
 {
 	std::string title;
 
-	i32  width = 1280;
+	i32  width  = 1280;
 	i32  height = 720;
 	u32  numDesiredImages = 2;
 	bool bFullscreen = false;

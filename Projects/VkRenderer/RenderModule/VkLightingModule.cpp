@@ -44,6 +44,7 @@ void LightingModule::Apply(CommandContext& context, const SceneRenderView& rende
 	subresourceRange.baseMipLevel = 0;
 	subresourceRange.levelCount   = m_pOutTexture->Desc().mipLevels;
 	subresourceRange.layerCount   = m_pOutTexture->Desc().arrayLayers;
+
 	context.TransitionImageLayout(g_FrameData.pGBuffer0.lock(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, subresourceRange);
 	context.TransitionImageLayout(g_FrameData.pGBuffer1.lock(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, subresourceRange);
 	context.TransitionImageLayout(g_FrameData.pGBuffer2.lock(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, subresourceRange);
@@ -51,6 +52,7 @@ void LightingModule::Apply(CommandContext& context, const SceneRenderView& rende
 	context.TransitionImageLayout(g_FrameData.pDepth.lock(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, subresourceRange);
 	context.TransitionImageLayout(g_FrameData.pSkyViewLUT.lock(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 	context.TransitionImageLayout(g_FrameData.pAerialPerspectiveLUT.lock(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+	context.TransitionImageLayout(g_FrameData.pCloudScatteringLUT.lock(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 	context.TransitionImageLayout(m_pOutTexture, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, subresourceRange);
 
 	context.BindSceneDescriptors(*g_FrameData.pSceneResource);
@@ -105,8 +107,18 @@ void LightingModule::Apply(CommandContext& context, const SceneRenderView& rende
 			g_FrameData.pAerialPerspectiveLUT->vkView(),
 			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 		}, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+	if (auto pCloudLUT = g_FrameData.pCloudScatteringLUT.lock())
+	{
+		context.PushDescriptors(
+			8,
+			{
+				g_FrameData.pLinearClamp->vkSampler(),
+				pCloudLUT->vkView(),
+				VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+			}, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+	}
 	context.PushDescriptors(
-		8,
+		9,
 		{
 			VK_NULL_HANDLE,
 			m_pOutTexture->vkView(),

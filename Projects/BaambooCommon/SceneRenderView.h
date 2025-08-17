@@ -131,6 +131,8 @@ struct PostProcessRenderView
 //-------------------------------------------------------------------------
 struct SceneRenderView
 {
+	float time;
+
 	std::vector< TransformRenderView >  transforms;
 	std::vector< StaticMeshRenderView > meshes; 
 	std::vector< MaterialRenderView >   materials;

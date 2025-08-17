@@ -7,9 +7,9 @@
 #include "RenderDevice/VkDescriptorSet.h"
 #include "RenderResource/VkTexture.h"
 #include "RenderResource/VkSceneResource.h"
-#include "RenderModule/VkCloudModule.h"
 #include "RenderModule/VkAtmosphereModule.h"
 #include "RenderModule/VkGBufferModule.h"
+#include "RenderModule/VkCloudModule.h"
 #include "RenderModule/VkLightingModule.h"
 #include "RenderModule/VkPostProcessModule.h"
 #include "RenderModule/VkImGuiModule.h"
@@ -34,12 +34,14 @@ Renderer::Renderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext)
 
 	g_FrameData.camera         = {};
 	g_FrameData.pSceneResource = new SceneResource(*m_pRenderDevice);
-	g_FrameData.pLinearClamp   = Sampler::CreateLinearClamp(*m_pRenderDevice);
 	g_FrameData.pPointClamp    = Sampler::CreatePointClamp(*m_pRenderDevice);
+	g_FrameData.pLinearClamp   = Sampler::CreateLinearClamp(*m_pRenderDevice);
+	g_FrameData.pLinearWrap    = Sampler::CreateLinearRepeat(*m_pRenderDevice);
 
-	m_pRenderModules.push_back(new CloudModule(*m_pRenderDevice));
+	m_pRenderModules.push_back(new CloudShapeModule(*m_pRenderDevice));
 	m_pRenderModules.push_back(new AtmosphereModule(*m_pRenderDevice));
 	m_pRenderModules.push_back(new GBufferModule(*m_pRenderDevice));
+	m_pRenderModules.push_back(new CloudScatteringModule(*m_pRenderDevice));
 	m_pRenderModules.push_back(new LightingModule(*m_pRenderDevice));
 	m_pRenderModules.push_back(new PostProcessModule(*m_pRenderDevice));
 	m_pRenderModules.push_back(new ImGuiModule(*m_pRenderDevice, *m_pSwapChain, pImGuiContext));
@@ -52,8 +54,9 @@ Renderer::~Renderer()
 	vkDeviceWaitIdle(m_pRenderDevice->vkDevice());
 
 	RELEASE(g_FrameData.pSceneResource);
-	g_FrameData.pPointClamp.reset();
+	g_FrameData.pLinearWrap.reset();
 	g_FrameData.pLinearClamp.reset();
+	g_FrameData.pPointClamp.reset();
 	for (auto pModule : m_pRenderModules)
 		RELEASE(pModule);
 
@@ -129,12 +132,12 @@ void Renderer::Render(SceneRenderView&& renderView)
 		{
 			pModule->Apply(commandContext, renderView);
 		}
-
+		
 		auto pBackBuffer = m_pSwapChain->GetImageToPresent();
 		if (g_FrameData.pColor.valid())
 		{
-			commandContext.BlitTexture(pBackBuffer, g_FrameData.pCloudLUT_BaseNoise.lock());
-			//commandContext.BlitTexture(pBackBuffer, g_FrameData.pColor.lock());
+			//commandContext.BlitTexture(pBackBuffer, g_FrameData.pCloudLUT_BaseNoise.lock());
+			commandContext.BlitTexture(pBackBuffer, g_FrameData.pColor.lock());
 		}
 
 		commandContext.TransitionImageLayout(

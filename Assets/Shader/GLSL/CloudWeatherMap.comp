@@ -1,0 +1,40 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "Noise.hg"
+#include "HelperFunctions.hg"
+
+layout(set = SET_PUSH, binding = 0, rgba8) writeonly uniform image2D g_WeatherMap;
+
+layout(push_constant) uniform PushConstants
+{
+    // cloud type
+    float fType;
+    int   oType;
+    float pType;
+    float lType;
+
+    // coverage
+    float fCoverage;
+    int   oCoverage;
+    float pCoverage;
+    float lCoverage;
+} g_Push;
+
+layout (local_size_x = 8, local_size_y = 8) in;
+void main()
+{
+    ivec2 imgSize   = imageSize(g_WeatherMap);
+    ivec2 pixCoords = ivec2(gl_GlobalInvocationID.xyz);
+    if (any(greaterThanEqual(pixCoords, imgSize)))
+        return;
+    
+    vec2  uv        = vec2(pixCoords + 0.5) / vec2(imgSize);
+
+    float cloudType = perlinFBM(uv, g_Push.fType, g_Push.oType, g_Push.pType, g_Push.lType);
+    float coverage  = perlinFBM(uv, g_Push.fCoverage, g_Push.oCoverage, g_Push.pCoverage, g_Push.lCoverage);
+    
+    vec4 weather = vec4(saturate(coverage), saturate(cloudType), 0, 1);
+
+    imageStore(g_WeatherMap, pixCoords, weather);
+}

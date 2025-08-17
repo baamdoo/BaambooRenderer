@@ -129,7 +129,7 @@ i32 Engine::Run()
 	{
 		m_GameTimer.Tick();
 
-		auto dt = m_GameTimer.GetDeltaSeconds();
+		auto dt        = m_GameTimer.GetDeltaSeconds();
 		m_RunningTime += dt;
 
 		Update(static_cast<float>(dt));
@@ -152,7 +152,7 @@ void Engine::Update(f32 dt)
 		m_pRendererBackend->OnWindowResized(m_ResizeWidth, m_ResizeHeight);
 
 		m_bWindowResized = false;
-		m_ResizeWidth = m_ResizeHeight = -1;
+		m_ResizeWidth    = m_ResizeHeight = -1;
 	}
 
 	GameLoop(dt);
