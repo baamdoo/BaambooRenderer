@@ -96,13 +96,13 @@ float perlinFBM(vec2 p, float frequency, int octaves, float persistence, float l
     return total / normalization;
 }
 
-float perlinFBM(vec3 p, float frequency, int octaves, float persistence, float lacunarity) 
+float perlinFBM(vec3 p, float frequency, uint octaves, float persistence, float lacunarity) 
 {
     float total         = 0.0;
     float amplitude     = 1.0;
     float normalization = 0.0;
     
-    for (int i = 0; i < octaves; i++) 
+    for (uint i = 0u; i < octaves; i++) 
     {
         float noise = perlinNoise3D(p * frequency, frequency);
 
@@ -114,6 +114,30 @@ float perlinFBM(vec3 p, float frequency, int octaves, float persistence, float l
     }
     
     return total / normalization;
+}
+
+float worleyNoise2D(vec2 p, float frequency) 
+{
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    
+    float closest = 10000.0;
+    for (int x = -1; x <= 1; ++x) 
+    {
+        for (int y = -1; y <= 1; ++y) 
+        {
+            {
+                vec2 neighbor = i + vec2(x, y);
+                vec2 offset   = hash2D(mod(neighbor, vec2(frequency))) * 0.5 + 0.5;
+
+                vec2  d    = f - (vec2(x, y) + offset);
+                float dist = dot(d, d);
+                closest    = min(closest, dist);
+            }
+        }
+    }
+    
+    return 1.0 - closest;
 }
 
 float worleyNoise3D(vec3 p, float frequency) 
@@ -148,6 +172,26 @@ float worleyFBM(vec3 p, float frequency)
     return worleyNoise3D(p * frequency, frequency) * 0.625 +
            worleyNoise3D(p * frequency * 2.0, frequency * 2.0) * 0.25 +
            worleyNoise3D(p * frequency * 4.0, frequency * 4.0) * 0.125;
+}
+
+float worleyFBM(vec3 p, float frequency, uint octaves, float persistence, float lacunarity) 
+{
+    float total         = 0.0;
+    float amplitude     = 1.0;
+    float normalization = 0.0;
+    
+    for (uint i = 0u; i < octaves; i++) 
+    {
+        float noise = worleyNoise3D(p * frequency, frequency);
+
+        total         += noise * amplitude;
+        normalization += amplitude;
+        
+        amplitude *= persistence;
+        frequency *= lacunarity;
+    }
+    
+    return total / normalization;
 }
 
 float ridgedFBM(vec3 p, int octaves, float persistence, float lacunarity) 

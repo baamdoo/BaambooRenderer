@@ -87,6 +87,11 @@ vec3 ReconstructWorldPos(vec2 uv, float depth, mat4 mViewProjInv)
     return posWORLD.xyz / posWORLD.w;
 }
 
+float LinearizeDepth(float depth, float near, float far) 
+{    
+    return (near * far) / (far - depth * (far - near));
+}
+
 float ConvertColorToLuminance(vec3 color)
 {
     return dot(color, vec3(0.2126, 0.7152, 0.0722));

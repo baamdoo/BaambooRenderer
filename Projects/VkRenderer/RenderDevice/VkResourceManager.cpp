@@ -3,6 +3,9 @@
 #include "VkCommandContext.h"
 #include "RenderResource/VkBuffer.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb/stb_image.h>
+
 namespace vk
 {
 
@@ -19,6 +22,45 @@ ResourceManager::ResourceManager(RenderDevice& device)
 
 ResourceManager::~ResourceManager()
 {
+}
+
+Arc< Texture > ResourceManager::LoadTexture(const std::string& filepath)
+{
+	fs::path path = filepath;
+
+	u32 width, height, numChannels;
+	u8* pData = stbi_load(path.string().c_str(), (int*)&width, (int*)&height, (int*)&numChannels, STBI_rgb_alpha);
+	BB_ASSERT(pData, "No texture found on the path: %s", path.string().c_str());
+
+	auto pTex = Texture::Create(m_RenderDevice, path.filename().string(),
+		{
+			.resolution = { width, height, 1 },
+			.format     = VK_FORMAT_R8G8B8A8_UNORM,
+			.imageUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT
+		});
+
+	// **
+	// Copy data to staging buffer
+	// **
+	auto texSizeInBytes = pTex->SizeInBytes();
+	VkBufferImageCopy region = {};
+	region.bufferOffset      = 0;
+	region.bufferRowLength   = 0;
+	region.bufferImageHeight = 0;
+	region.imageSubresource  = 
+	{
+		.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+		.mipLevel       = 0,
+		.baseArrayLayer = 0,
+		.layerCount     = 1
+	};
+	region.imageExtent = { width, height, 1 };
+
+	UploadData(pTex, (void*)pData, texSizeInBytes, region);
+
+	RELEASE(pData);
+
+	return pTex;
 }
 
 void ResourceManager::UploadData(Arc< Texture > pTexture, const void* pData, u64 sizeInBytes, VkBufferImageCopy region)

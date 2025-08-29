@@ -10,11 +10,26 @@ layout(set = SET_PUSH, binding = 0, rgba16f) writeonly uniform image3D g_DetailN
 
 layout(push_constant) uniform PushConstants
 {
-    float fWorley;
-    float lacunarityWorley;
+    // r-channel
+    float rWeight;
+    float rFrequency;
+    uint  rOctaves;
+    float rPersistence;
+    float rLacunarity;
 
-    // misc
-    float time_s;
+    // g-channel
+    float gWeight;
+    float gFrequency;
+    uint  gOctaves;
+    float gPersistence;
+    float gLacunarity;
+
+    // b-channel
+    float bWeight;
+    float bFrequency;
+    uint  bOctaves;
+    float bPersistence;
+    float bLacunarity;
 } g_Push;
 
 layout (local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
@@ -26,18 +41,13 @@ void main()
         return;
 
     vec3  uvw       = vec3(pixCoords + 0.5) / vec3(imgSize);
-          uvw.xy   += g_Push.time_s * 0.02;
     
-    float worley0 = (1.0f - worleyNoise3D(uvw, g_Push.fWorley));
-	float worley1 = (1.0f - worleyNoise3D(uvw, g_Push.fWorley * g_Push.lacunarityWorley));
-	float worley2 = (1.0f - worleyNoise3D(uvw, g_Push.fWorley * g_Push.lacunarityWorley * g_Push.lacunarityWorley));
-	float worley3 = (1.0f - worleyNoise3D(uvw, g_Push.fWorley * g_Push.lacunarityWorley * g_Push.lacunarityWorley * g_Push.lacunarityWorley));
+    float r = worleyFBM(uvw, 8.0);
+    float g = worleyFBM(uvw, 16.0);
+    float b = worleyFBM(uvw, 32.0);
+	float a = max(0.0, 1.0 - (r * g_Push.rWeight + g * g_Push.gWeight + b * g_Push.bWeight) / 1.75);
 
-    float worleyFBM0 = worley0 * 0.625 + worley1 * 0.25 + worley2 * 0.125;
-	float worleyFBM1 = worley1 * 0.625 + worley2 * 0.25 + worley3 * 0.125;
-	float worleyFBM2 = worley2 * 0.750 + worley3 * 0.25;
-
-    vec4 value = vec4(worleyFBM0, worleyFBM1, worleyFBM2, 1.0);
+    vec4 value = vec4(r, g, b, a);
 
     imageStore(g_DetailNoise, pixCoords, value);
 }

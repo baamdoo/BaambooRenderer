@@ -136,7 +136,7 @@ void Renderer::Render(SceneRenderView&& renderView)
 		auto pBackBuffer = m_pSwapChain->GetImageToPresent();
 		if (g_FrameData.pColor.valid())
 		{
-			//commandContext.BlitTexture(pBackBuffer, g_FrameData.pCloudLUT_BaseNoise.lock());
+			//commandContext.BlitTexture(pBackBuffer, g_FrameData.pCloudScatteringLUT.lock());
 			commandContext.BlitTexture(pBackBuffer, g_FrameData.pColor.lock());
 		}
 

@@ -20,6 +20,8 @@ public:
     ResourceManager(RenderDevice& device);
     ~ResourceManager();
 
+    Arc< Texture > LoadTexture(const std::string& filepath);
+
     void UploadData(Arc< Texture > pTexture, const void* pData, u64 sizeInBytes, VkBufferImageCopy region);
     void UploadData(Arc< Buffer > pBuffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes);
     void UploadData(VkBuffer vkBuffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes);

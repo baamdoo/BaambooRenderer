@@ -10,19 +10,30 @@ layout(set = SET_PUSH, binding = 0, rgba16f) writeonly uniform image3D g_BaseNoi
 
 layout(push_constant) uniform PushConstants
 {
-    // Perlin
-    float fPerlin;
-    uint  octaves;
-    float persistence;
-    float lacunarityPerlin;
+    // r-channel
+    float rFrequency;
+    uint  rOctaves;
+    float rPersistence;
+    float rLacunarity;
 
-    // Worley
-    float fWorley;
-    float lacunarityWorley;
+    // g-channel
+    float gFrequency;
+    uint  gOctaves;
+    float gPersistence;
+    float gLacunarity;
 
-    // misc
-    float time_s;
+    // b-channel
+    float bFrequency;
+    uint  bOctaves;
+    float bPersistence;
+    float bLacunarity;
+
+    // blend
+    float wPerlin;
+    float wWorley;
 } g_Push;
+
+// Reference: https://www.shadertoy.com/view/3dVXDc
 
 layout (local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 void main() 
@@ -33,7 +44,6 @@ void main()
         return;
     
     vec3  uvw       = vec3(pixCoords + 0.5) / vec3(imgSize);
-          uvw.xy   += g_Push.time_s * 0.02;
 
     // float noise = remap(perlinNoise3D(uvw * 10.0), -1.0, 1.0, 0.0, 1.0);
     // float noise = ridgedFBM(uvw * 10.0, 4, 0.5, 2.0);
@@ -43,11 +53,12 @@ void main()
     // float noise = perlinWorley3D(uvw, 10.0);
     // noise = steppedNoise(noise);
     
-    float perlin       = perlinFBM(uvw, g_Push.fPerlin, int(g_Push.octaves), g_Push.persistence, g_Push.lacunarityPerlin);
-          perlin       = perlin * 0.5 + 0.5;
-    float worley0      = worleyFBM(uvw, g_Push.fWorley);
-    float worley1      = worleyFBM(uvw, g_Push.fWorley * g_Push.lacunarityWorley);
-    float worley2      = worleyFBM(uvw, g_Push.fWorley * g_Push.lacunarityWorley * g_Push.lacunarityWorley);
+    float perlin       = perlinFBM(uvw, 4.0, 7, 0.5, 2.0);
+          perlin       = mix(1.0, perlin, 0.5);
+          perlin       = abs(perlin * 2.0 - 1.0);
+    float worley0      = worleyFBM(uvw, 4.0);
+    float worley1      = worleyFBM(uvw, 8.0);
+    float worley2      = worleyFBM(uvw, 16.0);
     float perlinWorley = remap(perlin, 0.0, 1.0, worley0, 1.0);
 
     vec4 value = vec4(perlinWorley, worley0, worley1, worley2);

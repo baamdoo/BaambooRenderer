@@ -127,19 +127,19 @@ struct AtmosphereData
 struct CloudData
 {
     float coverage;
-    float density;
+    float cloudType;
     float precipitation;
     float padding0;
 
-    float  cloudBaseHeight_km;
-    float  cloudLayerThickness_km;
+    float  topLayer_km;
+    float  bottomLayer_km;
     float2 padding1;
 
-    float3 shapeNoiseScale;
-    float  shapeNoiseIntensity;
-    float3 detailNoiseScale;
-    float  detailNoiseIntensity;
+    float baseNoiseScale;
+    float baseNoiseIntensity;
+    float detailNoiseScale;
+    float detailNoiseIntensity;
 
+    float3 windDirection;
     float  windSpeed_mps;
-    float3 padding2;
 };

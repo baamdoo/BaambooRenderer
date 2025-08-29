@@ -8,17 +8,10 @@ layout(set = SET_PUSH, binding = 0, rgba8) writeonly uniform image2D g_WeatherMa
 
 layout(push_constant) uniform PushConstants
 {
-    // cloud type
-    float fType;
-    int   oType;
-    float pType;
-    float lType;
-
-    // coverage
-    float fCoverage;
-    int   oCoverage;
-    float pCoverage;
-    float lCoverage;
+    float coverage;
+	float precipitation;
+	float time_s;
+	vec2  wind;
 } g_Push;
 
 layout (local_size_x = 8, local_size_y = 8) in;
@@ -30,11 +23,14 @@ void main()
         return;
     
     vec2  uv        = vec2(pixCoords + 0.5) / vec2(imgSize);
+          uv       += g_Push.wind * g_Push.time_s * 0.003;
 
-    float cloudType = perlinFBM(uv, g_Push.fType, g_Push.oType, g_Push.pType, g_Push.lType);
-    float coverage  = perlinFBM(uv, g_Push.fCoverage, g_Push.oCoverage, g_Push.pCoverage, g_Push.lCoverage);
-    
-    vec4 weather = vec4(saturate(coverage), saturate(cloudType), 0, 1);
+    float coverage      = remap(perlinFBM(uv, 8.0, 4, 0.5, 2.0), 1.0 - g_Push.coverage, 1.0, 0.0, 1.0);
+    float cloudType     = perlinFBM(uv, 4.0, 2, 0.5, 2.0) + g_Push.coverage * 0.6 - 0.3;
+    float heightDensity = CloudHeightDensity(uv.x, uv.y);
+    float precipitation = smoothstep(0.6, 0.9, cloudType);
+
+    vec4 weather = vec4(saturate(coverage), saturate(cloudType), heightDensity, 1);
 
     imageStore(g_WeatherMap, pixCoords, weather);
 }

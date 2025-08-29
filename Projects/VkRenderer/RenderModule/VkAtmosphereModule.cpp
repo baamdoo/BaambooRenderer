@@ -133,6 +133,8 @@ void AtmosphereModule::Apply(CommandContext& context, const SceneRenderView& ren
 	context.PushDescriptors(4, { VK_NULL_HANDLE, m_pAerialPerspectiveLUT->vkView(), VK_IMAGE_LAYOUT_GENERAL }, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 	context.Dispatch3D< 4, 4, 4 >(AERIALPERSPECTIVE_LUT_RESOLUTION.width, AERIALPERSPECTIVE_LUT_RESOLUTION.height, AERIALPERSPECTIVE_LUT_RESOLUTION.depth);
 
+	g_FrameData.pTransmittanceLUT     = m_pTransmittanceLUT;
+	g_FrameData.pMultiScatteringLUT   = m_pMultiScatteringLUT;
 	g_FrameData.pSkyViewLUT           = m_pSkyViewLUT;
 	g_FrameData.pAerialPerspectiveLUT = m_pAerialPerspectiveLUT;
 }

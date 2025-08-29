@@ -11,6 +11,12 @@ CloudSystem::CloudSystem(entt::registry& registry)
 
 void CloudSystem::OnComponentConstructed(entt::registry& registry, entt::entity entity)
 {
+    auto& cloud = registry.get< CloudComponent >(entity);
+
+    cloud.weatherMap   = TEXTURE_PATH.string() + "cloud_weather.png";
+    cloud.curlNoiseTex = TEXTURE_PATH.string() + "cloud_curl_noise.png";
+    cloud.blueNoiseTex = TEXTURE_PATH.string() + "blue_noise.png";
+
     Super::OnComponentConstructed(registry, entity);
 }
 

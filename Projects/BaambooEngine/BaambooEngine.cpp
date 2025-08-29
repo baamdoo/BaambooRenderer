@@ -692,14 +692,45 @@ void Engine::DrawUI()
 						if (ImGui::CollapsingHeader("Shape"))
 						{
 							bMark |= ImGui::DragFloat("Cloud Coverage", &component.coverage, 0.01f, 0.0f, 1.0f, "%.2f");
-							bMark |= ImGui::DragFloat("Cloud Density", &component.density, 0.01f, 0.0f, 1.0f, "%.2f");
+							bMark |= ImGui::DragFloat("Cloud Type", &component.cloudType, 0.01f, 0.0f, 1.0f, "%.2f");
 							bMark |= ImGui::DragFloat("Cloud Precipitation", &component.precipitation, 0.01f, 0.0f, 1.0f, "%.2f");
-							bMark |= ImGui::DragFloat("Cloud Bottom Height (km)", &component.cloudBaseHeight_km, 0.1f, 0.0f, 10.0f, "%.1f");
-							bMark |= ImGui::DragFloat("Cloud Thickness (km)", &component.cloudLayerThickness_km, 0.1f, 0.1f, 10.0f, "%.1f");
+							bMark |= ImGui::DragFloat("Cloud Bottom Height (km)", &component.bottomHeight_km, 0.1f, 0.0f, 10.0f, "%.1f");
+							bMark |= ImGui::DragFloat("Cloud Thickness (km)", &component.layerThickness_km, 0.1f, 0.1f, 10.0f, "%.1f");
 
-							// noise
-							bMark |= ImGui::DragFloat("Base Noise", &component.shapeNoiseScale, 0.1f, 1.0f, 10.0f, "%.1f");
-							bMark |= ImGui::DragFloat("Detail Noise", &component.detailNoiseScale, 1.0f, 0.0f, 100.0f, "%.1f");
+							float baseScale = component.baseNoiseScale * 1e5f;
+							if (ImGui::DragFloat("Base Scale", &baseScale, 1.0f, 1.0f, 100.0f, "%.1f"))
+							{
+								component.baseNoiseScale = baseScale * 1e-5f;
+
+								bMark = true;
+							}
+							if (ImGui::IsItemHovered())
+							{
+								ImGui::BeginTooltip();
+								ImGui::Text("Base Noise Scale : 0.00001");
+								ImGui::EndTooltip();
+							}
+							float detailScale = component.detailNoiseScale * 1e4f;
+							if (ImGui::DragFloat("Detail Scale", &detailScale, 1.0f, 1.0f, 100.0f, "%.1f"))
+							{
+								component.detailNoiseScale = detailScale * 1e-4f;
+
+								bMark = true;
+							}
+							if (ImGui::IsItemHovered())
+							{
+								ImGui::BeginTooltip();
+								ImGui::Text("Detail Noise Scale : 0.0001");
+								ImGui::EndTooltip();
+							}
+
+							if (ImGui::DragFloat3("Wind Direction", glm::value_ptr(component.windDirection), 1.0f, 1.0f, 100000.0f, "%.1f"))
+							{
+								component.windDirection = glm::normalize(component.windDirection);
+
+								bMark = true;
+							}
+							bMark |= ImGui::DragFloat("Wind Speed(m/s)", &component.windSpeed_mps, 0.1f, 0.0f, 1000.0f, "%.1f");
 						}
 					}
 

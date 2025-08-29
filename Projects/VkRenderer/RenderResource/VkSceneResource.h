@@ -31,12 +31,18 @@ struct FrameData
     // scene-resource
     struct SceneResource* pSceneResource = nullptr;
 
-    // LUTs
+    // Atmosphere LUTs
+    Weak< Texture > pTransmittanceLUT;
+    Weak< Texture > pMultiScatteringLUT;
     Weak< Texture > pSkyViewLUT;
     Weak< Texture > pAerialPerspectiveLUT;
-    Weak< Texture > pCloudLUT_BaseNoise;
-    Weak< Texture > pCloudLUT_DetailNoise;
+
+    // Cloud LUTs
+    Weak< Texture > pCloudBaseLUT;
+    Weak< Texture > pCloudDetailLUT;
+    Weak< Texture > pVerticalProfileLUT;
     Weak< Texture > pWeatherMapLUT;
+    Weak< Texture > pBlueNoiseTexture;
     Weak< Texture > pCloudScatteringLUT;
 
     // framebuffers

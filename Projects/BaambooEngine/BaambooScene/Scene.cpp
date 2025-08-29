@@ -463,14 +463,19 @@ SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 	m_Registry.view< TransformComponent, CloudComponent >().each([this, &view](auto id, auto& transformComponent, auto& cloudComponent)
 		{
 			CloudRenderView cloudView = {};
-			cloudView.coverage               = cloudComponent.coverage;
-			cloudView.density                = cloudComponent.density;
-			cloudView.precipitation          = cloudComponent.precipitation;
-			cloudView.cloudBaseHeight_km     = cloudComponent.cloudBaseHeight_km;
-			cloudView.cloudLayerThickness_km = cloudComponent.cloudLayerThickness_km;
-			cloudView.shapeNoiseScale        = float3(cloudComponent.shapeNoiseScale);
-			cloudView.detailNoiseScale       = float3(cloudComponent.detailNoiseScale);
-			cloudView.windSpeed_mps          = cloudComponent.windSpeed_mps;
+			cloudView.data.coverage         = cloudComponent.coverage;
+			cloudView.data.cloudType        = cloudComponent.cloudType;
+			cloudView.data.precipitation    = cloudComponent.precipitation;
+			cloudView.data.topLayer_km      = cloudComponent.bottomHeight_km + cloudComponent.layerThickness_km;
+			cloudView.data.bottomLayer_km   = cloudComponent.bottomHeight_km;
+			cloudView.data.baseNoiseScale   = cloudComponent.baseNoiseScale;
+			cloudView.data.detailNoiseScale = cloudComponent.detailNoiseScale;
+			cloudView.data.windDirection    = cloudComponent.windDirection;
+			cloudView.data.windSpeed_mps    = cloudComponent.windSpeed_mps;
+
+			cloudView.blueNoiseTex = cloudComponent.blueNoiseTex;
+			cloudView.weatherMap   = cloudComponent.weatherMap;
+			cloudView.curlNoiseTex = cloudComponent.curlNoiseTex;
 
 			view.cloud = cloudView;
 		});

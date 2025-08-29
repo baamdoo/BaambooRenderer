@@ -87,7 +87,14 @@ struct AtmosphereRenderView
 	u32  svMaxRaySteps;
 };
 
-using CloudRenderView = CloudData;
+struct CloudRenderView
+{
+	CloudData data;
+
+	std::string blueNoiseTex;
+	std::string weatherMap;
+	std::string curlNoiseTex;
+};
 
 struct PostProcessRenderView
 {

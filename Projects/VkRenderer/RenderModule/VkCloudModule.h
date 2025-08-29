@@ -19,10 +19,12 @@ public:
 private:
 	Arc< Texture > m_pBaseNoiseTexture;
 	Arc< Texture > m_pDetailNoiseTexture;
+	Arc< Texture > m_pVerticalProfileTexture;
 	Arc< Texture > m_pWeatherMapTexture;
 
 	Box< ComputePipeline > m_pCloudShapeBasePSO;
 	Box< ComputePipeline > m_pCloudShapeDetailPSO;
+	Box< ComputePipeline > m_pVerticalProfilePSO;
 	Box< ComputePipeline > m_pWeatherMapPSO;
 };
 
@@ -41,6 +43,9 @@ public:
 
 private:
 	Arc< Texture > m_pCloudScatteringLUT;
+	Arc< Texture > m_pCurlNoiseTexture;
+	Arc< Texture > m_pWeatherMap;
+	Arc< Texture > m_pBlueNoiseTexture;
 
 	Box< ComputePipeline > m_pCloudScatteringPSO;
 };

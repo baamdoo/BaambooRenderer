@@ -270,16 +270,21 @@ struct AtmosphereComponent
 struct CloudComponent
 {
 	float coverage      = 0.5f;
-	float density       = 0.2f;
+	float cloudType     = 0.2f;
 	float precipitation = 0.1f;
 
-	float cloudBaseHeight_km     = 2.0f;
-	float cloudLayerThickness_km = 4.0f;
+	float bottomHeight_km   = 2.0f;
+	float layerThickness_km = 4.0f;
 
-	float shapeNoiseScale  = 1.0f;
-	float detailNoiseScale = 8.0f;
+	float baseNoiseScale   = 1e-5f;
+	float detailNoiseScale = 1e-4f;
 
-	float windSpeed_mps = 1.0f;
+	float3 windDirection = float3(1.0f, 0.0f, 0.0f);
+	float  windSpeed_mps = 1.0f;
+
+	std::string blueNoiseTex;
+	std::string weatherMap;
+	std::string curlNoiseTex;
 
 	bool bDirtyMark = true;
 };
