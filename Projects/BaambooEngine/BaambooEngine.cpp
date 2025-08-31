@@ -691,40 +691,31 @@ void Engine::DrawUI()
 
 						if (ImGui::CollapsingHeader("Shape"))
 						{
-							bMark |= ImGui::DragFloat("Cloud Coverage", &component.coverage, 0.01f, 0.0f, 1.0f, "%.2f");
+							bMark |= ImGui::DragFloat("Cloud Coverage", &component.coverage, 0.001f, 0.0f, 1.0f, "%.3f");
 							bMark |= ImGui::DragFloat("Cloud Type", &component.cloudType, 0.01f, 0.0f, 1.0f, "%.2f");
 							bMark |= ImGui::DragFloat("Cloud Precipitation", &component.precipitation, 0.01f, 0.0f, 1.0f, "%.2f");
 							bMark |= ImGui::DragFloat("Cloud Bottom Height (km)", &component.bottomHeight_km, 0.1f, 0.0f, 10.0f, "%.1f");
-							bMark |= ImGui::DragFloat("Cloud Thickness (km)", &component.layerThickness_km, 0.1f, 0.1f, 10.0f, "%.1f");
+							bMark |= ImGui::DragFloat("Cloud Thickness (km)", &component.layerThickness_km, 0.1f, 0.1f, 100.0f, "%.1f");
 
-							float baseScale = component.baseNoiseScale * 1e5f;
-							if (ImGui::DragFloat("Base Scale", &baseScale, 1.0f, 1.0f, 100.0f, "%.1f"))
-							{
-								component.baseNoiseScale = baseScale * 1e-5f;
-
-								bMark = true;
-							}
+							bMark |= ImGui::DragFloat("Base Scale", &component.baseNoiseScale, 0.001f, 0.001f, 1.0f, "%.3f");
 							if (ImGui::IsItemHovered())
 							{
 								ImGui::BeginTooltip();
-								ImGui::Text("Base Noise Scale : 0.00001");
+								ImGui::Text("Range(km) per tile");
 								ImGui::EndTooltip();
 							}
-							float detailScale = component.detailNoiseScale * 1e4f;
-							if (ImGui::DragFloat("Detail Scale", &detailScale, 1.0f, 1.0f, 100.0f, "%.1f"))
-							{
-								component.detailNoiseScale = detailScale * 1e-4f;
+							bMark |= ImGui::DragFloat("Base Intensity", &component.baseIntensity, 0.01f, 0.0f, 10.0f, "%.2f");
 
-								bMark = true;
-							}
+							bMark |= ImGui::DragFloat("Detail Scale", &component.detailNoiseScale, 0.001f, 0.001f, 1.0f, "%.3f");
 							if (ImGui::IsItemHovered())
 							{
 								ImGui::BeginTooltip();
-								ImGui::Text("Detail Noise Scale : 0.0001");
+								ImGui::Text("Range(km) per tile");
 								ImGui::EndTooltip();
 							}
+							bMark |= ImGui::DragFloat("Detail Intensity", &component.detailIntensity, 0.01f, 0.0f, 1.0f, "%.2f");
 
-							if (ImGui::DragFloat3("Wind Direction", glm::value_ptr(component.windDirection), 1.0f, 1.0f, 100000.0f, "%.1f"))
+							if (ImGui::DragFloat3("Wind Direction", glm::value_ptr(component.windDirection), 0.01f, 0.0f, 1.0f, "%.2f"))
 							{
 								component.windDirection = glm::normalize(component.windDirection);
 

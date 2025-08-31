@@ -8,6 +8,7 @@
 #define _ATMOSPHERE
 #include "AtmosphereCommon.hg"
 #include "HelperFunctions.hg"
+#include "Noise.hg"
 
 layout(set = SET_PUSH, binding = 2) uniform CloudData
 {
@@ -21,9 +22,9 @@ layout(set = SET_PUSH, binding = 2) uniform CloudData
     vec2  padding1;
 
     float baseNoiseScale;
-    float baseNoiseIntensity;
+    float baseIntensity;
     float detailNoiseScale;
-    float detailNoiseIntensity;
+    float detailIntensity;
 
     vec3  windDirection;
     float windSpeed_mps;
@@ -126,8 +127,7 @@ float GetCloudBaseShape(vec3 pos)
 {
     vec3  baseUVW   = pos * g_Cloud.baseNoiseScale;
     vec4  baseNoise = texture(g_CloudBaseNoise, baseUVW);
-    // float baseCloud = saturate(remap(baseNoise.r, dot(baseNoise.gba, vec3(0.625, 0.25, 0.125)) - 1.0, 1.0, 0.0, 1.0));
-    float baseCloud = baseNoise.r;
+    float baseCloud = saturate(remap(baseNoise.r, dot(baseNoise.gba, vec3(0.625, 0.125, 0.25)) - 1.0, 1.0, 0.0, 1.0));
 
     return baseCloud;
 }
@@ -137,212 +137,66 @@ float GetCloudDetailShape(vec3 pos, float hNorm)
     vec3  detailUVW   = pos * g_Cloud.detailNoiseScale;
     vec3  detailNoise = texture(g_CloudDetailNoise, detailUVW).rgb;
     float detailShape = dot(detailNoise, vec3(0.625, 0.25, 0.125));
-          detailShape = mix(detailShape, 1.0 - detailShape, saturate(hNorm * 10.0));
+          detailShape = g_Cloud.detailIntensity * mix(detailShape, 1.0 - detailShape, saturate(hNorm * 10.0));
 
     return detailShape;
 }
 
 float SampleCloudDensity(vec3 pos, float hNorm)
 {
-    // vec3 windOffset = g_Push.time_s * g_Cloud.windSpeed_mps * 0.001;
-    //pos.xz -= g_Cloud.windDirection.xz * hNorm * CLOUD_TOP_OFFSET;
-    pos.y -= g_Atmosphere.planetRadius_km;
-    pos   += g_Cloud.windDirection * hNorm * 0.5;
+    pos -= g_Cloud.windDirection * g_Push.time_s * g_Cloud.windSpeed_mps;
+    
+    float verticalProfile = texture(g_VerticalProfileLUT, vec2(g_Cloud.cloudType, hNorm)).r;
 
-    float verticalProfile    = texture(g_VerticalProfileLUT, vec2(g_Cloud.cloudType, hNorm)).r;
-    float dimensionalProfile = verticalProfile * g_Cloud.coverage;
+    float f  = GetCloudBaseShape(pos);
+          f  = g_Cloud.coverage * safeRemap(f, 1.0 - g_Cloud.coverage, 1.0, 0.0, 1.0);
+          f *= verticalProfile;
 
-    vec4 weatherValue;
+    if (f > 0.0)
     {
-        vec2 weatherUV    = pos.xz * 0.02;
-             weatherValue = texture(g_WeatherMap, weatherUV);
+        float d = GetCloudDetailShape(pos, hNorm);
+
+        f = remap(f, d, 1.0, 0.0, 1.0);
     }
 
-    float base;
-    {
-        vec3 baseUVW  = pos;
-             baseUVW *= g_Cloud.baseNoiseScale;
+    f = pow(f, saturate(1.0 - hNorm) * 0.4 + 0.1) * g_Cloud.baseIntensity;
 
-        base = texture(g_CloudBaseNoise, baseUVW).r;
-    }
-
-    if (base > 0.0)
-    {
-        float detail = GetCloudDetailShape(pos, hNorm);
-
-        //base = remap(base, detail * 0.19, 1.0, 0.0, 1.0);
-        // base = inverseLerp(base, detail * 0.5, 1.0);
-    }
-
-    //float shape = pow(base, remap(hNorm, 0.6, 0.8, 1.0, mix(1.0, 0.1, 0.5)));
-
-    return saturate(base);
+    return f;
 }
 
 float RaymarchLight(vec3 rayOrigin, vec3 rayDirection)
 {
-    float shadowMarchLength = 15.0;
-    float numShadowStepsInv = 1.0 / CLOUD_SHADOW_RAYMARCH_STEPS;
+    float rTopLayer      = g_Atmosphere.planetRadius_km + g_Cloud.topLayer_km;
+    vec2 topIntersection = 
+        RaySphereIntersection(rayOrigin, rayDirection, PLANET_CENTER, rTopLayer);
+    if (all(lessThan(topIntersection, vec2(0.0, 0.0))))
+    {
+        return 1.0;
+    }
+
+    float shadowMarchLength   = topIntersection.x > 0.0 ? topIntersection.x : topIntersection.y;
+    float marchShadowStepSize = shadowMarchLength / float(CLOUD_SHADOW_RAYMARCH_STEPS);
 
     float shadow = 0.0;
-	for(float st = numShadowStepsInv; st <= 1.00001; st += numShadowStepsInv)
+	for(float st = marchShadowStepSize; st <= shadowMarchLength + 0.001; st += marchShadowStepSize)
 	{
-        float t    = st * st;
+        float t    = st;
         vec3  spos = rayOrigin + t * rayDirection;
 
         float saltitude = length(spos) - g_Atmosphere.planetRadius_km;
         float shNorm    = inverseLerp(saltitude, g_Cloud.bottomLayer_km, g_Cloud.topLayer_km);
+        if (shNorm > 1.0)
+        {
+            return exp(-shadow);
+        }
 
-		shadow += max(0, SampleCloudDensity(rayOrigin, shNorm) * t);
+		shadow += max(0, SampleCloudDensity(spos, shNorm) * marchShadowStepSize);
 	}
 
 	return exp(-shadow);
 }
 
-vec4 RaymarchClouds(vec3 rayOrigin, vec3 rayDir, float maxDistance)
-{
-    float rBottomLayer = g_Atmosphere.planetRadius_km + g_Cloud.bottomLayer_km;
-    float rTopLayer    = g_Atmosphere.planetRadius_km + g_Cloud.topLayer_km;
-    
-    vec2 bottomIntersection = 
-        RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, rBottomLayer);
-    vec2 topIntersection    = 
-        RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, rTopLayer);
-
-    float rayStart = bottomIntersection.y > 0.0 ? bottomIntersection.y : 0.0;
-    float rayEnd   = topIntersection.y;
-
-    if (length(rayOrigin) >= rBottomLayer && length(rayOrigin) <= rTopLayer)
-    {
-        // camera in-between cloud layers
-        rayStart = 0.0;
-        rayEnd   = topIntersection.y > 0.0 ? min(topIntersection.y, maxDistance) : maxDistance;
-    }
-    else if (bottomIntersection.y > 0.0)
-    {
-        // camera in-below cloud bottom layer
-        rayStart = min(bottomIntersection.y, maxDistance);
-        rayEnd   = min(topIntersection.y, maxDistance);
-    }
-    else if (topIntersection.x > 0.0 && topIntersection.x < maxDistance)
-    {
-        // camera in-above cloud top layer
-        rayStart = topIntersection.x;
-        rayEnd   = min(bottomIntersection.y, maxDistance);
-    }
-    else
-    {
-        // no cloud intersection
-        return vec4(0.0, 0.0, 0.0, 1.0);
-    }
-    
-    float rayLength = rayEnd - rayStart;
-    if (rayLength <= 0.0)
-        return vec4(0.0, 0.0, 0.0, 1.0);
-    
-    // light illuminance
-    vec3 lightColor = vec3(g_Atmosphere.light.colorR, g_Atmosphere.light.colorG, g_Atmosphere.light.colorB);
-    if (g_Atmosphere.light.temperature_K > 0.0)
-        lightColor *= ColorTemperatureToRGB(g_Atmosphere.light.temperature_K);
-
-    vec3 E      = g_Atmosphere.light.illuminance_lux * lightColor;
-    vec3 sunDir = normalize(vec3(-g_Atmosphere.light.dirX, -g_Atmosphere.light.dirY, -g_Atmosphere.light.dirZ));
-
-    // phase function
-    float cosTheta      = dot(rayDir, sunDir);
-    float forwardPhase  = phase_HG(cosTheta, CLOUD_FORWARD_SCATTERING_G);
-    float backwardPhase = phase_HG(cosTheta, CLOUD_BACKWARD_SCATTERING_G);
-    float phase         = mix(forwardPhase, backwardPhase, CLOUD_FORWARD_SCATTERING_BLEND);
-
-    float stepSize = rayLength / float(CLOUD_RAYMARCH_STEPS);
-    float tSample  = rayStart + 0.001 * stepSize;
-    
-    vec3  L          = vec3(0.0);
-    float throughput = 1.0;
-    for (uint i = 0u; i < CLOUD_RAYMARCH_STEPS; ++i)
-    {
-        vec3  pos = rayOrigin + tSample * rayDir;
-
-        float sampleTheta          = dot(normalize(pos), sunDir);
-        float sampleHeight         = length(pos);
-        vec3  transmittanceToLight = SampleTransmittanceLUT(g_TransmittanceLUT, sampleHeight, sampleTheta, g_Atmosphere.planetRadius_km, g_Atmosphere.atmosphereRadius_km);
-        
-        // Sample cloud density with LOD based on distance
-        float altitude    = sampleHeight - g_Atmosphere.planetRadius_km;
-        float hNorm       = inverseLerp(altitude, g_Cloud.bottomLayer_km, g_Cloud.topLayer_km);
-        //float lod      = smoothstep(0.0, 100.0, t * 0.1);
-        float stepDensity = SampleCloudDensity(pos, hNorm);
-        if (stepDensity > 0.0)
-        {
-            float opticalDepth      = stepDensity * stepSize * 1000.0; // to meter unit
-            float stepTransmittance = max(exp(-opticalDepth), exp(-opticalDepth * 0.25) * 0.7);
-
-            float shadow = RaymarchLight(pos, sunDir);
-
-            // float d      = pow(clamp(stepDensity * 8.0, 0.0, 1.0), remap(hNorm, 0.3, 0.85, 0.5, 2.0)) + 0.05;
-            // float v      = pow(remap(hNorm, 0.07, 0.22, 0.1, 1.0), 0.8);
-            // float powder = PowderEffect(d, v, sampleTheta);
-
-            vec3 ambientLight = mix(CLOUDS_AMBIENT_COLOR_BOTTOM, CLOUDS_AMBIENT_COLOR_TOP, hNorm);
-
-            vec3 S      = (ambientLight + E * transmittanceToLight * phase) * stepDensity;
-            vec3 Sint   = (S - S * stepTransmittance) / stepDensity;
-            L          += throughput * Sint;
-            throughput *= stepTransmittance;
-        }
-    }
-
-    return vec4(L, throughput);
-}
-
-#define MAX_STEPS 100
-#define MAX_STEPS_LIGHTS 6
-const float MARCH_SIZE = 0.08;
-const float ABSORPTION_COEFFICIENT = 0.1;
-
-float sdSphere(vec3 p, float radius) 
-{
-    return length(p) - radius;
-}
-
-float sdHollowSphere(vec3 p, vec3 center, float innerRadius, float outerRadius)
-{
-    float dist = length(p - center);
-    
-    float outerDist = dist - outerRadius;
-    float innerDist = innerRadius - dist;
-    
-    // For a hollow sphere:
-    // - If outside outer sphere: distance to outer surface (positive)
-    // - If inside inner sphere: distance to inner surface (positive) 
-    // - If between radii (in shell): negative of minimum distance to either surface
-    return max(outerDist, innerDist);
-}
-
-float scene(vec3 p, float hNorm) 
-{
-    p   -= g_Cloud.windDirection * g_Push.time_s * g_Cloud.windSpeed_mps;
-
-    float verticalProfile    = texture(g_VerticalProfileLUT, vec2(g_Cloud.cloudType, hNorm)).r;
-
-    float f = GetCloudBaseShape(p * 1e3);
-    f = remap(f * verticalProfile, 1.0 - g_Cloud.coverage, 1.0, 0.0, 1.0);
-
-    if (f > 0.0)
-    {
-        //float d = GetCloudDetailShape(p * 10000.0, hNorm);
-        //f = remap(f, 1.0 - d, 1.0, 0.0, 1.0);
-    }
-
-    return f;
-}
-
-float BeersLaw(float d, float a) 
-{
-    return exp(-d * a);
-}
-
-vec3 raymarchTest(vec3 rayOrigin, vec3 rayDirection, float offset, float maxDistance)
+vec4 RaymarchCloud(vec3 rayOrigin, vec3 rayDirection, float maxDistance)
 {
     float rBottomLayer = g_Atmosphere.planetRadius_km + g_Cloud.bottomLayer_km;
     float rTopLayer    = g_Atmosphere.planetRadius_km + g_Cloud.topLayer_km;
@@ -376,19 +230,19 @@ vec3 raymarchTest(vec3 rayOrigin, vec3 rayDirection, float offset, float maxDist
     else
     {
         // no cloud intersection
-        return vec3(0.0, 0.0, 0.0);
+        return vec4(0.0, 0.0, 0.0, 1.0);
     }
     
     float rayLength = rayEnd - rayStart;
     if (rayLength <= 0.0)
-        return vec3(0.0, 0.0, 0.0);
+        return vec4(0.0, 0.0, 0.0, 1.0);
 
     vec3 sunDirection = normalize(vec3(-g_Atmosphere.light.dirX, -g_Atmosphere.light.dirY, -g_Atmosphere.light.dirZ));
-    vec3 lightColor = vec3(g_Atmosphere.light.colorR, g_Atmosphere.light.colorG, g_Atmosphere.light.colorB);
+    vec3 lightColor   = vec3(g_Atmosphere.light.colorR, g_Atmosphere.light.colorG, g_Atmosphere.light.colorB);
     if (g_Atmosphere.light.temperature_K > 0.0)
         lightColor *= ColorTemperatureToRGB(g_Atmosphere.light.temperature_K);
 
-    vec3 E      = g_Atmosphere.light.illuminance_lux * lightColor;
+    vec3 E = g_Atmosphere.light.illuminance_lux * lightColor;
 
 
     // phase function
@@ -398,9 +252,9 @@ vec3 raymarchTest(vec3 rayOrigin, vec3 rayDirection, float offset, float maxDist
     float phase         = mix(forwardPhase, backwardPhase, CLOUD_FORWARD_SCATTERING_BLEND);
 
     float stepSize = rayLength / float(CLOUD_RAYMARCH_STEPS);
-    float tSample  = rayStart + 0.5 * stepSize * offset;
+    float tSample  = rayStart - stepSize * hash1D(rayDirection);
 
-    vec3 L = vec3(0.0);
+    vec3 L           = vec3(0.0);
     float throughput = 1.0;
     for (int i = 0; i < CLOUD_RAYMARCH_STEPS; i++) 
     {
@@ -411,28 +265,29 @@ vec3 raymarchTest(vec3 rayOrigin, vec3 rayDirection, float offset, float maxDist
         vec3  transmittanceToLight = SampleTransmittanceLUT(g_TransmittanceLUT, sampleHeight, sampleTheta, g_Atmosphere.planetRadius_km, g_Atmosphere.atmosphereRadius_km);
 
         float altitude = sampleHeight - g_Atmosphere.planetRadius_km;
-        float hNorm = inverseLerp(altitude, g_Cloud.bottomLayer_km, g_Cloud.topLayer_km);
+        float hNorm    = inverseLerp(altitude, g_Cloud.bottomLayer_km, g_Cloud.topLayer_km);
 
-        float stepDensity = scene(pos, hNorm);
+        float stepDensity = SampleCloudDensity(pos, hNorm);
 
         // We only draw the density if it's greater than 0
         if (stepDensity > 0.0) 
         {
-            float opticalDepth      = stepDensity * stepSize * 5.0; // to meter unit
-            // float stepTransmittance = max(exp(-opticalDepth), exp(-opticalDepth * 0.25) * 0.7);
+            float opticalDepth      = stepDensity * stepSize;
+            //float stepTransmittance = max(exp(-opticalDepth), exp(-opticalDepth * 0.25) * 0.7);
             float stepTransmittance = exp(-opticalDepth);
 
             float shadow = RaymarchLight(pos, sunDirection);
 
-            //float d      = pow(clamp(stepDensity * 8.0, 0.0, 1.0), remap(hNorm, 0.3, 0.85, 0.5, 2.0)) + 0.05;
-            //float v      = pow(remap(hNorm, 0.07, 0.22, 0.1, 1.0), 0.8);
-            //float powder = PowderEffect(d, v, sampleTheta);
+            float d      = pow(clamp(stepDensity * 8.0, 0.0, 1.0), safeRemap(hNorm, 0.3, 0.85, 0.5, 2.0)) + 0.05;
+            float v      = pow(safeRemap(hNorm, 0.07, 0.22, 0.1, 1.0), 0.8);
+            float powder = PowderEffect(d, v, sampleTheta);
 
-            vec3 ambientLit = (1.0 - sunDirection.y * sunDirection.y) * mix(transmittanceToLight, vec3(1.0), saturate(1.0 - throughput));
+            //vec3 ambientLit = (1.0 - sunDirection.y * sunDirection.y) * mix(transmittanceToLight, vec3(1.0), saturate(1.0 - throughput));
+            vec3 ambientLit = mix( CLOUDS_AMBIENT_COLOR_BOTTOM, CLOUDS_AMBIENT_COLOR_TOP, hNorm );
 
-            vec3 S      = (ambientLit + E * transmittanceToLight * phase) * stepDensity;
+            vec3 S      = (ambientLit + E * transmittanceToLight * shadow * powder) * stepDensity;
             vec3 Sint   = (S - S * stepTransmittance) / max(stepDensity, EPSILON);
-            L          += throughput * stepTransmittance;
+            L          += throughput * Sint;
             throughput *= stepTransmittance;
         }
 
@@ -444,20 +299,8 @@ vec3 raymarchTest(vec3 rayOrigin, vec3 rayDirection, float offset, float maxDist
         tSample += stepSize;
     }
 
-    return L;
+    return vec4(L, throughput);
 }
-
-vec3 ACESFilm(vec3 x)
-{
-    const float a = 2.51;
-    const float b = 0.03;
-    const float c = 2.43;
-    const float d = 0.59;
-    const float e = 0.14;
-
-    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
-}
-
 
 layout (local_size_x = 8, local_size_y = 8) in;
 void main()
@@ -470,8 +313,10 @@ void main()
     vec2  uv        = (vec2(pixCoords) + 0.5) / vec2(imgSize);
     float depth     = texture(g_DepthBuffer, uv).r;
 
-    vec3 cameraPos            = g_Camera.posWORLD * DISTANCE_SCALE;
-    vec3 cameraPosAbovePlanet = cameraPos + vec3(0.0, g_Atmosphere.planetRadius_km, 0.0);
+    vec3 cameraPos =
+            vec3(g_Camera.posWORLD.x, max(g_Camera.posWORLD.y, MIN_VIEW_HEIGHT_ABOVE_GROUND), g_Camera.posWORLD.z);
+    vec3 cameraPosAbovePlanet = 
+        cameraPos * DISTANCE_SCALE + vec3(0.0, g_Atmosphere.planetRadius_km, 0.0);
 
     vec3 posWORLD     = ReconstructWorldPos(uv, depth, g_Camera.mViewProjInv);
     vec3 rayDirection = normalize(posWORLD);
@@ -481,24 +326,7 @@ void main()
     float maxDistance        = groundIntersection.x > 0.0 ? groundIntersection.x : groundIntersection.y > 0.0 ? groundIntersection.y : RAY_MARCHING_MAX_DISTANCE;
           maxDistance        = min(maxDistance, depth == 1.0 ? RAY_MARCHING_MAX_DISTANCE : posWORLD.z * DISTANCE_SCALE);
     
-    vec2 blueNoiseSize = textureSize(g_BlueNoise, 0);
-    float blueNoise = texture(g_BlueNoise, pixCoords / blueNoiseSize).r;
-    float offset = fract(blueNoise + float(g_Push.frame % 32) / sqrt(0.5));
+    vec4 clouds = RaymarchCloud(rayOrigin, rayDirection, maxDistance);
 
-    vec3 clouds = raymarchTest(rayOrigin, rayDirection, offset, maxDistance); //RaymarchClouds(rayOrigin, rayDirection, maxDistance);
-
-    imageStore(g_CloudScatteringLUT, pixCoords, vec4(clouds, 1.0));
-
-
-    ///////////////////////////////////////////////////////////////////////
-    // vec3 ro = cameraPosAbovePlanet;
-    // vec3 rd = rayDirection;
-    // 
-    // vec2 blueNoiseSize = textureSize(g_BlueNoise, 0);
-    // float blueNoise = texture(g_BlueNoise, pixCoords / blueNoiseSize).r;
-    // float offset = fract(blueNoise + float(g_Push.frame % 32) / sqrt(0.5));
-    // 
-    // clouds = vec4(ACESFilm(raymarchTest(ro, rd, offset, maxDistance)), 1.0);
-    // 
-    // imageStore(g_CloudScatteringLUT, pixCoords, clouds);
+    imageStore(g_CloudScatteringLUT, pixCoords, clouds);
 }

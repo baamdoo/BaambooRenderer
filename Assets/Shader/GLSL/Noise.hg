@@ -13,6 +13,13 @@
 #define UI3 uvec3(UI0, UI1, 2798796415U)
 #define UIF (1.0 / float(0xffffffffU))
 
+float hash1D(vec3 p) 
+{
+    p  = fract(p * 1031.1031);
+    p += dot(p, p.yzx + 19.19);
+    return fract((p.x + p.y) * p.z);
+}
+
 vec2 hash2D(vec2 p) 
 {
     uvec2 q = uvec2(ivec2(p)) * UI2;

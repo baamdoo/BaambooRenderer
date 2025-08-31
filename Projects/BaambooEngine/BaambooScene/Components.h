@@ -276,8 +276,10 @@ struct CloudComponent
 	float bottomHeight_km   = 2.0f;
 	float layerThickness_km = 4.0f;
 
-	float baseNoiseScale   = 1e-5f;
-	float detailNoiseScale = 1e-4f;
+	float baseNoiseScale   = 1e-2f;  // 100x100km^2 per tile
+	float baseIntensity    = 1.0f;
+	float detailNoiseScale = 1e-1f;  // 10x10km^2 per tile
+	float detailIntensity  = 0.2f;
 
 	float3 windDirection = float3(1.0f, 0.0f, 0.0f);
 	float  windSpeed_mps = 1.0f;

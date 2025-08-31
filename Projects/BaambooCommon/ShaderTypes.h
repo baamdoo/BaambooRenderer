@@ -136,9 +136,9 @@ struct CloudData
     float2 padding1;
 
     float baseNoiseScale;
-    float baseNoiseIntensity;
+    float baseIntensity;
     float detailNoiseScale;
-    float detailNoiseIntensity;
+    float detailIntensity;
 
     float3 windDirection;
     float  windSpeed_mps;

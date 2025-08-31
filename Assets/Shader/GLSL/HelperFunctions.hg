@@ -22,24 +22,19 @@ float remap(float v, float inMin, float inMax, float outMin, float outMax)
 	return mix(outMin, outMax, t);
 }
 
-float safeRemap(float value, float oldMin, float oldMax, float newMin, float newMax) 
-{
-    return clamp(remap(value, oldMin, oldMax, newMin, newMax), newMin, newMax);
-}
-
-float clampedRemap(float value, float oldMin, float oldMax, float newMin, float newMax)
+float safeRemap(float value, float oldMin, float oldMax, float newMin, float newMax)
 {
     return clamp((value - oldMin) / (oldMax - oldMin), 0.0, 1.0) * (newMax - newMin) + newMin;
+}
+
+float clampedRemap(float value, float oldMin, float oldMax, float newMin, float newMax) 
+{
+    return clamp(remap(value, oldMin, oldMax, newMin, newMax), newMin, newMax);
 }
 
 float safeSqrt(float a)
 {
     return sqrt(max(a, 0.0));
-}
-
-float linearstep(float s, float e, float v) 
-{
-    return saturate((v - s) * (10.0 / (e - s)));
 }
 
 // Reference: https://github.com/EpicGames/UnrealEngine/blob/release/Engine/Shaders/Private/FastMath.ush

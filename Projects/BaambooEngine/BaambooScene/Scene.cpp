@@ -469,7 +469,9 @@ SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 			cloudView.data.topLayer_km      = cloudComponent.bottomHeight_km + cloudComponent.layerThickness_km;
 			cloudView.data.bottomLayer_km   = cloudComponent.bottomHeight_km;
 			cloudView.data.baseNoiseScale   = cloudComponent.baseNoiseScale;
+			cloudView.data.baseIntensity    = cloudComponent.baseIntensity;
 			cloudView.data.detailNoiseScale = cloudComponent.detailNoiseScale;
+			cloudView.data.detailIntensity  = cloudComponent.detailIntensity;
 			cloudView.data.windDirection    = cloudComponent.windDirection;
 			cloudView.data.windSpeed_mps    = cloudComponent.windSpeed_mps;
 
