@@ -205,8 +205,9 @@ bool ExampleApp::LoadScene()
 		light.type              = eLightType::Directional;
 		light.temperature_K     = 10000.0f;
 		light.color             = float3(1.0f, 0.95f, 0.8f);
-		light.illuminance_lux   = 6.0f;
+		light.illuminance_lux   = 6.0f; //120'000.0f;
 		light.angularRadius_rad = 0.00465f;
+		light.ev100             = 0.0; // 14.965f;
 
 		auto& transformComponent = sunLight.GetComponent< TransformComponent >();
 		//transformComponent.transform.position = float3(-0.46144, 0.76831, -0.44359);
@@ -256,8 +257,11 @@ bool ExampleApp::LoadScene()
 
 	// post-process volume
 	{
-		auto volume = m_pScene->CreateEntity("PostProcessVolume");
-		volume.AttachComponent< PostProcessComponent >();
+		auto  volume = m_pScene->CreateEntity("PostProcessVolume");
+		auto& pp     = volume.AttachComponent< PostProcessComponent >();
+
+		pp.tonemap.op    = eToneMappingOp::ACES;
+		pp.tonemap.gamma = 2.2f;
 	}
 
 	return true;

@@ -537,7 +537,7 @@ void Engine::DrawUI()
 
 					}
 
-					ImGui::DragFloat("EV100", &component.ev100, 0.01f, -10.0f, 10.0f, "%.2f");
+					ImGui::DragFloat("EV100", &component.ev100, 0.01f, -15.0f, 15.0f, "%.2f");
 				}
 			}
 

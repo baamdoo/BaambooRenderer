@@ -6,7 +6,18 @@
 #define _GLSL
 #include "../Common.bsh"
 
-// Reference: https://www.shadertoy.com/view/3dVXDc
+vec2 fade(vec2 t) 
+{
+    return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+}
+
+vec3 fade(vec3 t) 
+{
+    return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+}
+
+//////////////////////////////////////////////////////
+// Reference: https://www.shadertoy.com/view/3dVXDc //
 #define UI0 1597334673U
 #define UI1 3812015801U
 #define UI2 uvec2(UI0, UI1)
@@ -35,16 +46,7 @@ vec3 hash3D(vec3 p)
 
 	return -1.0 + 2.0 * vec3(q) * UIF;
 }
-
-vec2 fade(vec2 t) 
-{
-    return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
-}
-
-vec3 fade(vec3 t) 
-{
-    return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
-}
+//////////////////////////////////////////////////////
 
 float perlinNoise2D(vec2 p, float frequency) 
 {
@@ -174,6 +176,33 @@ float worleyNoise3D(vec3 p, float frequency)
 
 // Tileable Worley fbm inspired by Andrew Schneider's Real-Time Volumetric Cloudscapes
 // chapter in GPU Pro 7.
+float worleyFBM(vec2 p, float frequency)
+{
+    return worleyNoise2D(p * frequency, frequency) * 0.625 +
+           worleyNoise2D(p * frequency * 2.0, frequency * 2.0) * 0.25 +
+           worleyNoise2D(p * frequency * 4.0, frequency * 4.0) * 0.125;
+}
+
+float worleyFBM(vec2 p, float frequency, uint octaves, float persistence, float lacunarity) 
+{
+    float total         = 0.0;
+    float amplitude     = 1.0;
+    float normalization = 0.0;
+    
+    for (uint i = 0u; i < octaves; i++) 
+    {
+        float noise = worleyNoise2D(p * frequency, frequency);
+
+        total         += noise * amplitude;
+        normalization += amplitude;
+        
+        amplitude *= persistence;
+        frequency *= lacunarity;
+    }
+    
+    return total / normalization;
+}
+
 float worleyFBM(vec3 p, float frequency)
 {
     return worleyNoise3D(p * frequency, frequency) * 0.625 +
@@ -210,7 +239,7 @@ float ridgedFBM(vec3 p, int octaves, float persistence, float lacunarity)
     
     for (int i = 0; i < octaves; i++) 
     {
-        float noise = perlinNoise3D(p, frequency);
+        float noise = perlinNoise3D(p * frequency, frequency);
         noise       = abs(noise);
         noise       = 1.0 - noise;
 
@@ -236,7 +265,7 @@ float turbulenceFBM(vec3 p, int octaves, float persistence, float lacunarity)
     
     for (int i = 0; i < octaves; i++) 
     {
-        float noise = perlinNoise3D(p, frequency);
+        float noise = perlinNoise3D(p * frequency, frequency);
         noise       = abs(noise);
 
         total         += noise * amplitude;
@@ -290,4 +319,218 @@ float steppedNoise(float noiseSample)
     return (steppedSample - remainder) * 0.5 + 0.5;
 }
 
-#endif // _GLSL_HELPER_FUNCTION_HEADER
+
+///////////////////////////////////////////////////////
+// Reference : https://www.shadertoy.com/view/NlSGDz //
+// implementation of MurmurHash (https://sites.google.com/site/murmurhash/) for a single unsigned integer.
+uint hash1D(uint p, uint seed) 
+{
+    const uint m = 0x5bd1e995U;
+    uint hash = seed;
+    // process input
+    uint k = p;
+    k *= m;
+    k ^= k >> 24;
+    k *= m;
+    hash *= m;
+    hash ^= k;
+    // some final mixing
+    hash ^= hash >> 13;
+    hash *= m;
+    hash ^= hash >> 15;
+    return hash;
+}
+
+// implementation of MurmurHash (https://sites.google.com/site/murmurhash/) for a 2-dimensional unsigned integer input vector.
+uint hash2D(uvec2 p, uint seed)
+{
+    const uint m = 0x5bd1e995U;
+    uint hash    = seed;
+    // process first vector element
+    uint k = p.x; 
+    k *= m;
+    k ^= k >> 24;
+    k *= m;
+    hash *= m;
+    hash ^= k;
+    // process second vector element
+    k = p.y; 
+    k *= m;
+    k ^= k >> 24;
+    k *= m;
+    hash *= m;
+    hash ^= k;
+	// some final mixing
+    hash ^= hash >> 13;
+    hash *= m;
+    hash ^= hash >> 15;
+    return hash;
+}
+
+// implementation of MurmurHash (https://sites.google.com/site/murmurhash/) for a 3-dimensional unsigned integer input vector.
+uint hash3D(uvec3 p, uint seed)
+{
+    const uint m = 0x5bd1e995U;
+    uint hash = seed;
+    // process first vector element
+    uint k = p.x; 
+    k *= m;
+    k ^= k >> 24;
+    k *= m;
+    hash *= m;
+    hash ^= k;
+    // process second vector element
+    k = p.y; 
+    k *= m;
+    k ^= k >> 24;
+    k *= m;
+    hash *= m;
+    hash ^= k;
+    // process third vector element
+    k = p.z; 
+    k *= m;
+    k ^= k >> 24;
+    k *= m;
+    hash *= m;
+    hash ^= k;
+	// some final mixing
+    hash ^= hash >> 13;
+    hash *= m;
+    hash ^= hash >> 15;
+    return hash;
+}
+
+vec2 gradientDirection2D(uint hash) 
+{
+    switch (int(hash) & 3) // look at the last two bits to pick a gradient direction
+    { 
+    case 0:
+        return vec2(1.0, 1.0);
+    case 1:
+        return vec2(-1.0, 1.0);
+    case 2:
+        return vec2(1.0, -1.0);
+    case 3:
+        return vec2(-1.0, -1.0);
+    }
+}
+
+
+vec3 gradientDirection3D(uint hash) 
+{
+    switch (int(hash) & 15) // look at the last four bits to pick a gradient direction
+    { 
+    case 0:
+        return vec3(1, 1, 0);
+    case 1:
+        return vec3(-1, 1, 0);
+    case 2:
+        return vec3(1, -1, 0);
+    case 3:
+        return vec3(-1, -1, 0);
+    case 4:
+        return vec3(1, 0, 1);
+    case 5:
+        return vec3(-1, 0, 1);
+    case 6:
+        return vec3(1, 0, -1);
+    case 7:
+        return vec3(-1, 0, -1);
+    case 8:
+        return vec3(0, 1, 1);
+    case 9:
+        return vec3(0, -1, 1);
+    case 10:
+        return vec3(0, 1, -1);
+    case 11:
+        return vec3(0, -1, -1);
+    case 12:
+        return vec3(1, 1, 0);
+    case 13:
+        return vec3(-1, 1, 0);
+    case 14:
+        return vec3(0, -1, 1);
+    case 15:
+        return vec3(0, -1, -1);
+    }
+}
+///////////////////////////////////////////////////////
+
+float perlinNoise2D(vec2 p, uint seed) 
+{
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = fade(f);
+    
+    float dot00 = dot(gradientDirection2D(hash2D(uvec2(i) + uvec2(0, 0), seed)), f - vec2(0.0, 0.0));
+    float dot10 = dot(gradientDirection2D(hash2D(uvec2(i) + uvec2(1, 0), seed)), f - vec2(1.0, 0.0));
+    float dot01 = dot(gradientDirection2D(hash2D(uvec2(i) + uvec2(0, 1), seed)), f - vec2(0.0, 1.0));
+    float dot11 = dot(gradientDirection2D(hash2D(uvec2(i) + uvec2(1, 1), seed)), f - vec2(1.0, 1.0));
+    
+    return mix(mix(dot00, dot10, u.x),
+               mix(dot01, dot11, u.x), u.y);
+}
+
+float perlinNoise3D(vec3 p, uint seed) 
+{
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    vec3 u = fade(f);
+    
+    float dot000 = dot(gradientDirection3D(hash3D(uvec3(i) + uvec3(0, 0, 0), seed)), f - vec3(0,0,0));
+    float dot001 = dot(gradientDirection3D(hash3D(uvec3(i) + uvec3(0, 0, 1), seed)), f - vec3(0,0,1));
+    float dot010 = dot(gradientDirection3D(hash3D(uvec3(i) + uvec3(0, 1, 0), seed)), f - vec3(0,1,0));
+    float dot100 = dot(gradientDirection3D(hash3D(uvec3(i) + uvec3(1, 0, 0), seed)), f - vec3(1,0,0));
+    float dot011 = dot(gradientDirection3D(hash3D(uvec3(i) + uvec3(0, 1, 1), seed)), f - vec3(0,1,1));
+    float dot101 = dot(gradientDirection3D(hash3D(uvec3(i) + uvec3(1, 0, 1), seed)), f - vec3(1,0,1));
+    float dot110 = dot(gradientDirection3D(hash3D(uvec3(i) + uvec3(1, 1, 0), seed)), f - vec3(1,1,0));
+    float dot111 = dot(gradientDirection3D(hash3D(uvec3(i) + uvec3(1, 1, 1), seed)), f - vec3(1,1,1));
+    
+    // trilinear interpolation of 8 corner contributions
+    return mix(mix(mix(dot000, dot100, u.x),
+                   mix(dot010, dot110, u.x), u.y),
+               mix(mix(dot001, dot101, u.x),
+                   mix(dot011, dot111, u.x), u.y), u.z);
+}
+
+float perlinFBM(vec2 p, float frequency, int octaves, float persistence, float lacunarity, uint seed) 
+{
+    float total         = 0.0;
+    float amplitude     = 1.0;
+    
+    uint curSeed = seed;
+    for (int i = 0; i < octaves; i++) 
+    {
+        float noise = perlinNoise2D(p * frequency, curSeed);
+
+        total  += noise * amplitude;
+        curSeed = hash1D(curSeed, 0x0u); // create a new seed for each octave
+
+        amplitude *= persistence;
+        frequency *= lacunarity;
+    }
+    
+    return total;
+}
+
+float perlinFBM(vec3 p, float frequency, uint octaves, float persistence, float lacunarity, uint seed) 
+{
+    float total         = 0.0;
+    float amplitude     = 1.0;
+    
+    uint curSeed = seed;
+    for (uint i = 0u; i < octaves; i++) 
+    {
+        float noise = perlinNoise3D(p * frequency, curSeed);
+
+        total  += noise * amplitude;
+        curSeed = hash1D(curSeed, 0x0u); // create a new seed for each octave
+
+        amplitude *= persistence;
+        frequency *= lacunarity;
+    }
+    
+    return total;
+}
+
+#endif // _GLSL_NOISE_HEADER

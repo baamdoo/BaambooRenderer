@@ -4,15 +4,7 @@
 #include "Noise.hg"
 #include "HelperFunctions.hg"
 
-layout(set = SET_PUSH, binding = 0, rgba8) writeonly uniform image2D g_WeatherMap;
-
-layout(push_constant) uniform PushConstants
-{
-    float coverage;
-	float precipitation;
-	float time_s;
-	vec2  wind;
-} g_Push;
+layout(set = SET_PUSH, binding = 0, rg8) writeonly uniform image2D g_WeatherMap;
 
 layout (local_size_x = 8, local_size_y = 8) in;
 void main()
@@ -21,16 +13,19 @@ void main()
     ivec2 pixCoords = ivec2(gl_GlobalInvocationID.xyz);
     if (any(greaterThanEqual(pixCoords, imgSize)))
         return;
-    
+
     vec2  uv        = vec2(pixCoords + 0.5) / vec2(imgSize);
-          uv       += g_Push.wind * g_Push.time_s * 0.003;
 
-    float coverage      = remap(perlinFBM(uv, 8.0, 4, 0.5, 2.0), 1.0 - g_Push.coverage, 1.0, 0.0, 1.0);
-    float cloudType     = perlinFBM(uv, 4.0, 2, 0.5, 2.0) + g_Push.coverage * 0.6 - 0.3;
-    float heightDensity = CloudHeightDensity(uv.x, uv.y);
-    float precipitation = smoothstep(0.6, 0.9, cloudType);
+    float perlin = perlinFBM(uv, 4.0, 7, exp(-0.85), 2.0);
+          perlin = mix(1.0, perlin, 0.5);
+          perlin = abs(perlin * 2.0 - 1.0);
+          perlin = remap(perlin, 0.0, 1.0, 0.5, 1.0);
+    float worley = worleyFBM(uv, 8.0);
 
-    vec4 weather = vec4(saturate(coverage), saturate(cloudType), heightDensity, 1);
+    float coverage  = remap(worley, perlin, 1.0, 0.0, 1.0);
+    float cloudType = worleyFBM(uv, 16.0, 7, 0.5, 2.0);
+
+    vec4 weather = vec4(saturate(coverage), saturate(cloudType), 1.0, 1.0);
 
     imageStore(g_WeatherMap, pixCoords, weather);
 }

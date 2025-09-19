@@ -127,7 +127,7 @@ vec3 ApplyDirectionalLight(DirectionalLight light, vec3 N, vec3 V, vec3 albedo, 
     vec3 specular = CalculateBRDF(N, V, L, metallic, roughness, F0, kD);
     
     float NoL       = max(dot(N, L), 0.0);
-    vec3  luminance = lightColor * light.illuminance_lux;
+    vec3  luminance = lightColor * light.illuminance_lux * (1.0 / PI);
 
     return (kD * albedo / PI + specular) * luminance * NoL;
 }
@@ -336,7 +336,7 @@ void main()
             ivec3 texSize = textureSize(g_AerialPerspectiveLUT, 0);
             float slice   = viewDistance * (1.0 / AP_KM_PER_SLICE) * DISTANCE_SCALE;
             float w       = sqrt(slice / float(texSize.z));
-            slice         = w * texSize.z;
+                  slice   = w * texSize.z;
 
             vec4 ap = texture(g_AerialPerspectiveLUT, vec3(uv, w));
 
@@ -363,7 +363,7 @@ void main()
 
     // exposure correction
     float ev100    = g_LightBuffer.lightingData.ev100;
-    float exposure = 1.0 / (1.2 * pow(2.0, ev100));
+    float exposure = 1.0 / pow(2.0, ev100);
     color *= exposure;
     
     imageStore(g_OutputTexture, pixCoords, vec4(color, 1.0));

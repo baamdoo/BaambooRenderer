@@ -22,7 +22,7 @@ static inline VkExtent3D HalfResolution(RenderDevice& rd)
 static constexpr VkExtent3D BASE_NOISE_TEXTURE_RESOLUTION = { 128, 128, 128 };
 static constexpr VkExtent3D DETAIL_NOISE_TEXTURE_RESOLUTION = { 64, 64, 64 };
 static constexpr VkExtent3D VERTICAL_PROFILE_TEXTURE_RESOLUTION = { 256, 256, 1 };
-static constexpr VkExtent3D WEATHERMAP_TEXTURE_RESOLUTION = { 512, 512, 1 };
+static constexpr VkExtent3D WEATHERMAP_TEXTURE_RESOLUTION = { 1024, 1024, 1 };
 
 CloudShapeModule::CloudShapeModule(RenderDevice& device)
 	: Super(device)
@@ -62,7 +62,7 @@ CloudShapeModule::CloudShapeModule(RenderDevice& device)
             "CloudShape::WeatherMap",
             {
                 .resolution = WEATHERMAP_TEXTURE_RESOLUTION,
-                .format     = VK_FORMAT_R8G8B8A8_UNORM,
+                .format     = VK_FORMAT_R8G8_UNORM,
                 .imageUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT
             });
 
@@ -196,36 +196,21 @@ void CloudShapeModule::Apply(CommandContext& context, const SceneRenderView& ren
         g_FrameData.pVerticalProfileLUT = m_pVerticalProfileTexture;
     }
     {
-        //context.SetRenderPipeline(m_pWeatherMapPSO.get());
+        /*context.SetRenderPipeline(m_pWeatherMapPSO.get());
 
-        //context.TransitionImageLayout(m_pWeatherMapTexture, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+        context.TransitionImageLayout(m_pWeatherMapTexture, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
 
-        //struct
-        //{
-        //    // cloud type
-        //    float fType;
-        //    i32   oType;
-        //    float pType;
-        //    float lType;
+        context.PushDescriptors(
+            0, 
+            { 
+                VK_NULL_HANDLE, 
+                m_pWeatherMapTexture->vkView(), 
+                VK_IMAGE_LAYOUT_GENERAL 
+            }, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 
-        //    // coverage
-        //    float fCoverage;
-        //    i32   oCoverage;
-        //    float pCoverage;
-        //    float lCoverage;
-        //} constant = { 100.0f, 10, 0.75f, 3.0f, 76.0f, 4, 0.5f, 3.0f };
-        //context.SetPushConstants(sizeof(constant), &constant, VK_SHADER_STAGE_COMPUTE_BIT);
-        //context.PushDescriptors(
-        //    0, 
-        //    { 
-        //        VK_NULL_HANDLE, 
-        //        m_pWeatherMapTexture->vkView(), 
-        //        VK_IMAGE_LAYOUT_GENERAL 
-        //    }, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        context.Dispatch2D< 8, 8 >(WEATHERMAP_TEXTURE_RESOLUTION.width, WEATHERMAP_TEXTURE_RESOLUTION.height);
 
-        //context.Dispatch2D< 8, 8 >(WEATHERMAP_TEXTURE_RESOLUTION.width, WEATHERMAP_TEXTURE_RESOLUTION.height);
-
-        //g_FrameData.pWeatherMapLUT = m_pWeatherMapTexture;
+        g_FrameData.pWeatherMapLUT = m_pWeatherMapTexture;*/
     }
 }
 
@@ -290,6 +275,7 @@ void CloudScatteringModule::Apply(CommandContext& context, const SceneRenderView
     context.TransitionImageLayout(g_FrameData.pCloudDetailLUT.lock(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
     context.TransitionImageLayout(g_FrameData.pVerticalProfileLUT.lock(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
     context.TransitionImageLayout(m_pWeatherMap, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+    //context.TransitionImageLayout(g_FrameData.pWeatherMapLUT.lock(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
     context.TransitionImageLayout(m_pCurlNoiseTexture, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
     context.TransitionImageLayout(m_pBlueNoiseTexture, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
     context.TransitionImageLayout(g_FrameData.pDepth.lock(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_IMAGE_ASPECT_DEPTH_BIT);
@@ -333,6 +319,7 @@ void CloudScatteringModule::Apply(CommandContext& context, const SceneRenderView
         {
             g_FrameData.pLinearWrap->vkSampler(),
             m_pWeatherMap->vkView(),
+            //g_FrameData.pWeatherMapLUT->vkView(),
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         }, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
     context.PushDescriptors(

@@ -274,7 +274,7 @@ struct CloudComponent
 	float precipitation = 0.1f;
 
 	float bottomHeight_km   = 2.0f;
-	float layerThickness_km = 4.0f;
+	float layerThickness_km = 8.0f;
 
 	float baseNoiseScale   = 1e-2f;  // 100x100km^2 per tile
 	float baseIntensity    = 1.0f;
