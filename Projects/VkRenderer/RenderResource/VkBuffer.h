@@ -4,26 +4,15 @@
 namespace vk
 {
 
-class Buffer : public Resource
+class VulkanBuffer : public render::Buffer, public VulkanResource< VulkanBuffer >
 {
-using Super = Resource;
-
 public:
-    struct CreationInfo
-    {
-        u64  sizeInBytes;
-        bool bMap;
+    static Arc< VulkanBuffer > Create(VkRenderDevice& rd, const std::string& name, CreationInfo&& desc);
 
-        VmaMemoryUsage     memoryUsage = VMA_MEMORY_USAGE_AUTO;
-        VkBufferUsageFlags usage;
-    };
+    VulkanBuffer(VkRenderDevice& rd, const std::string& name, CreationInfo&& info);
+    virtual ~VulkanBuffer();
 
-    static Arc< Buffer > Create(RenderDevice& device, const std::string& name, CreationInfo&& desc);
-
-    Buffer(RenderDevice& device, const std::string& name, CreationInfo&& info);
-    virtual ~Buffer();
-
-    void Resize(u64 sizeInBytes, bool bReset = false);
+    virtual void Resize(u64 sizeInBytes, bool bReset = false) override;
 
     [[nodiscard]]
     inline VkBuffer vkBuffer() const { return m_vkBuffer; }
@@ -32,20 +21,17 @@ public:
     inline u64 SizeInBytes() const { return m_CreationInfo.sizeInBytes; }
 
 protected:
-    CreationInfo m_CreationInfo = {};
-
-    VkBuffer        m_vkBuffer = VK_NULL_HANDLE;
+    VkBuffer        m_vkBuffer      = VK_NULL_HANDLE;
     VkDeviceAddress m_DeviceAddress = 0;
 };
 
-class IndexBuffer : public Buffer 
+class VulkanIndexBuffer : public VulkanBuffer 
 {
-using Super = Buffer;
-
+using Super = VulkanBuffer;
 public:
-    static Arc< IndexBuffer > Create(RenderDevice& device, const std::string& name, u32 numIndices, VkIndexType type);
+    static Arc< VulkanIndexBuffer > Create(VkRenderDevice& rd, const std::string& name, u32 numIndices, VkIndexType type);
 
-    IndexBuffer(RenderDevice& device, const std::string& name, u32 numIndices, VkIndexType type);
+    VulkanIndexBuffer(VkRenderDevice& rd, const std::string& name, u32 numIndices, VkIndexType type);
 
     u32 GetIndexCount() const { return m_IndexCount; }
     u32 GetIndexSize() const { return m_IndexType == VK_INDEX_TYPE_UINT8_KHR ? 1 : m_IndexType == VK_INDEX_TYPE_UINT16 ? 2 : 4; }
@@ -57,27 +43,25 @@ private:
     VkIndexType m_IndexType;
 };
 
-class UniformBuffer : public Buffer 
+class VulkanUniformBuffer : public VulkanBuffer 
 {
-using Super = Buffer;
-
+using Super = VulkanBuffer;
 public:
-    static Arc< UniformBuffer > Create(RenderDevice& device, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags usage = 0);
+    static Arc< VulkanUniformBuffer > Create(VkRenderDevice& rd, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags usage = 0);
 
-    UniformBuffer(RenderDevice& device, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage);
+    VulkanUniformBuffer(VkRenderDevice& rd, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage);
 
     [[nodiscard]]
     inline void* MappedMemory() const { assert(m_AllocationInfo.pMappedData); return m_AllocationInfo.pMappedData; }
 };
 
-class StorageBuffer : public Buffer
+class VulkanStorageBuffer : public VulkanBuffer
 {
-using Super = Buffer;
-
+using Super = VulkanBuffer;
 public:
-    static Arc< StorageBuffer > Create(RenderDevice& device, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags usage = 0);
+    static Arc< VulkanStorageBuffer > Create(VkRenderDevice& rd, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags usage = 0);
 
-    StorageBuffer(RenderDevice& device, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage);
+    VulkanStorageBuffer(VkRenderDevice& rd, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage);
 };
 
 }

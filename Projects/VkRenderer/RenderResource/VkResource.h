@@ -1,28 +1,24 @@
 #pragma once
+
 namespace vk
 {
 
-enum class eResourceType : u8 
-{
-	Buffer,
-	Texture,
-	Sampler,
-	Shader,
-	AccelerationStructure
-};
-
-class Resource : public ArcBase
+template< typename TResource >
+class VulkanResource
 {
 public:
-	Resource(RenderDevice& device, const std::string& name, eResourceType type);
-	virtual ~Resource() = default;
+	VulkanResource(VkRenderDevice& rd, const std::string& name)
+		: m_RenderDevice(rd), m_Name(name) {}
+	virtual ~VulkanResource() = default;
 
 protected:
-	void SetDeviceObjectName(u64 handle, VkObjectType type);
+	void SetDeviceObjectName(u64 handle, VkObjectType type)
+	{
+		m_RenderDevice.SetVkObjectName(m_Name, handle, type);
+	}
 
-	RenderDevice& m_RenderDevice;
-	std::string   m_Name;
-	eResourceType m_Type;
+	VkRenderDevice& m_RenderDevice;
+	std::string     m_Name;
 
 	VmaAllocation     m_vmaAllocation  = VK_NULL_HANDLE;
 	VmaAllocationInfo m_AllocationInfo = {};

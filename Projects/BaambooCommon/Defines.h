@@ -1,12 +1,15 @@
 #pragma once
+#include <stdint.h>
 
 #define NOMINMAX
 #define NOGDI
 
-#ifdef BAAMBOO_ENGINE
-#define ENGINE_API __declspec(dllexport)
+#ifdef BB_COMMON_DLL // BaambooCommon 프로젝트를 빌드할 때 정의할 매크로
+    #define BAAMBOO_API __declspec(dllexport)
+    #define DLLEXPORT_TEMPLATE
 #else
-#define ENGINE_API __declspec(dllimport)
+    #define BAAMBOO_API __declspec(dllimport)
+    #define DLLEXPORT_TEMPLATE extern
 #endif
 
 #define UNUSED(expr) (void)(expr)
@@ -40,6 +43,16 @@
         } \
     } while (0)
 
+
+//-------------------------------------------------------------------------
+// RendererAPI
+//-------------------------------------------------------------------------
+using RenderFlags = uint64_t;
+
+#define LOD_CLAMP_NONE         (1000.0f)
+#define REMAINING_MIP_LEVELS   (~0U)
+#define REMAINING_ARRAY_LAYERS (~0U)
+#define ALL_SUBRESOURCES       (0xFFFFFFFF)
 
 
 //-------------------------------------------------------------------------

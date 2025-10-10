@@ -4,19 +4,12 @@
 namespace vk
 {
 
-class Shader : public Resource
+class VulkanShader : public render::Shader, public VulkanResource< VulkanShader >
 {
-using Super = Resource;
-
 public:
-    struct CreationInfo
-    {
-        std::string_view filepath;
-    };
-
 	struct DescriptorInfo
 	{
-		std::string_view name;
+		std::string      name;
 		u32              binding        = INVALID_INDEX;
 		u32              arraySize      = 0;
 		VkDescriptorType descriptorType = VK_DESCRIPTOR_TYPE_MAX_ENUM;
@@ -28,10 +21,10 @@ public:
 		std::unordered_map< u32, std::vector< DescriptorInfo > > descriptors;
 	};
 
-	static Arc< Shader > Create(RenderDevice& device, const std::string& name, CreationInfo&& info);
+	static Arc< VulkanShader > Create(VkRenderDevice& rd, const std::string& name, CreationInfo&& info);
 
-	Shader(RenderDevice& device, const std::string& name, CreationInfo&& info);
-	virtual ~Shader();
+	VulkanShader(VkRenderDevice& rd, const std::string& name, CreationInfo&& info);
+	virtual ~VulkanShader();
 
 	[[nodiscard]]
 	inline VkShaderModule vkModule() const { return m_vkModule; }

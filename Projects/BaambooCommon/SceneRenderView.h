@@ -1,6 +1,9 @@
 #pragma once
 #include "ShaderTypes.h"
 #include "ComponentTypes.h"
+#include "RenderCommon/RenderNode.h"
+
+#include <mutex>
 
 enum eComponentType
 {
@@ -139,6 +142,10 @@ struct PostProcessRenderView
 struct SceneRenderView
 {
 	float time;
+	u64   frame;
+
+	bool bDrawUI;
+	std::vector< Arc< render::RenderNode > > rg;
 
 	std::vector< TransformRenderView >  transforms;
 	std::vector< StaticMeshRenderView > meshes; 
@@ -155,5 +162,6 @@ struct SceneRenderView
 	// for sync producer(SceneRenderView)-consumer(Renderer)
 	std::mutex* pSceneMutex;
 
+	u64 componentMarker = 0;
 	std::unordered_map< u64, u64 >* pEntityDirtyMarks;
 };

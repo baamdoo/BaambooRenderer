@@ -5,8 +5,8 @@
 namespace vk
 {
 
-DescriptorPool::DescriptorPool(RenderDevice& device, std::vector< VkDescriptorPoolSize >&& poolSizes, u32 maxSets, VkDescriptorPoolCreateFlags flags)
-	: m_RenderDevice(device)
+DescriptorPool::DescriptorPool(VkRenderDevice& rd, std::vector< VkDescriptorPoolSize >&& poolSizes, u32 maxSets, VkDescriptorPoolCreateFlags flags)
+	: m_RenderDevice(rd)
 	, m_Flags(flags)
 	, m_MaxSets(maxSets)
 {

@@ -5,8 +5,8 @@
 namespace vk
 {
 
-CommandQueue::CommandQueue(RenderDevice& device, u32 queueIndex, eCommandType type)
-	: m_RenderDevice(device)
+CommandQueue::CommandQueue(VkRenderDevice& rd, u32 queueIndex, eCommandType type)
+	: m_RenderDevice(rd)
 	, m_CommandType(type)
 	, m_QueueIndex(queueIndex)
 {
@@ -29,18 +29,22 @@ CommandQueue::CommandQueue(RenderDevice& device, u32 queueIndex, eCommandType ty
 
 CommandQueue::~CommandQueue()
 {
-	for (auto pContext : m_pContexts)
-		RELEASE(pContext);
+	// explicit release due to release dependency
+	while (!m_pAvailableContexts.empty())
+	{
+		m_pAvailableContexts.pop();
+	}
+	m_pContexts.clear();
 
 	vkDestroyCommandPool(m_RenderDevice.vkDevice(), m_vkCommandPool, nullptr);
 }
 
-CommandContext& CommandQueue::Allocate(VkCommandBufferUsageFlags flags, bool bTransient)
+Arc< VkCommandContext > CommandQueue::Allocate(VkCommandBufferUsageFlags flags, bool bTransient)
 {
-	CommandContext* pContext = nullptr;
+	Arc< VkCommandContext > pContext;
 	if (bTransient)
 	{
-		pContext = new CommandContext(m_RenderDevice, m_vkCommandPool, m_CommandType);
+		pContext = MakeArc< VkCommandContext >(m_RenderDevice, m_vkCommandPool, m_CommandType);
 	}
 	else
 	{
@@ -58,7 +62,7 @@ CommandContext& CommandQueue::Allocate(VkCommandBufferUsageFlags flags, bool bTr
 		}
 		else
 		{
-			pContext = new CommandContext(m_RenderDevice, m_vkCommandPool, m_CommandType);
+			pContext = MakeArc< VkCommandContext >(m_RenderDevice, m_vkCommandPool, m_CommandType);
 			m_pContexts.push_back(pContext);
 		}
 	}
@@ -66,49 +70,55 @@ CommandContext& CommandQueue::Allocate(VkCommandBufferUsageFlags flags, bool bTr
 
 	pContext->Open(flags);
 	pContext->SetTransient(bTransient);
-	return *pContext;
+	return pContext;
 }
 
 void CommandQueue::Flush()
 {
-	for (auto pContext : m_pContexts)
-		pContext->Flush();
+	for (auto Context : m_pContexts)
+		if (Context)
+			Context->Flush();
 }
 
-void CommandQueue::ExecuteCommandBuffer(CommandContext& context)
+void CommandQueue::ExecuteCommandBuffer(Arc< VkCommandContext > context)
 {
 	// **
 	// Submit queue
 	// **
-	if (!context.IsTransient())
+	if (!context->IsTransient())
 	{
 		VkPipelineStageFlags waitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+		auto vkWaitSemaphore   = context->vkPresentCompleteSemaphore();
+		auto vkCommandBuffer   = context->vkCommandBuffer();
+		auto vkSignalSemaphore = context->vkRenderCompleteSemaphore();
 
 		VkSubmitInfo submitInfo         = {};
 		submitInfo.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submitInfo.waitSemaphoreCount   = 1;
-		submitInfo.pWaitSemaphores      = &context.m_vkPresentCompleteSemaphore;
+		submitInfo.pWaitSemaphores      = &vkWaitSemaphore;
 		submitInfo.pWaitDstStageMask    = &waitStages;
 		submitInfo.commandBufferCount   = 1;
-		submitInfo.pCommandBuffers      = &context.m_vkCommandBuffer;
+		submitInfo.pCommandBuffers      = &vkCommandBuffer;
 		submitInfo.signalSemaphoreCount = 1;
-		submitInfo.pSignalSemaphores    = &context.m_vkRenderCompleteSemaphore;
-		VK_CHECK(vkQueueSubmit(m_vkQueue, 1, &submitInfo, context.vkRenderCompleteFence()));
+		submitInfo.pSignalSemaphores    = &vkSignalSemaphore;
+		VK_CHECK(vkQueueSubmit(m_vkQueue, 1, &submitInfo, context->vkRenderCompleteFence()));
 
-		m_pAvailableContexts.push(&context);
+		m_pAvailableContexts.push(context);
 	}
 	else
 	{
+		auto vkCommandBuffer = context->vkCommandBuffer();
+
 		VkSubmitInfo submitInfo       = {};
 		submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers    = &context.m_vkCommandBuffer;
-		VK_CHECK(vkQueueSubmit(m_vkQueue, 1, &submitInfo, context.vkRenderCompleteFence()));
-		context.WaitForFence(context.vkRenderCompleteFence());
+		submitInfo.pCommandBuffers    = &vkCommandBuffer;
+		VK_CHECK(vkQueueSubmit(m_vkQueue, 1, &submitInfo, context->vkRenderCompleteFence()));
+		context->WaitForFence(context->vkRenderCompleteFence());
 		//VK_CHECK(vkQueueWaitIdle(m_vkQueue));
 
-		auto pContext = &context;
-		RELEASE(pContext);
+		context.reset();
 	}
 }
 

@@ -11,8 +11,8 @@ namespace vk
 //-------------------------------------------------------------------------
 // Dynamic-Buffer Allocator
 //-------------------------------------------------------------------------
-DynamicBufferAllocator::DynamicBufferAllocator(RenderDevice& device, VkDeviceSize pageSize)
-	: m_RenderDevice(device)
+DynamicBufferAllocator::DynamicBufferAllocator(VkRenderDevice& rd, VkDeviceSize pageSize)
+	: m_RenderDevice(rd)
 	, m_MaxPageSize(pageSize)
 {
 	m_Alignment = m_RenderDevice.DeviceProps().limits.minUniformBufferOffsetAlignment;
@@ -64,8 +64,8 @@ DynamicBufferAllocator::Page* DynamicBufferAllocator::RequestPage()
 	return pPage;
 }
 
-DynamicBufferAllocator::Page::Page(RenderDevice& device, VkDeviceSize sizeInBytes)
-	: m_RenderDevice(device)
+DynamicBufferAllocator::Page::Page(VkRenderDevice& rd, VkDeviceSize sizeInBytes)
+	: m_RenderDevice(rd)
 	, m_BaseCpuHandle(nullptr)
 	, m_Offset(0)
 	, m_PageSize(sizeInBytes)
@@ -126,8 +126,8 @@ bool DynamicBufferAllocator::Page::HasSpace(VkDeviceSize sizeInBytes, VkDeviceSi
 //-------------------------------------------------------------------------
 // Static-Buffer Allocator
 //-------------------------------------------------------------------------
-StaticBufferAllocator::StaticBufferAllocator(RenderDevice& device, VkDeviceSize bufferSize, VkBufferUsageFlags usage)
-	: m_RenderDevice(device)
+StaticBufferAllocator::StaticBufferAllocator(VkRenderDevice& rd, VkDeviceSize bufferSize, VkBufferUsageFlags usage)
+	: m_RenderDevice(rd)
 {
 	m_Alignment = m_RenderDevice.DeviceProps().limits.minStorageBufferOffsetAlignment;
 	m_UsageFlags = usage |
@@ -204,10 +204,10 @@ void StaticBufferAllocator::Resize(VkDeviceSize sizeInBytes)
 
 	if (m_Offset > 0 && m_vkBuffer != VK_NULL_HANDLE) 
 	{
-		auto& context = m_RenderDevice.BeginCommand(eCommandType::Transfer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
-		context.CopyBuffer(vkBuffer, m_vkBuffer, m_Offset, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT);
-		context.Close();
-		context.Execute();
+		auto pContext = m_RenderDevice.BeginCommand(eCommandType::Transfer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
+		pContext->CopyBuffer(vkBuffer, m_vkBuffer, m_Offset, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT);
+		pContext->Close();
+		m_RenderDevice.ExecuteCommand(pContext);
 	}
 
 	if (m_vkBuffer != VK_NULL_HANDLE) 

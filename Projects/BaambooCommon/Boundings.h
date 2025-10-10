@@ -1,10 +1,11 @@
 #pragma once
+#include "Defines.h"
 #include "MathTypes.h"
 
 //-------------------------------------------------------------------------
 // Bounding Sphere
 //-------------------------------------------------------------------------
-class BoundingSphere
+class BAAMBOO_API BoundingSphere
 {
 public:
 	BoundingSphere() : m_Center(0.f, 0.f, 0.f), m_Radius(1.f) {}
@@ -50,7 +51,7 @@ private:
 //-------------------------------------------------------------------------
 // BoundingBox
 //-------------------------------------------------------------------------
-class BoundingBox
+class BAAMBOO_API BoundingBox
 {
 public:
 	BoundingBox() = default;

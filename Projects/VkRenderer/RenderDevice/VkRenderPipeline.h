@@ -51,35 +51,27 @@ struct DescriptorInfo
 //-------------------------------------------------------------------------
 // Graphics Pipeline
 //-------------------------------------------------------------------------
-class GraphicsPipeline
+class VulkanGraphicsPipeline : public render::GraphicsPipeline
 {
 public:
-	GraphicsPipeline(RenderDevice& device, std::string name);
-	~GraphicsPipeline();
-
-	GraphicsPipeline& SetShaders(
-		Arc< Shader > vs, 
-		Arc< Shader > fs,
-		Arc< Shader > gs = Arc< Shader >(),
-		Arc< Shader > hs = Arc< Shader >(),
-		Arc< Shader > ds = Arc< Shader >());
-	GraphicsPipeline& SetMeshShaders(
-		Arc< Shader > ms,
-		Arc< Shader > ts = Arc< Shader >());
+	VulkanGraphicsPipeline(VkRenderDevice& rd, const std::string& name);
+	~VulkanGraphicsPipeline();
 
 	GraphicsPipeline& SetVertexInputs(std::vector< VkVertexInputBindingDescription >&& streams, std::vector< VkVertexInputAttributeDescription >&& attributes);
-	GraphicsPipeline& SetRenderTarget(const RenderTarget& renderTarget);
+	virtual render::GraphicsPipeline& SetRenderTarget(Arc< render::RenderTarget > renderTarget) override;
 
-	GraphicsPipeline& SetTopology(VkPrimitiveTopology topology);
-	GraphicsPipeline& SetDepthTestEnable(bool bEnable);
-	GraphicsPipeline& SetDepthWriteEnable(bool bEnable);
+	virtual render::GraphicsPipeline& SetTopology(render::ePrimitiveTopology topology) override;
+	virtual render::GraphicsPipeline& SetDepthTestEnable(bool bEnable) override;
+	virtual render::GraphicsPipeline& SetDepthWriteEnable(bool bEnable) override;
 
-	GraphicsPipeline& SetBlendEnable(u32 renderTargetIndex, bool bEnable);
-	GraphicsPipeline& SetColorBlending(u32 renderTargetIndex, VkBlendFactor srcBlend, VkBlendFactor dstBlend, VkBlendOp blendOp);
-	GraphicsPipeline& SetAlphaBlending(u32 renderTargetIndex, VkBlendFactor srcBlend, VkBlendFactor dstBlend, VkBlendOp blendOp);
-	GraphicsPipeline& SetLogicOp(VkLogicOp logicOp);
+	virtual render::GraphicsPipeline& SetLogicOp(render::eLogicOp logicOp) override;
+	virtual render::GraphicsPipeline& SetBlendEnable(u32 renderTargetIndex, bool bEnable) override;
+	virtual render::GraphicsPipeline& SetColorBlending(u32 renderTargetIndex, render::eBlendFactor srcBlend, render::eBlendFactor dstBlend, render::eBlendOp blendOp) override;
+	virtual render::GraphicsPipeline& SetAlphaBlending(u32 renderTargetIndex, render::eBlendFactor srcBlend, render::eBlendFactor dstBlend, render::eBlendOp blendOp) override;
 
-	void Build();
+	virtual void Build() override;
+
+	std::pair< u32, u32 > GetResourceBindingIndex(const std::string& name);
 
 	[[nodiscard]]
 	inline VkPipeline vkPipeline() const { return m_vkPipeline; }
@@ -89,8 +81,7 @@ public:
 	inline VkDescriptorSetLayout vkSetLayout(u8 set) const { return m_vkSetLayouts[set]; }
 
 private:
-	RenderDevice& m_RenderDevice;
-	std::string   m_Name;
+	VkRenderDevice& m_RenderDevice;
 
 	VkPipeline		                     m_vkPipeline = VK_NULL_HANDLE;
 	VkPipelineLayout                     m_vkPipelineLayout = VK_NULL_HANDLE;
@@ -102,7 +93,6 @@ private:
 	{
 		VkRenderPass renderPass = VK_NULL_HANDLE;
 
-		std::vector< VkPipelineShaderStageCreateInfo >     shaderStages;
 		std::vector< VkPipelineColorBlendAttachmentState > blendStates;
 		VkLogicOp                                          blendLogicOp = VK_LOGIC_OP_CLEAR;
 
@@ -114,6 +104,8 @@ private:
 		VkPipelineMultisampleStateCreateInfo	multisamplingInfo = {};
 	} m_PipelineDesc = {};
 
+	// [name, set:binding]
+	std::unordered_map< std::string, u64 >    m_ResourceBindingMap;
 	std::unordered_map< u32, DescriptorSet& > m_DescriptorTable;
 };
 
@@ -121,14 +113,15 @@ private:
 //-------------------------------------------------------------------------
 // Compute Pipeline
 //-------------------------------------------------------------------------
-class ComputePipeline
+class VulkanComputePipeline : public render::ComputePipeline
 {
 public:
-	ComputePipeline(RenderDevice& device, std::string name);
-	~ComputePipeline();
+	VulkanComputePipeline(VkRenderDevice& rd, const std::string& name);
+	~VulkanComputePipeline();
 
-	ComputePipeline& SetComputeShader(Arc< Shader > pCS);
-	void Build();
+	virtual void Build() override;
+
+	std::pair< u32, u32 > GetResourceBindingIndex(const std::string& name);
 
 	[[nodiscard]]
 	inline VkPipeline vkPipeline() const { return m_vkPipeline; }
@@ -136,15 +129,14 @@ public:
 	inline VkPipelineLayout vkPipelineLayout() const { return m_vkPipelineLayout; }
 
 private:
-	RenderDevice& m_RenderDevice;
-	std::string   m_Name;
+	VkRenderDevice& m_RenderDevice;
 
 	VkPipeline		                     m_vkPipeline = VK_NULL_HANDLE;
 	VkPipelineLayout                     m_vkPipelineLayout = VK_NULL_HANDLE;
 	std::vector< VkDescriptorSetLayout > m_vkSetLayouts;
 
-	Arc< Shader > m_pCS;
-
+	// [name, set:binding]
+	std::unordered_map< std::string, u64 >    m_ResourceBindingMap;
 	std::unordered_map< u32, DescriptorSet& > m_DescriptorTable;
 };
 

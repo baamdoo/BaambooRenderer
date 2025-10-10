@@ -4,6 +4,11 @@
 #include "BaambooCore/Input.hpp"
 #include "BaambooScene/Entity.h"
 #include "BaambooScene/Components.h"
+#include "BaambooScene/RenderNodes/AtmosphereNode.h"
+#include "BaambooScene/RenderNodes/GBufferNode.h"
+#include "BaambooScene/RenderNodes/CloudNode.h"
+#include "BaambooScene/RenderNodes/LightingNode.h"
+#include "BaambooScene/RenderNodes/PostProcessNode.h"
 
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui/backends/imgui_impl_glfw.h>
@@ -146,123 +151,8 @@ bool ExampleApp::LoadScene()
 {
 	m_pScene = new Scene("ExampleScene");
 
-	// static mesh
-	{
-		MeshDescriptor descriptor = {};
-		descriptor.rootPath       = GetModelPath();
-		descriptor.bOptimize      = true;
-		descriptor.rendererAPI    = m_eBackendAPI;
-		descriptor.bWindingCW     = true;
-
-		auto entity = m_pScene->ImportModel(MODEL_PATH.append("kitten.obj"), descriptor);
-		entity.AttachComponent< ScriptComponent >();
-
-		auto& entitytc = entity.GetComponent< TransformComponent >();
-		entitytc.transform.position = { 0.0f, 0.0f, 500.0f };
-		entitytc.transform.scale    = { 100.0f, 100.0f, 100.0f };
-
-
-		/*auto dhEntity = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
-		auto& tcdh = dhEntity.GetComponent< TransformComponent >();
-		tcdh.transform.position = { -1.0f, 0.0f, 0.0f };
-
-		auto dhEntity2 = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
-		tcdh.transform.position = { 1.0f, 0.0f, 0.0f };*/
-	}
-
-	// animated mesh
-	{
-		/*MeshDescriptor descriptor  = {};
-		descriptor.rootPath        = GetModelPath();
-		descriptor.scale           = 10000.0f;
-		descriptor.rendererAPI     = m_eBackendAPI;
-		descriptor.bLoadAnimations = true;
-
-		fs::path animatedModelPath = MODEL_PATH.append("woman/Woman.gltf");
-		if (fs::exists(animatedModelPath))
-		{
-			Entity character = m_pScene->ImportModel(animatedModelPath, descriptor);
-
-			auto& transformComponent              = character.GetComponent< TransformComponent >();
-			transformComponent.transform.position = float3(0.0f, 0.0f, 5.0f);
-
-			if (character.HasAll< AnimationComponent >())
-			{
-				auto& animComp         = character.GetComponent< AnimationComponent >();
-				animComp.bPlaying      = true;
-				animComp.bLoop         = true;
-				animComp.playbackSpeed = 1.0f;
-			}
-		}*/
-	}
-
-	{
-		auto sunLight = m_pScene->CreateEntity("Sun Light");
-		sunLight.AttachComponent< LightComponent >();
-		sunLight.AttachComponent< AtmosphereComponent >();
-
-		auto& light = sunLight.GetComponent< LightComponent >();
-		light.type              = eLightType::Directional;
-		light.temperature_K     = 10000.0f;
-		light.color             = float3(1.0f, 0.95f, 0.8f);
-		light.illuminance_lux   = 6.0f; //120'000.0f;
-		light.angularRadius_rad = 0.00465f;
-		light.ev100             = 0.0; // 14.965f;
-
-		auto& transformComponent = sunLight.GetComponent< TransformComponent >();
-		//transformComponent.transform.position = float3(-0.46144, 0.76831, -0.44359);
-		transformComponent.transform.position = float3(0.0f, 1.0f, 0.0f);
-
-		auto& atmosphere = sunLight.GetComponent< AtmosphereComponent >();
-		atmosphere.atmosphereRadius_km = 6420.0f;
-	}
-	{
-		auto cloud = m_pScene->CreateEntity("Cloud");
-		cloud.AttachComponent< CloudComponent >();
-	}
-
-	// Create a point light
-	{
-		/*auto pointLight = m_pScene->CreateEntity("Point Light");
-		pointLight.AttachComponent< LightComponent >();
-
-		auto& light            = pointLight.GetComponent< LightComponent >();
-		light.type             = eLightType::Point;
-		light.color            = float3(1.0f, 1.0f, 1.0f);
-		light.temperature_K    = 4000.0f;
-		light.radius_m         = 0.03f;
-		light.luminousPower_lm = 1000.0f;
-
-		auto& transformComponent              = pointLight.GetComponent< TransformComponent >();
-		transformComponent.transform.position = float3(0.0f, 0.0f, 5.0f);*/
-	}
-
-	// Create a spot light
-	{
-		//auto spotLight = m_pScene->CreateEntity("Spot Light");
-		//spotLight.AttachComponent <LightComponent >();
-
-		//auto& light              = spotLight.GetComponent< LightComponent >();
-		//light.type               = eLightType::Spot;
-		//light.color              = float3(1.0f, 1.0f, 1.0f);
-		//light.temperature_K      = 3200.0f;
-		//light.radius_m           = 0.05f;
-		//light.luminousPower_lm   = 25.0f * 10.0f;
-		//light.outerConeAngle_rad = PI_DIV(2.0f);
-
-		//auto& transform              = spotLight.GetComponent< TransformComponent >();
-		//transform.transform.position = float3(0.0f, 10.0f, 0.0f);
-		//transform.transform.rotation = float3(90.0f, 0.0f, 0.0f); // Point down
-	}
-
-	// post-process volume
-	{
-		auto  volume = m_pScene->CreateEntity("PostProcessVolume");
-		auto& pp     = volume.AttachComponent< PostProcessComponent >();
-
-		pp.tonemap.op    = eToneMappingOp::ACES;
-		pp.tonemap.gamma = 2.2f;
-	}
+	ConfigureRenderGraph();
+	ConfigureSceneObjects();
 
 	return true;
 }
@@ -339,4 +229,135 @@ void ExampleApp::DrawUI()
 		}
 	}
 	ImGui::End();
+}
+
+void ExampleApp::ConfigureRenderGraph()
+{
+	m_pScene->AddRenderNode(MakeArc< CloudShapeNode >(*m_pRendererBackend->GetDevice()));
+	m_pScene->AddRenderNode(MakeArc< AtmosphereNode >(*m_pRendererBackend->GetDevice()));
+	m_pScene->AddRenderNode(MakeArc< GBufferNode >(*m_pRendererBackend->GetDevice()));
+	m_pScene->AddRenderNode(MakeArc< CloudScatteringNode >(*m_pRendererBackend->GetDevice()));
+	m_pScene->AddRenderNode(MakeArc< LightingNode >(*m_pRendererBackend->GetDevice()));
+	m_pScene->AddRenderNode(MakeArc< PostProcessNode >(*m_pRendererBackend->GetDevice()));
+}
+
+void ExampleApp::ConfigureSceneObjects()
+{
+	// static mesh
+	{
+		MeshDescriptor descriptor = {};
+		descriptor.rootPath = GetModelPath();
+		descriptor.bOptimize = true;
+		descriptor.rendererAPI = s_RendererAPI;
+		descriptor.bWindingCW = true;
+
+		auto entity = m_pScene->ImportModel(MODEL_PATH.append("kitten.obj"), descriptor);
+		entity.AttachComponent< ScriptComponent >();
+
+		auto& entitytc = entity.GetComponent< TransformComponent >();
+		entitytc.transform.position = { 0.0f, 0.0f, 500.0f };
+		entitytc.transform.scale = { 100.0f, 100.0f, 100.0f };
+
+
+		/*auto dhEntity = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
+		auto& tcdh = dhEntity.GetComponent< TransformComponent >();
+		tcdh.transform.position = { -1.0f, 0.0f, 0.0f };
+
+		auto dhEntity2 = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
+		tcdh.transform.position = { 1.0f, 0.0f, 0.0f };*/
+	}
+
+	// animated mesh
+	{
+		/*MeshDescriptor descriptor  = {};
+		descriptor.rootPath        = GetModelPath();
+		descriptor.scale           = 10000.0f;
+		descriptor.rendererAPI     = m_eBackendAPI;
+		descriptor.bLoadAnimations = true;
+
+		fs::path animatedModelPath = MODEL_PATH.append("woman/Woman.gltf");
+		if (fs::exists(animatedModelPath))
+		{
+			Entity character = m_pScene->ImportModel(animatedModelPath, descriptor);
+
+			auto& transformComponent              = character.GetComponent< TransformComponent >();
+			transformComponent.transform.position = float3(0.0f, 0.0f, 5.0f);
+
+			if (character.HasAll< AnimationComponent >())
+			{
+				auto& animComp         = character.GetComponent< AnimationComponent >();
+				animComp.bPlaying      = true;
+				animComp.bLoop         = true;
+				animComp.playbackSpeed = 1.0f;
+			}
+		}*/
+	}
+
+	{
+		auto sunLight = m_pScene->CreateEntity("Sun Light");
+		sunLight.AttachComponent< LightComponent >();
+		sunLight.AttachComponent< AtmosphereComponent >();
+
+		auto& light = sunLight.GetComponent< LightComponent >();
+		light.type = eLightType::Directional;
+		light.temperature_K = 10000.0f;
+		light.color = float3(1.0f, 0.95f, 0.8f);
+		light.illuminance_lux = 6.0f; //120'000.0f;
+		light.angularRadius_rad = 0.00465f;
+		light.ev100 = 0.0; // 14.965f;
+
+		auto& transformComponent = sunLight.GetComponent< TransformComponent >();
+		//transformComponent.transform.position = float3(-0.46144, 0.76831, -0.44359);
+		transformComponent.transform.position = float3(0.0f, 1.0f, 0.0f);
+
+		auto& atmosphere = sunLight.GetComponent< AtmosphereComponent >();
+		atmosphere.atmosphereRadius_km = 6420.0f;
+	}
+	{
+		auto cloud = m_pScene->CreateEntity("Cloud");
+		cloud.AttachComponent< CloudComponent >();
+	}
+
+	// Create a point light
+	{
+		/*auto pointLight = m_pScene->CreateEntity("Point Light");
+		pointLight.AttachComponent< LightComponent >();
+
+		auto& light            = pointLight.GetComponent< LightComponent >();
+		light.type             = eLightType::Point;
+		light.color            = float3(1.0f, 1.0f, 1.0f);
+		light.temperature_K    = 4000.0f;
+		light.radius_m         = 0.03f;
+		light.luminousPower_lm = 1000.0f;
+
+		auto& transformComponent              = pointLight.GetComponent< TransformComponent >();
+		transformComponent.transform.position = float3(0.0f, 0.0f, 5.0f);*/
+	}
+
+	// Create a spot light
+	{
+		//auto spotLight = m_pScene->CreateEntity("Spot Light");
+		//spotLight.AttachComponent <LightComponent >();
+
+		//auto& light              = spotLight.GetComponent< LightComponent >();
+		//light.type               = eLightType::Spot;
+		//light.color              = float3(1.0f, 1.0f, 1.0f);
+		//light.temperature_K      = 3200.0f;
+		//light.radius_m           = 0.05f;
+		//light.luminousPower_lm   = 25.0f * 10.0f;
+		//light.outerConeAngle_rad = PI_DIV(2.0f);
+
+		//auto& transform              = spotLight.GetComponent< TransformComponent >();
+		//transform.transform.position = float3(0.0f, 10.0f, 0.0f);
+		//transform.transform.rotation = float3(90.0f, 0.0f, 0.0f); // Point down
+	}
+
+	// post-process volume
+	{
+		auto  volume = m_pScene->CreateEntity("PostProcessVolume");
+		auto& pp = volume.AttachComponent< PostProcessComponent >();
+
+		pp.tonemap.op = eToneMappingOp::ACES;
+		pp.tonemap.gamma = 2.2f;
+	}
 }

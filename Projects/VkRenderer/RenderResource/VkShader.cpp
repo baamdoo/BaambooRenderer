@@ -9,6 +9,58 @@ static constexpr u32 MAX_DYNAMIC_ARRAY_SIZE = 1024u;
 namespace vk
 {
 
+#define VK_SHADER_PATH(filename, stage) GetCompiledShaderPath(filename, stage)
+std::string GetCompiledShaderPath(const std::string& filename, render::eShaderStage stage)
+{
+	using namespace render;
+
+	std::string stageStr;
+	switch (VK_SHADER_STAGE(stage))
+	{
+	case VK_SHADER_STAGE_VERTEX_BIT:
+		stageStr = ".vert";
+		break;
+	case VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT:
+		stageStr = ".hull";
+		break;
+	case VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT:
+		stageStr = ".domain";
+		break;
+	case VK_SHADER_STAGE_GEOMETRY_BIT:
+		stageStr = ".geom";
+		break;
+	case VK_SHADER_STAGE_FRAGMENT_BIT:
+		stageStr = ".frag";
+		break;
+	case VK_SHADER_STAGE_COMPUTE_BIT:
+		stageStr = ".comp";
+		break;
+	case VK_SHADER_STAGE_ALL_GRAPHICS:
+	case VK_SHADER_STAGE_ALL:
+		assert(false && "Invalid shader bit for parsing spirv path!");
+		break;
+
+	case VK_SHADER_STAGE_RAYGEN_BIT_KHR:
+	case VK_SHADER_STAGE_ANY_HIT_BIT_KHR:
+	case VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR:
+	case VK_SHADER_STAGE_MISS_BIT_KHR:
+	case VK_SHADER_STAGE_INTERSECTION_BIT_KHR:
+	case VK_SHADER_STAGE_CALLABLE_BIT_KHR:
+		// TODO
+		assert(false && "Invalid shader bit for parsing spirv path!");
+		break;
+
+	case VK_SHADER_STAGE_TASK_BIT_EXT:
+		stageStr = ".task";
+		break;
+	case VK_SHADER_STAGE_MESH_BIT_EXT:
+		stageStr = ".mesh";
+		break;
+	}
+
+	return SPIRV_PATH.string() + filename + stageStr + ".spv";
+}
+
 std::vector< char > ReadSpirv(std::string_view filepath)
 {
 	std::ifstream file(filepath.data(), std::ios::ate | std::ios::binary);
@@ -26,7 +78,7 @@ std::vector< char > ReadSpirv(std::string_view filepath)
 	return buffer;
 }
 
-VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderReflection& reflection)
+VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, VulkanShader::ShaderReflection& reflection)
 {
 	reflection = {};
 
@@ -71,16 +123,17 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 		auto buffers = compiler.get_active_buffer_ranges(resource.id);
 		if (!buffers.empty())
 		{
-			const std::string& name = resource.name;
+			std::string instanceName = compiler.get_name(resource.id);
+
 			const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
 			u32 set       = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
 			u32 binding   = compiler.get_decoration(resource.id, spv::DecorationBinding);
 			// u32 size = (u32)compiler.get_declared_struct_size(type);
 			u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_DYNAMIC_ARRAY_SIZE : type.array[0]; // assume utilize only 1d-array for now
 
-			Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
+			VulkanShader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
 			descriptorInfo.binding        = binding;
-			descriptorInfo.name           = name;
+			descriptorInfo.name           = instanceName;
 			descriptorInfo.arraySize      = arraySize;
 			descriptorInfo.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		}
@@ -91,15 +144,16 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 		auto buffers = compiler.get_active_buffer_ranges(resource.id);
 		if (!buffers.empty())
 		{
-			const std::string& name = resource.name;
+			std::string instanceName = compiler.get_name(resource.id);
+
 			const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
 			u32 set       = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
 			u32 binding   = compiler.get_decoration(resource.id, spv::DecorationBinding);
 			u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_DYNAMIC_ARRAY_SIZE : type.array[0]; // assume utilize only 1d-array for now
 
-			Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
+			VulkanShader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
 			descriptorInfo.binding        = binding;
-			descriptorInfo.name           = name;
+			descriptorInfo.name           = instanceName;
 			descriptorInfo.arraySize      = arraySize;
 			descriptorInfo.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 		}
@@ -107,30 +161,32 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 
 	for (const auto& resource : resources.sampled_images)
 	{
-		const std::string& name = resource.name;
+		std::string instanceName = compiler.get_name(resource.id);
+
 		const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
 		u32 set       = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
 		u32 binding   = compiler.get_decoration(resource.id, spv::DecorationBinding);
 		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_DYNAMIC_ARRAY_SIZE : type.array[0]; // assume utilize only 1d-array for now
 
-		Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
+		VulkanShader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
 		descriptorInfo.binding        = binding;
-		descriptorInfo.name           = name;
+		descriptorInfo.name           = instanceName;
 		descriptorInfo.arraySize      = arraySize;
 		descriptorInfo.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	}
 
 	for (const auto& resource : resources.storage_images)
 	{
-		const std::string& name = resource.name;
+		std::string instanceName = compiler.get_name(resource.id);
+
 		const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
 		u32 set = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
 		u32 binding = compiler.get_decoration(resource.id, spv::DecorationBinding);
 		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_DYNAMIC_ARRAY_SIZE : type.array[0]; // assume utilize only 1d-array for now
 
-		Shader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
+		VulkanShader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
 		descriptorInfo.binding        = binding;
-		descriptorInfo.name           = name;
+		descriptorInfo.name           = instanceName;
 		descriptorInfo.arraySize      = arraySize;
 		descriptorInfo.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 	}
@@ -154,16 +210,16 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, Shader::ShaderRe
 	return stage;
 }
 
-Arc< Shader > Shader::Create(RenderDevice& device, const std::string& name, CreationInfo&& info)
+Arc< VulkanShader > VulkanShader::Create(VkRenderDevice& rd, const std::string& name, CreationInfo&& info)
 {
-	return MakeArc< Shader >(device, name, std::move(info));
+	return MakeArc< VulkanShader >(rd, name, std::move(info));
 }
 
-Shader::Shader(RenderDevice& device, const std::string& name, CreationInfo&& info)
-	: Super(device, name, eResourceType::Shader)
-	, m_CreationInfo(info)
+VulkanShader::VulkanShader(VkRenderDevice& rd, const std::string& name, CreationInfo&& info)
+	: render::Shader(name, std::move(info))
+	, VulkanResource(rd, name)
 {
-	auto code = ReadSpirv(info.filepath);
+	auto code = ReadSpirv(VK_SHADER_PATH(info.filename, info.stage));
 
 	VkShaderModuleCreateInfo shaderInfo = {};
 	shaderInfo.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -176,7 +232,7 @@ Shader::Shader(RenderDevice& device, const std::string& name, CreationInfo&& inf
 	SetDeviceObjectName((u64)m_vkModule, VK_OBJECT_TYPE_SHADER_MODULE);
 }
 
-Shader::~Shader()
+VulkanShader::~VulkanShader()
 {
 	vkDestroyShaderModule(m_RenderDevice.vkDevice(), m_vkModule, nullptr);
 }

@@ -7,8 +7,8 @@
 namespace vk
 {
 
-FrameManager::FrameManager(RenderDevice& device, SwapChain& swapChain)
-    : m_RenderDevice(device)
+FrameManager::FrameManager(VkRenderDevice& rd, SwapChain& swapChain)
+    : m_RenderDevice(rd)
     , m_SwapChain(swapChain)
 {
     VkFenceCreateInfo fenceInfo = {};
@@ -41,20 +41,24 @@ FrameManager::FrameContext FrameManager::BeginFrame()
     VK_CHECK(vkWaitForFences(m_RenderDevice.vkDevice(), 2, vkFences, VK_TRUE, UINT64_MAX));
     VK_CHECK(vkResetFences(m_RenderDevice.vkDevice(), 2, vkFences));*/
 
-    FrameContext context    = {};
-    context.pCommandContext = &m_RenderDevice.BeginCommand(eCommandType::Graphics);
-    context.imageIndex      = m_SwapChain.AcquireNextImage(context.pCommandContext->vkPresentCompleteSemaphore());
+    FrameContext context = {};
+    context.rhiCommandContext = m_RenderDevice.BeginCommand(eCommandType::Graphics);
+    context.imageIndex        = m_SwapChain.AcquireNextImage(context.rhiCommandContext->vkPresentCompleteSemaphore());
 
     frame.bProcessing = true;
 
     return context;
 }
 
-void FrameManager::EndFrame(FrameContext& context)
+void FrameManager::EndFrame(Arc< VkCommandContext >&& pContext)
 {
-    context.pCommandContext->Execute();
+    m_RenderDevice.ExecuteCommand(pContext);
 
-    m_SwapChain.Present(context.pCommandContext->vkRenderCompleteSemaphore(), context.pCommandContext->vkPresentCompleteFence());
+    // Transient command context is released right after execution
+    if (pContext)
+    {
+        m_SwapChain.Present(pContext->vkRenderCompleteSemaphore(), pContext->vkPresentCompleteFence());
+    }
 
     m_Frames[m_ContextIndex].bProcessing = false;
     m_ContextIndex = (m_ContextIndex + 1) % MAX_FRAMES_IN_FLIGHT;

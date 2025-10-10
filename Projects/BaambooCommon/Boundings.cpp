@@ -1,4 +1,3 @@
-#include "BaambooPch.h"
 #include "Boundings.h"
 
 #define GLM_ENABLE_EXPERIMENTAL

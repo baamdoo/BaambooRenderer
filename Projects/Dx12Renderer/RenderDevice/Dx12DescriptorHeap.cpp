@@ -70,7 +70,7 @@ u32 DescriptorHeap::StageDescriptors(u32 rootIndex, u32 offset, std::vector< D3D
     auto d3d12Device = m_RenderDevice.GetD3D12Device();
     m_CachedDescriptorAllocations[m_pCurrentRS][rootIndex] = m_pDescriptorPool->Allocate(numDescriptors);
 
-    u32 offset_      = offset;
+    u32   offset_    = offset;
     auto& allocation = m_CachedDescriptorAllocations[m_pCurrentRS][rootIndex];
     for (const auto& handle : srcHandles)
     {

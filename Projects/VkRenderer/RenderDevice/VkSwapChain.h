@@ -8,12 +8,12 @@ namespace baamboo
 namespace vk
 {
 
-class Texture;
+class VulkanTexture;
 
 class SwapChain
 {
 public:
-	explicit SwapChain(RenderDevice& device, baamboo::Window& window);
+	explicit SwapChain(VkRenderDevice& rd, baamboo::Window& window);
 	~SwapChain();
 
 	u32 AcquireNextImage(VkSemaphore vkPresentCompleteSemaphore);
@@ -26,8 +26,7 @@ public:
 	[[nodiscard]]
 	inline VkSurfaceCapabilitiesKHR Capabilities() const { return m_Capabilities; }
 
-	[[nodiscard]]
-	inline Arc< Texture > GetImageToPresent() const { return m_BackBuffers[m_ImageIndex]; }
+	Arc< VulkanTexture > GetImageToPresent() const;
 
 	[[nodiscard]]
 	inline VkFormat ImageFormat() const { return m_ImageFormat; }
@@ -41,7 +40,7 @@ private:
 	void Release(VkSwapchainKHR vkSwapChain);
 
 private:
-	RenderDevice&    m_RenderDevice;
+	VkRenderDevice&  m_RenderDevice;
 	baamboo::Window& m_Window;
 
 	VkFormat                 m_ImageFormat = VK_FORMAT_UNDEFINED;
@@ -52,7 +51,7 @@ private:
 	u32 m_ImageCount;
 	u32 m_ImageIndex;
 
-	std::vector< Arc< Texture > > m_BackBuffers;
+	std::vector< Arc< VulkanTexture > > m_BackBuffers;
 
 	bool m_vSync    = true;
 	bool m_bResized = false;

@@ -42,7 +42,7 @@ project "Application"
 	}
 
 	debugenvs { 
-		"PATH=Projects/ThirdParties/assimp/bin/Release/;%PATH%"
+		"PATH=Projects/ThirdParties/assimp/bin/Release/;Output/Binaries/Debug/windows/BaambooCommon;%PATH%"
 	}
 
 	filter 'system:windows'
@@ -88,10 +88,6 @@ project "BaambooEngine"
 		"%{prj.name}/**.cpp",
 		"%{prj.name}/**.c",
 
-		"%{Path.Solution}Projects/BaambooCommon/*.h",
-		"%{Path.Solution}Projects/BaambooCommon/*.hpp",
-		"%{Path.Solution}Projects/BaambooCommon/*.cpp",
-
 		"%{Path.Solution}Projects/ThirdParties/imgui/*.h",
 		"%{Path.Solution}Projects/ThirdParties/imgui/*.cpp",
 		"%{Path.Solution}Projects/ThirdParties/imgui/misc/cpp/imgui_stdlib.h",
@@ -117,18 +113,17 @@ project "BaambooEngine"
 	}
 
 	links {
+		"BaambooCommon",
 		"GLFW",
 		'assimp-vc143-mt.lib', 
 	}
 
 	debugenvs { 
-		"PATH=Projects/ThirdParties/assimp/bin/Release/;%PATH%"
+		"PATH=Projects/ThirdParties/assimp/bin/Release/;Output/Binaries/Debug/windows/BaambooCommon;%PATH%"
 	}
 
 	filter { "files:ThirdParties/imgui/**.cpp" }
 		flags "NoPCH"
-	filter { "files:BaambooCommon/**.cpp" }
-		flags "NoPCH" 
 
 	filter 'system:windows'
 		systemversion 'latest'
@@ -142,6 +137,54 @@ project "BaambooEngine"
 		defines 'NDEBUG'
 		runtime 'Release'
 		optimize 'on'
+
+
+-- BaambooCommon
+project "BaambooCommon"
+	location "BaambooCommon"
+	kind "SharedLib"
+	language "C++"
+	cppdialect "C++23"
+	staticruntime "off"
+
+	targetdir (Path.Target)
+	objdir (Path.Obj)
+
+	callingconvention ("FastCall")
+	exceptionhandling ("Off")
+	rtti ("Off")
+	floatingpoint ("Fast")
+	flags { "MultiProcessorCompile" }
+	warnings ("High")
+	exceptionhandling ("On")
+
+	files {
+		"%{prj.name}/**.h",
+		"%{prj.name}/**.hpp",
+		"%{prj.name}/**.cpp"
+	}
+
+	includedirs {
+		"%{prj.name}/",
+		"%{Path.ThirdParty}/glm",
+	}
+
+	defines {
+		"BB_COMMON_DLL"
+	}
+
+	filter "system:windows"
+		systemversion "latest"
+
+	filter "configurations:Debug"
+		defines "_DEBUG"
+		runtime "Debug"
+		optimize "on"
+
+	filter "configurations:Release"
+		defines "NDEBUG"
+		runtime "Release"
+		optimize "on"
 
 
 -- Renderers
@@ -173,13 +216,6 @@ project "Dx12Renderer"
 		"%{prj.name}/**.cpp",
 		"%{prj.name}/**.c",
 		"%{prj.name}/**.def",
-
-		"%{Path.Solution}Projects/BaambooCommon/*.h",
-		"%{Path.Solution}Projects/BaambooCommon/*.hpp",
-		"%{Path.Solution}Projects/BaambooCommon/*.cpp",
-		"%{Path.Solution}Projects/BaambooCommon/RendererCommon/*.h",
-		"%{Path.Solution}Projects/BaambooCommon/RendererCommon/*.hpp",
-		"%{Path.Solution}Projects/BaambooCommon/RendererCommon/*.cpp",
 		"%{Path.ShaderSrc}/HLSL/**.hlsl",
 
 		"%{Path.Solution}Projects/ThirdParties/imgui/*.h",
@@ -208,6 +244,7 @@ project "Dx12Renderer"
 	}
 
 	links {
+		"BaambooCommon"
 	}
 
 	shadermodel ("6.6")
@@ -239,9 +276,7 @@ project "Dx12Renderer"
 	filter { "files:Dx12Renderer/RenderDevice/D3D12MemoryAllocator/src/**.cpp" }
 		flags "NoPCH"
 	filter { "files:ThirdParties/imgui/**.cpp" }
-		flags "NoPCH" 
-	filter { "files:BaambooCommon/**.cpp" }
-		flags "NoPCH" 
+		flags "NoPCH"
 
 	filter "system:windows"
 		systemversion "latest"
@@ -313,13 +348,6 @@ project "VkRenderer"
 		"%{prj.name}/**.cpp",
 		"%{prj.name}/**.c",
 		"%{prj.name}/**.def",
-
-		"%{Path.Solution}Projects/BaambooCommon/*.h",
-		"%{Path.Solution}Projects/BaambooCommon/*.hpp",
-		"%{Path.Solution}Projects/BaambooCommon/*.cpp",
-		"%{Path.Solution}Projects/BaambooCommon/RendererCommon/*.h",
-		"%{Path.Solution}Projects/BaambooCommon/RendererCommon/*.hpp",
-		"%{Path.Solution}Projects/BaambooCommon/RendererCommon/*.cpp",
 		"%{Path.ShaderSrc}/GLSL/**",
 
 		"%{Path.Solution}Projects/ThirdParties/imgui/*.h",
@@ -350,12 +378,11 @@ project "VkRenderer"
 
 	links {
 		"vulkan-1.lib",
+		"BaambooCommon",
 	}
 
 	filter { "files:ThirdParties/imgui/**.cpp" }
-		flags "NoPCH" 
-	filter { "files:BaambooCommon/**.cpp" }
-		flags "NoPCH" 
+		flags "NoPCH"
 
 	filter "configurations:Debug"
 		defines "_DEBUG"

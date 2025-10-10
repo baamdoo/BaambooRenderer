@@ -8,26 +8,26 @@ namespace vk
 //-------------------------------------------------------------------------
 // Base Buffer
 //-------------------------------------------------------------------------
-Buffer::Buffer(RenderDevice& device, const std::string& name, CreationInfo&& info)
-	: Super(device, name, eResourceType::Buffer)
-	, m_CreationInfo(std::move(info))
+Arc< VulkanBuffer > VulkanBuffer::Create(VkRenderDevice& rd, const std::string& name, CreationInfo&& desc)
+{
+	return MakeArc< VulkanBuffer >(rd, name, std::move(desc));
+}
+
+VulkanBuffer::VulkanBuffer(VkRenderDevice& rd, const std::string& name, CreationInfo&& info)
+	: render::Buffer(name, std::move(info))
+	, VulkanResource(rd, name)
 {
 	Resize(m_CreationInfo.sizeInBytes, true);
 	SetDeviceObjectName((u64)m_vkBuffer, VK_OBJECT_TYPE_BUFFER);
 }
 
-Arc< Buffer > Buffer::Create(RenderDevice& device, const std::string& name, CreationInfo&& desc)
-{
-	return MakeArc< Buffer >(device, name, std::move(desc));
-}
-
-Buffer::~Buffer()
+VulkanBuffer::~VulkanBuffer()
 {
 	if (m_vmaAllocation)
 		vmaDestroyBuffer(m_RenderDevice.vmaAllocator(), m_vkBuffer, m_vmaAllocation);
 }
 
-void Buffer::Resize(u64 sizeInBytes, bool bReset)
+void VulkanBuffer::Resize(u64 sizeInBytes, bool bReset)
 {
 	VkBuffer          vkNewBuffer   = VK_NULL_HANDLE;
 	VmaAllocation     vmaAllocation = VK_NULL_HANDLE;
@@ -37,12 +37,12 @@ void Buffer::Resize(u64 sizeInBytes, bool bReset)
 	VkBufferCreateInfo bufferInfo = {};
 	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	bufferInfo.size  = sizeInBytes;
-	bufferInfo.usage = m_CreationInfo.usage;
+	bufferInfo.usage = VK_BUFFER_USAGE_FLAGS(m_CreationInfo.bufferUsage);
 
 	VmaAllocationCreateInfo vmaInfo = {};
 	vmaInfo.flags = m_CreationInfo.bMap ?
 		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT : VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
-	vmaInfo.usage = m_CreationInfo.memoryUsage;
+	vmaInfo.usage = VMA_MEMORY_USAGE_AUTO;
 	VK_CHECK(vmaCreateBuffer(m_RenderDevice.vmaAllocator(), &bufferInfo, &vmaInfo, &vkNewBuffer, &vmaAllocation, &allocationInfo));
 
 	if (bufferInfo.usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
@@ -56,10 +56,10 @@ void Buffer::Resize(u64 sizeInBytes, bool bReset)
 
 	if (!bReset && m_vkBuffer != VK_NULL_HANDLE)
 	{
-		auto& context = m_RenderDevice.BeginCommand(eCommandType::Transfer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
-		context.CopyBuffer(vkNewBuffer, m_vkBuffer, SizeInBytes(), VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT);
-		context.Close();
-		context.Execute();
+		auto pContext = m_RenderDevice.BeginCommand(eCommandType::Transfer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
+		pContext->CopyBuffer(vkNewBuffer, m_vkBuffer, SizeInBytes(), VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT);
+		pContext->Close();
+		m_RenderDevice.ExecuteCommand(pContext);
 
 		vmaDestroyBuffer(m_RenderDevice.vmaAllocator(), m_vkBuffer, m_vmaAllocation);
 	}
@@ -79,18 +79,18 @@ void Buffer::Resize(u64 sizeInBytes, bool bReset)
 //-------------------------------------------------------------------------
 // Index Buffer
 //-------------------------------------------------------------------------
-Arc<IndexBuffer> IndexBuffer::Create(RenderDevice& device, const std::string& name, u32 numIndices, VkIndexType type)
+Arc< VulkanIndexBuffer > VulkanIndexBuffer::Create(VkRenderDevice& rd, const std::string& name, u32 numIndices, VkIndexType type)
 {
-	return MakeArc< IndexBuffer >(device, name, numIndices, type);
+	return MakeArc< VulkanIndexBuffer >(rd, name, numIndices, type);
 }
 
-IndexBuffer::IndexBuffer(RenderDevice& device, const std::string& name, u32 numIndices, VkIndexType type)
+VulkanIndexBuffer::VulkanIndexBuffer(VkRenderDevice& rd, const std::string& name, u32 numIndices, VkIndexType type)
 	: m_IndexType(type)
-	, Super(device, name,
+	, Super(rd, name,
 		{
 			.sizeInBytes = numIndices * GetIndexSize(),
 			.bMap        = false,
-			.usage       = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+			.bufferUsage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
 		})
 {
 }
@@ -99,17 +99,17 @@ IndexBuffer::IndexBuffer(RenderDevice& device, const std::string& name, u32 numI
 //-------------------------------------------------------------------------
 // Uniform Buffer
 //-------------------------------------------------------------------------
-Arc< UniformBuffer > UniformBuffer::Create(RenderDevice& device, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags usage)
+Arc< VulkanUniformBuffer > VulkanUniformBuffer::Create(VkRenderDevice& rd, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags usage)
 {
-	return MakeArc< UniformBuffer >(device, name, sizeInBytes, usage);
+	return MakeArc< VulkanUniformBuffer >(rd, name, sizeInBytes, usage);
 }
 
-UniformBuffer::UniformBuffer(RenderDevice& device, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage)
-	: Super(device, name,
+VulkanUniformBuffer::VulkanUniformBuffer(VkRenderDevice& rd, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage)
+	: Super(rd, name,
 		{
 			.sizeInBytes = sizeInBytes,
 			.bMap        = true,
-			.usage       = additionalUsage | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
+			.bufferUsage = additionalUsage | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
 		})
 {
 }
@@ -118,16 +118,16 @@ UniformBuffer::UniformBuffer(RenderDevice& device, const std::string& name, u64 
 //-------------------------------------------------------------------------
 // Storage Buffer
 //-------------------------------------------------------------------------
-Arc< StorageBuffer > StorageBuffer::Create(RenderDevice& device, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags usage)
+Arc< VulkanStorageBuffer > VulkanStorageBuffer::Create(VkRenderDevice& rd, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags usage)
 {
-	return MakeArc< StorageBuffer >(device, name, sizeInBytes, usage);
+	return MakeArc< VulkanStorageBuffer >(rd, name, sizeInBytes, usage);
 }
 
-StorageBuffer::StorageBuffer(RenderDevice& device, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage)
-	: Super(device, name,
+VulkanStorageBuffer::VulkanStorageBuffer(VkRenderDevice& rd, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage)
+	: Super(rd, name,
 		{
 			.sizeInBytes = sizeInBytes,
-			.usage       = additionalUsage
+			.bufferUsage = additionalUsage
 			             | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT 
 		                 | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
 		})

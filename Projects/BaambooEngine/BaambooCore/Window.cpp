@@ -90,7 +90,7 @@ void Window::NewFrame()
 
 void Window::OnWindowResized(i32 width, i32 height)
 {
-	m_Desc.width = width;
+	m_Desc.width  = width;
 	m_Desc.height = height;
 }
 

@@ -97,6 +97,7 @@ enum : u8
 	ePhysicalDeviceFeature_DeviceAddress,
 	ePhysicalDeviceFeature_SamplerAnistropy,
 	ePhysicalDeviceFeature_DynamicRendering,
+	ePhysicalDeviceFeature_ShaderInt64,
 
 	// **
 	// 32 ~ 63 : More Extension Features

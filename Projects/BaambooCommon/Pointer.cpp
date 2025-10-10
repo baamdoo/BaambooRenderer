@@ -9,19 +9,20 @@ static std::mutex                  s_LiveReferenceMutex;
 namespace ptr_util
 {
 
-bool IsLive(void* ptr)
+BAAMBOO_API bool IsLive(void* ptr)
 {
+	std::scoped_lock< std::mutex > lock(s_LiveReferenceMutex);
 	return s_LiveReferences.find(ptr) != s_LiveReferences.end();
 }
 
-void AddToLiveReferences(void* ptr)
+BAAMBOO_API void AddToLiveReferences(void* ptr)
 {
 	assert(ptr);
 	std::scoped_lock< std::mutex > lock(s_LiveReferenceMutex);
 	s_LiveReferences.insert(ptr);
 }
 
-void RemoveFromLiveReferences(void* ptr)
+BAAMBOO_API void RemoveFromLiveReferences(void* ptr)
 {
 	assert(ptr);
 	assert(s_LiveReferences.find(ptr) != s_LiveReferences.end());

@@ -1,11 +1,12 @@
 #pragma once
+#include "RenderCommon/RenderResources.h"
 
 namespace vk
 {
 
-class Buffer;
-class Texture;
-class UniformBuffer;
+class VulkanBuffer;
+class VulkanTexture;
+class VulkanUniformBuffer;
 
 enum
 {
@@ -14,39 +15,27 @@ enum
     eDefaultTexture_Gray  = 2,
 };
 
-class ResourceManager
+class VkResourceManager : public render::ResourceManager
 {
 public:
-    ResourceManager(RenderDevice& device);
-    ~ResourceManager();
+    VkResourceManager(VkRenderDevice& rd);
+    ~VkResourceManager();
 
-    Arc< Texture > LoadTexture(const std::string& filepath);
+    virtual Arc< render::Texture > LoadTexture(const std::string& filepath) override;
 
-    void UploadData(Arc< Texture > pTexture, const void* pData, u64 sizeInBytes, VkBufferImageCopy region);
-    void UploadData(Arc< Buffer > pBuffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes);
+    void UploadData(Arc< VulkanTexture > texture, const void* pData, u64 sizeInBytes, VkBufferImageCopy region);
+    void UploadData(Arc< VulkanBuffer > buffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes);
     void UploadData(VkBuffer vkBuffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes);
 
-    [[nodiscard]]
-    Arc< Texture > GetFlatWhiteTexture() { return m_pWhiteTexture; }
-    [[nodiscard]]
-    Arc< Texture > GetFlatBlackTexture() { return m_pBlackTexture; }
-    [[nodiscard]]
-    Arc< Texture > GetFlatGrayTexture() { return m_pGrayTexture; }
+private:
+    Arc< render::Texture > CreateFlat2DTexture(const std::string& name, u32 color);
+    Arc< render::Texture > CreateFlatWhiteTexture();
+    Arc< render::Texture > CreateFlatBlackTexture();
 
 private:
-    Arc< Texture > CreateFlat2DTexture(const std::string& name, u32 color);
-    Arc< Texture > CreateFlatWhiteTexture();
-    Arc< Texture > CreateFlatBlackTexture();
+    VkRenderDevice& m_RenderDevice;
 
-private:
-    RenderDevice& m_RenderDevice;
-
-    Arc< UniformBuffer > m_pStagingBuffer;
-
-    // default textures
-    Arc< Texture > m_pWhiteTexture;
-    Arc< Texture > m_pBlackTexture;
-    Arc< Texture > m_pGrayTexture;
+    Arc< VulkanUniformBuffer > m_pStagingBuffer;
 };
 
 } // namespace vk

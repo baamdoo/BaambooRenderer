@@ -2,6 +2,7 @@
 #include "Components.h"
 #include "SceneRenderView.h"
 #include "ModelLoader.h"
+#include "RenderCommon/RenderNode.h"
 
 namespace baamboo
 {
@@ -13,6 +14,44 @@ class MaterialSystem;
 class AtmosphereSystem;
 class CloudSystem;
 class PostProcessSystem;
+
+struct FrameData
+{
+	float time  = 0.0f;
+	u64   frame = 0;
+
+	u64 componentMarker = 0;
+
+	CameraData camera = {};
+
+	// AtmosphereLUTs
+	Weak< render::Texture > pTransmittanceLUT;
+	Weak< render::Texture > pMultiScatteringLUT;
+	Weak< render::Texture > pSkyViewLUT;
+	Weak< render::Texture > pAerialPerspectiveLUT;
+
+	// CloudLUTs
+	Weak< render::Texture > pCloudBaseLUT;
+	Weak< render::Texture > pCloudDetailLUT;
+	Weak< render::Texture > pVerticalProfileLUT;
+	Weak< render::Texture > pWeatherMapLUT;
+	Weak< render::Texture > pBlueNoiseTexture;
+	Weak< render::Texture > pCloudScatteringLUT;
+
+	// Scene buffers
+	Weak< render::Texture > pGBuffer0;
+	Weak< render::Texture > pGBuffer1;
+	Weak< render::Texture > pGBuffer2;
+	Weak< render::Texture > pGBuffer3;
+	Weak< render::Texture > pColor;
+	Weak< render::Texture > pDepth;
+
+	// samplers
+	Arc< render::Sampler > pPointClamp;
+	Arc< render::Sampler > pLinearClamp;
+	Arc< render::Sampler > pLinearWrap;
+};
+inline FrameData g_FrameData = {};
 
 class Scene
 {
@@ -27,10 +66,14 @@ public:
 	class Entity ImportModel(const fs::path& filepath, MeshDescriptor descriptor);
 	class Entity ImportModel(Entity rootEntity, const fs::path& filepath, MeshDescriptor descriptor);
 
+	void AddRenderNode(Arc< render::RenderNode > node);
+
 	void Update(float dt);
 
+	void OnWindowResized(u32 width, u32 height);
+
 	[[nodiscard]]
-	SceneRenderView RenderView(const EditorCamera& camera) const;
+	SceneRenderView RenderView(const EditorCamera& edCamera, bool bDrawUI) const;
 
 	[[nodiscard]]
 	const std::string& Name() const { return m_Name; }
@@ -43,6 +86,8 @@ public:
 	const entt::registry& Registry() const { return m_Registry; }
 	[[nodiscard]]
 	TransformSystem* GetTransformSystem() const { return m_pTransformSystem; }
+
+	std::vector< Arc< render::RenderNode > >& GetRenderNodes() { return m_RenderNodes; }
 
 	const MeshData* GetMeshData(u32 meshID) const { auto it = m_MeshData.find(meshID); return (it != m_MeshData.end()) ? &it->second : nullptr;  }
 	const Skeleton* GetSkeleton(u32 skeletonID) const { auto it = m_Skeletons.find(skeletonID); return (it != m_Skeletons.end()) ? &it->second : nullptr; }
@@ -73,6 +118,8 @@ private:
 	AtmosphereSystem*  m_pAtmosphereSystem  = nullptr;
 	CloudSystem*       m_pCloudSystem       = nullptr;
 	PostProcessSystem* m_pPostProcessSystem = nullptr;
+
+	std::vector< Arc< render::RenderNode > > m_RenderNodes;
 
 	// animations
 	std::unordered_map< u32, MeshData >      m_MeshData;

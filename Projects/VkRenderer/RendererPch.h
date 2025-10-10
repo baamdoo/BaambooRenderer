@@ -21,4 +21,3 @@
 #include "Pointer.hpp"
 #include "ShaderTypes.h"
 #include "Core/VkCore.h"
-

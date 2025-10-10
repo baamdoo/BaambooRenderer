@@ -1,5 +1,5 @@
 #pragma once
-#include "BaambooCore/BackendAPI.h"
+#include "RenderCommon/RendererAPI.h"
 
 struct ImGuiContext;
 
@@ -13,7 +13,7 @@ namespace dx12
 
 class RenderModule;
 
-class Renderer : public RendererAPI
+class Renderer : public render::RendererAPI
 {
 public:
 	explicit Renderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext);

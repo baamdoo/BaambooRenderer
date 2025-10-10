@@ -5,14 +5,13 @@
 namespace vk
 {
 
-RenderTarget::RenderTarget(RenderDevice& device, std::string_view name)
-	: m_RenderDevice(device)
-	, m_Name(name)
-	, m_pAttachments(eAttachmentPoint::NumAttachmentPoints)
+VulkanRenderTarget::VulkanRenderTarget(VkRenderDevice& rd, const std::string& name)
+	: render::RenderTarget(name)
+	, m_RenderDevice(rd)
 {
 }
 
-RenderTarget::~RenderTarget()
+VulkanRenderTarget::~VulkanRenderTarget()
 {
 	if (m_vkFramebuffer) 
 		vkDestroyFramebuffer(m_RenderDevice.vkDevice(), m_vkFramebuffer, nullptr);
@@ -20,22 +19,26 @@ RenderTarget::~RenderTarget()
 		vkDestroyRenderPass(m_RenderDevice.vkDevice(), m_vkRenderPass, nullptr);
 }
 
-RenderTarget& RenderTarget::AttachTexture(eAttachmentPoint attachmentPoint, Arc< Texture > pTex)
+VulkanRenderTarget& VulkanRenderTarget::AttachTexture(render::eAttachmentPoint attachmentPoint, Arc< render::Texture > tex)
 {
+	using namespace render;
+
 	assert(attachmentPoint < eAttachmentPoint::NumAttachmentPoints);
-	m_pAttachments[attachmentPoint] = pTex;
+	m_pAttachments[attachmentPoint] = tex;
 
     return *this;
 }
 
-RenderTarget& RenderTarget::SetLoadAttachment(eAttachmentPoint attachmentPoint)
+VulkanRenderTarget& VulkanRenderTarget::SetLoadAttachment(render::eAttachmentPoint attachmentPoint)
 {
 	m_bLoadAttachmentBits |= (1 << attachmentPoint);
     return *this;
 }
 
-void RenderTarget::Build()
+void VulkanRenderTarget::Build()
 {
+	using namespace render;
+
 	const bool bUseDepth = m_pAttachments[eAttachmentPoint::DepthStencil] != nullptr;
 
 	// **
@@ -47,13 +50,13 @@ void RenderTarget::Build()
 	std::vector< VkAttachmentDescription > attachmentDescs; attachmentDescs.reserve(m_pAttachments.size());
 	for (u32 i = 0; i < eAttachmentPoint::NumColorAttachments; ++i)
 	{
-		auto pTex = m_pAttachments[i];
-		if (!pTex)
+		auto tex = StaticCast<VulkanTexture>(m_pAttachments[i]);
+		if (!tex)
 			continue;
 
 		VkAttachmentDescription attachmentDesc = {};
-		attachmentDesc.format         = pTex->Desc().format;
-		attachmentDesc.samples        = pTex->Desc().samples;
+		attachmentDesc.format         = tex->Desc().format;
+		attachmentDesc.samples        = tex->Desc().samples;
 		// VK_ATTACHMENT_LOAD_OP_DONT_CARE: appropriate if all pixels are sure to be replaced. since it is cost-effective than clear op. but remains clear for safety.
 		attachmentDesc.loadOp         = (m_bLoadAttachmentBits & i) ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
 		attachmentDesc.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
@@ -61,7 +64,7 @@ void RenderTarget::Build()
 		attachmentDesc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		attachmentDesc.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
 		attachmentDesc.finalLayout    = 
-			pTex->Desc().usage & VK_IMAGE_USAGE_SAMPLED_BIT ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+			tex->Desc().usage & VK_IMAGE_USAGE_SAMPLED_BIT ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 		attachmentDescs.push_back(attachmentDesc);
 
 		colorReferences.push_back(
@@ -70,22 +73,22 @@ void RenderTarget::Build()
 				.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
 			});
 
-		attachments.push_back(pTex->vkView());
+		attachments.push_back(tex->vkView());
 
 		// resolution of all targets should be equal
-		assert(width  == 0 || width  == pTex->Desc().extent.width);    width = pTex->Desc().extent.width;
-		assert(height == 0 || height == pTex->Desc().extent.height);  height = pTex->Desc().extent.height;
-		assert(depth  == 0 || depth  == pTex->Desc().extent.depth);    depth = pTex->Desc().extent.depth;
+		assert(width  == 0 || width  == tex->Desc().extent.width);    width = tex->Desc().extent.width;
+		assert(height == 0 || height == tex->Desc().extent.height);  height = tex->Desc().extent.height;
+		assert(depth  == 0 || depth  == tex->Desc().extent.depth);    depth = tex->Desc().extent.depth;
 	}
 	m_NumColors = static_cast<u32>(attachments.size());
 
 	VkAttachmentReference depthReference;
 	if (bUseDepth)
 	{
-		auto pTex = m_pAttachments[eAttachmentPoint::DepthStencil];
+		auto pTex = StaticCast<VulkanTexture>(m_pAttachments[eAttachmentPoint::DepthStencil]);
 		if (pTex)
 		{
-			const bool bIsDepthOnly = IsDepthOnly();
+			//const bool bIsDepthOnly = IsDepthOnly();
 
 			VkAttachmentDescription attachmentDesc = {};
 			attachmentDesc.format         = pTex->Desc().format;
@@ -114,7 +117,7 @@ void RenderTarget::Build()
 	}
 
 	std::vector< VkSubpassDescription > subpasses;
-	VkSubpassDescription subpassDesc    = {};
+	VkSubpassDescription subpassDesc = {};
 	subpassDesc.pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS;
 	subpassDesc.colorAttachmentCount    = static_cast<u32>(colorReferences.size());
 	subpassDesc.pColorAttachments       = colorReferences.data();
@@ -123,13 +126,13 @@ void RenderTarget::Build()
 
 	std::vector< VkSubpassDependency > dependencies;
 	VkSubpassDependency subpassDependency = {};
-	subpassDependency.srcSubpass          = VK_SUBPASS_EXTERNAL;
-	subpassDependency.dstSubpass          = 0;
-	subpassDependency.srcStageMask        = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-	subpassDependency.dstStageMask        = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	subpassDependency.srcAccessMask       = 0;
-	subpassDependency.dstAccessMask       = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-	subpassDependency.dependencyFlags     = VK_DEPENDENCY_BY_REGION_BIT;
+	subpassDependency.srcSubpass      = VK_SUBPASS_EXTERNAL;
+	subpassDependency.dstSubpass      = 0;
+	subpassDependency.srcStageMask    = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+	subpassDependency.dstStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	subpassDependency.srcAccessMask   = 0;
+	subpassDependency.dstAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	subpassDependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 	dependencies.push_back(subpassDependency);
 
 	VkRenderPassCreateInfo renderPassInfo = {};
@@ -160,13 +163,13 @@ void RenderTarget::Build()
 	// **
 	// Begin info
 	// **
-	auto pColor0 = m_pAttachments[eAttachmentPoint::Color0];
+	auto pColor0       = m_pAttachments[eAttachmentPoint::Color0];
 	auto pDepthStencil = m_pAttachments[eAttachmentPoint::DepthStencil];
 	assert(pColor0 || pDepthStencil);
 
 	for (u32 i = 0; i < eAttachmentPoint::NumAttachmentPoints; ++i)
 	{
-		auto pTex = m_pAttachments[i];
+		auto pTex = StaticCast<VulkanTexture>(m_pAttachments[i]);
 		if (!pTex)
 			continue;
 
@@ -184,16 +187,16 @@ void RenderTarget::Build()
 	m_RenderDevice.SetVkObjectName(m_Name, (u64)m_vkFramebuffer, VK_OBJECT_TYPE_FRAMEBUFFER);
 }
 
-void RenderTarget::Resize(u32 width, u32 height, u32 depth)
+void VulkanRenderTarget::Resize(u32 width, u32 height, u32 depth)
 {
-	for (auto pAttachment : m_pAttachments)
+	for (auto attachment : m_pAttachments)
 	{
-		if (pAttachment)
-			pAttachment->Resize(width, height, depth);
+		if (attachment)
+			attachment->Resize(width, height, depth);
 	}
 
 	u32 bLoadAttachmentBits = m_bLoadAttachmentBits;
-	std::vector< Arc< Texture > > pAttachments = m_pAttachments;
+	std::vector< Arc< render::Texture > > pAttachments = m_pAttachments;
 	Reset();
 
 	m_pAttachments        = pAttachments;
@@ -201,8 +204,10 @@ void RenderTarget::Resize(u32 width, u32 height, u32 depth)
 	Build();
 }
 
-void RenderTarget::Reset()
+void VulkanRenderTarget::Reset()
 {
+	using namespace render;
+
 	m_bLoadAttachmentBits = 0;
 
 	m_pAttachments.clear();
@@ -212,11 +217,13 @@ void RenderTarget::Reset()
 	if (m_vkRenderPass) vkDestroyRenderPass(m_RenderDevice.vkDevice(), m_vkRenderPass, nullptr);
 }
 
-void RenderTarget::InvalidateImageLayout()
+void VulkanRenderTarget::InvalidateImageLayout()
 {
+	using namespace render;
+
 	for (u32 i = 0; i < eAttachmentPoint::NumAttachmentPoints; ++i)
 	{
-		auto pTex = m_pAttachments[i];
+		auto pTex = StaticCast<VulkanTexture>(m_pAttachments[i]);
 		if (!pTex)
 			continue;
 
@@ -233,13 +240,13 @@ void RenderTarget::InvalidateImageLayout()
 		{
 			pTex->SetState(
 				pTex->Desc().usage & VK_IMAGE_USAGE_SAMPLED_BIT ?
-				Texture::State
+				VulkanTexture::State
 				{
 					.access = VK_ACCESS_SHADER_READ_BIT,
 					.stage  = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
 					.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 				} :
-				Texture::State
+				VulkanTexture::State
 				{
 					.access = VK_ACCESS_TRANSFER_READ_BIT,
 					.stage  = VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -249,10 +256,12 @@ void RenderTarget::InvalidateImageLayout()
 	}
 }
 
-VkViewport RenderTarget::GetViewport(float2 scale, float2 bias, f32 minDepth, f32 maxDepth) const
+VkViewport VulkanRenderTarget::GetViewport(float2 scale, float2 bias, f32 minDepth, f32 maxDepth) const
 {
-	auto pColor0       = m_pAttachments[eAttachmentPoint::Color0];
-	auto pDepthStencil = m_pAttachments[eAttachmentPoint::DepthStencil];
+	using namespace render;
+
+	auto pColor0       = StaticCast<VulkanTexture>(m_pAttachments[eAttachmentPoint::Color0]);
+	auto pDepthStencil = StaticCast<VulkanTexture>(m_pAttachments[eAttachmentPoint::DepthStencil]);
 	assert(pColor0 || pDepthStencil);
 
 	u32 width = pColor0 ?
@@ -271,10 +280,12 @@ VkViewport RenderTarget::GetViewport(float2 scale, float2 bias, f32 minDepth, f3
 	return viewport;
 }
 
-VkRect2D RenderTarget::GetScissorRect() const
+VkRect2D VulkanRenderTarget::GetScissorRect() const
 {
-	auto pColor0       = m_pAttachments[eAttachmentPoint::Color0];
-	auto pDepthStencil = m_pAttachments[eAttachmentPoint::DepthStencil];
+	using namespace render;
+
+	auto pColor0 = StaticCast<VulkanTexture>(m_pAttachments[eAttachmentPoint::Color0]);
+	auto pDepthStencil = StaticCast<VulkanTexture>(m_pAttachments[eAttachmentPoint::DepthStencil]);
 	assert(pColor0 || pDepthStencil);
 
 	u32 width = pColor0 ?
@@ -289,13 +300,10 @@ VkRect2D RenderTarget::GetScissorRect() const
 	return scissor;
 }
 
-Arc< Texture > RenderTarget::Attachment(eAttachmentPoint attachment) const
+bool VulkanRenderTarget::IsDepthOnly() const
 {
-	return m_pAttachments[attachment];
-}
+	using namespace render;
 
-bool RenderTarget::IsDepthOnly() const
-{
     bool bDepthOnly = true;
     for (u32 i = 0; i < eAttachmentPoint::NumColorAttachments; ++i)
         if (m_pAttachments[i]) 

@@ -1,40 +1,23 @@
 #pragma once
+
 namespace vk
 {
 
-class Texture;
+class VulkanTexture;
 
-enum eAttachmentPoint : u8
+class VulkanRenderTarget : public render::RenderTarget
 {
-    Color0,
-    Color1,
-    Color2,
-    Color3,
-    Color4,
-    Color5,
-    Color6,
-    Color7,
-    DepthStencil,
-
-    All,
-    NumColorAttachments = DepthStencil,
-    NumAttachmentPoints = All,
-};
-
-class RenderTarget
-{
-
 public:
-    RenderTarget(RenderDevice& device, std::string_view name);
-    ~RenderTarget();
+    VulkanRenderTarget(VkRenderDevice& rd, const std::string& name);
+    ~VulkanRenderTarget();
 
-    RenderTarget& AttachTexture(eAttachmentPoint attachmentPoint, Arc< Texture > pTex);
-    RenderTarget& SetLoadAttachment(eAttachmentPoint attachmentPoint);
-    void Build();
+    VulkanRenderTarget& AttachTexture(render::eAttachmentPoint attachmentPoint, Arc< render::Texture > tex);
+    VulkanRenderTarget& SetLoadAttachment(render::eAttachmentPoint attachmentPoint);
+    virtual void Build() override;
 
-    void Resize(u32 width, u32 height, u32 depth);
-    void Reset();
-    void InvalidateImageLayout();
+    virtual void Resize(u32 width, u32 height, u32 depth) override;
+    virtual void Reset() override;
+    virtual void InvalidateImageLayout() override;
     
     [[nodiscard]]
     const VkRenderPassBeginInfo& GetBeginInfo() const { return m_BeginInfo; }
@@ -43,14 +26,9 @@ public:
     [[nodiscard]]
     VkRect2D GetScissorRect() const;
 
-    [[nodiscard]]
     inline VkRenderPass vkRenderPass() const { return m_vkRenderPass; }
-    [[nodiscard]]
     inline VkFramebuffer vkFramebuffer() const { return m_vkFramebuffer; }
 
-    [[nodiscard]]
-    Arc< Texture > Attachment(eAttachmentPoint attachment) const;
-    [[nodiscard]]
     inline u32 GetNumColors() const { return m_NumColors; }
 
 private:
@@ -58,16 +36,14 @@ private:
     bool IsDepthOnly() const;
 
 private:
-    RenderDevice&   m_RenderDevice;
-    std::string_view m_Name;
+    VkRenderDevice& m_RenderDevice;
 
     VkRenderPass          m_vkRenderPass = VK_NULL_HANDLE;
     VkFramebuffer         m_vkFramebuffer = VK_NULL_HANDLE;
     VkRenderPassBeginInfo m_BeginInfo = {};
 
-    std::vector< Arc< Texture > > m_pAttachments;
-    std::vector< VkClearValue >   m_ClearValues;
-    VkAttachmentDescription       m_AttachmentDesc;
+    std::vector< VkClearValue >         m_ClearValues;
+    VkAttachmentDescription             m_AttachmentDesc;
 
     u32 m_NumColors = 0;
     u32 m_bLoadAttachmentBits = 0;

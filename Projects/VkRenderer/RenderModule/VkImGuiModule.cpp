@@ -13,8 +13,8 @@ namespace vk
 
 u32 g_minImageCount = 2;
 
-ImGuiModule::ImGuiModule(RenderDevice& device, vk::SwapChain& swapChain, ImGuiContext* pImGuiContext)
-	: Super(device)
+ImGuiModule::ImGuiModule(VkRenderDevice& rd, vk::SwapChain& swapChain, ImGuiContext* pImGuiContext)
+	: m_RenderDevice(rd)
 {
 	assert(pImGuiContext);
 	ImGui::SetCurrentContext(pImGuiContext);
@@ -30,18 +30,18 @@ ImGuiModule::ImGuiModule(RenderDevice& device, vk::SwapChain& swapChain, ImGuiCo
 	VK_CHECK(vkCreateDescriptorPool(m_RenderDevice.vkDevice(), &descriptorPoolInfo, nullptr, &m_vkImGuiPool));
 
 	ImGui_ImplVulkan_InitInfo imguiInfo = {};
-	imguiInfo.ApiVersion                = VK_API_VERSION_1_3;
-	imguiInfo.Instance                  = m_RenderDevice.vkInstance();
-	imguiInfo.PhysicalDevice            = m_RenderDevice.vkPhysicalDevice();
-	imguiInfo.Device                    = m_RenderDevice.vkDevice();
-	imguiInfo.QueueFamily               = m_RenderDevice.GraphicsQueue().Index();
-	imguiInfo.Queue                     = m_RenderDevice.GraphicsQueue().vkQueue();
-	imguiInfo.DescriptorPool            = m_vkImGuiPool;
-	//imguiInfo.RenderPass                = m_RenderDevice.vkMainRenderPass();
-	imguiInfo.MinImageCount             = g_minImageCount;
-	imguiInfo.ImageCount                = swapChain.Capabilities().maxImageCount; // set larger count to prevent validation error from CreateOrResizeBuffer(..) - line.523 in imgui_impl_vulkan.cpp
-	imguiInfo.MSAASamples               = VK_SAMPLE_COUNT_1_BIT;
-	imguiInfo.CheckVkResultFn           = ThrowIfFailed;
+	imguiInfo.ApiVersion      = VK_API_VERSION_1_3;
+	imguiInfo.Instance        = m_RenderDevice.vkInstance();
+	imguiInfo.PhysicalDevice  = m_RenderDevice.vkPhysicalDevice();
+	imguiInfo.Device          = m_RenderDevice.vkDevice();
+	imguiInfo.QueueFamily     = m_RenderDevice.GraphicsQueue().Index();
+	imguiInfo.Queue           = m_RenderDevice.GraphicsQueue().vkQueue();
+	imguiInfo.DescriptorPool  = m_vkImGuiPool;
+	//imguiInfo.RenderPass      = m_RenderDevice.vkMainRenderPass();
+	imguiInfo.MinImageCount   = g_minImageCount;
+	imguiInfo.ImageCount      = swapChain.Capabilities().maxImageCount; // set larger count to prevent validation error from CreateOrResizeBuffer(..) - line.523 in imgui_impl_vulkan.cpp
+	imguiInfo.MSAASamples     = VK_SAMPLE_COUNT_1_BIT;
+	imguiInfo.CheckVkResultFn = ThrowIfFailed;
 
 	auto imageFormat = swapChain.ImageFormat();
 	imguiInfo.UseDynamicRendering                                 = true;
@@ -59,21 +59,18 @@ ImGuiModule::~ImGuiModule()
 	vkDestroyDescriptorPool(m_RenderDevice.vkDevice(), m_vkImGuiPool, nullptr);
 }
 
-void ImGuiModule::Apply(CommandContext& context, const SceneRenderView& renderView)
+void ImGuiModule::Apply(VkCommandContext& context, Arc< VulkanTexture > pColor)
 {
-	UNUSED(renderView);
-
 	context.TransitionImageLayout(
-		g_FrameData.pColor.lock(),
+		pColor,
 		VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 
 		VK_IMAGE_ASPECT_COLOR_BIT
 	);
 
 	VkRenderingAttachmentInfo colorAttachment = 
 	{
 		.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-		.imageView   = g_FrameData.pColor->vkView(),
+		.imageView   = pColor->vkView(),
 		.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 		.loadOp      = VK_ATTACHMENT_LOAD_OP_LOAD,
 		.storeOp     = VK_ATTACHMENT_STORE_OP_STORE
@@ -81,7 +78,7 @@ void ImGuiModule::Apply(CommandContext& context, const SceneRenderView& renderVi
 	VkRenderingInfo renderInfo = 
 	{
 		.sType                = VK_STRUCTURE_TYPE_RENDERING_INFO,
-		.renderArea           = { { 0, 0 }, { g_FrameData.pColor->Desc().extent.width, g_FrameData.pColor->Desc().extent.height}},
+		.renderArea           = { { 0, 0 }, { pColor->Desc().extent.width, pColor->Desc().extent.height}},
 		.layerCount           = 1,
 		.colorAttachmentCount = 1,
 		.pColorAttachments    = &colorAttachment

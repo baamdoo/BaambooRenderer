@@ -5,6 +5,8 @@
 #include <cassert>
 #include <type_traits>
 
+#include "Defines.h"
+
 template< typename T >
 using Box = std::unique_ptr< T >;
 
@@ -17,13 +19,14 @@ Box< T > MakeBox(TArgs&&... args)
 namespace ptr_util
 {
 
-bool IsLive(void* ptr);
-void AddToLiveReferences(void* ptr);
-void RemoveFromLiveReferences(void* ptr);
+BAAMBOO_API bool IsLive(void* ptr);
+BAAMBOO_API void AddToLiveReferences(void* ptr);
+BAAMBOO_API void RemoveFromLiveReferences(void* ptr);
 
 }
 
-class ArcBase 
+DLLEXPORT_TEMPLATE template struct BAAMBOO_API std::atomic< uint32_t >;
+class BAAMBOO_API ArcBase
 {
 public:
     ArcBase() : m_refCount(0) {}

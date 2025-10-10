@@ -301,6 +301,11 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 			physicalDevice13Features.synchronization2 = VK_TRUE;
 		}
 
+		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_ShaderInt64))
+		{
+			physicalDeviceFeatures.shaderInt64 = VK_TRUE;
+		}
+
 		physicalDeviceFeatures2.features = physicalDeviceFeatures;
 
 		featureChain.bind(physicalDeviceFeatures2);

@@ -1,6 +1,6 @@
 #pragma once
-#include "BaambooCore/BackendAPI.h"
 #include "Window.h"
+#include "RenderCommon/RendererAPI.h"
 
 #include <stdlib.h>
 #include <shlwapi.h>
@@ -10,7 +10,7 @@
 
 bool typedef (__stdcall* CreateInstance)(baamboo::Window* pWindow, struct ImGuiContext* pImGuiContext, void* ppv);
 
-inline bool LoadRenderer(eRendererAPI eApi, baamboo::Window* pWindow, struct ImGuiContext* pImGuiContext, OUT RendererAPI** ppRenderer)
+inline bool LoadRenderer(eRendererAPI eApi, baamboo::Window* pWindow, struct ImGuiContext* pImGuiContext, OUT render::Renderer** ppRenderer)
 {
 	HMODULE hEngineDLL = nullptr;
 	std::wstring enginePath;

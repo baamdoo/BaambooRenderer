@@ -20,8 +20,8 @@ static PFN_vkQueuePresentKHR           fnQueuePresent2          = nullptr;
 static PFN_vkGetSwapchainStatusKHR     fnGetSwapchainStatus     = nullptr;
 static PFN_vkReleaseSwapchainImagesEXT fnReleaseSwapchainImages = nullptr;
 
-SwapChain::SwapChain(RenderDevice& device, baamboo::Window& window)
-	: m_RenderDevice(device)
+SwapChain::SwapChain(VkRenderDevice& rd, baamboo::Window& window)
+	: m_RenderDevice(rd)
 	, m_Window(window)
 {
 	VkWin32SurfaceCreateInfoKHR createInfo{};
@@ -31,9 +31,9 @@ SwapChain::SwapChain(RenderDevice& device, baamboo::Window& window)
 	VK_CHECK(vkCreateWin32SurfaceKHR(m_RenderDevice.vkInstance(), &createInfo, nullptr, &m_vkSurface));
 
 	u32 deviceExtCount;
-	vkEnumerateDeviceExtensionProperties(device.vkPhysicalDevice(), nullptr, &deviceExtCount, nullptr);
+	vkEnumerateDeviceExtensionProperties(m_RenderDevice.vkPhysicalDevice(), nullptr, &deviceExtCount, nullptr);
 	std::vector<VkExtensionProperties> deviceExts(deviceExtCount);
-	vkEnumerateDeviceExtensionProperties(device.vkPhysicalDevice(), nullptr, &deviceExtCount, deviceExts.data());
+	vkEnumerateDeviceExtensionProperties(m_RenderDevice.vkPhysicalDevice(), nullptr, &deviceExtCount, deviceExts.data());
 
 	for (const auto& ext : deviceExts) 
 	{
@@ -43,9 +43,9 @@ SwapChain::SwapChain(RenderDevice& device, baamboo::Window& window)
 
 	if (m_bHasMaintenance) 
 	{
-		fnAcquireNextImage2      = reinterpret_cast<PFN_vkAcquireNextImage2KHR>(vkGetDeviceProcAddr(device.vkDevice(), "vkAcquireNextImage2KHR"));
-		fnGetSwapchainStatus     = reinterpret_cast<PFN_vkGetSwapchainStatusKHR>(vkGetDeviceProcAddr(device.vkDevice(), "vkGetSwapchainStatusKHR"));
-		fnReleaseSwapchainImages = reinterpret_cast<PFN_vkReleaseSwapchainImagesEXT>(vkGetDeviceProcAddr(device.vkDevice(), "vkReleaseSwapchainImagesEXT"));
+		fnAcquireNextImage2      = reinterpret_cast<PFN_vkAcquireNextImage2KHR>(vkGetDeviceProcAddr(m_RenderDevice.vkDevice(), "vkAcquireNextImage2KHR"));
+		fnGetSwapchainStatus     = reinterpret_cast<PFN_vkGetSwapchainStatusKHR>(vkGetDeviceProcAddr(m_RenderDevice.vkDevice(), "vkGetSwapchainStatusKHR"));
+		fnReleaseSwapchainImages = reinterpret_cast<PFN_vkReleaseSwapchainImagesEXT>(vkGetDeviceProcAddr(m_RenderDevice.vkDevice(), "vkReleaseSwapchainImagesEXT"));
 
 		VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT maintenance1Features = {};
 		maintenance1Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT;
@@ -53,14 +53,14 @@ SwapChain::SwapChain(RenderDevice& device, baamboo::Window& window)
 		VkPhysicalDeviceFeatures2 features2 = {};
 		features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 		features2.pNext = &maintenance1Features;
-		vkGetPhysicalDeviceFeatures2(device.vkPhysicalDevice(), &features2);
+		vkGetPhysicalDeviceFeatures2(m_RenderDevice.vkPhysicalDevice(), &features2);
 
 		m_bHasMaintenance = maintenance1Features.swapchainMaintenance1;
 
 		VkPhysicalDevicePresentIdFeaturesKHR presentIdFeatures = {};
 		presentIdFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR;
 		features2.pNext         = &presentIdFeatures;
-		vkGetPhysicalDeviceFeatures2(device.vkPhysicalDevice(), &features2);
+		vkGetPhysicalDeviceFeatures2(m_RenderDevice.vkPhysicalDevice(), &features2);
 
 		m_bHasPresentFence = presentIdFeatures.presentId;
 	}
@@ -159,6 +159,11 @@ void SwapChain::ResizeViewport()
 	Init();
 }
 
+Arc< VulkanTexture > SwapChain::GetImageToPresent() const
+{
+	return m_BackBuffers[m_ImageIndex];
+}
+
 void SwapChain::Init()
 {
 	// **
@@ -213,7 +218,7 @@ void SwapChain::Init()
 		};
 		VK_CHECK(vkCreateImageView(m_RenderDevice.vkDevice(), &imageViewInfo, nullptr, &imageViews[i]));
 
-		auto pTex = Texture::CreateEmpty(m_RenderDevice, "SwapChainBuffer_" + std::to_string(i));
+		auto pTex = VulkanTexture::CreateEmpty(m_RenderDevice, "SwapChainBuffer_" + std::to_string(i));
 		pTex->SetResource(
 			images[i],
 			imageViews[i],

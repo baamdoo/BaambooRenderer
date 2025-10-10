@@ -4,40 +4,11 @@
 namespace vk
 {
 
-enum class eTextureType
-{
-    Texture1D = VK_IMAGE_TYPE_1D,
-    Texture2D = VK_IMAGE_TYPE_2D,
-	Texture3D = VK_IMAGE_TYPE_3D,
-	TextureCube,
-};
+class VulkanSampler;
 
-class Texture : public Resource
+class VulkanTexture : public render::Texture, public VulkanResource< VulkanTexture >
 {
-using Super = Resource;
-
 public:
-    struct CreationInfo
-    {
-        eTextureType  type          = eTextureType::Texture2D;
-        VkExtent3D    resolution    = {};
-        VkFormat      format        = VK_FORMAT_R8G8B8A8_UNORM;
-		VkImageLayout initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-		VkClearColorValue        colorClearValue = { 0, 0, 0, 0 };
-		VkClearDepthStencilValue depthClearValue = { 1.0f, 0 };
-
-        u32  arrayLayers   = 1;
-        u32  sampleCount   = 1;
-        bool bFlipY        = false;
-        bool bGenerateMips = false;
-
-        VmaMemoryUsage    memoryUsage = VMA_MEMORY_USAGE_AUTO;
-        VkImageUsageFlags imageUsage;
-
-		operator VkImageCreateInfo() const;
-    };
-
 	// **
 	// Texture resource state
 	// State : VkImageLayout
@@ -58,7 +29,7 @@ public:
 		u32 baseLayer;
 		u32 arrayLayers;
 	};
-	inline static const Subresource ALL_SUBRESOURCES = Subresource();
+	inline static const Subresource VK_ALL_SUBRESOURCES = Subresource();
 
 	struct State
 	{
@@ -91,12 +62,12 @@ public:
 			for (const auto& pair : subresourceStates)
 				BB_ASSERT(state_ == pair.second, "All subresource states should be equal before flatten");
 
-			SetSubresourceState(state_, ALL_SUBRESOURCES);
+			SetSubresourceState(state_, VK_ALL_SUBRESOURCES);
 		}
 
 		void SetSubresourceState(State state_, Subresource subresource)
 		{
-			if (subresource == ALL_SUBRESOURCES)
+			if (subresource == VK_ALL_SUBRESOURCES)
 			{
 				state = state_;
 				subresourceStates.clear();
@@ -108,7 +79,7 @@ public:
 		}
 
 		[[nodiscard]]
-		State GetSubresourceState(Subresource subresource = ALL_SUBRESOURCES) const
+		State GetSubresourceState(Subresource subresource = VK_ALL_SUBRESOURCES) const
 		{
 			State state_ = state;
 
@@ -123,38 +94,26 @@ public:
 		std::map< Subresource, State > subresourceStates;
 	};
 
-	static Arc< Texture > Create(RenderDevice& device, const std::string& name, CreationInfo&& desc);
-	static Arc< Texture > CreateEmpty(RenderDevice& device, const std::string& name);
+	static Arc< VulkanTexture > Create(VkRenderDevice& rd, const std::string& name, CreationInfo&& desc);
+	static Arc< VulkanTexture > CreateEmpty(VkRenderDevice& rd, const std::string& name);
 
-	Texture(RenderDevice& device, const std::string& name);
-	Texture(RenderDevice& device, const std::string& name, CreationInfo&& info);
-	virtual ~Texture();
+	VulkanTexture(VkRenderDevice& rd, const std::string& name);
+	VulkanTexture(VkRenderDevice& rd, const std::string& name, CreationInfo&& info);
+	virtual ~VulkanTexture();
 
 	void Resize(u32 width, u32 height, u32 depth);
 	void SetResource(VkImage vkImage, VkImageView vkImageView, VkImageCreateInfo createInfo, VmaAllocation vmaAllocation, VkImageAspectFlags aspectMask);
 
-	[[nodiscard]]
 	inline CreationInfo Info() const { return m_CreationInfo; }
-    [[nodiscard]]
     inline VkImage vkImage() const { return m_vkImage; }
-    [[nodiscard]]
     inline VkImageView vkView() const { return m_vkImageView; }
-    [[nodiscard]]
     inline const VkImageCreateInfo& Desc() const { return m_Desc; }
-	[[nodiscard]]
 	inline VkImageAspectFlags AspectMask() const { return m_AspectFlags; }
-	[[nodiscard]]
-	inline VkClearValue ClearValue() const { return m_AspectFlags & VK_IMAGE_ASPECT_COLOR_BIT ? VkClearValue{ .color = m_CreationInfo.colorClearValue } : VkClearValue{ .depthStencil = m_CreationInfo.depthClearValue }; }
-	[[nodiscard]]
-	inline const VkClearColorValue* ClearColorValue() const { assert(m_AspectFlags & VK_IMAGE_ASPECT_COLOR_BIT); return &m_CreationInfo.colorClearValue; }
-	[[nodiscard]]
-	inline const VkClearDepthStencilValue* ClearDepthValue() const { assert(m_AspectFlags & VK_IMAGE_ASPECT_DEPTH_BIT); return &m_CreationInfo.depthClearValue; }
-	[[nodiscard]]
+	VkClearValue ClearValue() const;
 	u64 SizeInBytes() const;
 
-	[[nodiscard]]
 	inline const ResourceState& GetState() const { return m_CurrentState; }
-	void SetState(State state, Subresource subresource = ALL_SUBRESOURCES) { m_CurrentState.SetSubresourceState(state, subresource); }
+	void SetState(State state, Subresource subresource = VK_ALL_SUBRESOURCES) { m_CurrentState.SetSubresourceState(state, subresource); }
 
 	void FlattenSubresourceStates() { m_CurrentState.FlattenResourceState(); }
 
@@ -163,12 +122,11 @@ protected:
     VkImageViewCreateInfo GetViewDesc(const VkImageCreateInfo& imageDesc);
 
 private:
-    VkImage            m_vkImage = VK_NULL_HANDLE;
+    VkImage            m_vkImage     = VK_NULL_HANDLE;
     VkImageView        m_vkImageView = VK_NULL_HANDLE;
-    VkImageCreateInfo  m_Desc = {};
+    VkImageCreateInfo  m_Desc        = {};
 	VkImageAspectFlags m_AspectFlags = 0;
 
-	CreationInfo  m_CreationInfo = {}; // for resize
 	ResourceState m_CurrentState = {};
 };
 

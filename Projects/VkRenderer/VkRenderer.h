@@ -1,40 +1,33 @@
 #pragma once
-#include "BaambooCore/BackendAPI.h"
-
-struct ImGuiContext;
-
-namespace baamboo
-{
-	class Window;
-}
+#include "RenderCommon/RendererAPI.h"
 
 namespace vk
 {
 
-class CommandContext;
-class RenderModule;
-
-class Renderer : public RendererAPI
+class VkRenderer : public render::Renderer
 {
 public:
-	explicit Renderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext);
-	virtual ~Renderer() override;
+	VkRenderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext);
+	~VkRenderer();
 
-	virtual void Render(SceneRenderView&& renderView) override;
+	virtual Arc< render::CommandContext > BeginFrame() override;
+	virtual void EndFrame(Arc< render::CommandContext >&& context, Arc< render::Texture > scene, bool bDrawUI) override;
+
 	virtual void NewFrame() override;
 
-	virtual void OnWindowResized(i32 width, i32 height) override;
+	virtual void WaitIdle() override;
+	virtual void Resize(i32 width, i32 height) override;
 
-	virtual void SetRendererType(eRendererType type) override;
+	virtual render::RenderDevice* GetDevice() override { return m_pRenderDevice; }
+
+	eRendererAPI GetAPIType() const override { return eRendererAPI::Vulkan; }
 
 private:
-	class RenderDevice* m_pRenderDevice = nullptr;
-	class SwapChain*    m_pSwapChain = nullptr;
-	class FrameManager* m_pFrameManager = nullptr;
+	class VkRenderDevice* m_pRenderDevice = nullptr;
+	class SwapChain*      m_pSwapChain    = nullptr;
+	class FrameManager*   m_pFrameManager = nullptr;
 
-	std::vector< RenderModule* > m_pRenderModules;
-
-	eRendererType m_Type = eRendererType::Deferred;
+	Box< class ImGuiModule > m_ImGuiModule;
 };
 
 } // namespace vk

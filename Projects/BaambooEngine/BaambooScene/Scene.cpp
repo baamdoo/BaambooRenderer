@@ -9,6 +9,7 @@
 #include "Systems/AtmosphereSystem.h"
 #include "Systems/CloudSystem.h"
 #include "Systems/PostProcessSystem.h"
+#include "Utils/Math.hpp"
 
 #include <queue>
 #include <glm/gtx/matrix_decompose.hpp>
@@ -219,6 +220,11 @@ Entity Scene::ImportModel(Entity rootEntity, const fs::path& filepath, MeshDescr
 	return rootEntity;
 }
 
+void Scene::AddRenderNode(Arc<render::RenderNode> node)
+{
+	m_RenderNodes.push_back(node);
+}
+
 u32 Scene::StoreMeshData(const MeshData& meshData)
 {
 	static u32 nextMeshID = 0;
@@ -286,7 +292,14 @@ void Scene::Update(f32 dt)
 	}
 }
 
-SceneRenderView Scene::RenderView(const EditorCamera& camera) const
+void Scene::OnWindowResized(u32 width, u32 height)
+{
+	for (auto node : m_RenderNodes)
+		if (node)
+			node->Resize(width, height);
+}
+
+SceneRenderView Scene::RenderView(const EditorCamera& edCamera, bool bDrawUI) const
 {
 	bool bMarkedAny = false;
 	for (const auto& pair : m_EntityDirtyMasks)
@@ -294,16 +307,19 @@ SceneRenderView Scene::RenderView(const EditorCamera& camera) const
 		bMarkedAny |= pair.second;
 	}
 
-	SceneRenderView view{};
+	SceneRenderView view = {};
 	view.time              = s_SceneRunningTime;
+	view.frame             = g_FrameData.frame;
+	view.bDrawUI           = bDrawUI;
+	view.rg                = m_RenderNodes;
 	view.pSceneMutex       = &m_SceneMutex;
 	view.pEntityDirtyMarks = bMarkedAny ? &m_EntityDirtyMasks : nullptr;
 
-	view.camera.mView = camera.GetView();
-	view.camera.mProj = camera.GetProj();
-	view.camera.pos   = camera.GetPosition();
-	view.camera.zNear = camera.zNear;
-	view.camera.zFar  = camera.zFar;
+	view.camera.mView = edCamera.GetView();
+	view.camera.mProj = edCamera.GetProj();
+	view.camera.pos   = edCamera.GetPosition();
+	view.camera.zNear = edCamera.zNear;
+	view.camera.zFar  = edCamera.zFar;
 
 	m_Registry.view< TransformComponent >().each([this, &view](auto id, auto& transformComponent)
 		{

@@ -1,6 +1,7 @@
 #pragma once
 #include "VkRenderPipeline.h"
 #include "RenderResource/VkTexture.h"
+#include "RenderCommon/CommandContext.h"
 
 namespace vk
 {
@@ -12,7 +13,7 @@ class ComputePipeline;
 class DescriptorInfo;
 class DynamicBufferAllocator;
 class StaticBufferAllocator;
-class Buffer;
+class VulkanBuffer;
 
 constexpr u32 MAX_NUM_PENDING_BARRIERS = 16;
 
@@ -26,185 +27,127 @@ enum class eCommandType
 //-------------------------------------------------------------------------
 // Command Context
 //-------------------------------------------------------------------------
-class CommandContext
+class VkCommandContext : public render::CommandContext
 {
 public:
-    CommandContext(RenderDevice& device, VkCommandPool vkCommandPool, eCommandType type, VkCommandBufferLevel vkLevel = VK_COMMAND_BUFFER_LEVEL_PRIMARY);
-    virtual ~CommandContext();
+    VkCommandContext(VkRenderDevice& rd, VkCommandPool vkCommandPool, eCommandType type, VkCommandBufferLevel vkLevel = VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+    virtual ~VkCommandContext() = default;
 
     void Open(VkCommandBufferUsageFlags flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
     void Close();
-    void Execute();
 
-    void CopyBuffer(
-        VkBuffer vkDstBuffer, 
-        VkBuffer vkSrcBuffer, 
-        VkDeviceSize sizeInBytes, 
-        VkPipelineStageFlags2 dstStageMask,
-        VkDeviceSize dstOffset = 0, 
-        VkDeviceSize srcOffset = 0, 
-        bool bFlushImmediate = true);
-    void CopyBuffer(
-        Arc< Buffer > pDstBuffer,
-        Arc< Buffer > pSrcBuffer,
-        VkDeviceSize sizeInBytes,
-        VkPipelineStageFlags2 dstStageMask,
-        VkDeviceSize dstOffset = 0, 
-        VkDeviceSize srcOffset = 0, 
-        bool bFlushImmediate = true);
-    void CopyBuffer(
-        Arc< Texture > pDstTexture,
-        Arc< Buffer > pSrcBuffer,
-        const std::vector< VkBufferImageCopy >& regions, 
-        bool bAllSubresources = true);
-    void CopyTexture(Arc< Texture > pDstTexture, Arc< Texture > pSrcTexture);
-    void BlitTexture(Arc< Texture > pDstTexture, Arc< Texture > pSrcTexture);
-    void GenerateMips(Arc< Texture > pTexture);
+    virtual void CopyBuffer(Arc< render::Buffer > dstBuffer, Arc< render::Buffer > srcBuffer) override;
+    virtual void CopyTexture(Arc< render::Texture > dstTexture, Arc< render::Texture > srcTexture) override;
 
-    // todo. unlock other types of barrier
-    void TransitionImageLayout(
-        Arc< Texture > pTexture,
-        VkImageLayout newLayout,
-        VkPipelineStageFlags2 dstStageMask,
-        VkImageAspectFlags aspectMask,
-        bool bFlushImmediate = true,
-        bool bFlatten = false);
-    void TransitionImageLayout(
-        Arc< Texture > pTexture,
-        VkImageLayout newLayout, 
-        VkPipelineStageFlags2 dstStageMask,
-        VkImageSubresourceRange subresourceRange,
-        bool bFlushImmediate = true, 
-        bool bFlatten = false);
+	void CopyBuffer(
+		VkBuffer vkDstBuffer,
+		VkBuffer vkSrcBuffer,
+		VkDeviceSize sizeInBytes,
+		VkPipelineStageFlags2 dstStageMask,
+		VkDeviceSize dstOffset = 0,
+		VkDeviceSize srcOffset = 0,
+		bool bFlushImmediate = true);
+	void CopyBuffer(
+		Arc< VulkanBuffer > dstBuffer,
+		Arc< VulkanBuffer > srcBuffer,
+		VkDeviceSize sizeInBytes,
+		VkPipelineStageFlags2 dstStageMask,
+		VkDeviceSize dstOffset = 0,
+		VkDeviceSize srcOffset = 0,
+		bool bFlushImmediate = true);
+	void CopyBuffer(
+		Arc< VulkanTexture > dstTexture,
+		Arc< VulkanBuffer > srcBuffer,
+		const std::vector< VkBufferImageCopy >& regions,
+		bool bAllSubresources = true);
+	void BlitTexture(Arc< VulkanTexture > dstTexture, Arc< VulkanTexture > srcTexture);
+	void GenerateMips(Arc< VulkanTexture > texture);
 
-    void ClearTexture(
-        Arc< Texture >pTexture, 
-        VkImageLayout newLayout, 
-        VkPipelineStageFlags2 dstStageMask,
-        u32 baseMip = 0, u32 numMips = 1, u32 baseArray = 0, u32 numArrays = 1);
-    
-    void SetPushConstants(u32 sizeInBytes, const void* data, VkShaderStageFlags stages, u32 offsetInBytes = 0);
-    void SetDynamicUniformBuffer(u32 binding, VkDeviceSize sizeInBytes, const void* bufferData);
-    template< typename T >
-    void SetDynamicUniformBuffer(u32 binding, const T& data)
-    {
-        SetDynamicUniformBuffer(binding, sizeof(T), &data);
-    }
-    void PushDescriptors(u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType);
-    void PushDescriptors(u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType);
+	virtual void TransitionBarrier(Arc< render::Texture > texture, render::eTextureLayout newState, u32 subresource = ALL_SUBRESOURCES, bool bFlushImmediate = false) override;
 
-    void BindSceneDescriptors(const SceneResource& sceneResource);
+	// todo. unlock other types of barrier
+	void TransitionImageLayout(
+		Arc< VulkanTexture > texture,
+		VkImageLayout newLayout,
+		VkImageAspectFlags aspectMask,
+		bool bFlushImmediate = true,
+		bool bFlatten = false);
+	void TransitionImageLayout(
+		Arc< VulkanTexture > texture,
+		VkImageLayout newLayout,
+		VkImageSubresourceRange subresourceRange,
+		bool bFlushImmediate = true,
+		bool bFlatten = false);
 
-    void SetRenderPipeline(GraphicsPipeline* pRenderPipeline);
-    void SetRenderPipeline(ComputePipeline* pRenderPipeline);
+	void ClearTexture(
+		Arc< VulkanTexture > texture,
+		VkImageLayout newLayout,
+		u32 baseMip = 0, u32 numMips = 1, u32 baseArray = 0, u32 numArrays = 1);
 
-    void BeginRenderPass(const RenderTarget& renderTarget);
-    void EndRenderPass();
-    void BeginRendering(const VkRenderingInfo& renderInfo);
-    void EndRendering();
+	virtual void SetRenderPipeline(render::ComputePipeline* pPipeline) override;
+	virtual void SetRenderPipeline(render::GraphicsPipeline* pPipeline) override;
 
-    void Draw(u32 vertexCount, u32 instanceCount = 1, u32 firstVertex = 0, u32 firstInstance = 0);
-    void DrawIndexed(u32 indexCount, u32 instanceCount = 1, u32 firstIndex = 0, i32 vertexOffset = 0, u32 firstInstance = 0);
-    void DrawIndexedIndirect(const SceneResource& sceneResource);
-    
-    void Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ);
+	virtual void SetComputeConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) override;
+	virtual void SetGraphicsConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) override;
 
-    template< u32 numThreadsPerGroupX >
-    void Dispatch1D(u32 numThreadsX)
-    {
-        u32 numGroupsX = RoundUpAndDivide(numThreadsX, numThreadsPerGroupX);
-        Dispatch(numGroupsX, 1, 1);
-    }
+	virtual void SetComputeDynamicUniformBuffer(const std::string& name, u32 sizeInBytes, const void* pData) override;
+	virtual void SetGraphicsDynamicUniformBuffer(const std::string& name, u32 sizeInBytes, const void* pData) override;
 
-    template< u32 numThreadsPerGroupX, u32 numThreadsPerGroupY >
-    void Dispatch2D(u32 numThreadsX, u32 numThreadsY)
-    {
-        u32 numGroupsX = RoundUpAndDivide(numThreadsX, numThreadsPerGroupX);
-        u32 numGroupsY = RoundUpAndDivide(numThreadsY, numThreadsPerGroupY);
-        Dispatch(numGroupsX, numGroupsY, 1);
-    }
+	virtual void SetComputeShaderResource(const std::string& name, Arc< render::Texture > texture, Arc< render::Sampler > samplerInCharge) override;
+	virtual void SetGraphicsShaderResource(const std::string& name, Arc< render::Texture > texture, Arc< render::Sampler > samplerInCharge) override;
+	virtual void SetComputeShaderResource(const std::string& name, Arc< render::Buffer > buffer) override;
+	virtual void SetGraphicsShaderResource(const std::string& name, Arc< render::Buffer > buffer) override;
 
-    template< u32 numThreadsPerGroupX, u32 numThreadsPerGroupY, u32 numThreadsPerGroupZ >
-    void Dispatch3D(u32 numThreadsX, u32 numThreadsY, u32 numThreadsZ)
-    {
-        u32 numGroupsX = RoundUpAndDivide(numThreadsX, numThreadsPerGroupX);
-        u32 numGroupsY = RoundUpAndDivide(numThreadsY, numThreadsPerGroupY);
-        u32 numGroupsZ = RoundUpAndDivide(numThreadsZ, numThreadsPerGroupZ);
-        Dispatch(numGroupsX, numGroupsY, numGroupsZ);
-    }
+	virtual void StageDescriptor(const std::string& name, Arc< render::Buffer > buffer, u32 offset = 0) override;
+	virtual void StageDescriptor(const std::string& name, Arc< render::Texture > texture, Arc< render::Sampler > samplerInCharge, u32 offset = 0) override;
 
-    [[nodiscard]]
-    bool IsReady() const;
-    [[nodiscard]]
-    bool IsFenceComplete(VkFence vkFence) const;
-    void WaitForFence(VkFence vkFence) const;
-    void Flush() const;
+	void PushDescriptor(u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType);
+	void PushDescriptor(u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType);
 
-    [[nodiscard]]
-    bool IsTransient() const { return m_bTransient; }
-    void SetTransient(bool bTransient) { m_bTransient = bTransient; }
+	void SetRenderPipeline(GraphicsPipeline* pRenderPipeline);
+	void SetRenderPipeline(ComputePipeline* pRenderPipeline);
 
-    [[nodiscard]]
-    VkCommandBuffer vkCommandBuffer() const { return m_vkCommandBuffer; }
-    [[nodiscard]]
-    VkFence vkRenderCompleteFence() const { return m_vkRenderCompleteFence; }
-    [[nodiscard]]
-    VkSemaphore vkRenderCompleteSemaphore() const { return m_vkRenderCompleteSemaphore; }
-    [[nodiscard]]
-    VkFence vkPresentCompleteFence() const { return m_vkPresentCompleteFence; }
-    [[nodiscard]]
-    VkSemaphore vkPresentCompleteSemaphore() const { return m_vkPresentCompleteSemaphore; }
-    [[nodiscard]]
-    VkPipeline vkGraphicsPipeline() const { assert(m_pGraphicsPipeline); return m_pGraphicsPipeline->vkPipeline(); }
-    [[nodiscard]]
-    VkPipeline vkComputePipeline() const { assert(m_pComputePipeline); return m_pComputePipeline->vkPipeline(); }
+	virtual void BeginRenderPass(Arc< render::RenderTarget > renderTarget) override;
+	virtual void EndRenderPass() override;
+
+	void BeginRendering(const VkRenderingInfo& renderInfo);
+	void EndRendering();
+
+	virtual void Draw(u32 vertexCount, u32 instanceCount = 1, u32 firstVertex = 0, u32 firstInstance = 0) override;
+	virtual void DrawIndexed(u32 indexCount, u32 instanceCount = 1, u32 firstIndex = 0, i32 vertexOffset = 0, u32 firstInstance = 0) override;
+	virtual void DrawScene(const render::SceneResource& sceneResource) override;
+
+	virtual void Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ) override;
+	// TODO. virtual void DispatchIndirect(Arc< Buffer > argumentBuffer, u32 argumentBufferOffset = 0) override {}
+
+	bool IsReady() const;
+	bool IsFenceComplete(VkFence vkFence) const;
+	void WaitForFence(VkFence vkFence) const;
+	void Flush() const;
+
+	eCommandType GetCommandType() const;
+
+	bool IsTransient() const;
+	void SetTransient(bool bTransient);
+
+	bool IsGraphicsContext() const;
+	bool IsComputeContext() const;
+
+	VkCommandBuffer vkCommandBuffer() const;
+
+	VkFence vkRenderCompleteFence() const;
+	VkSemaphore vkRenderCompleteSemaphore() const;
+	VkFence vkPresentCompleteFence() const;
+	VkSemaphore vkPresentCompleteSemaphore() const;
+
+	VkPipelineLayout vkGraphicsPipelineLayout() const;
+	VkPipelineLayout vkComputePipelineLayout() const;
+	VkPipeline vkGraphicsPipeline() const;
+	VkPipeline vkComputePipeline() const;
 
 private:
-    void AddBarrier(const VkBufferMemoryBarrier2& barrier, bool bFlushImmediate);
-    void AddBarrier(const VkImageMemoryBarrier2& barrier, bool bFlushImmediate);
-    void FlushBarriers();
-
-    template< typename T >
-    constexpr T RoundUpAndDivide(T Value, size_t Alignment)
-    {
-        return (T)((Value + Alignment - 1) / Alignment);
-    }
-
-private:
-    friend class CommandQueue;
-    RenderDevice& m_RenderDevice;
-    eCommandType  m_CommandType;
-
-    VkCommandBuffer      m_vkCommandBuffer = VK_NULL_HANDLE;
-    VkCommandPool        m_vkBelongedPool  = VK_NULL_HANDLE;
-    VkCommandBufferLevel m_Level           = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-
-    DynamicBufferAllocator* m_pUniformBufferPool = nullptr;
-
-    VkFence     m_vkRenderCompleteFence      = VK_NULL_HANDLE;
-    VkSemaphore m_vkRenderCompleteSemaphore  = VK_NULL_HANDLE;
-    VkFence     m_vkPresentCompleteFence     = VK_NULL_HANDLE;
-    VkSemaphore m_vkPresentCompleteSemaphore = VK_NULL_HANDLE;
-
-    GraphicsPipeline* m_pGraphicsPipeline = nullptr;
-    ComputePipeline*  m_pComputePipeline  = nullptr;
-
-    struct AllocationInfo
-    {
-        u32              binding;
-        DescriptorInfo   descriptor;
-        VkDescriptorType descriptorType;
-    };
-    std::vector< AllocationInfo > m_PushAllocations;
-
-    u32                    m_NumBufferBarriersToFlush                 = 0;
-    VkBufferMemoryBarrier2 m_BufferBarriers[MAX_NUM_PENDING_BARRIERS] = {};
-    u32                    m_NumImageBarriersToFlush                  = 0;
-    VkImageMemoryBarrier2  m_ImageBarriers[MAX_NUM_PENDING_BARRIERS]  = {};
-
-    u32 m_CurrentContextIndex = 0;
-
-    bool m_bTransient = false;
+    class Impl;
+    Box< Impl > m_Impl;
 };
 
 } // namespace vk

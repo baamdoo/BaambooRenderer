@@ -42,10 +42,10 @@ namespace baamboo
 
 bool DllCreateInstance(baamboo::Window* pWindow, ImGuiContext* pImGuiContext, OUT void** ppv)
 {
-	RendererAPI* pEngine = new vk::Renderer(pWindow, pImGuiContext);
-	if (!pEngine)
+	render::Renderer* pRenderer = new vk::VkRenderer(pWindow, pImGuiContext);
+	if (!pRenderer)
 		return false;
 
-	*ppv = pEngine;
+	*ppv = pRenderer;
 	return true;
 }

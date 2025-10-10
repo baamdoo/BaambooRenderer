@@ -1,9 +1,9 @@
 #pragma once
 #include "ThreadQueue.hpp"
 #include "BaambooCore/Timer.h"
-#include "BaambooCore/BackendAPI.h"
 #include "BaambooScene/Scene.h"
 #include "BaambooScene/Camera.h"
+#include "RenderCommon/RendererAPI.h"
 
 namespace baamboo { class Engine; }
 namespace ImGui
@@ -26,12 +26,9 @@ public:
 	[[nodiscard]]
 	class Scene* GetScene() const { return m_pScene; }
 	[[nodiscard]]
-	RendererAPI* GetRenderer() const { return m_pRendererBackend; }
+	render::Renderer* GetRenderer() const { return m_pRendererBackend; }
 	[[nodiscard]]
 	class Window* GetWindow() const { return m_pWindow; }
-
-	[[nodiscard]]
-	eRendererAPI BackendAPI() const { return m_eBackendAPI; }
 
 protected:
 	virtual void Release();
@@ -51,14 +48,15 @@ protected:
 protected:
 	class Window* m_pWindow = nullptr;
 	class Scene*  m_pScene = nullptr;
-	RendererAPI*  m_pRendererBackend = nullptr;
 	EditorCamera* m_pCamera = nullptr;
+
+	render::Renderer* m_pRendererBackend = nullptr;
 
 	int  m_ResizeWidth = -1;
 	int  m_ResizeHeight = -1;
 	bool m_bWindowResized = false;
 
-	eRendererAPI m_eBackendAPI;
+	bool m_bDrawUI = true;
 
 private:
 	double m_RunningTime = 0.0;

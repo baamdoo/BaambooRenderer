@@ -5,8 +5,8 @@
 namespace vk
 {
 
-DescriptorSet::DescriptorSet(RenderDevice& device)
-	: m_RenderDevice(device)
+DescriptorSet::DescriptorSet(VkRenderDevice& rd)
+	: m_RenderDevice(rd)
 {
 }
 

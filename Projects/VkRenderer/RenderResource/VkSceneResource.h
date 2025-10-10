@@ -19,58 +19,18 @@ struct BufferHandle
     u64 elementSizeInBytes;
 };
 
-struct FrameData
+struct VkSceneResource : public render::SceneResource
 {
-    u64 frameCounter;
+    VkSceneResource(VkRenderDevice& rd);
+    ~VkSceneResource();
 
-    // frame static data
-    CameraData camera;
-
-    u64 componentMarker;
-
-    // scene-resource
-    struct SceneResource* pSceneResource = nullptr;
-
-    // Atmosphere LUTs
-    Weak< Texture > pTransmittanceLUT;
-    Weak< Texture > pMultiScatteringLUT;
-    Weak< Texture > pSkyViewLUT;
-    Weak< Texture > pAerialPerspectiveLUT;
-
-    // Cloud LUTs
-    Weak< Texture > pCloudBaseLUT;
-    Weak< Texture > pCloudDetailLUT;
-    Weak< Texture > pVerticalProfileLUT;
-    Weak< Texture > pWeatherMapLUT;
-    Weak< Texture > pBlueNoiseTexture;
-    Weak< Texture > pCloudScatteringLUT;
-
-    // framebuffers
-    Weak< Texture > pGBuffer0;
-    Weak< Texture > pGBuffer1;
-    Weak< Texture > pGBuffer2;
-    Weak< Texture > pGBuffer3;
-    Weak< Texture > pColor;
-    Weak< Texture > pDepth;
-
-    // samplers
-    Arc< Sampler > pPointClamp;
-    Arc< Sampler > pLinearClamp;
-    Arc< Sampler > pLinearWrap;
-};
-inline FrameData g_FrameData;
-
-struct SceneResource
-{
-    SceneResource(RenderDevice& device);
-    ~SceneResource();
-
-    void UpdateSceneResources(const SceneRenderView& sceneView);
+    virtual void UpdateSceneResources(const SceneRenderView& sceneView) override;
+    virtual void BindSceneResources(render::CommandContext& context) override;
 
     BufferHandle GetOrUpdateVertex(u64 entity, const std::string& filepath, const void* pData, u32 count);
     BufferHandle GetOrUpdateIndex(u64 entity, const std::string& filepath, const void* pData, u32 count);
-    Arc< Texture > GetOrLoadTexture(u64 entity, const std::string& filepath);
-    Arc< Texture > GetTexture(const std::string& filepath);
+    Arc< VulkanTexture > GetOrLoadTexture(u64 entity, const std::string& filepath);
+    Arc< VulkanTexture > GetTexture(const std::string& filepath);
 
     [[nodiscard]]
     VkDescriptorSet GetSceneDescriptorSet() const;
@@ -89,7 +49,7 @@ private:
     void UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator& targetBuffer);
 
 private:
-    RenderDevice& m_RenderDevice;
+    VkRenderDevice& m_RenderDevice;
 
     VkDescriptorSetLayout m_vkSetLayout     = VK_NULL_HANDLE;
     DescriptorPool*       m_pDescriptorPool = nullptr;
@@ -101,11 +61,11 @@ private:
     Box< StaticBufferAllocator > m_pMaterialAllocator;
     Box< StaticBufferAllocator > m_pLightAllocator;
 
-    std::unordered_map< std::string, BufferHandle >   m_VertexCache;
-    std::unordered_map< std::string, BufferHandle >   m_IndexCache;
-    std::unordered_map< std::string, Arc< Texture > > m_TextureCache;
+    std::unordered_map< std::string, BufferHandle >         m_VertexCache;
+    std::unordered_map< std::string, BufferHandle >         m_IndexCache;
+    std::unordered_map< std::string, Arc< VulkanTexture > > m_TextureCache;
 
-    Arc< Sampler > m_pDefaultSampler;
+    Arc< VulkanSampler > m_pDefaultSampler;
 };
 
 

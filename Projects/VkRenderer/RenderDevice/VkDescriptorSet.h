@@ -18,7 +18,7 @@ struct DescriptorHandle
 class DescriptorSet
 {
 public:
-    DescriptorSet(RenderDevice& device);
+    DescriptorSet(VkRenderDevice& rd);
     ~DescriptorSet();
 
     DescriptorHandle StageDescriptor(const VkDescriptorImageInfo& imageInfo, u32 binding, VkDescriptorType descriptorType);
@@ -33,7 +33,7 @@ public:
     const VkDescriptorSet vkDescriptorSet() const { return m_vkDescriptorSet; }
 
 private:
-    RenderDevice& m_RenderDevice;
+    VkRenderDevice& m_RenderDevice;
 
     VkDescriptorSet     m_vkDescriptorSet = VK_NULL_HANDLE;
     baamboo::FreeList<> m_IndexAllocator;

@@ -2,6 +2,7 @@
 #include "VkResourceManager.h"
 #include "VkCommandContext.h"
 #include "RenderResource/VkBuffer.h"
+#include "RenderResource/VkSceneResource.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb/stb_image.h>
@@ -9,40 +10,44 @@
 namespace vk
 {
 
-ResourceManager::ResourceManager(RenderDevice& device)
-	: m_RenderDevice(device)
+VkResourceManager::VkResourceManager(VkRenderDevice& rd)
+	: m_RenderDevice(rd)
 {
-	m_pStagingBuffer = 
-		UniformBuffer::Create(m_RenderDevice, "StagingBufferPool", _MB(8), VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+	m_pStagingBuffer =
+		VulkanUniformBuffer::Create(m_RenderDevice, "StagingBufferPool", _MB(8), VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 
 	m_pWhiteTexture = CreateFlatWhiteTexture();
 	m_pBlackTexture = CreateFlatBlackTexture();
 	m_pGrayTexture  = CreateFlat2DTexture("DefaultTexture::Gray", 0xFF808080u);
+
+	m_pSceneResource = new VkSceneResource(m_RenderDevice);
 }
 
-ResourceManager::~ResourceManager()
+VkResourceManager::~VkResourceManager()
 {
 }
 
-Arc< Texture > ResourceManager::LoadTexture(const std::string& filepath)
+Arc< render::Texture > VkResourceManager::LoadTexture(const std::string& filepath)
 {
+	using namespace render;
+
 	fs::path path = filepath;
 
 	u32 width, height, numChannels;
 	u8* pData = stbi_load(path.string().c_str(), (int*)&width, (int*)&height, (int*)&numChannels, STBI_rgb_alpha);
 	BB_ASSERT(pData, "No texture found on the path: %s", path.string().c_str());
 
-	auto pTex = Texture::Create(m_RenderDevice, path.filename().string(),
+	auto tex = VulkanTexture::Create(m_RenderDevice, path.filename().string(),
 		{
 			.resolution = { width, height, 1 },
-			.format     = VK_FORMAT_R8G8B8A8_UNORM,
-			.imageUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT
+			.format     = eFormat::RGBA8_UNORM,
+			.imageUsage = eTextureUsage_Sample | eTextureUsage_TransferDest
 		});
-
+	
 	// **
 	// Copy data to staging buffer
 	// **
-	auto texSizeInBytes = pTex->SizeInBytes();
+	auto texSizeInBytes = tex->SizeInBytes();
 	VkBufferImageCopy region = {};
 	region.bufferOffset      = 0;
 	region.bufferRowLength   = 0;
@@ -56,14 +61,14 @@ Arc< Texture > ResourceManager::LoadTexture(const std::string& filepath)
 	};
 	region.imageExtent = { width, height, 1 };
 
-	UploadData(pTex, (void*)pData, texSizeInBytes, region);
+	UploadData(tex, (void*)pData, texSizeInBytes, region);
 
 	RELEASE(pData);
 
-	return pTex;
+	return tex;
 }
 
-void ResourceManager::UploadData(Arc< Texture > pTexture, const void* pData, u64 sizeInBytes, VkBufferImageCopy region)
+void VkResourceManager::UploadData(Arc< VulkanTexture > texture, const void* pData, u64 sizeInBytes, VkBufferImageCopy region)
 {
 	if (m_pStagingBuffer->SizeInBytes() < sizeInBytes)
 	{
@@ -71,20 +76,20 @@ void ResourceManager::UploadData(Arc< Texture > pTexture, const void* pData, u64
 	}
 	memcpy(m_pStagingBuffer->MappedMemory(), pData, sizeInBytes);
 
-	auto& context = m_RenderDevice.BeginCommand(eCommandType::Graphics, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
-	context.CopyBuffer(pTexture, m_pStagingBuffer, { region });
+	auto pContext = m_RenderDevice.BeginCommand(eCommandType::Graphics, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
+	pContext->CopyBuffer(texture, m_pStagingBuffer, { region });
 	//if (bGenerateMips)
 	//	cmdBuffer.GenerateMips(pTex);
-	context.Close();
-	context.Execute();
+	pContext->Close();
+	m_RenderDevice.ExecuteCommand(pContext);
 }
 
-void ResourceManager::UploadData(Arc< Buffer > pBuffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes)
+void VkResourceManager::UploadData(Arc< VulkanBuffer > buffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes)
 {
-	UploadData(pBuffer->vkBuffer(), pData, sizeInBytes, dstStageMask, dstOffsetInBytes);
+	UploadData(buffer->vkBuffer(), pData, sizeInBytes, dstStageMask, dstOffsetInBytes);
 }
 
-void ResourceManager::UploadData(VkBuffer vkBuffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes)
+void VkResourceManager::UploadData(VkBuffer vkBuffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes)
 {
 	if (m_pStagingBuffer->SizeInBytes() < sizeInBytes)
 	{
@@ -92,16 +97,16 @@ void ResourceManager::UploadData(VkBuffer vkBuffer, const void* pData, u64 sizeI
 	}
 	memcpy(m_pStagingBuffer->MappedMemory(), pData, sizeInBytes);
 
-	auto& context = m_RenderDevice.BeginCommand(eCommandType::Transfer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
-	context.CopyBuffer(vkBuffer, m_pStagingBuffer->vkBuffer(), sizeInBytes, dstStageMask, dstOffsetInBytes, 0);
-	context.Close();
-	context.Execute();
+	auto pContext = m_RenderDevice.BeginCommand(eCommandType::Transfer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
+	pContext->CopyBuffer(vkBuffer, m_pStagingBuffer->vkBuffer(), sizeInBytes, dstStageMask, dstOffsetInBytes, 0);
+	pContext->Close();
+	m_RenderDevice.ExecuteCommand(pContext);
 }
 
-Arc< Texture > ResourceManager::CreateFlat2DTexture(const std::string& name, u32 color)
+Arc< render::Texture > VkResourceManager::CreateFlat2DTexture(const std::string& name, u32 color)
 {
-	auto pFlatTexture =
-		Texture::Create(
+	auto flatTexture =
+		VulkanTexture::Create(
 			m_RenderDevice,
 			name,
 			{
@@ -121,18 +126,18 @@ Arc< Texture > ResourceManager::CreateFlat2DTexture(const std::string& name, u32
 		.layerCount = 1
 	};
 	region.imageExtent = { 1, 1, 1 };
-	UploadData(pFlatTexture, pData, sizeof(u32) * 4, region);
+	UploadData(flatTexture, pData, sizeof(u32) * 4, region);
 
 	RELEASE(pData);
-	return pFlatTexture;
+	return flatTexture;
 }
 
-Arc< Texture > ResourceManager::CreateFlatWhiteTexture()
+Arc< render::Texture > VkResourceManager::CreateFlatWhiteTexture()
 {
 	return CreateFlat2DTexture("DefaultTexture::White", 0xFFFFFFFFu);
 }
 
-Arc< Texture > ResourceManager::CreateFlatBlackTexture()
+Arc< render::Texture > VkResourceManager::CreateFlatBlackTexture()
 {
 	return CreateFlat2DTexture("DefaultTexture::Black", 0xFF000000u);
 }

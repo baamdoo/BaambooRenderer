@@ -3,19 +3,19 @@
 namespace vk
 {
 
-class CommandContext;
+class VkCommandContext;
 
 class CommandQueue
 {
 public:
-	CommandQueue(RenderDevice& device, u32 queueIndex, eCommandType type);
+	CommandQueue(VkRenderDevice& rd, u32 queueIndex, eCommandType type);
 	~CommandQueue();
 	
 	[[nodiscard]]
-	CommandContext& Allocate(VkCommandBufferUsageFlags flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, bool bTransient = false);
+	Arc< VkCommandContext > Allocate(VkCommandBufferUsageFlags flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, bool bTransient = false);
 	void Flush();
 
-	void ExecuteCommandBuffer(CommandContext& context);
+	void ExecuteCommandBuffer(Arc< VkCommandContext > context);
 
 
 	[[nodiscard]]
@@ -26,14 +26,14 @@ public:
 	inline VkCommandPool vkCommandPool() const { return m_vkCommandPool; }
 
 private:
-	RenderDevice& m_RenderDevice;
-	eCommandType  m_CommandType;
+	VkRenderDevice& m_RenderDevice;
+	eCommandType    m_CommandType;
 
-	VkQueue       m_vkQueue = VK_NULL_HANDLE;
+	VkQueue       m_vkQueue       = VK_NULL_HANDLE;
 	VkCommandPool m_vkCommandPool = VK_NULL_HANDLE;
 
-	std::vector< CommandContext* > m_pContexts;
-	std::queue< CommandContext* >  m_pAvailableContexts;
+	std::vector< Arc< VkCommandContext > > m_pContexts;
+	std::queue< Arc< VkCommandContext > >  m_pAvailableContexts;
 
 	u32 m_QueueIndex = UINT_MAX;
 };

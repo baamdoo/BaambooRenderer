@@ -4,7 +4,10 @@
 #include "BaambooCore/EngineCore.h"
 #include "BaambooCore/Input.hpp"
 #include "BaambooScene/Entity.h"
+#include "RenderCommon/RenderDevice.h"
+#include "RenderCommon/CommandContext.h"
 #include "ThreadQueue.hpp"
+#include "Utils/Math.hpp"
 
 #include <filesystem>
 #include <imgui/imgui.h>
@@ -108,15 +111,28 @@ Engine::~Engine()
 
 void Engine::Initialize(eRendererAPI eApi)
 {
-	m_eBackendAPI = eApi;
+	s_RendererAPI = eApi;
 
 	auto pImGuiContext = ImGui::InitUI();
 	if (!InitWindow())
 		throw std::runtime_error("Failed to initialize window!");
-	if (!LoadRenderer(m_eBackendAPI, m_pWindow, pImGuiContext, &m_pRendererBackend))
+	if (!LoadRenderer(s_RendererAPI, m_pWindow, pImGuiContext, &m_pRendererBackend))
 		throw std::runtime_error("Failed to load backend!");
 	if (!LoadScene())
 		throw std::runtime_error("Failed to create scene!");
+
+	auto pDevice = m_pRendererBackend->GetDevice();
+	assert(pDevice);
+
+	g_FrameData.frame           = 0;
+	g_FrameData.time            = 0.0f;
+	g_FrameData.componentMarker = 0;
+
+	g_FrameData.camera         = {};
+
+	g_FrameData.pPointClamp  = render::Sampler::CreatePointClamp(*pDevice);
+	g_FrameData.pLinearClamp = render::Sampler::CreateLinearClamp(*pDevice);
+	g_FrameData.pLinearWrap  = render::Sampler::CreateLinearRepeat(*pDevice);
 }
 
 i32 Engine::Run()
@@ -141,7 +157,7 @@ i32 Engine::Run()
 	return 0;
 }
 
-void Engine::Update(f32 dt)
+void Engine::Update(float dt)
 {
 	if (m_bWindowResized && m_ResizeWidth >= 0 && m_ResizeHeight >= 0)
 	{
@@ -149,10 +165,13 @@ void Engine::Update(f32 dt)
 			return;
 
 		m_pWindow->OnWindowResized(m_ResizeWidth, m_ResizeHeight);
-		m_pRendererBackend->OnWindowResized(m_ResizeWidth, m_ResizeHeight);
+		m_pScene->OnWindowResized(m_ResizeWidth, m_ResizeHeight);
+		m_pRendererBackend->Resize(m_ResizeWidth, m_ResizeHeight);
 
 		m_bWindowResized = false;
 		m_ResizeWidth    = m_ResizeHeight = -1;
+
+		g_FrameData.frame = 0;
 	}
 
 	GameLoop(dt);
@@ -167,11 +186,16 @@ void Engine::Release()
 	{
 		m_RenderThread.join();
 	}
+	m_pRendererBackend->WaitIdle();
 
 	RELEASE(m_pCamera);
 	RELEASE(m_pScene);
-	RELEASE(m_pRendererBackend);
 	RELEASE(m_pWindow);
+
+	g_FrameData.pLinearWrap.reset();
+	g_FrameData.pLinearClamp.reset();
+	g_FrameData.pPointClamp.reset();
+	RELEASE(m_pRendererBackend);
 
 	ImGui::Destroy();
 }
@@ -188,9 +212,9 @@ void Engine::GameLoop(float dt)
 	m_pScene->Update(dt);
 
 	if (m_RenderViewQueue.size() >= NUM_TOLERANCE_ASYNC_FRAME_GAME_TO_RENDER)
-		m_RenderViewQueue.replace(m_pScene->RenderView(*m_pCamera));
+		m_RenderViewQueue.replace(m_pScene->RenderView(*m_pCamera, m_bDrawUI));
 	else
-		m_RenderViewQueue.push(m_pScene->RenderView(*m_pCamera));
+		m_RenderViewQueue.push(m_pScene->RenderView(*m_pCamera, m_bDrawUI));
 }
 
 void Engine::RenderLoop()
@@ -207,14 +231,84 @@ void Engine::RenderLoop()
 			m_RenderViewQueue.clear();
 		}
 
-		auto renderView = m_RenderViewQueue.try_pop();
-		if (!renderView.has_value())
+		auto renderViewOptional = m_RenderViewQueue.try_pop();
+		if (!renderViewOptional.has_value())
 			continue;
 
 		m_RenderTimer.Tick();
 
-		ImGui::DrawUI(*this);
-		m_pRendererBackend->Render(std::move(renderView.value()));
+		// Render
+		const auto& renderView = renderViewOptional.value();
+		{
+			auto& rm = m_pRendererBackend->GetDevice()->GetResourceManager();
+			rm.GetSceneResource().UpdateSceneResources(renderView);
+
+			auto ApplyRhiNDC = [](const mat4& mProj_, eRendererAPI eAPI)
+				{
+					mat4 mProj   = mProj_;
+					mProj[1][1] *= eAPI == eRendererAPI::Vulkan ? -1.0f : 1.0f;
+					return mProj;
+				};
+			auto ApplyJittering = [viewport = float2(m_pWindow->Width(), m_pWindow->Height())](const mat4& m_, float2 jitter)
+				{
+					mat4 m = m_;
+					m[2][0] += (jitter.x * 2.0f - 1.0f) / viewport.x;
+					m[2][1] += (jitter.y * 2.0f - 1.0f) / viewport.y;
+
+					return m;
+				};
+
+			auto pContext = m_pRendererBackend->BeginFrame();
+			if (pContext)
+			{
+				CameraData camera = {};
+				camera.mView = renderView.camera.mView;
+				camera.mProj = ApplyRhiNDC(renderView.postProcess.effectBits & (1 << ePostProcess::AntiAliasing) ?
+					ApplyJittering(renderView.camera.mProj, baamboo::math::GetHaltonSequence((u32)g_FrameData.frame)) : renderView.camera.mProj, s_RendererAPI);
+				camera.mViewProj               = camera.mProj * camera.mView;
+				camera.mViewProjInv            = glm::inverse(camera.mViewProj);
+				camera.mViewProjUnjittered     = ApplyRhiNDC(renderView.camera.mProj, s_RendererAPI) * camera.mView;
+				camera.mViewProjUnjitteredPrev =
+					g_FrameData.camera.mViewProjUnjittered == glm::identity< mat4 >() ? camera.mViewProjUnjittered : g_FrameData.camera.mViewProjUnjittered;
+				camera.position = renderView.camera.pos;
+				camera.zNear    = renderView.camera.zNear;
+				camera.zFar     = renderView.camera.zFar;
+
+				g_FrameData.camera = std::move(camera);
+
+				if (renderView.pEntityDirtyMarks)
+				{
+					assert(renderView.pSceneMutex);
+					std::lock_guard< std::mutex > lock(*renderView.pSceneMutex);
+
+					g_FrameData.componentMarker |= (*renderView.pEntityDirtyMarks)[renderView.atmosphere.id] & (1 << eComponentType::CAtmosphere);
+					// .. process other markers if needed
+
+					// reset marks once it is consumed by renderer
+					for (auto& mark : (*renderView.pEntityDirtyMarks))
+					{
+						mark.second = 0;
+					}
+				}
+
+				if (m_bDrawUI)
+				{
+					ImGui::DrawUI(*this);
+				}
+
+				for (auto pNode : m_pScene->GetRenderNodes())
+				{
+					if (pNode)
+						pNode->Apply(*pContext, renderView);
+				}
+
+				assert(g_FrameData.pColor);
+				m_pRendererBackend->EndFrame(std::move(pContext), g_FrameData.pColor.lock(), m_bDrawUI);
+
+				g_FrameData.frame++;
+				g_FrameData.componentMarker = 0;
+			}
+		}
 	}
 }
 
@@ -244,7 +338,6 @@ void Engine::DrawUI()
 		ImGui::Text("RenderLoop %.3f ms(frame: %.1f FPS)", renderElapsed_ms, 1000.0f / renderElapsed_ms);
 	}
 	ImGui::End();
-
 
 	// **
 	// scene hierarchy panel
@@ -1108,7 +1201,7 @@ void Engine::ProcessInput()
 {
 	if (glfwGetKey(m_pWindow->Handle(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS && glfwGetKey(m_pWindow->Handle(), GLFW_KEY_V))
 	{
-		if (m_eBackendAPI != eRendererAPI::Vulkan)
+		if (s_RendererAPI != eRendererAPI::Vulkan)
 		{
 			m_bRunning = false;
 			// NOTE. There is a bug which the window image is not properly updated 
@@ -1124,7 +1217,7 @@ void Engine::ProcessInput()
 	}
 	else if (glfwGetKey(m_pWindow->Handle(), GLFW_KEY_LEFT_SHIFT) && glfwGetKey(m_pWindow->Handle(), GLFW_KEY_D))
 	{
-		if (m_eBackendAPI != eRendererAPI::D3D12)
+		if (s_RendererAPI != eRendererAPI::D3D12)
 		{
 			m_bRunning = false;
 

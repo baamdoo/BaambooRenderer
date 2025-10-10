@@ -1,25 +1,25 @@
 #pragma once
-#include "VkRenderModule.h"
-
 struct ImGuiContext;
 
 namespace vk
 {
 
 class SwapChain;
+class VkCommandContext;
+class VulkanTexture;
 
-class ImGuiModule : public RenderModule
+class ImGuiModule
 {
-using Super = RenderModule;
 public:
-	ImGuiModule(RenderDevice& device, vk::SwapChain& swapChain, ImGuiContext* pImGuiContext);
+	ImGuiModule(VkRenderDevice& rd, vk::SwapChain& swapChain, ImGuiContext* pImGuiContext);
 	~ImGuiModule();
 
-	void Apply(CommandContext& context, const SceneRenderView& renderView) override;
+	void Apply(VkCommandContext& context, Arc< VulkanTexture > pColor);
 
 private:
-	RenderTarget*    m_pRenderTarget = nullptr;
-	VkDescriptorPool m_vkImGuiPool   = VK_NULL_HANDLE;
+	VkRenderDevice& m_RenderDevice;
+
+	VkDescriptorPool m_vkImGuiPool = VK_NULL_HANDLE;
 };
 
 } // namespace vk

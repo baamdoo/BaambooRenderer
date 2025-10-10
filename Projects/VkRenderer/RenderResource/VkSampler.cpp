@@ -4,83 +4,176 @@
 namespace vk
 {
 
-Arc< Sampler > Sampler::Create(RenderDevice& device, const std::string& name, CreationInfo&& info)
+using namespace render;
+
+#define VK_SAMPLER_FILTER(mode) ConvertToVkSamplerFilter(mode)
+VkFilter ConvertToVkSamplerFilter(eFilterMode filter)
 {
-	return MakeArc< Sampler >(device, name, std::move(info));
+    switch (filter)
+    {
+        case eFilterMode::Point:
+            return VK_FILTER_NEAREST;
+        case eFilterMode::Linear:
+            return VK_FILTER_LINEAR;
+        case eFilterMode::Anisotropic:
+            return VK_FILTER_CUBIC_IMG;
+    }
+
+    assert(false && "Invalid filter mode!");
+    return VK_FILTER_MAX_ENUM;
 }
 
-Arc< Sampler > Sampler::CreateLinearRepeat(RenderDevice& device, const std::string& name) {
-    return Create(device, name,
+#define VK_SAMPLER_MIPMAP(mode) ConvertToVkSamplerMipMap(mode)
+VkSamplerMipmapMode ConvertToVkSamplerMipMap(eMipmapMode mode)
+{
+    switch (mode)
+    {
+    case eMipmapMode::Nearest:
+        return VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    case eMipmapMode::Linear:
+        return VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    }
+
+    assert(false && "Invalid mipmap mode!");
+    return VK_SAMPLER_MIPMAP_MODE_MAX_ENUM;
+}
+
+#define VK_SAMPLER_ADDRESS(mode) ConvertToVkSamplerAddressMode(mode)
+VkSamplerAddressMode ConvertToVkSamplerAddressMode(eAddressMode mode)
+{
+    switch (mode)
+    {
+    case eAddressMode::Wrap:
+        return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    case eAddressMode::MirrorRepeat:
+        return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+    case eAddressMode::ClampEdge:
+        return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    case eAddressMode::ClampBorder:
+        return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    case eAddressMode::MirrorClampEdge:
+        return VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE;
+    }
+
+    assert(false && "Invalid address mode!");
+    return VK_SAMPLER_ADDRESS_MODE_MAX_ENUM;
+}
+
+#define VK_SAMPLER_COMPAREOP(op) ConvertToVkSamplerCompareOp(op)
+VkCompareOp ConvertToVkSamplerCompareOp(eCompareOp op)
+{
+    switch (op)
+    {
+    case eCompareOp::Never       : return VK_COMPARE_OP_NEVER;
+    case eCompareOp::Less        : return VK_COMPARE_OP_LESS;
+    case eCompareOp::Equal       : return VK_COMPARE_OP_EQUAL;
+    case eCompareOp::LessEqual   : return VK_COMPARE_OP_LESS_OR_EQUAL;
+    case eCompareOp::Greater     : return VK_COMPARE_OP_GREATER;
+    case eCompareOp::NotEqual    : return VK_COMPARE_OP_NOT_EQUAL;
+    case eCompareOp::GreaterEqual: return VK_COMPARE_OP_GREATER_OR_EQUAL;
+    case eCompareOp::Always      : return VK_COMPARE_OP_ALWAYS;
+    }
+
+    assert(false && "Invalid compare op!");
+    return VK_COMPARE_OP_MAX_ENUM;
+}
+
+#define VK_SAMPLER_BORDERCOLOR(color) ConvertToVkSamplerBorderColor(color)
+VkBorderColor ConvertToVkSamplerBorderColor(eBorderColor color)
+{
+    switch (color)
+    {
+    case eBorderColor::TransparentBlack_Float: return VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
+    case eBorderColor::TransparentBlack_Int  : return VK_BORDER_COLOR_INT_TRANSPARENT_BLACK;
+    case eBorderColor::OpaqueBlack_Float     : return VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+    case eBorderColor::OpaqueBlack_Int       : return VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    case eBorderColor::OpaqueWhite_Float     : return VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+    case eBorderColor::OpaqueWhite_Int       : return VK_BORDER_COLOR_INT_OPAQUE_WHITE;
+    }
+
+    assert(false && "Invalid boder color!");
+    return VK_BORDER_COLOR_MAX_ENUM;
+}
+
+
+Arc< VulkanSampler > VulkanSampler::Create(VkRenderDevice& rd, const std::string& name, CreationInfo&& info)
+{
+	return MakeArc< VulkanSampler >(rd, name, std::move(info));
+}
+
+Arc< VulkanSampler > VulkanSampler::CreateLinearRepeat(VkRenderDevice& rd, const std::string& name) {
+    return Create(rd, name,
         {
-            .filter      = VK_FILTER_LINEAR,
-            .addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT
+            .filter      = eFilterMode::Linear,
+            .addressMode = eAddressMode::Wrap
         });
 }
 
-Arc< Sampler > Sampler::CreateLinearClamp(RenderDevice& device, const std::string& name)
+Arc< VulkanSampler > VulkanSampler::CreateLinearClamp(VkRenderDevice& rd, const std::string& name)
 {
-    return Create(device, name,
+    return Create(rd, name,
         {
-            .filter      = VK_FILTER_LINEAR,
-            .addressMode = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+            .filter      = eFilterMode::Linear,
+            .addressMode = eAddressMode::ClampEdge
         });
 }
 
-Arc< Sampler > Sampler::CreatePointRepeat(RenderDevice& device, const std::string& name)
+Arc< VulkanSampler > VulkanSampler::CreatePointRepeat(VkRenderDevice& rd, const std::string& name)
 {
-    return Create(device, name,
+    return Create(rd, name,
         {
-            .filter        = VK_FILTER_NEAREST,
-            .addressMode   = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+            .filter        = eFilterMode::Point,
+            .addressMode   = eAddressMode::Wrap,
             .maxAnisotropy = 0.0f
         });
 }
 
-Arc< Sampler > Sampler::CreatePointClamp(RenderDevice& device, const std::string& name)
+Arc< VulkanSampler > VulkanSampler::CreatePointClamp(VkRenderDevice& rd, const std::string& name)
 {
-    return Create(device, name,
+    return Create(rd, name,
         {
-            .filter        = VK_FILTER_NEAREST,
-            .addressMode   = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            .filter        = eFilterMode::Point,
+            .addressMode   = eAddressMode::ClampEdge,
             .maxAnisotropy = 0.0f
         });
 }
 
-Arc< Sampler > Sampler::CreateLinearClampCmp(RenderDevice& device, const std::string& name)
+Arc< VulkanSampler > VulkanSampler::CreateLinearClampCmp(VkRenderDevice& rd, const std::string& name)
 {
-    return Create(device, name,
+    return Create(rd, name,
         {
-            .filter        = VK_FILTER_LINEAR,
-            .addressMode   = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER,
+            .filter        = eFilterMode::Linear,
+            .addressMode   = eAddressMode::ClampBorder,
             .maxAnisotropy = 0.0f,
-            .compareOp     = VK_COMPARE_OP_LESS_OR_EQUAL,
-            .borderColor   = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE
+            .compareOp     = eCompareOp::LessEqual,
+            .borderColor   = eBorderColor::OpaqueWhite_Float
         });
 }
 
-Sampler::Sampler(RenderDevice& device, const std::string& name, CreationInfo&& info)
-: Super(device, name, eResourceType::Sampler)
-, m_CreationInfo(std::move(info))
+VulkanSampler::VulkanSampler(VkRenderDevice& rd, const std::string& name, CreationInfo&& info)
+    : render::Sampler(name, std::move(info))
+    , VulkanResource(rd, name)
 {
 	VkSamplerCreateInfo createInfo = {};
 	createInfo.sType            = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-	createInfo.minFilter        = createInfo.magFilter = m_CreationInfo.filter;
-	createInfo.mipmapMode       = m_CreationInfo.mipmapMode;
-	createInfo.addressModeU     = createInfo.addressModeV = createInfo.addressModeW = m_CreationInfo.addressMode;
+	createInfo.minFilter        = createInfo.magFilter = VK_SAMPLER_FILTER(m_CreationInfo.filter);
+	createInfo.mipmapMode       = VK_SAMPLER_MIPMAP(m_CreationInfo.mipmapMode);
+	createInfo.addressModeU     = 
+        createInfo.addressModeV = createInfo.addressModeW = VK_SAMPLER_ADDRESS(m_CreationInfo.addressMode);
 	createInfo.mipLodBias       = m_CreationInfo.mipLodBias;
 	createInfo.anisotropyEnable = m_CreationInfo.maxAnisotropy > 0.0f;
 	createInfo.maxAnisotropy    = m_CreationInfo.maxAnisotropy;
-	createInfo.compareEnable    = m_CreationInfo.compareOp > VK_COMPARE_OP_NEVER;
-	createInfo.compareOp        = m_CreationInfo.compareOp;
+	createInfo.compareEnable    = VK_SAMPLER_COMPAREOP(m_CreationInfo.compareOp) > VK_COMPARE_OP_NEVER;
+	createInfo.compareOp        = VK_SAMPLER_COMPAREOP(m_CreationInfo.compareOp);
 	createInfo.minLod           = m_CreationInfo.minLod;
 	createInfo.maxLod           = m_CreationInfo.maxLod;
-	createInfo.borderColor      = m_CreationInfo.borderColor;
+	createInfo.borderColor      = VK_SAMPLER_BORDERCOLOR(m_CreationInfo.borderColor);
 	VK_CHECK(vkCreateSampler(m_RenderDevice.vkDevice(), &createInfo, nullptr, &m_vkSampler));
 
     SetDeviceObjectName((u64)m_vkSampler, VK_OBJECT_TYPE_SAMPLER);
 }
 
-Sampler::~Sampler()
+VulkanSampler::~VulkanSampler()
 {
     if (m_vkSampler)
 	    vkDestroySampler(m_RenderDevice.vkDevice(), m_vkSampler, nullptr);

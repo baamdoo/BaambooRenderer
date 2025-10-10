@@ -8,24 +8,24 @@ class SwapChain;
 class FrameManager
 {
 public:
-    FrameManager(RenderDevice& device, SwapChain& swapChain);
+    FrameManager(VkRenderDevice& rd, SwapChain& swapChain);
     ~FrameManager();
 
     struct FrameContext
 	{
-        u32             imageIndex;
-        CommandContext* pCommandContext;
+        u32                     imageIndex;
+        Arc< VkCommandContext > rhiCommandContext;
     };
 
     FrameContext BeginFrame();
 
-    void EndFrame(FrameContext& frame);
+    void EndFrame(Arc< VkCommandContext >&& pContext);
 
     void WaitIdle();
 
 private:
-    RenderDevice& m_RenderDevice;
-    SwapChain&    m_SwapChain;
+    VkRenderDevice& m_RenderDevice;
+    SwapChain&      m_SwapChain;
 
     // Per-frame resources
     struct FrameData

@@ -24,64 +24,66 @@ enum
 	eStaticSetBindingIndex_Lighting = 5,
 };
 
-static ComputePipeline* s_CombineTexturesPipeline = nullptr;
-Arc< Texture > CombineTextures(RenderDevice& renderDevice, const std::string& name, Arc< Texture > pTextureR, Arc< Texture > pTextureG, Arc< Texture > pTextureB, Arc< Sampler > pSampler)
+static VulkanComputePipeline* s_CombineTexturesPipeline = nullptr;
+Arc< VulkanTexture > CombineTextures(VkRenderDevice& rd, const std::string& name, Arc< VulkanTexture > textureR, Arc< VulkanTexture > textureG, Arc< VulkanTexture > textureB, Arc< VulkanSampler > sampler)
 {
 	u32 width 
-		= std::max({ pTextureR->Desc().extent.width, pTextureG->Desc().extent.width, pTextureB->Desc().extent.width });
+		= std::max({ textureR->Desc().extent.width, textureG->Desc().extent.width, textureB->Desc().extent.width });
 	u32 height 
-		= std::max({ pTextureR->Desc().extent.height, pTextureG->Desc().extent.height, pTextureB->Desc().extent.height });
+		= std::max({ textureR->Desc().extent.height, textureG->Desc().extent.height, textureB->Desc().extent.height });
 	auto pCombinedTexture =
-		Texture::Create(
-			renderDevice,
+		VulkanTexture::Create(
+			rd,
 			name,
 			{
 				.resolution = { width, height, 1 },
 				.imageUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT
 			});
 
-	auto& context = renderDevice.BeginCommand(eCommandType::Compute, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
+	auto pContext = rd.BeginCommand(eCommandType::Compute, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
+	if (pContext)
 	{
-		context.SetRenderPipeline(s_CombineTexturesPipeline);
+		pContext->SetRenderPipeline(s_CombineTexturesPipeline);
 
 		VkImageSubresourceRange subresourceRange = {};
 		subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		subresourceRange.baseMipLevel = 0;
 		subresourceRange.levelCount = pCombinedTexture->Desc().mipLevels;
 		subresourceRange.layerCount = pCombinedTexture->Desc().arrayLayers;
-		context.TransitionImageLayout(pTextureR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, subresourceRange);
-		context.TransitionImageLayout(pTextureG, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, subresourceRange);
-		context.TransitionImageLayout(pTextureB, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, subresourceRange);
-		context.TransitionImageLayout(pCombinedTexture, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, subresourceRange);
-		context.PushDescriptors(
+		pContext->TransitionImageLayout(textureR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange);
+		pContext->TransitionImageLayout(textureG, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange);
+		pContext->TransitionImageLayout(textureB, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange);
+		pContext->TransitionImageLayout(pCombinedTexture, VK_IMAGE_LAYOUT_GENERAL, subresourceRange);
+		pContext->PushDescriptor(
 			0, 
-			{ pSampler->vkSampler(), pTextureR->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }, 
+			{ sampler->vkSampler(), textureR->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }, 
 			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-		context.PushDescriptors(
+		pContext->PushDescriptor(
 			1,
-			{ pSampler->vkSampler(), pTextureG->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+			{ sampler->vkSampler(), textureG->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
 			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-		context.PushDescriptors(
+		pContext->PushDescriptor(
 			2,
-			{ pSampler->vkSampler(), pTextureB->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+			{ sampler->vkSampler(), textureB->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
 			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-		context.PushDescriptors(
+		pContext->PushDescriptor(
 			3,
-			{ pSampler->vkSampler(), pCombinedTexture->vkView(), VK_IMAGE_LAYOUT_GENERAL },
+			{ sampler->vkSampler(), pCombinedTexture->vkView(), VK_IMAGE_LAYOUT_GENERAL },
 			VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 
-		context.Dispatch2D< 16, 16 >(width, height);
+		pContext->Dispatch2D< 16, 16 >(width, height);
 
-		context.TransitionImageLayout(pCombinedTexture, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, subresourceRange);
-		context.Close();
+		pContext->TransitionImageLayout(pCombinedTexture, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange);
+		pContext->Close();
+
+		rd.ExecuteCommand(pContext);
 	}
-	context.Execute();
 
 	return pCombinedTexture;
 }
 
-SceneResource::SceneResource(RenderDevice& device)
-	: m_RenderDevice(device)
+VkSceneResource::VkSceneResource(VkRenderDevice& rd)
+	: m_RenderDevice(rd)
 {
 	// **
 	// scene buffers
@@ -140,10 +142,10 @@ SceneResource::SceneResource(RenderDevice& device)
 	// **
 	// default sampler for scene textures
 	// **
-	m_pDefaultSampler = Sampler::Create(m_RenderDevice, "DefaultSampler", {});
+	m_pDefaultSampler = VulkanSampler::Create(m_RenderDevice, "DefaultSampler", {});
 }
 
-SceneResource::~SceneResource()
+VkSceneResource::~VkSceneResource()
 {
 	imageInfos.clear();
 
@@ -153,7 +155,7 @@ SceneResource::~SceneResource()
 	RELEASE(s_CombineTexturesPipeline);
 }
 
-void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
+void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 {
 	auto& rm = m_RenderDevice.GetResourceManager();
 
@@ -171,13 +173,13 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 	UpdateFrameBuffer(transforms.data(), (u32)transforms.size(), sizeof(TransformData), *m_pTransformAllocator);
 
 	imageInfos.clear();
-	imageInfos.push_back({ m_pDefaultSampler->vkSampler(), rm.GetFlatWhiteTexture()->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
-	imageInfos.push_back({ m_pDefaultSampler->vkSampler(), rm.GetFlatBlackTexture()->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
-	imageInfos.push_back({ m_pDefaultSampler->vkSampler(), rm.GetFlatGrayTexture()->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
+	imageInfos.push_back({ m_pDefaultSampler->vkSampler(), StaticCast<VulkanTexture>(rm.GetFlatWhiteTexture())->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
+	imageInfos.push_back({ m_pDefaultSampler->vkSampler(), StaticCast<VulkanTexture>(rm.GetFlatBlackTexture())->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
+	imageInfos.push_back({ m_pDefaultSampler->vkSampler(), StaticCast<VulkanTexture>(rm.GetFlatGrayTexture())->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
 
 	std::vector< MaterialData > materials;
 	materials.reserve(sceneView.materials.size());
-	std::unordered_map< Texture*, u32 > srvIndexCache;
+	std::unordered_map< VulkanTexture*, u32 > srvIndexCache;
 	for (auto& materialView : sceneView.materials)
 	{
 		MaterialData material  = {};
@@ -231,27 +233,27 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 		{
 			if (s_CombineTexturesPipeline == nullptr)
 			{
-				s_CombineTexturesPipeline = new ComputePipeline(m_RenderDevice, "CombineTextures");
-				Arc< Shader > pCS
-					= Shader::Create(m_RenderDevice, "CombineTextures", { .filepath = SPIRV_PATH.string() + "CombineTextures.comp.spv" });
+				s_CombineTexturesPipeline = new VulkanComputePipeline(m_RenderDevice, "CombineTextures");
+				Arc< VulkanShader > pCS
+					= VulkanShader::Create(m_RenderDevice, "CombineTextures", { .stage = render::eShaderStage::Compute, .filename = "CombineTextures" });
 				s_CombineTexturesPipeline->SetComputeShader(std::move(pCS)).Build();
 			}
 
-			Arc< Texture > pCombiningTextures[3] = {};
+			Arc< VulkanTexture > pCombiningTextures[3] = {};
 			if (!materialView.aoTex.empty())
 				pCombiningTextures[0] = GetOrLoadTexture(materialView.id, materialView.aoTex);
 			else
-				pCombiningTextures[0] = rm.GetFlatWhiteTexture();
+				pCombiningTextures[0] = StaticCast<VulkanTexture>(rm.GetFlatWhiteTexture());
 
 			if (!materialView.roughnessTex.empty())
 				pCombiningTextures[1] = GetOrLoadTexture(materialView.id, materialView.roughnessTex);
 			else
-				pCombiningTextures[1] = rm.GetFlatWhiteTexture();
+				pCombiningTextures[1] = StaticCast<VulkanTexture>(rm.GetFlatWhiteTexture());
 
 			if (!materialView.metallicTex.empty())
 				pCombiningTextures[2] = GetOrLoadTexture(materialView.id, materialView.metallicTex);
 			else
-				pCombiningTextures[2] = rm.GetFlatWhiteTexture();
+				pCombiningTextures[2] = StaticCast<VulkanTexture>(rm.GetFlatWhiteTexture());
 
 			pORM = CombineTextures(m_RenderDevice, "ORM", pCombiningTextures[0], pCombiningTextures[1], pCombiningTextures[2], m_pDefaultSampler);
 			m_TextureCache.emplace(ormStr, pORM);
@@ -294,7 +296,7 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 		IndirectDrawData indirect = {};
 		if (data.mesh != INVALID_INDEX)
 		{
-			assert(data.mesh < sceneView.meshes.size() && "Mesh idx_%d should less than mesh size %d", data.mesh, (u32)sceneView.meshes.size());
+			BB_ASSERT(data.mesh < sceneView.meshes.size(), "Mesh idx_%d should less than mesh size %d", data.mesh, (u32)sceneView.meshes.size());
 			auto& meshView = sceneView.meshes[data.mesh];
 
 			auto vertex = GetOrUpdateVertex(meshView.id, meshView.tag, meshView.vData, meshView.vCount);
@@ -333,9 +335,32 @@ void SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 	descriptorSet.StageDescriptor(m_pLightAllocator->GetDescriptorInfo(), eStaticSetBindingIndex_Lighting, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 }
 
-BufferHandle SceneResource::GetOrUpdateVertex(u64 entity, const std::string& filepath, const void* pData, u32 count)
+void VkSceneResource::BindSceneResources(render::CommandContext& context)
 {
-	auto& rm = m_RenderDevice.GetResourceManager();
+	VkCommandContext& context_ = static_cast<VkCommandContext&>(context);
+
+	auto vkDescriptorSet = m_pDescriptorPool->AllocateSet(m_vkSetLayout).vkDescriptorSet();
+	if (context_.IsGraphicsContext())
+	{
+		vkCmdBindDescriptorSets(
+			context_.vkCommandBuffer(),
+			VK_PIPELINE_BIND_POINT_GRAPHICS,
+			context_.vkGraphicsPipelineLayout(),
+			eDescriptorSet_Static, 1, &vkDescriptorSet, 0, nullptr);
+	}
+	else
+	{
+		vkCmdBindDescriptorSets(
+			context_.vkCommandBuffer(),
+			VK_PIPELINE_BIND_POINT_COMPUTE,
+			context_.vkComputePipelineLayout(),
+			eDescriptorSet_Static, 1, &vkDescriptorSet, 0, nullptr);
+	}
+}
+
+BufferHandle VkSceneResource::GetOrUpdateVertex(u64 entity, const std::string& filepath, const void* pData, u32 count)
+{
+	auto& rm = static_cast<VkResourceManager&>(m_RenderDevice.GetResourceManager());
 
 	if (m_VertexCache.contains(filepath))
 	{
@@ -357,9 +382,9 @@ BufferHandle SceneResource::GetOrUpdateVertex(u64 entity, const std::string& fil
 	return handle;
 }
 
-BufferHandle SceneResource::GetOrUpdateIndex(u64 entity, const std::string& filepath, const void* pData, u32 count)
+BufferHandle VkSceneResource::GetOrUpdateIndex(u64 entity, const std::string& filepath, const void* pData, u32 count)
 {
-	auto& rm = m_RenderDevice.GetResourceManager();
+	auto& rm = static_cast<VkResourceManager&>(m_RenderDevice.GetResourceManager());
 
 	if (m_IndexCache.contains(filepath))
 	{
@@ -381,7 +406,7 @@ BufferHandle SceneResource::GetOrUpdateIndex(u64 entity, const std::string& file
 	return handle;
 }
 
-Arc< Texture > SceneResource::GetOrLoadTexture(u64 entity, const std::string& filepath)
+Arc< VulkanTexture > VkSceneResource::GetOrLoadTexture(u64 entity, const std::string& filepath)
 {
 	auto& rm = m_RenderDevice.GetResourceManager();
 
@@ -390,14 +415,15 @@ Arc< Texture > SceneResource::GetOrLoadTexture(u64 entity, const std::string& fi
 		return m_TextureCache.find(filepath)->second;
 	}
 
-	auto pTex = rm.LoadTexture(filepath);
+	auto tex   = rm.LoadTexture(filepath);
+	auto vkTex = StaticCast<VulkanTexture>(tex);
 
-	m_TextureCache.emplace(filepath, pTex);
+	m_TextureCache.emplace(filepath, vkTex);
 
-	return pTex;
+	return vkTex;
 }
 
-Arc< Texture > SceneResource::GetTexture(const std::string& filepath)
+Arc< VulkanTexture > VkSceneResource::GetTexture(const std::string& filepath)
 {
 	std::string f = filepath.data();
 	if (m_TextureCache.contains(f))
@@ -408,7 +434,7 @@ Arc< Texture > SceneResource::GetTexture(const std::string& filepath)
 	return nullptr;
 }
 
-void SceneResource::ResetFrameBuffers()
+void VkSceneResource::ResetFrameBuffers()
 {
 	m_pIndirectDrawAllocator->Reset();
 	m_pTransformAllocator->Reset();
@@ -416,12 +442,12 @@ void SceneResource::ResetFrameBuffers()
 	m_pLightAllocator->Reset();
 }
 
-void SceneResource::UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator& targetBuffer)
+void VkSceneResource::UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator& targetBuffer)
 {
 	if (count == 0 || elementSizeInBytes == 0)
 		return;
 
-	auto& rm = m_RenderDevice.GetResourceManager();
+	auto& rm = static_cast<VkResourceManager&>(m_RenderDevice.GetResourceManager());
 
 	u64 sizeInBytes = count * elementSizeInBytes;
 
@@ -429,17 +455,17 @@ void SceneResource::UpdateFrameBuffer(const void* pData, u32 count, u64 elementS
 	rm.UploadData(allocation.vkBuffer, pData, sizeInBytes, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT, allocation.offset);
 }
 
-VkDescriptorSet SceneResource::GetSceneDescriptorSet() const
+VkDescriptorSet VkSceneResource::GetSceneDescriptorSet() const
 {
 	return m_pDescriptorPool->AllocateSet(m_vkSetLayout).vkDescriptorSet();
 }
 
-VkDescriptorBufferInfo SceneResource::GetIndexBufferInfo() const
+VkDescriptorBufferInfo VkSceneResource::GetIndexBufferInfo() const
 {
 	return m_pIndexAllocator->GetDescriptorInfo();
 }
 
-VkDescriptorBufferInfo SceneResource::GetIndirectBufferInfo() const
+VkDescriptorBufferInfo VkSceneResource::GetIndirectBufferInfo() const
 {
 	return m_pIndirectDrawAllocator->GetDescriptorInfo();
 }
