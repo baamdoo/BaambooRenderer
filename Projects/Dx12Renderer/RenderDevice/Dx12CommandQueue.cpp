@@ -5,8 +5,8 @@
 namespace dx12
 {
 
-CommandQueue::CommandQueue(RenderDevice& device, D3D12_COMMAND_LIST_TYPE type)
-	: m_RenderDevice(device)
+Dx12CommandQueue::Dx12CommandQueue(Dx12RenderDevice& rd, D3D12_COMMAND_LIST_TYPE type)
+	: m_RenderDevice(rd)
 	, m_Type(type)
 {
 	D3D12_COMMAND_QUEUE_DESC queueDesc = {};
@@ -18,21 +18,19 @@ CommandQueue::CommandQueue(RenderDevice& device, D3D12_COMMAND_LIST_TYPE type)
 	ThrowIfFailed(d3d12Device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_d3d12Fence)));
 }
 
-CommandQueue::~CommandQueue()
+Dx12CommandQueue::~Dx12CommandQueue()
 {
 	while (!m_pAvailableContexts.empty())
 	{
-		auto pContext = m_pAvailableContexts.front();
 		m_pAvailableContexts.pop();
-
-		RELEASE(pContext);
 	}
+	m_pPendingContexts.clear();
 
 	COM_RELEASE(m_d3d12Fence);
 	COM_RELEASE(m_d3d12CommandQueue);
 }
 
-CommandContext& CommandQueue::Allocate()
+Arc< Dx12CommandContext > Dx12CommandQueue::Allocate()
 {
 	auto iter = m_pPendingContexts.begin();
 	while (iter != m_pPendingContexts.end() && IsFenceComplete(iter->first))
@@ -41,7 +39,7 @@ CommandContext& CommandQueue::Allocate()
 		iter = m_pPendingContexts.erase(iter);
 	}
 
-	CommandContext* pCommandList = nullptr;
+	Arc< Dx12CommandContext > pCommandList;
 	if (!m_pAvailableContexts.empty())
 	{
 		pCommandList = m_pAvailableContexts.front();
@@ -52,25 +50,23 @@ CommandContext& CommandQueue::Allocate()
 	else
 	{
 		pCommandList = RequestList();
-
 		pCommandList->Open();
 	}
 
-	return *pCommandList;
-}
-
-CommandContext* CommandQueue::RequestList()
-{
-	auto pCommandList = new CommandContext(m_RenderDevice, m_Type);
 	return pCommandList;
 }
 
-u64 CommandQueue::ExecuteCommandList(CommandContext* pContext)
+Arc< Dx12CommandContext > Dx12CommandQueue::RequestList()
+{
+	return MakeArc< Dx12CommandContext >(m_RenderDevice, m_Type);
+}
+
+u64 Dx12CommandQueue::ExecuteCommandList(Arc< Dx12CommandContext > pContext)
 {
 	return ExecuteCommandLists({ pContext });
 }
 
-u64 CommandQueue::ExecuteCommandLists(const std::vector< CommandContext* >& pCommandContexts)
+u64 Dx12CommandQueue::ExecuteCommandLists(const std::vector< Arc< Dx12CommandContext > >& pCommandContexts)
 {
 	std::vector< ID3D12CommandList* > d3d12CommandLists;
 	d3d12CommandLists.reserve(pCommandContexts.size());
@@ -87,14 +83,14 @@ u64 CommandQueue::ExecuteCommandLists(const std::vector< CommandContext* >& pCom
 	return fenceValue;
 }
 
-u64 CommandQueue::Signal()
+u64 Dx12CommandQueue::Signal()
 {
 	u64 fenceValue = ++m_FenceValue;
 	ThrowIfFailed(m_d3d12CommandQueue->Signal(m_d3d12Fence, fenceValue));
 	return fenceValue;
 }
 
-bool CommandQueue::IsFenceComplete(u64 fenceValue)
+bool Dx12CommandQueue::IsFenceComplete(u64 fenceValue)
 {
 	if (fenceValue <= m_FenceCompletedValue)
 		return true;
@@ -103,7 +99,7 @@ bool CommandQueue::IsFenceComplete(u64 fenceValue)
 	return fenceValue <= m_FenceCompletedValue;
 }
 
-void CommandQueue::WaitForFenceValue(u64 fenceValue)
+void Dx12CommandQueue::WaitForFenceValue(u64 fenceValue)
 {
 	if (!IsFenceComplete(fenceValue))
 	{
@@ -118,7 +114,7 @@ void CommandQueue::WaitForFenceValue(u64 fenceValue)
 	}
 }
 
-void CommandQueue::Flush()
+void Dx12CommandQueue::Flush()
 {
 	WaitForFenceValue(Signal());
 

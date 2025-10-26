@@ -3,7 +3,7 @@
 
 StructuredBuffer< TransformData > g_Transforms : register(t0, space0);
 
-cbuffer RootConstants : register(b1, space0)
+cbuffer RootConstants : register(b1, ROOT_CONSTANT_SPACE)
 {
     uint g_TransformIndex;
 };

@@ -75,7 +75,9 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 			.filename = "GBuffer"
 		});
 	m_pGBufferPSO = GraphicsPipeline::Create(m_RenderDevice, "GBufferPSO");
-	m_pGBufferPSO->SetShaders(hVS, hFS).SetRenderTarget(m_pRenderTarget).SetDepthWriteEnable(true).Build();
+	m_pGBufferPSO->SetShaders(hVS, hFS)
+		          .SetRenderTarget(m_pRenderTarget)
+		          .SetDepthWriteEnable(true).Build();
 }
 
 void GBufferNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)

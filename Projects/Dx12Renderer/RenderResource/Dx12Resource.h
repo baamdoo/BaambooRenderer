@@ -58,24 +58,24 @@ struct ResourceState
 	std::map< u32, D3D12_RESOURCE_STATES > SubresourceStates;
 };
 
-struct ResourceCreationInfo
+struct Dx12ResourceCreationInfo
 {
 	D3D12_RESOURCE_DESC   desc;
-	D3D12_HEAP_PROPERTIES heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-	D3D12_HEAP_FLAGS      heapFlags = D3D12_HEAP_FLAG_NONE;
+	D3D12_HEAP_PROPERTIES heapProps    = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+	D3D12_HEAP_FLAGS      heapFlags    = D3D12_HEAP_FLAG_NONE;
 	D3D12_RESOURCE_STATES initialState = D3D12_RESOURCE_STATE_COMMON;
 	D3D12_CLEAR_VALUE     clearValue;
 };
 
-class Resource : public ArcBase
+class Dx12Resource
 {
 public:
-	friend class ResourceManager;
+	friend class Dx12ResourceManager;
 
-	Resource(RenderDevice& device, const std::wstring& name);
-	Resource(RenderDevice& device, const std::wstring& name, eResourceType type);
-	Resource(RenderDevice& device, const std::wstring& name, ResourceCreationInfo&& info, eResourceType type);
-	virtual ~Resource();
+	Dx12Resource(Dx12RenderDevice& rd, const std::string& name);
+	Dx12Resource(Dx12RenderDevice& rd, const std::string& name, eResourceType type);
+	Dx12Resource(Dx12RenderDevice& rd, const std::string& name, Dx12ResourceCreationInfo&& info, eResourceType type);
+	virtual ~Dx12Resource();
 
 	[[nodiscard]]
 	inline bool IsValid() const { return m_d3d12Resource != nullptr; }
@@ -102,7 +102,8 @@ private:
 	void SetFormatSupported();
 
 protected:
-	RenderDevice& m_RenderDevice;
+	Dx12RenderDevice& m_RenderDevice;
+
 	std::wstring  m_Name;
 	eResourceType m_Type = eResourceType::None;
 

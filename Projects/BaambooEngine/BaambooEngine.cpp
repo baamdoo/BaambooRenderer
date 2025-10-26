@@ -273,7 +273,6 @@ void Engine::RenderLoop()
 				camera.position = renderView.camera.pos;
 				camera.zNear    = renderView.camera.zNear;
 				camera.zFar     = renderView.camera.zFar;
-
 				g_FrameData.camera = std::move(camera);
 
 				if (renderView.pEntityDirtyMarks)

@@ -40,18 +40,13 @@ private:
 	std::vector< CD3DX12_DESCRIPTOR_RANGE1 > m_Ranges;
 };
 
-class RootSignatureDesc
-{
-
-};
-
-class RootSignature
+class Dx12RootSignature : public ArcBase
 {
 public:
-	RootSignature(RenderDevice& device, const std::wstring& name);
-	~RootSignature();
+	Dx12RootSignature(Dx12RenderDevice& rd, const std::string& name);
+	~Dx12RootSignature();
 
-	u32 AddConstants(u32 reg, u32 space, u32 numConstants, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
+	u32 AddConstants(u32 reg, u32 numConstants, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
 	u32 AddCBV(u32 reg, u32 space, D3D12_ROOT_DESCRIPTOR_FLAGS flags = D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
 	u32 AddSRV(u32 reg, u32 space, D3D12_ROOT_DESCRIPTOR_FLAGS flags = D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
 	u32 AddUAV(u32 reg, u32 space, D3D12_ROOT_DESCRIPTOR_FLAGS flags = D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
@@ -63,12 +58,15 @@ public:
 		UINT                       maxAnisotropy,
 		D3D12_COMPARISON_FUNC      comparisonFunc = D3D12_COMPARISON_FUNC_NEVER,
 		D3D12_STATIC_BORDER_COLOR  borderColor    = D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK);
+	u32 AddSamplerPreset(u32 preset);
 	u32 AddDescriptorTable(const DescriptorTable& table, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
 
 	void Build();
+	
+	void UpdateVisibility(u32 rootIndex, D3D12_SHADER_VISIBILITY visibility);
 
 public:
-	void CopySignatureParams(RootSignature& srcSignature);
+	void CopySignatureParams(Dx12RootSignature& srcSignature);
 
 	ID3D12RootSignature* GetD3D12RootSignature() const { return m_d3d12RootSignature; }
 
@@ -82,8 +80,8 @@ protected:
 	u32 AddParameter(const CD3DX12_ROOT_PARAMETER1& param);
 
 private:
-	RenderDevice& m_RenderDevice;
-	std::wstring  m_Name;
+	Dx12RenderDevice& m_RenderDevice;
+	std::string       m_Name;
 
 	ID3D12RootSignature* m_d3d12RootSignature = nullptr;
 

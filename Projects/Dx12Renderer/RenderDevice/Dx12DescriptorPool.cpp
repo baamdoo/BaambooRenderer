@@ -4,8 +4,8 @@
 namespace dx12
 {
 
-DescriptorPool::DescriptorPool(RenderDevice& device, D3D12_DESCRIPTOR_HEAP_TYPE type, D3D12_DESCRIPTOR_HEAP_FLAGS flags, u32 maxDescriptorCount)
-	: m_RenderDevice(device)
+DescriptorPool::DescriptorPool(Dx12RenderDevice& rd, D3D12_DESCRIPTOR_HEAP_TYPE type, D3D12_DESCRIPTOR_HEAP_FLAGS flags, u32 maxDescriptorCount)
+	: m_RenderDevice(rd)
 	, m_d3d12HeapType(type)
 	, m_NumDescriptors(maxDescriptorCount)
 	, m_DescriptorSize(0)

@@ -12,49 +12,43 @@ class RenderTarget;
 //-------------------------------------------------------------------------
 // Graphics pipeline
 //-------------------------------------------------------------------------
-class GraphicsPipeline
+class Dx12GraphicsPipeline : public render::GraphicsPipeline
 {
 public:
-	GraphicsPipeline(RenderDevice& device, const std::wstring& name);
-	~GraphicsPipeline();
+	Dx12GraphicsPipeline(Dx12RenderDevice& rd, const std::string& name);
+	~Dx12GraphicsPipeline();
 
-	GraphicsPipeline& SetShaderModules(
-		Arc< Shader > pVS,
-		Arc< Shader > pPS,
-		Arc< Shader > pGS = nullptr,
-		Arc< Shader > pHS = nullptr,
-		Arc< Shader > pDS = nullptr);
-	GraphicsPipeline& SetRootSignature(RootSignature* pRootSignature);
-	GraphicsPipeline& SetRenderTargetFormats(const RenderTarget& renderTarget);
+	virtual render::GraphicsPipeline& SetRenderTarget(Arc< render::RenderTarget > pRenderTarget) override;
 
-	GraphicsPipeline& SetCullMode(D3D12_CULL_MODE cullMode);
-	GraphicsPipeline& SetFillMode(bool bWireframe);
+	virtual render::GraphicsPipeline& SetFillMode(bool bWireframe) override;
+	virtual render::GraphicsPipeline& SetCullMode(render::eCullMode cullMode) override;
 
-	GraphicsPipeline& SetBlendEnable(u32 renderTargetIndex, bool bEnable);
-	GraphicsPipeline& SetBlendState(u32 renderTargetIndex, D3D12_BLEND srcBlend, D3D12_BLEND dstBlend, D3D12_BLEND srcBlendAlpha, D3D12_BLEND dstBlendAlpha);
-	GraphicsPipeline& SetBlendOp(u32 renderTargetIndex, D3D12_BLEND_OP blendOp, D3D12_BLEND_OP blendOpAlpha, D3D12_LOGIC_OP logicOp = D3D12_LOGIC_OP_NOOP);
+	virtual render::GraphicsPipeline& SetTopology(render::ePrimitiveTopology topology) override;
+	virtual render::GraphicsPipeline& SetDepthTestEnable(bool bEnable, render::eCompareOp) override;
+	virtual render::GraphicsPipeline& SetDepthWriteEnable(bool bEnable, render::eCompareOp) override;
 
-	GraphicsPipeline& SetTopology(D3D12_PRIMITIVE_TOPOLOGY_TYPE type);
+	virtual render::GraphicsPipeline& SetLogicOp(render::eLogicOp logicOp) override;
+	virtual render::GraphicsPipeline& SetBlendEnable(u32 renderTargetIndex, bool bEnable) override;
+	virtual render::GraphicsPipeline& SetColorBlending(u32 renderTargetIndex, render::eBlendFactor srcBlend, render::eBlendFactor dstBlend, render::eBlendOp blendOp) override;
+	virtual render::GraphicsPipeline& SetAlphaBlending(u32 renderTargetIndex, render::eBlendFactor srcBlend, render::eBlendFactor dstBlend, render::eBlendOp blendOp) override;
 
-	void Build();
+	virtual void Build() override;
 
-public:
+	Arc< Dx12RootSignature > GetRootSignature() const { return m_pRootSignature; }
+	u32 GetConstantRootIndex() const { return m_ConstantRootIndex; }
 	inline ID3D12PipelineState* GetD3D12PipelineState() const { return m_d3d12PipelineState; }
 
 protected:
 	void SetVertexInputLayout(ID3D12ShaderReflection* d3d12ShaderReflection);
+	void AppendRootSignature(const Dx12Shader::ShaderReflection& reflection, D3D12_SHADER_VISIBILITY visibility);
 
 private:
-	RenderDevice& m_RenderDevice;
-	std::wstring   m_Name;
+	Dx12RenderDevice& m_RenderDevice;
 
-	Arc< Shader > m_pVS;
-	Arc< Shader > m_pPS;
-	Arc< Shader > m_pGS;
-	Arc< Shader > m_pHS;
-	Arc< Shader > m_pDS;
+	Arc< Dx12RootSignature > m_pRootSignature;
+	ID3D12PipelineState*     m_d3d12PipelineState = nullptr;
 
-	ID3D12PipelineState* m_d3d12PipelineState = nullptr;
+	u32 m_ConstantRootIndex = INVALID_INDEX;
 
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC      m_PipelineDesc = {};
 	std::vector< D3D12_INPUT_ELEMENT_DESC > m_InputLayoutDesc;
@@ -64,27 +58,28 @@ private:
 //-------------------------------------------------------------------------
 // Compute pipeline
 //-------------------------------------------------------------------------
-class ComputePipeline
+class Dx12ComputePipeline : public render::ComputePipeline
 {
-public:
-	ComputePipeline(RenderDevice& device, const std::wstring& name);
-	~ComputePipeline();
+public: 
+	Dx12ComputePipeline(Dx12RenderDevice& rd, const std::string& name);
+	~Dx12ComputePipeline();
 
-	ComputePipeline& SetShaderModules(Arc< Shader > pCS);
-	ComputePipeline& SetRootSignature(RootSignature* pRootSignature);
+	virtual void Build() override;
 
-	void Build();
-
-public:
+	Arc< Dx12RootSignature > GetRootSignature() const { return m_pRootSignature; }
+	u32 GetConstantRootIndex() const { return m_ConstantRootIndex; }
 	inline ID3D12PipelineState* GetD3D12PipelineState() const { return m_d3d12PipelineState; }
 
 private:
-	RenderDevice& m_RenderDevice;
-	std::wstring   m_Name;
+	void AppendRootSignature(const Dx12Shader::ShaderReflection& reflection);
 
-	Arc< Shader > m_pCS;
+private:
+	Dx12RenderDevice& m_RenderDevice;
 
-	ID3D12PipelineState* m_d3d12PipelineState = nullptr;
+	Arc< Dx12RootSignature > m_pRootSignature;
+	ID3D12PipelineState*     m_d3d12PipelineState = nullptr;
+
+	u32 m_ConstantRootIndex = INVALID_INDEX;
 
 	D3D12_COMPUTE_PIPELINE_STATE_DESC m_PipelineDesc = {};
 };

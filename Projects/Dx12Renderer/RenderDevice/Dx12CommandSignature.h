@@ -40,7 +40,7 @@ class CommandSignature
 {
 public:
 	CommandSignature() noexcept = default;
-	explicit CommandSignature(RenderDevice& device, CommandSignatureDesc& signatureDesc, ID3D12RootSignature* d3d12RootSignature);
+	explicit CommandSignature(Dx12RenderDevice& rd, CommandSignatureDesc& signatureDesc, ID3D12RootSignature* d3d12RootSignature);
 	~CommandSignature();
 
 	inline ID3D12CommandSignature* GetD3D12CommandSignature() const noexcept { return m_d3d12CommandSignature; }

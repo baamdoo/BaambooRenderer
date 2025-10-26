@@ -99,32 +99,7 @@ public:
 	void Draw(u32 vertexCount, u32 instanceCount = 1, u32 firstVertex = 0, u32 firstInstance = 0);
 	void DrawIndexed(u32 indexCount, u32 instanceCount = 1, u32 firstIndex = 0, i32 vertexOffset = 0, u32 firstInstance = 0);
 	void DrawScene(const VkSceneResource& sceneResource);
-
 	void Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ);
-
-	template< u32 numThreadsPerGroupX >
-	void Dispatch1D(u32 numThreadsX)
-	{
-		u32 numGroupsX = RoundUpAndDivide(numThreadsX, numThreadsPerGroupX);
-		Dispatch(numGroupsX, 1, 1);
-	}
-
-	template< u32 numThreadsPerGroupX, u32 numThreadsPerGroupY >
-	void Dispatch2D(u32 numThreadsX, u32 numThreadsY)
-	{
-		u32 numGroupsX = RoundUpAndDivide(numThreadsX, numThreadsPerGroupX);
-		u32 numGroupsY = RoundUpAndDivide(numThreadsY, numThreadsPerGroupY);
-		Dispatch(numGroupsX, numGroupsY, 1);
-	}
-
-	template< u32 numThreadsPerGroupX, u32 numThreadsPerGroupY, u32 numThreadsPerGroupZ >
-	void Dispatch3D(u32 numThreadsX, u32 numThreadsY, u32 numThreadsZ)
-	{
-		u32 numGroupsX = RoundUpAndDivide(numThreadsX, numThreadsPerGroupX);
-		u32 numGroupsY = RoundUpAndDivide(numThreadsY, numThreadsPerGroupY);
-		u32 numGroupsZ = RoundUpAndDivide(numThreadsZ, numThreadsPerGroupZ);
-		Dispatch(numGroupsX, numGroupsY, numGroupsZ);
-	}
 
 	[[nodiscard]]
 	bool IsReady() const;
@@ -746,6 +721,10 @@ void VkCommandContext::Impl::StageDescriptor(const std::string& name, Arc< Vulka
 	if (IsGraphicsContext())
 	{
 		auto [_, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
+		if (_ == INVALID_INDEX || binding == INVALID_INDEX)
+		{
+			__debugbreak();
+		}
 
 		auto layout = pTexture->GetState().GetSubresourceState().layout;
 
@@ -762,6 +741,10 @@ void VkCommandContext::Impl::StageDescriptor(const std::string& name, Arc< Vulka
 	else if (IsComputeContext())
 	{
 		auto [_, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
+		if (_ == INVALID_INDEX || binding == INVALID_INDEX)
+		{
+			__debugbreak();
+		}
 
 		auto layout = pTexture->GetState().GetSubresourceState().layout;
 
@@ -777,6 +760,7 @@ void VkCommandContext::Impl::StageDescriptor(const std::string& name, Arc< Vulka
 	}
 	else
 	{
+		__debugbreak();
 		assert(false && "No pipeline is set!");
 	}
 }
@@ -1109,18 +1093,24 @@ void VkCommandContext::CopyBuffer(
 	m_Impl->CopyBuffer(dstTexture, srcBuffer, regions, bAllSubresources);
 }
 
-void VkCommandContext::CopyBuffer(Arc< render::Buffer > dstBuffer, Arc< render::Buffer > srcBuffer)
+void VkCommandContext::CopyBuffer(Arc< render::Buffer > pDstBuffer, Arc< render::Buffer > pSrcBuffer, u64 offsetInBytes)
 {
-	//m_Impl->CopyBuffer(dstBuffer, srcBuffer, srcBuffer->SizeInBytes(), )
+	auto rhiBufferDst = StaticCast<VulkanBuffer>(pDstBuffer);
+	auto rhiBufferSrc = StaticCast<VulkanBuffer>(pSrcBuffer);
+	assert(rhiBufferDst && rhiBufferSrc);
+
+	m_Impl->CopyBuffer(rhiBufferDst, rhiBufferSrc, (VkDeviceSize)pSrcBuffer->SizeInBytes(), VK_PIPELINE_STAGE_2_TRANSFER_BIT, offsetInBytes);
 }
 
-void VkCommandContext::CopyTexture(Arc< render::Texture > dstTexture, Arc< render::Texture > srcTexture)
+void VkCommandContext::CopyTexture(Arc< render::Texture > pDstTexture, Arc< render::Texture > pSrcTexture, u64 offsetInBytes)
 {
-	auto vkTextureDst = StaticCast<VulkanTexture>(dstTexture);
-	auto vkTextureSrc = StaticCast<VulkanTexture>(srcTexture);
-	assert(vkTextureDst && vkTextureSrc);
+	UNUSED(offsetInBytes);
 
-	m_Impl->CopyTexture(vkTextureDst, vkTextureSrc);
+	auto rhiTextureDst = StaticCast<VulkanTexture>(pDstTexture);
+	auto rhiTextureSrc = StaticCast<VulkanTexture>(pSrcTexture);
+	assert(rhiTextureDst && rhiTextureSrc);
+
+	m_Impl->CopyTexture(rhiTextureDst, rhiTextureSrc);
 }
 
 void VkCommandContext::BlitTexture(Arc< VulkanTexture > dstTexture, Arc< VulkanTexture > srcTexture)
@@ -1135,6 +1125,8 @@ void VkCommandContext::GenerateMips(Arc< VulkanTexture > texture)
 
 void VkCommandContext::TransitionBarrier(Arc< render::Texture > texture, render::eTextureLayout newState, u32 subresource, bool bFlushImmediate)
 {
+	UNUSED(subresource);
+
 	auto rhiTexture = StaticCast<VulkanTexture>(texture);
 	assert(rhiTexture);
 
@@ -1298,9 +1290,9 @@ void VkCommandContext::DrawIndexed(u32 indexCount, u32 instanceCount, u32 firstI
 
 void VkCommandContext::DrawScene(const render::SceneResource& sceneResource)
 {
-	const auto& vkSceneResource = static_cast<const VkSceneResource&>(sceneResource);
+	const auto& rhiSceneResource = static_cast<const VkSceneResource&>(sceneResource);
 
-	m_Impl->DrawScene(vkSceneResource);
+	m_Impl->DrawScene(rhiSceneResource);
 }
 
 void VkCommandContext::Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ)

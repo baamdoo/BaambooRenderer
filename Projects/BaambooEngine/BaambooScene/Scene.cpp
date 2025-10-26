@@ -220,9 +220,9 @@ Entity Scene::ImportModel(Entity rootEntity, const fs::path& filepath, MeshDescr
 	return rootEntity;
 }
 
-void Scene::AddRenderNode(Arc<render::RenderNode> node)
+void Scene::AddRenderNode(Arc< render::RenderNode > pNode)
 {
-	m_RenderNodes.push_back(node);
+	m_RenderNodes.push_back(pNode);
 }
 
 u32 Scene::StoreMeshData(const MeshData& meshData)

@@ -89,13 +89,13 @@ CloudShapeNode::CloudShapeNode(render::RenderDevice& rd)
                 .filename = "CloudVerticalProfile"
             })).Build();
 
-    m_pWeatherMapPSO = ComputePipeline::Create(m_RenderDevice, "CloudWeatherMapPSO");
+    /*m_pWeatherMapPSO = ComputePipeline::Create(m_RenderDevice, "CloudWeatherMapPSO");
     m_pWeatherMapPSO->SetComputeShader(
         Shader::Create(m_RenderDevice, "CloudWeatherMapCS",
             {
                 .stage    = eShaderStage::Compute,
                 .filename = "CloudWeatherMap"
-            })).Build();
+            })).Build();*/
 }
 
 CloudShapeNode::~CloudShapeNode()
@@ -110,22 +110,6 @@ void CloudShapeNode::Apply(render::CommandContext& context, const SceneRenderVie
 
         context.TransitionBarrier(m_pBaseNoiseTexture, eTextureLayout::General);
 
-        struct
-        {
-            // Perlin
-            float fPerlin;
-            u32   octaves;
-            float persistence;
-            float lacunarityPerlin;
-
-            // Worley
-            float fWorley;
-            float lacunarityWorley;
-
-            // misc
-            float time_s;
-        } constant = { 4.0, 7, exp(-0.85f), 2.0f, 6.0f, 2.0f, renderView.time };
-        context.SetComputeConstants(sizeof(constant), &constant);
         context.StageDescriptor("g_BaseNoise", m_pBaseNoiseTexture);
 
         context.Dispatch3D< 8, 8, 8 >(BASE_NOISE_TEXTURE_RESOLUTION.x, BASE_NOISE_TEXTURE_RESOLUTION.y, BASE_NOISE_TEXTURE_RESOLUTION.z);
@@ -187,7 +171,7 @@ void CloudShapeNode::Apply(render::CommandContext& context, const SceneRenderVie
         //    float lCoverage;
         //} constant = { 100.0f, 10, 0.75f, 3.0f, 76.0f, 4, 0.5f, 3.0f };
         //context.SetComputeConstants(sizeof(constant), &constant);
-        context.StageDescriptor("g_DetailNoise", m_pVerticalProfileTexture);
+        context.StageDescriptor("g_VerticalProfileLUT", m_pVerticalProfileTexture);
 
         context.Dispatch2D< 8, 8 >(VERTICAL_PROFILE_TEXTURE_RESOLUTION.x, VERTICAL_PROFILE_TEXTURE_RESOLUTION.y);
 
@@ -226,12 +210,12 @@ CloudScatteringNode::CloudScatteringNode(render::RenderDevice& device)
                 .imageUsage = eTextureUsage_Sample | eTextureUsage_Storage | eTextureUsage_TransferSource
             });
 
-    m_pCloudScatteringPSO = ComputePipeline::Create(m_RenderDevice, "CloudScatteringPSO");
-    m_pCloudScatteringPSO->SetComputeShader(
-        Shader::Create(m_RenderDevice, "CloudScatteringCS",
+    m_pCloudRaymarchPSO = ComputePipeline::Create(m_RenderDevice, "CloudRaymarchPSO");
+    m_pCloudRaymarchPSO->SetComputeShader(
+        Shader::Create(m_RenderDevice, "CloudRaymarchCS",
             {
                 .stage    = eShaderStage::Compute,
-                .filename = "CloudScatteringLUT"
+                .filename = "CloudRaymarch"
             })).Build();
 }
 
@@ -243,36 +227,13 @@ void CloudScatteringNode::Apply(render::CommandContext& context, const SceneRend
 {
     using namespace render;
 
-    if (!m_pWeatherMap)
-    {
-        auto& rm = m_RenderDevice.GetResourceManager();
-
-        m_pWeatherMap = rm.LoadTexture(renderView.cloud.weatherMap);
-        assert(m_pWeatherMap);
-    }
-    if (!m_pCurlNoiseTexture)
-    {
-        auto& rm = m_RenderDevice.GetResourceManager();
-
-        m_pCurlNoiseTexture = rm.LoadTexture(renderView.cloud.curlNoiseTex);
-        assert(m_pCurlNoiseTexture);
-    }
-    if (!m_pBlueNoiseTexture)
-    {
-        auto& rm = m_RenderDevice.GetResourceManager();
-
-        m_pBlueNoiseTexture = rm.LoadTexture(renderView.cloud.blueNoiseTex);
-        assert(m_pBlueNoiseTexture);
-    }
-
     // Dispatch compute shader
-    context.SetRenderPipeline(m_pCloudScatteringPSO.get());
+    context.SetRenderPipeline(m_pCloudRaymarchPSO.get());
 
     assert(
         g_FrameData.pCloudBaseLUT &&
         g_FrameData.pCloudDetailLUT &&
         g_FrameData.pVerticalProfileLUT && 
-        //g_FrameData.pWeatherMapLUT && 
         g_FrameData.pDepth && 
         g_FrameData.pTransmittanceLUT && 
         g_FrameData.pMultiScatteringLUT
@@ -280,10 +241,7 @@ void CloudScatteringNode::Apply(render::CommandContext& context, const SceneRend
     context.TransitionBarrier(g_FrameData.pCloudBaseLUT.lock(), eTextureLayout::ShaderReadOnly);
     context.TransitionBarrier(g_FrameData.pCloudDetailLUT.lock(), eTextureLayout::ShaderReadOnly);
     context.TransitionBarrier(g_FrameData.pVerticalProfileLUT.lock(), eTextureLayout::ShaderReadOnly);
-    context.TransitionBarrier(m_pWeatherMap, eTextureLayout::ShaderReadOnly);
     context.TransitionBarrier(g_FrameData.pWeatherMapLUT.lock(), eTextureLayout::ShaderReadOnly);
-    context.TransitionBarrier(m_pCurlNoiseTexture, eTextureLayout::ShaderReadOnly);
-    context.TransitionBarrier(m_pBlueNoiseTexture, eTextureLayout::ShaderReadOnly);
     context.TransitionBarrier(g_FrameData.pDepth.lock(), eTextureLayout::ShaderReadOnly);
     context.TransitionBarrier(g_FrameData.pTransmittanceLUT.lock(), eTextureLayout::ShaderReadOnly);
     context.TransitionBarrier(g_FrameData.pMultiScatteringLUT.lock(), eTextureLayout::ShaderReadOnly);
@@ -301,9 +259,6 @@ void CloudScatteringNode::Apply(render::CommandContext& context, const SceneRend
     context.StageDescriptor("g_CloudBaseNoise", g_FrameData.pCloudBaseLUT.lock(), g_FrameData.pLinearWrap);
     context.StageDescriptor("g_CloudDetailNoise", g_FrameData.pCloudDetailLUT.lock(), g_FrameData.pLinearWrap);
     context.StageDescriptor("g_VerticalProfileLUT", g_FrameData.pVerticalProfileLUT.lock(), g_FrameData.pLinearClamp);
-    context.StageDescriptor("g_WeatherMap", m_pWeatherMap, g_FrameData.pLinearWrap);
-    context.StageDescriptor("g_CurlNoise", m_pCurlNoiseTexture, g_FrameData.pLinearWrap);
-    context.StageDescriptor("g_BlueNoise", m_pBlueNoiseTexture, g_FrameData.pLinearClamp);
     context.StageDescriptor("g_DepthBuffer", g_FrameData.pDepth.lock(), g_FrameData.pPointClamp);
     context.StageDescriptor("g_TransmittanceLUT", g_FrameData.pTransmittanceLUT.lock(), g_FrameData.pLinearClamp);
     context.StageDescriptor("g_MultiScatteringLUT", g_FrameData.pMultiScatteringLUT.lock(), g_FrameData.pLinearClamp);

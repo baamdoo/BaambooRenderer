@@ -2,9 +2,9 @@
 
 Texture2D g_SceneTexture : register(t0);
 
-RWTexture2D< float4 > g_OutputTexture : register(u0);
+RWTexture2D< float4 > g_OutputImage : register(u0);
 
-SamplerState g_LinearClampSampler : register(s0);
+SamplerState g_LinearClampSampler : register(SAMPLER_INDEX_LINEAR_CLAMP);
 
 cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
@@ -38,7 +38,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 {
     int2 pixelCoord = int2(dispatchThreadID.xy);
     uint2 imageSize;
-    g_OutputTexture.GetDimensions(imageSize.x, imageSize.y);
+    g_OutputImage.GetDimensions(imageSize.x, imageSize.y);
 
     if (any(pixelCoord >= imageSize))
         return;
@@ -74,5 +74,5 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 
     float3 gammaCorrected = pow(toneMapped, float3(1.0 / gamma, 1.0 / gamma, 1.0 / gamma));
 
-    g_OutputTexture[pixelCoord] = float4(gammaCorrected, 1.0);
+    g_OutputImage[pixelCoord] = float4(gammaCorrected, 1.0);
 }

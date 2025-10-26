@@ -3,7 +3,7 @@
 namespace dx12
 {
 
-class StructuredBuffer;
+class Dx12StructuredBuffer;
 
 //-------------------------------------------------------------------------
 // Dynamic Buffer-Allocator
@@ -13,7 +13,7 @@ class StructuredBuffer;
 class DynamicBufferAllocator
 {
 public:
-    explicit DynamicBufferAllocator(RenderDevice& device, size_t pageSize = _2MB);
+    explicit DynamicBufferAllocator(Dx12RenderDevice& rd, size_t pageSize = _2MB);
     virtual ~DynamicBufferAllocator();
 
 public:
@@ -33,7 +33,7 @@ public:
 private:
     struct Page
     {
-        Page(RenderDevice& device, size_t sizeInBytes);
+        Page(Dx12RenderDevice& rd, size_t sizeInBytes);
         ~Page();
 
         Allocation Allocate(size_t sizeInBytes, size_t alignment);
@@ -43,8 +43,8 @@ private:
         bool HasSpace(size_t sizeInBytes, size_t alignment) const;
 
     private:
-        RenderDevice&  m_RenderDevice;
-        ID3D12Resource* m_d3d12Resource = nullptr;
+        Dx12RenderDevice& m_RenderDevice;
+        ID3D12Resource*   m_d3d12Resource = nullptr;
 
         void*                     m_BaseCpuHandle = nullptr;
         D3D12_GPU_VIRTUAL_ADDRESS m_BaseGpuHandle;
@@ -55,7 +55,7 @@ private:
 
     Page* RequestPage();
 
-    RenderDevice& m_RenderDevice;
+    Dx12RenderDevice& m_RenderDevice;
 
     using PagePool = std::deque< Page* >;
     PagePool m_PagePool;
@@ -74,12 +74,12 @@ private:
 class StaticBufferAllocator
 {
 public:
-    StaticBufferAllocator(RenderDevice& device, const std::wstring& name, size_t bufferSize = _4MB);
+    StaticBufferAllocator(Dx12RenderDevice& rd, const std::string& name, size_t bufferSize = _4MB);
     ~StaticBufferAllocator();
 
     struct Allocation
     {
-        Arc< StructuredBuffer >   pBuffer;
+        Arc< Dx12StructuredBuffer >   pBuffer;
 
         u64                       offset = 0;
         u64                       sizeInBytes = 0;
@@ -91,23 +91,23 @@ public:
     void Reset();
 
     [[nodiscard]]
-    u64 GetAllocatedSize() const { return m_Offset; }
+    u64 GetAllocatedSize() const { return m_OffsetInBytes; }
     [[nodiscard]]
-    Arc< StructuredBuffer > GetBuffer() const { return m_pBuffer; }
+    Arc< Dx12StructuredBuffer > GetBuffer() const { return m_pBuffer; }
 
 private:
     void Resize(size_t sizeInBytes);
 
 private:
-    RenderDevice& m_RenderDevice;
-    std::wstring   m_Name;
+    Dx12RenderDevice& m_RenderDevice;
+    std::string       m_Name;
 
-    Arc< StructuredBuffer >   m_pBuffer;
-    D3D12_GPU_VIRTUAL_ADDRESS m_BaseGpuHandle;
+    Arc< Dx12StructuredBuffer > m_pBuffer;
+    D3D12_GPU_VIRTUAL_ADDRESS   m_BaseGpuHandle;
 
-    u64 m_Size = 0;
-    u64 m_Offset = 0;
-    u64 m_Alignment = 0;
+    u64 m_SizeInBytes   = 0;
+    u64 m_OffsetInBytes = 0;
+    u64 m_Alignment     = 0;
 };
 
 }

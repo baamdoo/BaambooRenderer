@@ -165,8 +165,8 @@ struct LightingData
 	uint  numSpots;
 	float ev100;
 
-	float ambientIntensity;
 	float ambientColorR, ambientColorG, ambientColorB;
+	float ambientIntensity;
 };
 
 #endif // _COMMON_HEADER

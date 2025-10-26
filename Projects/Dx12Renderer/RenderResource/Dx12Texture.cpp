@@ -6,6 +6,44 @@
 namespace dx12
 {
 
+static D3D12_RESOURCE_FLAGS ConvertToDx12ResourceFlags(RenderFlags usage)
+{
+    D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
+    if (usage & render::eTextureUsage_ColorAttachment)
+    {
+        flags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+    }
+    if (usage & render::eTextureUsage_DepthStencilAttachment)
+    {
+        flags |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+    }
+    if (usage & render::eTextureUsage_Storage)
+    {
+        flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+    }
+
+    return flags;
+}
+
+static D3D12_RESOURCE_STATES ConvertToDx12ResourceStates(RenderFlags usage)
+{
+    D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON;
+    if (usage & render::eTextureUsage_ColorAttachment)
+    {
+        state = D3D12_RESOURCE_STATE_RENDER_TARGET;
+    }
+    if (usage & render::eTextureUsage_DepthStencilAttachment)
+    {
+        state = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+    }
+    if (usage & render::eTextureUsage_Storage)
+    {
+        state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    }
+
+    return state;
+}
+
 bool IsTypelessFormat(DXGI_FORMAT format)
 {
     return format == DXGI_FORMAT_R32G32B32A32_TYPELESS
@@ -285,13 +323,48 @@ D3D12_UNORDERED_ACCESS_VIEW_DESC GetUAVDesc(const D3D12_RESOURCE_DESC& resDesc, 
     return uavDesc;
 }
 
-Texture::Texture(RenderDevice& device, const std::wstring& name)
-	: Super(device, name, eResourceType::Texture)
+Arc< Dx12Texture > Dx12Texture::Create(Dx12RenderDevice& rd, const std::string& name, CreationInfo&& desc)
+{
+    return MakeArc< Dx12Texture >(rd, name, std::move(desc));
+}
+
+Arc< Dx12Texture > Dx12Texture::CreateEmpty(Dx12RenderDevice& device, const std::string& name)
+{
+    return MakeArc< Dx12Texture >(device, name);
+}
+
+Dx12Texture::Dx12Texture(Dx12RenderDevice& rd, const std::string& name)
+	: Dx12Resource(rd, name, eResourceType::Texture)
+    , render::Texture(name)
 {
 }
 
-Texture::Texture(RenderDevice& device, const std::wstring& name, CreationInfo&& info)
-    : Super(device, name, std::move(info), eResourceType::Texture)
+Dx12Texture::Dx12Texture(Dx12RenderDevice& rd, const std::string& name, CreationInfo&& info)
+    : render::Texture(name, std::move(info))
+    , Dx12Resource(rd, name, 
+        {
+            .desc = 
+                m_CreationInfo.type == render::eTextureType::Texture1D ?
+                    CD3DX12_RESOURCE_DESC::Tex1D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, m_CreationInfo.arrayLayers, m_CreationInfo.bGenerateMips ? 0 : 1, ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)) :
+                m_CreationInfo.type == render::eTextureType::Texture3D ?
+                    CD3DX12_RESOURCE_DESC::Tex3D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, m_CreationInfo.resolution.y, m_CreationInfo.resolution.z, m_CreationInfo.bGenerateMips ? 0 : 1, ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)) :
+                    CD3DX12_RESOURCE_DESC::Tex2D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, m_CreationInfo.resolution.y, m_CreationInfo.arrayLayers, m_CreationInfo.bGenerateMips ? 0 : 1, m_CreationInfo.sampleCount, 0, ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)),
+            .initialState = ConvertToDx12ResourceStates(m_CreationInfo.imageUsage),
+            .clearValue   = IsDepthTexture() == false ? 
+                D3D12_CLEAR_VALUE
+                { 
+                    DX12_FORMAT(m_CreationInfo.format), 
+                    m_CreationInfo.clearValue[0], 
+                    m_CreationInfo.clearValue[1],
+                    m_CreationInfo.clearValue[2],
+                    m_CreationInfo.clearValue[3],
+                } : 
+                D3D12_CLEAR_VALUE
+                {
+                    DX12_FORMAT(m_CreationInfo.format),
+                    m_CreationInfo.depthClearValue
+                }
+        }, eResourceType::Texture)
 {
     m_Width  = static_cast<u32>(m_ResourceDesc.Width);
     m_Height = static_cast<u32>(m_ResourceDesc.Height);
@@ -300,14 +373,14 @@ Texture::Texture(RenderDevice& device, const std::wstring& name, CreationInfo&& 
     CreateViews();
 }
 
-Texture::~Texture()
+Dx12Texture::~Dx12Texture()
 {
     Reset();
 }
 
-void Texture::Reset()
+void Dx12Texture::Reset()
 {
-    Super::Release();
+    Dx12Resource::Reset();
 
     if (m_RenderTargetView.IsValid())
         m_RenderTargetView.Free();
@@ -322,9 +395,9 @@ void Texture::Reset()
         m_UnorderedAccessView.Free();
 }
 
-void Texture::SetD3D12Resource(ID3D12Resource* d3d12Resource, D3D12_RESOURCE_STATES states)
+void Dx12Texture::SetD3D12Resource(ID3D12Resource* d3d12Resource, D3D12_RESOURCE_STATES states)
 {
-    Super::SetD3D12Resource(d3d12Resource, states);
+    Dx12Resource::SetD3D12Resource(d3d12Resource, states);
 
     m_Width = static_cast<u32>(m_ResourceDesc.Width);
     m_Height = static_cast<u32>(m_ResourceDesc.Height);
@@ -333,7 +406,7 @@ void Texture::SetD3D12Resource(ID3D12Resource* d3d12Resource, D3D12_RESOURCE_STA
     CreateViews();
 }
 
-void Texture::Resize(u32 width, u32 height, u32 depthOrArraySize)
+void Dx12Texture::Resize(u32 width, u32 height, u32 depthOrArraySize)
 {
     if (IsValid())
     {
@@ -355,29 +428,29 @@ void Texture::Resize(u32 width, u32 height, u32 depthOrArraySize)
     }
 }
 
-DXGI_FORMAT Texture::GetFormat(bool bSRV) const
+DXGI_FORMAT Dx12Texture::GetFormat(bool bSRV) const
 {
     return IsTypelessFormat(m_Format) ? ConvertToViewFormat(m_Format, bSRV) : m_Format;
 }
 
-void Texture::CreateShaderResourceView(const D3D12_SHADER_RESOURCE_VIEW_DESC& desc)
+void Dx12Texture::CreateShaderResourceView(const D3D12_SHADER_RESOURCE_VIEW_DESC& desc)
 {
     if (m_d3d12Resource)
     {
         auto  d3d12Device = m_RenderDevice.GetD3D12Device();
-        auto& rm = m_RenderDevice.GetResourceManager();
+        auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
 
         m_ShaderResourceView = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
         d3d12Device->CreateShaderResourceView(m_d3d12Resource, &desc, m_ShaderResourceView.GetCPUHandle());
     }
 }
 
-void Texture::CreateViews()
+void Dx12Texture::CreateViews()
 {
     if (m_d3d12Resource)
     {
         auto  d3d12Device = m_RenderDevice.GetD3D12Device();
-        auto& rm = m_RenderDevice.GetResourceManager();
+        auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
 
         CD3DX12_RESOURCE_DESC desc(m_d3d12Resource->GetDesc());
 
@@ -420,6 +493,14 @@ void Texture::CreateViews()
                 m_ShaderResourceView = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
                 d3d12Device->CreateShaderResourceView(m_d3d12Resource, &srvDesc, m_ShaderResourceView.GetCPUHandle());
             }
+            else if (m_DepthStencilView.IsValid() && (m_CreationInfo.imageUsage & render::eTextureUsage_Sample))
+            {
+                auto srvDesc   = GetSRVDesc(desc, 0);
+                srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
+
+                m_ShaderResourceView = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+                d3d12Device->CreateShaderResourceView(m_d3d12Resource, &srvDesc, m_ShaderResourceView.GetCPUHandle());
+            }
         }
         // Create UAV for each mip (only supported for 1D and 2D textures).
         if ((desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS) != 0 && IsUAVSupported())
@@ -433,16 +514,6 @@ void Texture::CreateViews()
             }
         }
     }
-}
-
-Arc< Texture > Texture::Create(RenderDevice& device, const std::wstring& name, CreationInfo&& desc)
-{
-    return MakeArc< Texture >(device, name, std::move(desc));
-}
-
-Arc<Texture> Texture::CreateEmpty(RenderDevice& device, const std::wstring& name)
-{
-    return MakeArc< Texture >(device, name);
 }
 
 }

@@ -1,42 +1,47 @@
 #pragma once
+#include "RenderCommon/RenderResources.h"
 
 namespace dx12
 {
 
 class DescriptorPool;
-class Buffer; 
-class Texture;
+class Dx12Buffer;
+class Dx12ConstantBuffer;
+class Dx12Texture;
 
-class ResourceManager
+class Dx12ResourceManager : public render::ResourceManager
 {
 public:
-    ResourceManager(RenderDevice& device);
-    ~ResourceManager();
+    Dx12ResourceManager(Dx12RenderDevice& rd);
+    ~Dx12ResourceManager();
+
+    virtual Arc< render::Texture > LoadTexture(const std::string& filepath) override;
+
+    void UploadData(Dx12Resource* pResource, const void* pData, u64 sizeInBytes, u64 dstOffsetInBytes, D3D12_RESOURCE_STATES stateAfter);
+    void UploadData(Arc< Dx12Buffer > pBuffer, const void* pData, u64 sizeInBytes, u64 dstOffsetInBytes, D3D12_RESOURCE_STATES stateAfter);
+    void UploadData(Arc< Dx12Texture > pTexture, const void* pData, u64 sizeInBytes, D3D12_RESOURCE_STATES stateAfter);
 
     [[nodiscard]]
     DescriptorAllocation AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE type, u32 numDescriptors = 1);
 
-    [[nodiscard]]
-    Arc< Texture > GetFlatWhiteTexture();
-    [[nodiscard]]
-    Arc< Texture > GetFlatBlackTexture();
-    [[nodiscard]]
-    Arc< Texture > GetFlatGrayTexture();
+    // Overriding to avoid resource dependency order
+    // [ResourceManager] => [RenderResources]
+    virtual render::SceneResource& GetSceneResource() override;
+    virtual Arc< render::Texture > GetFlatWhiteTexture() override;
+    virtual Arc< render::Texture > GetFlatBlackTexture() override;
+    virtual Arc< render::Texture > GetFlatGrayTexture() override;
 
 private:
-    Arc< Texture > CreateFlat2DTexture(const std::wstring& name, u32 color);
+    Arc< Dx12Texture > CreateFlat2DTexture(const std::string& name, u32 color);
 
 private:
-    RenderDevice& m_RenderDevice;
+    Dx12RenderDevice& m_RenderDevice;
+
+    Arc< Dx12Buffer > m_pStagingBuffer;
 
     Box< DescriptorPool > m_pViewDescriptorPool;
     Box< DescriptorPool > m_pRtvDescriptorPool;
     Box< DescriptorPool > m_pDsvDescriptorPool;
-
-    // default textures
-    Arc< Texture > m_pWhiteTexture;
-    Arc< Texture > m_pBlackTexture;
-    Arc< Texture > m_pGrayTexture;
 };
 
 }

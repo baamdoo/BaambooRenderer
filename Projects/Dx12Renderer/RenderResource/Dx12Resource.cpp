@@ -5,22 +5,22 @@
 namespace dx12
 {
 
-Resource::Resource(RenderDevice& device, const std::wstring& name)
-	: m_RenderDevice(device)
-	, m_Name(name)
+Dx12Resource::Dx12Resource(Dx12RenderDevice& rd, const std::string& name)
+	: m_RenderDevice(rd)
+	, m_Name(ConvertToWString(name))
 {
 }
 
-Resource::Resource(RenderDevice& device, const std::wstring& name, eResourceType type)
-	: m_RenderDevice(device)
-	, m_Name(name)
+Dx12Resource::Dx12Resource(Dx12RenderDevice& rd, const std::string& name, eResourceType type)
+	: m_RenderDevice(rd)
+	, m_Name(ConvertToWString(name))
 	, m_Type(type)
 {
 }
 
-Resource::Resource(RenderDevice& device, const std::wstring& name, ResourceCreationInfo&& info, eResourceType type)
-	: m_RenderDevice(device)
-	, m_Name(name)
+Dx12Resource::Dx12Resource(Dx12RenderDevice& rd, const std::string& name, Dx12ResourceCreationInfo&& info, eResourceType type)
+	: m_RenderDevice(rd)
+	, m_Name(ConvertToWString(name))
 	, m_Type(type)
 	, m_CurrentState(info.initialState)
 {
@@ -37,11 +37,11 @@ Resource::Resource(RenderDevice& device, const std::wstring& name, ResourceCreat
 
 	case eResourceType::Texture:
 		m_pClearValue = nullptr;
-		if (info.clearValue.Format != DXGI_FORMAT_UNKNOWN)
+		if ((info.desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET) || (info.desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL))
 		{
 			//assert(info.clearValue.Format == info.desc.Format);
 
-			m_pClearValue = new D3D12_CLEAR_VALUE();
+			m_pClearValue         = new D3D12_CLEAR_VALUE();
 			m_pClearValue->Format = info.clearValue.Format;
 			memcpy(&(m_pClearValue->Color), &info.clearValue.Color[0], sizeof(info.clearValue.Color));
 		}
@@ -53,8 +53,14 @@ Resource::Resource(RenderDevice& device, const std::wstring& name, ResourceCreat
 
 		break;
 
+	case eResourceType::Sampler:
+
+		break;
+
 	case eResourceType::None:
+		__debugbreak();
 		assert(!"Invalid entry in Resource::Resource()!");
+		break;
 	}
 
 	assert(m_d3d12Resource);
@@ -64,33 +70,32 @@ Resource::Resource(RenderDevice& device, const std::wstring& name, ResourceCreat
 	SetFormatSupported();
 }
 
-Resource::~Resource()
+Dx12Resource::~Dx12Resource()
 {
 	RELEASE(m_pClearValue);
 
-	Resource::Reset();
+	Dx12Resource::Reset();
 }
 
-void Resource::Reset()
+void Dx12Resource::Reset()
 {
 	COM_RELEASE(m_d3d12Resource);
 }
 
-bool Resource::IsFormatSupported(D3D12_FORMAT_SUPPORT1 formatSupport) const
+bool Dx12Resource::IsFormatSupported(D3D12_FORMAT_SUPPORT1 formatSupport) const
 {
 	return (m_FormatSupport.Support1 & formatSupport) != 0;
 }
 
-bool Resource::IsFormatSupported(D3D12_FORMAT_SUPPORT2 formatSupport) const
+bool Dx12Resource::IsFormatSupported(D3D12_FORMAT_SUPPORT2 formatSupport) const
 {
 	return (m_FormatSupport.Support2 & formatSupport) != 0;
 }
 
-void Resource::SetD3D12Resource(ID3D12Resource* d3d12Resource, D3D12_RESOURCE_STATES states)
+void Dx12Resource::SetD3D12Resource(ID3D12Resource* d3d12Resource, D3D12_RESOURCE_STATES states)
 {
 	assert(d3d12Resource);
-	if (m_d3d12Resource)
-		COM_RELEASE(m_d3d12Resource);
+	COM_RELEASE(m_d3d12Resource);
 
 	m_d3d12Resource = d3d12Resource;
 	m_ResourceDesc = m_d3d12Resource->GetDesc();
@@ -100,7 +105,7 @@ void Resource::SetD3D12Resource(ID3D12Resource* d3d12Resource, D3D12_RESOURCE_ST
 	m_CurrentState.SetSubresourceState(states, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 }
 
-void Resource::SetFormatSupported()
+void Dx12Resource::SetFormatSupported()
 {
 	auto d3d12Device = m_RenderDevice.GetD3D12Device();
 

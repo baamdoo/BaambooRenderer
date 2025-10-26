@@ -59,25 +59,6 @@ VkSamplerAddressMode ConvertToVkSamplerAddressMode(eAddressMode mode)
     return VK_SAMPLER_ADDRESS_MODE_MAX_ENUM;
 }
 
-#define VK_SAMPLER_COMPAREOP(op) ConvertToVkSamplerCompareOp(op)
-VkCompareOp ConvertToVkSamplerCompareOp(eCompareOp op)
-{
-    switch (op)
-    {
-    case eCompareOp::Never       : return VK_COMPARE_OP_NEVER;
-    case eCompareOp::Less        : return VK_COMPARE_OP_LESS;
-    case eCompareOp::Equal       : return VK_COMPARE_OP_EQUAL;
-    case eCompareOp::LessEqual   : return VK_COMPARE_OP_LESS_OR_EQUAL;
-    case eCompareOp::Greater     : return VK_COMPARE_OP_GREATER;
-    case eCompareOp::NotEqual    : return VK_COMPARE_OP_NOT_EQUAL;
-    case eCompareOp::GreaterEqual: return VK_COMPARE_OP_GREATER_OR_EQUAL;
-    case eCompareOp::Always      : return VK_COMPARE_OP_ALWAYS;
-    }
-
-    assert(false && "Invalid compare op!");
-    return VK_COMPARE_OP_MAX_ENUM;
-}
-
 #define VK_SAMPLER_BORDERCOLOR(color) ConvertToVkSamplerBorderColor(color)
 VkBorderColor ConvertToVkSamplerBorderColor(eBorderColor color)
 {
@@ -163,8 +144,8 @@ VulkanSampler::VulkanSampler(VkRenderDevice& rd, const std::string& name, Creati
 	createInfo.mipLodBias       = m_CreationInfo.mipLodBias;
 	createInfo.anisotropyEnable = m_CreationInfo.maxAnisotropy > 0.0f;
 	createInfo.maxAnisotropy    = m_CreationInfo.maxAnisotropy;
-	createInfo.compareEnable    = VK_SAMPLER_COMPAREOP(m_CreationInfo.compareOp) > VK_COMPARE_OP_NEVER;
-	createInfo.compareOp        = VK_SAMPLER_COMPAREOP(m_CreationInfo.compareOp);
+	createInfo.compareEnable    = VK_COMPAREOP(m_CreationInfo.compareOp) > VK_COMPARE_OP_NEVER;
+	createInfo.compareOp        = VK_COMPAREOP(m_CreationInfo.compareOp);
 	createInfo.minLod           = m_CreationInfo.minLod;
 	createInfo.maxLod           = m_CreationInfo.maxLod;
 	createInfo.borderColor      = VK_SAMPLER_BORDERCOLOR(m_CreationInfo.borderColor);

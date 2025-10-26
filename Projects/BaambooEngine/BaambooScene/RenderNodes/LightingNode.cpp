@@ -66,7 +66,7 @@ void LightingNode::Apply(render::CommandContext& context, const SceneRenderView&
 	context.StageDescriptor("g_GBuffer1", g_FrameData.pGBuffer1.lock(), g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_GBuffer2", g_FrameData.pGBuffer2.lock(), g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_GBuffer3", g_FrameData.pGBuffer3.lock(), g_FrameData.pLinearClamp);
-	context.StageDescriptor("g_DepthBuffer", g_FrameData.pDepth.lock(), g_FrameData.pLinearClamp);
+	context.StageDescriptor("g_DepthBuffer", g_FrameData.pDepth.lock(), g_FrameData.pPointClamp);
 	context.StageDescriptor("g_SkyViewLUT", g_FrameData.pSkyViewLUT.lock(), g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_AerialPerspectiveLUT", g_FrameData.pAerialPerspectiveLUT.lock(), g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_CloudScatteringLUT", g_FrameData.pCloudScatteringLUT.lock(), g_FrameData.pLinearClamp);

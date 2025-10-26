@@ -7,7 +7,7 @@ Texture2D< float3 >   g_TransmittanceLUT     : register(t0);
 Texture2D< float3 >   g_MultiScatteringLUT   : register(t1);
 RWTexture3D< float4 > g_AerialPerspectiveLUT : register(u0);
 
-SamplerState g_LinearClampSampler : register(s0);
+SamplerState g_LinearClampSampler : register(SAMPLER_INDEX_LINEAR_CLAMP);
 
 float4 ComputeAerialPerspective(float3 rayOrigin, float3 rayDir, float maxDistance, uint rayMarchSteps)
 {

@@ -44,10 +44,8 @@ public:
 private:
 	Arc< render::Texture > m_pCloudScatteringLUT;
 	Arc< render::Texture > m_pCurlNoiseTexture;
-	Arc< render::Texture > m_pWeatherMap;
-	Arc< render::Texture > m_pBlueNoiseTexture;
 
-	Box< render::ComputePipeline > m_pCloudScatteringPSO;
+	Box< render::ComputePipeline > m_pCloudRaymarchPSO;
 };
 
 } // namespace baamboo

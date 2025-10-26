@@ -23,9 +23,9 @@ public:
 
     virtual Arc< render::Texture > LoadTexture(const std::string& filepath) override;
 
-    void UploadData(Arc< VulkanTexture > texture, const void* pData, u64 sizeInBytes, VkBufferImageCopy region);
-    void UploadData(Arc< VulkanBuffer > buffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes);
     void UploadData(VkBuffer vkBuffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes);
+    void UploadData(Arc< VulkanBuffer > pBuffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes);
+    void UploadData(Arc< VulkanTexture > pTexture, const void* pData, u64 sizeInBytes, VkBufferImageCopy region);
 
 private:
     Arc< render::Texture > CreateFlat2DTexture(const std::string& name, u32 color);

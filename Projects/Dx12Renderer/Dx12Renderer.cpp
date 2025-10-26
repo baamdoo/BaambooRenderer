@@ -4,11 +4,6 @@
 #include "RenderDevice/Dx12DescriptorPool.h"
 #include "RenderDevice/Dx12CommandQueue.h"
 #include "RenderDevice/Dx12CommandContext.h"
-#include "RenderModule/Dx12AtmosphereModule.h"
-#include "RenderModule/Dx12GBufferModule.h"
-#include "RenderModule/Dx12LightingModule.h"
-#include "RenderModule/Dx12ForwardModule.h"
-#include "RenderModule/Dx12PostProcessModule.h"
 #include "RenderModule/Dx12ImGuiModule.h"
 #include "RenderResource/Dx12Texture.h"
 #include "RenderResource/Dx12SceneResource.h"
@@ -66,28 +61,16 @@ Renderer::Renderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext)
 	//}
 	//system("PAUSE");
 
-	m_pRenderDevice = new RenderDevice(false);
-	m_pSwapChain    = new SwapChain(*m_pRenderDevice, *pWindow);
-
-	g_FrameData.pSceneResource = new SceneResource(*m_pRenderDevice);
-	
-	m_pRenderModules.push_back(new AtmosphereModule(*m_pRenderDevice));
-	m_pRenderModules.push_back(new GBufferModule(*m_pRenderDevice));
-	m_pRenderModules.push_back(new LightingModule(*m_pRenderDevice));
-	m_pRenderModules.push_back(new PostProcessModule(*m_pRenderDevice));
-	// m_pRenderModules.push_back(new ForwardModule(*m_pRenderDevice));
-	m_pRenderModules.push_back(new ImGuiModule(*m_pRenderDevice, pImGuiContext));
+	m_pRenderDevice = new Dx12RenderDevice(false);
+	m_pSwapChain    = new Dx12SwapChain(*m_pRenderDevice, *pWindow);
+	m_pImGuiModule  = MakeBox< ImGuiModule >(*m_pRenderDevice, pImGuiContext);
 
 	printf("D3D12Renderer constructed!\n");
 }
 
 Renderer::~Renderer()
 {
-	m_pRenderDevice->Flush();
-
-	RELEASE(g_FrameData.pSceneResource);
-	for (auto& pModule : m_pRenderModules)
-		RELEASE(pModule);
+	WaitIdle();
 
 	RELEASE(m_pSwapChain);
 	RELEASE(m_pRenderDevice);
@@ -101,120 +84,40 @@ void Renderer::NewFrame()
 	ImGui_ImplDX12_NewFrame();
 }
 
-void Renderer::Render(SceneRenderView&& renderView)
+Arc< render::CommandContext > Renderer::BeginFrame()
 {
-	assert(g_FrameData.pSceneResource);
-	g_FrameData.pSceneResource->UpdateSceneResources(renderView);
-	g_FrameData.frameCounter++;
-	g_FrameData.componentMarker = 0;
+	return m_pRenderDevice->GraphicsQueue().Allocate();
+}
 
-	auto ApplyJittering = [viewport = float2(m_pRenderDevice->WindowWidth(), m_pRenderDevice->WindowHeight())](const mat4& m_, float2 jitter)
-		{
-			mat4 m = m_;
-			m[2][0] += (jitter.x * 2.0f - 1.0f) / viewport.x;
-			m[2][1] += (jitter.y * 2.0f - 1.0f) / viewport.y;
+void Renderer::EndFrame(Arc< render::CommandContext >&& pContext, Arc< render::Texture > pScene, bool bDrawUI)
+{
+	auto contextIndex = m_pRenderDevice->ContextIndex();
 
-			return m;
-		};
+	auto& cmdQueue   = m_pRenderDevice->GraphicsQueue();
+	auto  rhiContext = StaticCast<Dx12CommandContext>(pContext);
+	assert(rhiContext);
 
-	if (renderView.pEntityDirtyMarks)
+	auto pColor = StaticCast<Dx12Texture>(pScene);
+	assert(pColor);
+	if (bDrawUI)
 	{
-		assert(renderView.pSceneMutex);
-		std::lock_guard< std::mutex > lock(*renderView.pSceneMutex);
-
-		g_FrameData.componentMarker |= (*renderView.pEntityDirtyMarks)[renderView.atmosphere.id] & (1 << eComponentType::CAtmosphere);
-		// .. process other markers if needed
-
-		// reset marks once it is consumed by renderer
-		for (auto& mark : (*renderView.pEntityDirtyMarks))
-		{
-			mark.second = 0;
-		}
+		m_pImGuiModule->Apply(*rhiContext, pColor);
 	}
-
-	auto& context = BeginFrame();
-	{
-		CameraData camera              = {};
-		camera.mView                   = renderView.camera.mView;
-		camera.mProj                   = renderView.postProcess.effectBits & (1 << ePostProcess::AntiAliasing) ?
-			ApplyJittering(renderView.camera.mProj, baamboo::math::GetHaltonSequence((u32)g_FrameData.frameCounter)) : renderView.camera.mProj;
-		camera.mViewProj               = camera.mProj * camera.mView;
-		camera.mViewProjInv            = glm::inverse(camera.mViewProj);
-		camera.mViewProjUnjittered     = renderView.camera.mProj * camera.mView;
-		camera.mViewProjUnjitteredPrev =
-			g_FrameData.camera.mViewProjUnjittered == glm::identity< mat4 >() ? camera.mViewProjUnjittered : g_FrameData.camera.mViewProjUnjittered;
-		camera.position                = renderView.camera.pos;
-		camera.zNear                   = renderView.camera.zNear;
-		camera.zFar                    = renderView.camera.zFar;
-		g_FrameData.camera = std::move(camera);
-
-		for (auto pModule : m_pRenderModules)
-		{
-			pModule->Apply(context, renderView);
-		}
-	}
-	EndFrame(context);
-}
-
-void Renderer::OnWindowResized(i32 width, i32 height)
-{
-	if (width == 0 || height == 0)
-		return;
-
-	if (!m_pSwapChain)
-		return;
-
-	if (m_pRenderDevice->WindowWidth() == static_cast<u32>(width) && m_pRenderDevice->WindowHeight() == static_cast<u32>(height))
-		return;
-
-	m_pRenderDevice->Flush();
-	m_pRenderDevice->SetWindowWidth(width);
-	m_pRenderDevice->SetWindowHeight(height);
-
-	m_pSwapChain->ResizeViewport(width, height);
-
-	g_FrameData.frameCounter = 0;
-
-	for (auto pModule : m_pRenderModules)
-		pModule->Resize(width, height);
-}
-
-void Renderer::SetRendererType(eRendererType type)
-{
-	m_type = type;
-}
-
-CommandContext& Renderer::BeginFrame()
-{
-	auto& cmdList = m_pRenderDevice->BeginCommand(D3D12_COMMAND_LIST_TYPE_DIRECT);
-	return cmdList;
-}
-
-void Renderer::EndFrame(CommandContext& context)
-{
-	auto frameIndex    = m_pRenderDevice->FrameIndex();
-	auto& commandQueue = m_pRenderDevice->GraphicsQueue();
 
 	auto pBackImage = m_pSwapChain->GetBackImage();
 	if constexpr (NUM_SAMPLING > 1)
 	{
-		if (g_FrameData.pColor.valid())
-		{
-			context.ResolveSubresource(pBackImage, g_FrameData.pColor.lock());
-		}
+		rhiContext->ResolveSubresource(pBackImage.get(), pColor.get());
 	}
 	else
 	{
-		if (g_FrameData.pColor.valid())
-		{
-			context.CopyTexture(pBackImage, g_FrameData.pColor.lock());
-		}
+		rhiContext->CopyTexture(pBackImage, pColor);
 	}
-	context.TransitionBarrier(pBackImage, D3D12_RESOURCE_STATE_PRESENT);
-	context.Close();
+	rhiContext->TransitionBarrier(pBackImage.get(), D3D12_RESOURCE_STATE_PRESENT);
+	rhiContext->Close();
 
-	auto fenceValue = commandQueue.ExecuteCommandList(&context);
-	m_FrameFenceValue[frameIndex] = fenceValue;
+	auto fenceValue = cmdQueue.ExecuteCommandList(rhiContext);
+	m_FrameFenceValue[contextIndex] = fenceValue;
 
 	auto hr = m_pSwapChain->Present();
 	if (DXGI_ERROR_DEVICE_REMOVED == hr)
@@ -235,7 +138,7 @@ void Renderer::EndFrame(CommandContext& context)
 					D3D12_AUTO_BREADCRUMB_OP hangingOp = pNode->pCommandHistory[lastCompletedIndex + 1];
 
 					const char* opName = "";
-					switch (hangingOp) 
+					switch (hangingOp)
 					{
 						case D3D12_AUTO_BREADCRUMB_OP_EXECUTEINDIRECT: opName = "EXECUTEINDIRECT"; break;
 						case D3D12_AUTO_BREADCRUMB_OP_DRAWINSTANCED:   opName = "DRAWINSTANCED";   break;
@@ -252,7 +155,30 @@ void Renderer::EndFrame(CommandContext& context)
 	}
 
 	UINT nextFrameIndex = m_pRenderDevice->Swap();
-	commandQueue.WaitForFenceValue(m_FrameFenceValue[nextFrameIndex]);
+	cmdQueue.WaitForFenceValue(m_FrameFenceValue[nextFrameIndex]);
+}
+
+void Renderer::WaitIdle()
+{
+	m_pRenderDevice->Flush();
+}
+
+void Renderer::Resize(i32 width, i32 height)
+{
+	if (width == 0 || height == 0)
+		return;
+
+	if (!m_pSwapChain)
+		return;
+
+	if (m_pRenderDevice->WindowWidth() == static_cast<u32>(width) && m_pRenderDevice->WindowHeight() == static_cast<u32>(height))
+		return;
+
+	m_pRenderDevice->Flush();
+	m_pRenderDevice->SetWindowWidth(width);
+	m_pRenderDevice->SetWindowHeight(height);
+
+	m_pSwapChain->ResizeViewport(width, height);
 }
 
 } // namespace dx12

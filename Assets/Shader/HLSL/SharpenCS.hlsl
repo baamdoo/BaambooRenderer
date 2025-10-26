@@ -2,9 +2,9 @@
 
 Texture2D g_AntiAliasedTexture : register(t0);
 
-RWTexture2D< float4 > g_OutputTexture : register(u0);
+RWTexture2D< float4 > g_OutputImage : register(u0);
 
-SamplerState g_LinearClampSampler : register(s0);
+SamplerState g_LinearClampSampler : register(SAMPLER_INDEX_LINEAR_CLAMP);
 
 cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
@@ -16,7 +16,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 {
     int2 pixelCoord  = int2(dispatchThreadID.xy);
     uint2 imageSize;
-    g_OutputTexture.GetDimensions(imageSize.x, imageSize.y);
+    g_OutputImage.GetDimensions(imageSize.x, imageSize.y);
     if (any(pixelCoord >= imageSize))
         return;
 
@@ -36,5 +36,5 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     float3 maxColor  = max(max(max(max(center, top), bottom), left), right);
     sharpened        = clamp(sharpened, minColor, maxColor);
 
-    g_OutputTexture[pixelCoord] = float4(sharpened, 1.0);
+    g_OutputImage[pixelCoord] = float4(sharpened, 1.0);
 }

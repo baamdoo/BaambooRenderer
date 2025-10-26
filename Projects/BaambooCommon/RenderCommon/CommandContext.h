@@ -27,8 +27,8 @@ public:
     virtual ~CommandContext() = default;
 
     // === Copy ===
-    virtual void CopyBuffer(Arc< Buffer > dstBuffer, Arc< Buffer > srcBuffer) = 0;
-    virtual void CopyTexture(Arc< Texture > dstTexture, Arc< Texture > srcTexture) = 0;
+    virtual void CopyBuffer(Arc< Buffer > pDstBuffer, Arc< Buffer > pSrcBuffer, u64 offsetInBytes = 0) = 0;
+    virtual void CopyTexture(Arc< Texture > pDstTexture, Arc< Texture > pSrcTexture, u64 offsetInBytes = 0) = 0;
 
     // === Barriers ===
     virtual void TransitionBarrier(Arc< Texture > texture, eTextureLayout newState, u32 subresource = ALL_SUBRESOURCES, bool flushImmediate = false) = 0;
@@ -56,7 +56,7 @@ public:
     {
         SetGraphicsDynamicUniformBuffer(name, sizeof(T), &data);
     }
-
+    
     virtual void SetComputeShaderResource(const std::string&, Arc< Buffer > buffer) = 0;
     virtual void SetGraphicsShaderResource(const std::string&, Arc< Buffer > buffer) = 0;
     virtual void SetComputeShaderResource(const std::string&, Arc< Texture > texture, Arc< Sampler > samplerInCharge = nullptr) = 0;

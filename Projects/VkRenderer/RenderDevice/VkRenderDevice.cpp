@@ -121,6 +121,11 @@ Arc< render::Buffer > VkRenderDevice::CreateBuffer(const std::string& name, rend
 	return VulkanBuffer::Create(*this, name, std::move(desc));
 }
 
+Arc<render::Buffer> VkRenderDevice::CreateEmptyBuffer(const std::string& name)
+{
+	return VulkanBuffer::CreateEmpty(*this, name);
+}
+
 Arc< render::Texture > VkRenderDevice::CreateTexture(const std::string& name, render::Texture::CreationInfo&& desc)
 {
 	return VulkanTexture::Create(*this, name, std::move(desc));

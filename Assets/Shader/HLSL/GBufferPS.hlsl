@@ -4,9 +4,9 @@
 Texture2D                        g_SceneTextures[] : register(t0, space100);
 StructuredBuffer< MaterialData > g_Materials       : register(t0, space0);
 
-SamplerState g_LinearSampler : register(s0, space0);
+SamplerState g_LinearClampSampler : register(SAMPLER_INDEX_LINEAR_CLAMP, space0);
 
-cbuffer RootConstants : register(b1, space0)
+cbuffer PushConstants : register(b1, ROOT_CONSTANT_SPACE)
 {
     uint g_MaterialIndex;
 };
@@ -43,7 +43,7 @@ PSOutput main(PSInput input)
     float3 albedo = float3(1.0, 1.0, 1.0);
     if (material.albedoID != INVALID_INDEX) 
     {
-        albedo = g_SceneTextures[NonUniformResourceIndex(material.albedoID)].Sample(g_LinearSampler, input.uv).rgb;
+        albedo = g_SceneTextures[NonUniformResourceIndex(material.albedoID)].Sample(g_LinearClampSampler, input.uv).rgb;
         //albedo = pow(albedo, 2.2);
     }
     albedo *= float3(material.tintR, material.tintG, material.tintB);
@@ -54,7 +54,7 @@ PSOutput main(PSInput input)
     if (material.metallicRoughnessAoID != INVALID_INDEX)
     {
         float3 orm = 
-            g_SceneTextures[NonUniformResourceIndex(material.metallicRoughnessAoID)].Sample(g_LinearSampler, input.uv).rgb;
+            g_SceneTextures[NonUniformResourceIndex(material.metallicRoughnessAoID)].Sample(g_LinearClampSampler, input.uv).rgb;
 
         metallic  *= orm.b;
         roughness *= orm.g;
@@ -65,7 +65,7 @@ PSOutput main(PSInput input)
     if (material.normalID != INVALID_INDEX)
     {
         float3 tangentNormal 
-            = g_SceneTextures[NonUniformResourceIndex(material.normalID)].Sample(g_LinearSampler, input.uv).rgb * 2.0 - 1.0;
+            = g_SceneTextures[NonUniformResourceIndex(material.normalID)].Sample(g_LinearClampSampler, input.uv).rgb * 2.0 - 1.0;
 
         float3   T   = normalize(input.tangentWORLD);
         float3   B   = cross(N, T);
@@ -77,7 +77,7 @@ PSOutput main(PSInput input)
     float3 emissive = float3(0.0, 0.0, 0.0);
     if (material.emissiveID != INVALID_INDEX)
     {
-        emissive  = g_SceneTextures[NonUniformResourceIndex(material.emissiveID)].Sample(g_LinearSampler, input.uv).rgb;
+        emissive  = g_SceneTextures[NonUniformResourceIndex(material.emissiveID)].Sample(g_LinearClampSampler, input.uv).rgb;
         //emissive  = pow(emissive, 2.2); // convert from sRGB to linear
         emissive *= material.emissivePower;
     }

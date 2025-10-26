@@ -66,7 +66,7 @@ public:
 	class Entity ImportModel(const fs::path& filepath, MeshDescriptor descriptor);
 	class Entity ImportModel(Entity rootEntity, const fs::path& filepath, MeshDescriptor descriptor);
 
-	void AddRenderNode(Arc< render::RenderNode > node);
+	void AddRenderNode(Arc< render::RenderNode > pNode);
 
 	void Update(float dt);
 

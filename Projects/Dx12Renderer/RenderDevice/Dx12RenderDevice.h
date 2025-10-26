@@ -1,4 +1,5 @@
 #pragma once
+#include "RenderCommon/RenderDevice.h"
 
 namespace D3D12MA
 {
@@ -8,23 +9,50 @@ namespace D3D12MA
 namespace dx12
 {
 
-class CommandQueue;
-class CommandContext;
+class Dx12CommandQueue;
+class Dx12CommandContext;
 class DescriptorPool;
 class DescriptorAllocation;
-class ResourceManager;
-class Resource;
+class Dx12ResourceManager;
+class Dx12Resource;
 
-class RenderDevice
+class SyncObject
 {
 public:
-	RenderDevice(bool bEnableGBV = false);
-	~RenderDevice();
+	SyncObject(u64 fenceValue, Dx12CommandQueue& cmdQueue) : m_FenceValue(fenceValue), m_CommandQueue(cmdQueue) {}
+	void Wait();
 
-	void Flush();
+private:
+	u64               m_FenceValue;
+	Dx12CommandQueue& m_CommandQueue;
+};
+
+class Dx12RenderDevice : public render::RenderDevice
+{
+public:
+	Dx12RenderDevice(bool bEnableGBV = false);
+	~Dx12RenderDevice();
+
 	u32 Swap();
+	virtual void Flush() override;
 
-	void UpdateSubresources(Arc< Resource > pResource, u32 firstSubresource, u32 numSubresources, const D3D12_SUBRESOURCE_DATA* pSrcData);
+	virtual Arc< render::Buffer > CreateBuffer(const std::string& name, render::Buffer::CreationInfo&& desc) override;
+	virtual Arc< render::Buffer > CreateEmptyBuffer(const std::string& name = "") override;
+	virtual Arc< render::Texture > CreateTexture(const std::string& name, render::Texture::CreationInfo&& desc) override;
+	virtual Arc< render::Texture > CreateEmptyTexture(const std::string& name = "") override;
+
+	virtual Arc< render::RenderTarget > CreateEmptyRenderTarget(const std::string& name = "") override;
+
+	virtual Arc< render::Sampler > CreateSampler(const std::string& name, render::Sampler::CreationInfo&& info) override;
+
+	virtual Arc< render::Shader > CreateShader(const std::string& name, render::Shader::CreationInfo&& info) override;
+
+	virtual Box< render::ComputePipeline > CreateComputePipeline(const std::string& name) override;
+	virtual Box< render::GraphicsPipeline > CreateGraphicsPipeline(const std::string& name) override;
+
+	virtual Box< render::SceneResource > CreateSceneResource() override;
+
+	void UpdateSubresources(Dx12Resource* pResource, u32 firstSubresource, u32 numSubresources, const D3D12_SUBRESOURCE_DATA* pSrcData);
 
 	ID3D12Resource* CreateRHIResource(const D3D12_RESOURCE_DESC& desc, D3D12_RESOURCE_STATES initialState, D3D12_HEAP_PROPERTIES heapProperties, const D3D12_CLEAR_VALUE* pClearValue = nullptr);
 
@@ -32,18 +60,17 @@ public:
 	inline ID3D12Device5* GetD3D12Device() const { return m_d3d12Device; }
 
 	[[nodiscard]]
-	CommandQueue& GraphicsQueue() const { return *m_pGraphicsCommandQueue; }
+	Dx12CommandQueue& GraphicsQueue() const { return *m_pGraphicsQueue; }
 	[[nodiscard]]
-	CommandQueue& ComputeQueue() const { return *m_pComputeCommandQueue; }
+	Dx12CommandQueue& ComputeQueue() const { return *m_pComputeQueue; }
 	[[nodiscard]]
-	CommandQueue& CopyQueue() const { return *m_pCopyCommandQueue; }
-	[[nodiscard]]
-	CommandContext& BeginCommand(D3D12_COMMAND_LIST_TYPE commandType) const;
+	Dx12CommandQueue& CopyQueue() const { return *m_pCopyQueue; }
 
-	[[nodiscard]]
+	Arc< Dx12CommandContext > BeginCommand(D3D12_COMMAND_LIST_TYPE commandType);
+	SyncObject ExecuteCommand(Arc< Dx12CommandContext >&& pContext);
+
 	inline D3D12MA::Allocator* dmaAllocator() const { return m_dmaAllocator; }
-	[[nodiscard]]
-	inline ResourceManager& GetResourceManager() const { return *m_pResourceManager; }
+	virtual render::ResourceManager& GetResourceManager() const override;
 
 	[[nodiscard]]
 	inline u32 GetSRVDescriptorSize() const { return m_SRVDescriptorSize; }
@@ -59,37 +86,23 @@ public:
 	[[nodiscard]]
 	D3D_ROOT_SIGNATURE_VERSION GetHighestRootSignatureVersion() const { return m_HighestRootSignatureVersion; }
 
-	[[nodiscard]]
-	inline u8 FrameIndex() const { return m_FrameIndex; }
-
-	[[nodiscard]]
-	u32 WindowWidth() const { return m_WindowWidth; }
-	void SetWindowWidth(u32 width) { m_WindowWidth = width; }
-	[[nodiscard]]
-	u32 WindowHeight() const { return m_WindowHeight; }
-	void SetWindowHeight(u32 height) { m_WindowHeight = height; }
-
 private:
 	void CreateDevice(bool bEnableGBV);
 
 private:
 	ID3D12Device5* m_d3d12Device = nullptr;
 
-	CommandQueue* m_pGraphicsCommandQueue;
-	CommandQueue* m_pComputeCommandQueue;
-	CommandQueue* m_pCopyCommandQueue;
+	Dx12CommandQueue* m_pGraphicsQueue = nullptr;
+	Dx12CommandQueue* m_pComputeQueue  = nullptr;
+	Dx12CommandQueue* m_pCopyQueue     = nullptr;
 
-	ResourceManager*    m_pResourceManager;
-	D3D12MA::Allocator* m_dmaAllocator;
+	Dx12ResourceManager* m_pResourceManager = nullptr;
+	D3D12MA::Allocator*  m_dmaAllocator;
 
 	u32 m_SRVDescriptorSize = 0;
 	u32 m_RTVDescriptorSize = 0;
 	u32 m_DSVDescriptorSize = 0;
 	D3D_ROOT_SIGNATURE_VERSION m_HighestRootSignatureVersion;
-
-	u8  m_FrameIndex = 0;
-	u32 m_WindowWidth = 0;
-	u32 m_WindowHeight = 0;
 };
 
 }

@@ -68,6 +68,25 @@ Arc< render::Texture > VkResourceManager::LoadTexture(const std::string& filepat
 	return tex;
 }
 
+void VkResourceManager::UploadData(VkBuffer vkBuffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes)
+{
+	if (m_pStagingBuffer->SizeInBytes() < sizeInBytes)
+	{
+		m_pStagingBuffer->Resize(sizeInBytes);
+	}
+	memcpy(m_pStagingBuffer->MappedMemory(), pData, sizeInBytes);
+
+	auto pContext = m_RenderDevice.BeginCommand(eCommandType::Transfer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
+	pContext->CopyBuffer(vkBuffer, m_pStagingBuffer->vkBuffer(), sizeInBytes, dstStageMask, dstOffsetInBytes, 0);
+	pContext->Close();
+	m_RenderDevice.ExecuteCommand(pContext);
+}
+
+void VkResourceManager::UploadData(Arc< VulkanBuffer > pBuffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes)
+{
+	UploadData(pBuffer->vkBuffer(), pData, sizeInBytes, dstStageMask, dstOffsetInBytes);
+}
+
 void VkResourceManager::UploadData(Arc< VulkanTexture > texture, const void* pData, u64 sizeInBytes, VkBufferImageCopy region)
 {
 	if (m_pStagingBuffer->SizeInBytes() < sizeInBytes)
@@ -80,25 +99,6 @@ void VkResourceManager::UploadData(Arc< VulkanTexture > texture, const void* pDa
 	pContext->CopyBuffer(texture, m_pStagingBuffer, { region });
 	//if (bGenerateMips)
 	//	cmdBuffer.GenerateMips(pTex);
-	pContext->Close();
-	m_RenderDevice.ExecuteCommand(pContext);
-}
-
-void VkResourceManager::UploadData(Arc< VulkanBuffer > buffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes)
-{
-	UploadData(buffer->vkBuffer(), pData, sizeInBytes, dstStageMask, dstOffsetInBytes);
-}
-
-void VkResourceManager::UploadData(VkBuffer vkBuffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes)
-{
-	if (m_pStagingBuffer->SizeInBytes() < sizeInBytes)
-	{
-		m_pStagingBuffer->Resize(sizeInBytes);
-	}
-	memcpy(m_pStagingBuffer->MappedMemory(), pData, sizeInBytes);
-
-	auto pContext = m_RenderDevice.BeginCommand(eCommandType::Transfer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
-	pContext->CopyBuffer(vkBuffer, m_pStagingBuffer->vkBuffer(), sizeInBytes, dstStageMask, dstOffsetInBytes, 0);
 	pContext->Close();
 	m_RenderDevice.ExecuteCommand(pContext);
 }

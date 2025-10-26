@@ -13,6 +13,7 @@ public:
 
     // Resource creation
     virtual Arc< Buffer > CreateBuffer(const std::string& name, Buffer::CreationInfo&& desc) = 0;
+    virtual Arc< Buffer > CreateEmptyBuffer(const std::string& name = "") = 0;
     virtual Arc< Texture > CreateTexture(const std::string& name, Texture::CreationInfo&& desc) = 0;
     virtual Arc< Texture > CreateEmptyTexture(const std::string& name = "") = 0;
 

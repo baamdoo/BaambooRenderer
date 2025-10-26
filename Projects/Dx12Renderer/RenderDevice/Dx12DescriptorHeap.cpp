@@ -6,23 +6,23 @@
 namespace dx12
 {
 
-DescriptorHeap::DescriptorHeap(RenderDevice& device, D3D12_DESCRIPTOR_HEAP_TYPE type, u32 maxDescriptors)
-    : m_RenderDevice(device)
+Dx12DescriptorHeap::Dx12DescriptorHeap(Dx12RenderDevice& rd, D3D12_DESCRIPTOR_HEAP_TYPE type, u32 maxDescriptors)
+    : m_RenderDevice(rd)
     , m_NumDescriptors(maxDescriptors)
     , m_Type(type)
 {
     m_pDescriptorPool =
-        new DescriptorPool(device, type, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, m_NumDescriptors);
+        new DescriptorPool(m_RenderDevice, type, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, m_NumDescriptors);
 }
 
-DescriptorHeap::~DescriptorHeap()
+Dx12DescriptorHeap::~Dx12DescriptorHeap()
 {
     Reset();
 
 	RELEASE(m_pDescriptorPool);
 }
 
-void DescriptorHeap::Reset()
+void Dx12DescriptorHeap::Reset()
 {
     m_pCurrentRS = nullptr;
 
@@ -36,25 +36,44 @@ void DescriptorHeap::Reset()
     }
 }
 
-void DescriptorHeap::ParseRootSignature(RootSignature* pRootsignature)
+void Dx12DescriptorHeap::ParseRootSignature(Arc< Dx12RootSignature > pRootsignature)
 {
 	assert(pRootsignature);
     m_pCurrentRS = pRootsignature;
 
-    m_DescriptorTableBitMask = pRootsignature->GetDescriptorTableBitMask(m_Type);
-    m_CachedDescriptorAllocations.emplace(m_pCurrentRS, std::array< DescriptorAllocation, MAX_ROOT_INDEX >{});
+    m_DescriptorTableBitMask = m_pCurrentRS->GetDescriptorTableBitMask(m_Type);
+    m_CachedDescriptorAllocations.emplace(m_pCurrentRS.get(), std::array< DescriptorAllocation, MAX_ROOT_INDEX >{});
+
+    auto mask = m_DescriptorTableBitMask;
+    DWORD rootIndex;
+    while (_BitScanForward64(&rootIndex, mask))
+    {
+        auto numDescriptors = m_pCurrentRS->GetNumDescriptors(rootIndex);
+        // Allocate bindless descriptors on-demand
+        if (numDescriptors < UINT_MAX)
+        {
+            m_CachedDescriptorAllocations[m_pCurrentRS.get()][rootIndex] = m_pDescriptorPool->Allocate(numDescriptors);
+        }
+
+        mask ^= (1LL << rootIndex);
+    }
 }
 
-u32 DescriptorHeap::StageDescriptors(u32 rootIndex, u32 numDescriptors, u32 offset, D3D12_CPU_DESCRIPTOR_HANDLE srcHandle)
+u32 Dx12DescriptorHeap::StageDescriptor(u32 rootIndex, u32 numDescriptors, u32 offset, D3D12_CPU_DESCRIPTOR_HANDLE srcHandle)
 {
     assert(m_pCurrentRS);
     assert(rootIndex < MAX_ROOT_INDEX && numDescriptors < m_NumDescriptors && offset + numDescriptors < m_NumDescriptors);
 
     auto d3d12Device = m_RenderDevice.GetD3D12Device();
-    m_CachedDescriptorAllocations[m_pCurrentRS][rootIndex] = m_pDescriptorPool->Allocate(numDescriptors);
+    // On-demand bindless descriptors allocation
+    if (m_pCurrentRS->GetNumDescriptors(rootIndex) == UINT_MAX)
+    {
+        assert(!m_CachedDescriptorAllocations[m_pCurrentRS.get()][rootIndex].IsValid() && "Do not mix bindless descriptor and others in a same root index");
+        m_CachedDescriptorAllocations[m_pCurrentRS.get()][rootIndex] = m_pDescriptorPool->Allocate(numDescriptors);
+    }
 
-    auto& allocation = m_CachedDescriptorAllocations[m_pCurrentRS][rootIndex];
-    auto  dstHandle  = allocation.GetCPUHandle(offset);
+    auto& allocation  = m_CachedDescriptorAllocations[m_pCurrentRS.get()][rootIndex];
+    auto  dstHandle   = allocation.GetCPUHandle(offset);
     d3d12Device->CopyDescriptorsSimple(numDescriptors, dstHandle, srcHandle, m_Type);
 
     m_DescriptorTableDirtyFlags |= (1LL << rootIndex);
@@ -62,16 +81,21 @@ u32 DescriptorHeap::StageDescriptors(u32 rootIndex, u32 numDescriptors, u32 offs
     return allocation.Index(offset);
 }
 
-u32 DescriptorHeap::StageDescriptors(u32 rootIndex, u32 offset, std::vector< D3D12_CPU_DESCRIPTOR_HANDLE >&& srcHandles)
+u32 Dx12DescriptorHeap::StageDescriptors(u32 rootIndex, u32 offset, std::vector< D3D12_CPU_DESCRIPTOR_HANDLE >&& srcHandles)
 {
     u32 numDescriptors = static_cast<u32>(srcHandles.size());
     assert(rootIndex < MAX_ROOT_INDEX && numDescriptors < m_NumDescriptors && offset + numDescriptors < m_NumDescriptors);
 
     auto d3d12Device = m_RenderDevice.GetD3D12Device();
-    m_CachedDescriptorAllocations[m_pCurrentRS][rootIndex] = m_pDescriptorPool->Allocate(numDescriptors);
+    // On-demand bindless descriptors allocation
+    if (m_pCurrentRS->GetNumDescriptors(rootIndex) == UINT_MAX)
+    {
+        assert(!m_CachedDescriptorAllocations[m_pCurrentRS.get()][rootIndex].IsValid());
+        m_CachedDescriptorAllocations[m_pCurrentRS.get()][rootIndex] = m_pDescriptorPool->Allocate(numDescriptors);
+    }
 
     u32   offset_    = offset;
-    auto& allocation = m_CachedDescriptorAllocations[m_pCurrentRS][rootIndex];
+    auto& allocation = m_CachedDescriptorAllocations[m_pCurrentRS.get()][rootIndex];
     for (const auto& handle : srcHandles)
     {
         auto dstHandle = allocation.GetCPUHandle(offset_++);
@@ -83,34 +107,37 @@ u32 DescriptorHeap::StageDescriptors(u32 rootIndex, u32 offset, std::vector< D3D
     return allocation.Index(offset);
 }
 
-void DescriptorHeap::CommitDescriptorsForDraw(CommandContext& context)
-{
-    CommitDescriptorTables(context, &ID3D12GraphicsCommandList::SetGraphicsRootDescriptorTable);
-}
-
-void DescriptorHeap::CommitDescriptorsForDispatch(CommandContext& context)
-{
-    CommitDescriptorTables(context, &ID3D12GraphicsCommandList::SetComputeRootDescriptorTable);
-}
-
-void DescriptorHeap::CommitDescriptorTables(CommandContext& context, std::function< void(ID3D12GraphicsCommandList*, u32, D3D12_GPU_DESCRIPTOR_HANDLE) > setFunc)
+void Dx12DescriptorHeap::CommitDescriptorsForDraw(ID3D12GraphicsCommandList2* d3d12CommandList2)
 {
     if (m_DescriptorTableDirtyFlags)
     {
-        auto d3d12CommandList = context.GetD3D12CommandList();
-
         DWORD rootIndex;
         while (_BitScanForward64(&rootIndex, m_DescriptorTableDirtyFlags))
         {
-            const auto& allocation = m_CachedDescriptorAllocations[m_pCurrentRS][rootIndex];
-            setFunc(d3d12CommandList, rootIndex, allocation.GetGPUHandle());
+            const auto& allocation = m_CachedDescriptorAllocations[m_pCurrentRS.get()][rootIndex];
+            d3d12CommandList2->SetGraphicsRootDescriptorTable(rootIndex, allocation.GetGPUHandle());
 
             m_DescriptorTableDirtyFlags ^= (1LL << rootIndex);
         }
     }
 }
 
-ID3D12DescriptorHeap* DescriptorHeap::GetD3D12DescriptorHeap() const
+void Dx12DescriptorHeap::CommitDescriptorsForDispatch(ID3D12GraphicsCommandList2* d3d12CommandList2)
+{
+    if (m_DescriptorTableDirtyFlags)
+    {
+        DWORD rootIndex;
+        while (_BitScanForward64(&rootIndex, m_DescriptorTableDirtyFlags))
+        {
+            const auto& allocation = m_CachedDescriptorAllocations[m_pCurrentRS.get()][rootIndex];
+            d3d12CommandList2->SetComputeRootDescriptorTable(rootIndex, allocation.GetGPUHandle());
+
+            m_DescriptorTableDirtyFlags ^= (1LL << rootIndex);
+        }
+    }
+}
+
+ID3D12DescriptorHeap* Dx12DescriptorHeap::GetD3D12DescriptorHeap() const
 {
 	return m_pDescriptorPool->GetD3D12DescriptorHeap();
 }

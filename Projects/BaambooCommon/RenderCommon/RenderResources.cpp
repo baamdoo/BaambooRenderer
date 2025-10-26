@@ -12,6 +12,16 @@ Arc< Buffer > Buffer::Create(RenderDevice& rd, const std::string& name, Creation
 	return rd.CreateBuffer(name, std::move(desc));
 }
 
+Arc< Buffer > Buffer::CreateEmpty(RenderDevice& rd, const std::string& name)
+{
+	return rd.CreateEmptyBuffer(name);
+}
+
+Buffer::Buffer(const std::string& name)
+	: Super(name, eResourceType::Buffer)
+{
+}
+
 Buffer::Buffer(const std::string& name, CreationInfo&& desc)
 	: Super(name, eResourceType::Buffer)
 	, m_CreationInfo(std::move(desc))
@@ -170,32 +180,41 @@ GraphicsPipeline::GraphicsPipeline(const std::string& name)
 }
 
 GraphicsPipeline& GraphicsPipeline::SetShaders(
-	Arc< Shader > vs,
-	Arc< Shader > fs,
-	Arc< Shader > gs,
-	Arc< Shader > hs,
-	Arc< Shader > ds)
+	Arc< Shader > pVS,
+	Arc< Shader > pPS,
+	Arc< Shader > pGS,
+	Arc< Shader > pHS,
+	Arc< Shader > pDS)
 {
-	m_VS = vs;
-	m_PS = fs;
-	m_GS = gs;
-	m_HS = hs;
-	m_DS = ds;
+	m_pVS = pVS;
+	m_pPS = pPS;
+	m_pGS = pGS;
+	m_pHS = pHS;
+	m_pDS = pDS;
 
 	m_bMeshShader = false;
 
 	return *this;
 }
 GraphicsPipeline& GraphicsPipeline::SetMeshShaders(
-	Arc< Shader > ms,
-	Arc< Shader > ts)
+	Arc< Shader > pMS,
+	Arc< Shader > pTS)
 {
-	m_MS = ms;
-	m_TS = ts;
+	m_pMS = pMS;
+	m_pTS = pTS;
 
 	m_bMeshShader = true;
 
 	return *this;
+}
+
+std::pair< u32, u32 > GraphicsPipeline::GetResourceBindingIndex(const std::string& name)
+{
+	auto iter = m_ResourceBindingMap.find(name);
+	if (iter == m_ResourceBindingMap.end())
+		return { INVALID_INDEX, INVALID_INDEX };
+
+	return { (u32)(iter->second >> 32), (u32)(iter->second & 0xFFFFFFFF) };
 }
 
 
@@ -209,10 +228,19 @@ ComputePipeline::ComputePipeline(const std::string& name)
 {
 }
 
-ComputePipeline& ComputePipeline::SetComputeShader(Arc< Shader > cs)
+ComputePipeline& ComputePipeline::SetComputeShader(Arc< Shader > pCS)
 {
-	m_CS = cs;
+	m_pCS = pCS;
 	return *this;
+}
+
+std::pair< u32, u32 > ComputePipeline::GetResourceBindingIndex(const std::string& name)
+{
+	auto iter = m_ResourceBindingMap.find(name);
+	if (iter == m_ResourceBindingMap.end())
+		return { -1, -1 };
+
+	return { (u32)(iter->second >> 32), (u32)(iter->second & 0xFFFFFFFF) };
 }
 
 

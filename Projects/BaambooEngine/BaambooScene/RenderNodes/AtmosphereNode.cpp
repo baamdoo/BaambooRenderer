@@ -60,7 +60,7 @@ AtmosphereNode::AtmosphereNode(render::RenderDevice& rd)
 		Shader::Create(m_RenderDevice, "TransmittanceCS",
 			{
 				.stage    = eShaderStage::Compute,
-				.filename = "TransmittanceLUT"
+				.filename = "AtmosphereTransmittance"
 			})).Build();
 
 	m_pMultiScatteringPSO = ComputePipeline::Create(m_RenderDevice, "MultiScatteringPSO");
@@ -68,7 +68,7 @@ AtmosphereNode::AtmosphereNode(render::RenderDevice& rd)
 		Shader::Create(m_RenderDevice, "MultiScatteringCS",
 			{
 				.stage    = eShaderStage::Compute,
-				.filename = "MultiScatteringLUT"
+				.filename = "AtmosphereMultiScattering"
 			})).Build();
 
 	m_pSkyViewPSO = ComputePipeline::Create(m_RenderDevice, "SkyViewPSO");
@@ -76,7 +76,7 @@ AtmosphereNode::AtmosphereNode(render::RenderDevice& rd)
 		Shader::Create(m_RenderDevice, "SkyViewCS",
 			{
 				.stage    = eShaderStage::Compute,
-				.filename = "SkyViewLUT"
+				.filename = "AtmosphereSkyView"
 			})).Build();
 
 	m_pAerialPerspectivePSO = ComputePipeline::Create(m_RenderDevice, "AerialPerspectivePSO");
@@ -84,7 +84,7 @@ AtmosphereNode::AtmosphereNode(render::RenderDevice& rd)
 		Shader::Create(m_RenderDevice, "AerialPerspectiveCS",
 			{
 				.stage    = eShaderStage::Compute,
-				.filename = "AerialPerspectiveLUT"
+				.filename = "AerialPerspective"
 			})).Build();
 }
 

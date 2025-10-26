@@ -57,12 +57,15 @@ public:
 	VulkanGraphicsPipeline(VkRenderDevice& rd, const std::string& name);
 	~VulkanGraphicsPipeline();
 
-	GraphicsPipeline& SetVertexInputs(std::vector< VkVertexInputBindingDescription >&& streams, std::vector< VkVertexInputAttributeDescription >&& attributes);
-	virtual render::GraphicsPipeline& SetRenderTarget(Arc< render::RenderTarget > renderTarget) override;
+	render::GraphicsPipeline& SetVertexInputs(std::vector< VkVertexInputBindingDescription >&& streams, std::vector< VkVertexInputAttributeDescription >&& attributes);
+	virtual render::GraphicsPipeline& SetRenderTarget(Arc< render::RenderTarget > pRenderTarget) override;
+
+	virtual render::GraphicsPipeline& SetFillMode(bool bWireframe) override;
+	virtual render::GraphicsPipeline& SetCullMode(render::eCullMode cullMode) override;
 
 	virtual render::GraphicsPipeline& SetTopology(render::ePrimitiveTopology topology) override;
-	virtual render::GraphicsPipeline& SetDepthTestEnable(bool bEnable) override;
-	virtual render::GraphicsPipeline& SetDepthWriteEnable(bool bEnable) override;
+	virtual render::GraphicsPipeline& SetDepthTestEnable(bool bEnable, render::eCompareOp) override;
+	virtual render::GraphicsPipeline& SetDepthWriteEnable(bool bEnable, render::eCompareOp) override;
 
 	virtual render::GraphicsPipeline& SetLogicOp(render::eLogicOp logicOp) override;
 	virtual render::GraphicsPipeline& SetBlendEnable(u32 renderTargetIndex, bool bEnable) override;
@@ -70,8 +73,6 @@ public:
 	virtual render::GraphicsPipeline& SetAlphaBlending(u32 renderTargetIndex, render::eBlendFactor srcBlend, render::eBlendFactor dstBlend, render::eBlendOp blendOp) override;
 
 	virtual void Build() override;
-
-	std::pair< u32, u32 > GetResourceBindingIndex(const std::string& name);
 
 	[[nodiscard]]
 	inline VkPipeline vkPipeline() const { return m_vkPipeline; }
@@ -104,8 +105,6 @@ private:
 		VkPipelineMultisampleStateCreateInfo	multisamplingInfo = {};
 	} m_PipelineDesc = {};
 
-	// [name, set:binding]
-	std::unordered_map< std::string, u64 >    m_ResourceBindingMap;
 	std::unordered_map< u32, DescriptorSet& > m_DescriptorTable;
 };
 
@@ -121,8 +120,6 @@ public:
 
 	virtual void Build() override;
 
-	std::pair< u32, u32 > GetResourceBindingIndex(const std::string& name);
-
 	[[nodiscard]]
 	inline VkPipeline vkPipeline() const { return m_vkPipeline; }
 	[[nodiscard]]
@@ -135,8 +132,6 @@ private:
 	VkPipelineLayout                     m_vkPipelineLayout = VK_NULL_HANDLE;
 	std::vector< VkDescriptorSetLayout > m_vkSetLayouts;
 
-	// [name, set:binding]
-	std::unordered_map< std::string, u64 >    m_ResourceBindingMap;
 	std::unordered_map< u32, DescriptorSet& > m_DescriptorTable;
 };
 

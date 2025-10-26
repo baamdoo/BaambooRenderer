@@ -309,3 +309,25 @@ static VkShaderStageFlagBits ConvertToVkShaderStage(render::eShaderStage stage)
 
 	return VkShaderStageFlagBits(0);
 }
+
+#define VK_COMPAREOP(op) ConvertToVkCompareOp(op)
+static VkCompareOp ConvertToVkCompareOp(render::eCompareOp op)
+{
+	using namespace render;
+	switch (op)
+	{
+	case eCompareOp::Never        : return VK_COMPARE_OP_NEVER;
+	case eCompareOp::Less         : return VK_COMPARE_OP_LESS;
+	case eCompareOp::Equal        : return VK_COMPARE_OP_EQUAL;
+	case eCompareOp::LessEqual    : return VK_COMPARE_OP_LESS_OR_EQUAL;
+	case eCompareOp::Greater      : return VK_COMPARE_OP_GREATER;
+	case eCompareOp::NotEqual     : return VK_COMPARE_OP_NOT_EQUAL;
+	case eCompareOp::GreaterEqual : return VK_COMPARE_OP_GREATER_OR_EQUAL;
+	case eCompareOp::Always       : return VK_COMPARE_OP_ALWAYS;
+
+	default:
+		assert(false && "Invalid compare op!"); break;
+	}
+	
+	return VK_COMPARE_OP_MAX_ENUM;
+}

@@ -36,8 +36,8 @@ public:
     void Open(VkCommandBufferUsageFlags flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
     void Close();
 
-    virtual void CopyBuffer(Arc< render::Buffer > dstBuffer, Arc< render::Buffer > srcBuffer) override;
-    virtual void CopyTexture(Arc< render::Texture > dstTexture, Arc< render::Texture > srcTexture) override;
+    virtual void CopyBuffer(Arc< render::Buffer > dstBuffer, Arc< render::Buffer > srcBuffer, u64 offsetInBytes = 0) override;
+    virtual void CopyTexture(Arc< render::Texture > dstTexture, Arc< render::Texture > srcTexture, u64 offsetInBytes = 0) override;
 
 	void CopyBuffer(
 		VkBuffer vkDstBuffer,

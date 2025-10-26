@@ -1,5 +1,4 @@
 #pragma once
-#include "Dx12RenderModule.h"
 #include "RenderResource/Dx12RenderTarget.h"
 
 struct ImGuiContext;
@@ -7,20 +6,18 @@ struct ImGuiContext;
 namespace dx12
 {
 
-class RootSignature;
-class GraphicsPipeline;
+class Dx12Texture;
 
-class ImGuiModule : public RenderModule
+class ImGuiModule
 {
-	using Super = RenderModule;
 public:
-	ImGuiModule(RenderDevice& device, ImGuiContext* pImGuiContext);
+	ImGuiModule(Dx12RenderDevice& rd, ImGuiContext* pImGuiContext);
 	virtual ~ImGuiModule();
 
-	virtual void Apply(CommandContext& context, const SceneRenderView& renderView) override;
+	void Apply(Dx12CommandContext& context, Arc< Dx12Texture > pColor);
 
 private:
-	RenderTarget m_RenderTarget;
+	Dx12RenderDevice& m_RenderDevice;
 
 	ID3D12DescriptorHeap* m_d3d12SrvDescHeap = nullptr;
 };

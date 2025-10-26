@@ -1,178 +1,88 @@
 #pragma once
+#include "RenderCommon/CommandContext.h"
 
 namespace dx12
 {
 
 constexpr u32 MAX_NUM_PENDING_BARRIERS = 16;
 
-class RenderTarget;
-class VertexBuffer;
-class IndexBuffer;
-class RootSignature;
-class DescriptorHeap;
-class GraphicsPipeline;
-class ComputePipeline;
-class DynamicBufferAllocator;
-class Buffer;
-class Texture;
-struct SceneResource;
+class Dx12Resource;
+class Dx12Buffer;
+class Dx12Texture;
+class Dx12RenderTarget;
 
-class SyncObject
+class Dx12CommandContext : public render::CommandContext
 {
 public:
-	SyncObject(u64 fenceValue, CommandQueue& cmdQueue) : m_FenceValue(fenceValue), m_CommandQueue(cmdQueue) {}
-	void Wait();
-
-private:
-	u64           m_FenceValue;
-	CommandQueue& m_CommandQueue;
-};
-
-class CommandContext
-{
-public:
-	CommandContext(RenderDevice& device, D3D12_COMMAND_LIST_TYPE type);
-	~CommandContext();
+	Dx12CommandContext(Dx12RenderDevice& rd, D3D12_COMMAND_LIST_TYPE type);
+	virtual ~Dx12CommandContext() = default;
 
 	void Open();
 	void Close();
-	SyncObject Execute();
 
-	void TransitionBarrier(const Arc< Resource >& pResource, D3D12_RESOURCE_STATES stateAfter, u32 subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, bool bFlushImmediate = true);
-	void UAVBarrier(const Arc< Resource >& pResource, bool bFlushImmediate = false);
-	void AliasingBarrier(const Arc< Resource >& pResourceBefore, const Arc< Resource >& pResourceAfter, bool bFlushImmediate = false);
+	void ClearTexture(const Arc< Dx12Texture >& pTexture);
+	void ClearDepthStencilTexture(const Arc< Dx12Texture >& pTexture, D3D12_CLEAR_FLAGS clearFlags);
 
-	void CopyBuffer(const Arc< Buffer >& pDstBuffer, const Arc< Buffer >& pSrcBuffer, size_t sizeInBytes);
-	void CopyBuffer(ID3D12Resource* d3d12DstBuffer, ID3D12Resource* d3d12SrcBuffer, SIZE_T sizeInBytes);
-	void CopyTexture(const Arc< Texture >& pDstTexture, const Arc< Texture >& pSrcTexture);
-	void ResolveSubresource(const Arc< Resource >& pDstResource, const Arc< Resource >& pSrcResource, u32 dstSubresource = 0, u32 srcSubresource = 0);
+	virtual void TransitionBarrier(Arc< render::Texture > pTexture, render::eTextureLayout newState, u32 subresource = ALL_SUBRESOURCES, bool bFlushImmediate = false) override;
+	void TransitionBarrier(Dx12Resource* pResource, D3D12_RESOURCE_STATES stateAfter, u32 subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, bool bFlushImmediate = true);
+	void UAVBarrier(Dx12Resource* pResource, bool bFlushImmediate = false);
+	void AliasingBarrier(Dx12Resource* pResourceBefore, Dx12Resource* pResourceAfter, bool bFlushImmediate = false);
 
-	void SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY primitiveTopology);
+	void CopyBuffer(ID3D12Resource* d3d12DstBuffer, ID3D12Resource* d3d12SrcBuffer, SIZE_T sizeInBytes, SIZE_T dstOffsetInBytes);
+	virtual void CopyBuffer(Arc< render::Buffer > pDstBuffer, Arc< render::Buffer > pSrcBuffer, u64 offsetInBytes = 0) override;
+	virtual void CopyTexture(Arc< render::Texture > pDstTexture, Arc< render::Texture > pSrcTexture, u64 offsetInBytes = 0) override;
+	void ResolveSubresource(Dx12Resource* pDstResource, Dx12Resource* pSrcResource, u32 dstSubresource = 0, u32 srcSubresource = 0);
 
-	void ClearTexture(const Arc< Texture >& pTexture);
-	void ClearDepthStencilTexture(const Arc< Texture >& pTexture, D3D12_CLEAR_FLAGS clearFlags);
+	virtual void SetRenderPipeline(render::ComputePipeline* pRenderPipeline) override;
+	virtual void SetRenderPipeline(render::GraphicsPipeline* pRenderPipeline) override;
 
-	void SetViewport(const D3D12_VIEWPORT& viewport);
-	void SetViewports(const std::vector< D3D12_VIEWPORT >& viewports);
+	virtual void SetComputeConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) override;
+	virtual void SetGraphicsConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) override;
 
-	void SetScissorRect(const D3D12_RECT& scissorRect);
-	void SetScissorRects(const std::vector< D3D12_RECT >& scissorRects);
+	virtual void SetComputeDynamicUniformBuffer(const std::string& name, u32 sizeInBytes, const void* pData) override;
+	virtual void SetGraphicsDynamicUniformBuffer(const std::string& name, u32 sizeInBytes, const void* pData) override;
 
-	void SetRenderPipeline(GraphicsPipeline* pGraphicsPipelineState);
-	void SetRenderPipeline(ComputePipeline* pComputePipelineState);
+	virtual void SetComputeShaderResource(const std::string& name, Arc< render::Texture > pTexture, Arc< render::Sampler > pSamplerInCharge) override;
+	virtual void SetGraphicsShaderResource(const std::string& name, Arc< render::Texture > pTexture, Arc< render::Sampler > pSamplerInCharge) override;
+	virtual void SetComputeShaderResource(const std::string& name, Arc< render::Buffer > pBuffer) override;
+	virtual void SetGraphicsShaderResource(const std::string& name, Arc< render::Buffer > pBuffer) override;
+	void SetComputeConstantBufferView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS srv);
+	void SetGraphicsConstantBufferView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS srv);
+	void SetComputeShaderResourceView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS srv);
+	void SetGraphicsShaderResourceView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS srv);
 
-	void SetGraphicsRootSignature(RootSignature* pRootSignature);
-	void SetComputeRootSignature(RootSignature* pRootSignature);
-
-	void SetDescriptorHeaps(const std::vector< ID3D12DescriptorHeap* >& d3d12DescriptorHeaps);
-
-	void SetRenderTarget(u32 numRenderTargets, D3D12_CPU_DESCRIPTOR_HANDLE rtv, D3D12_CPU_DESCRIPTOR_HANDLE dsv = D3D12_CPU_DESCRIPTOR_HANDLE());
-	void SetRenderTarget(const RenderTarget& renderTarget);
-
-	void SetGraphicsRootConstant(u32 rootIndex, u32 srcValue, u32 dstOffset = 0);
-	void SetGraphicsRootConstants(u32 rootIndex, u32 srcSizeInBytes, void* srcData, u32 dstOffsetInBytes = 0);
-	void SetComputeRootConstant(u32 rootIndex, u32 srcValue, u32 dstOffset = 0);
-	void SetComputeRootConstants(u32 rootIndex, u32 srcSizeInBytes, const void* srcData, u32 dstOffsetInBytes = 0);
-
-	void SetGraphicsDynamicConstantBuffer(u32 rootIndex, size_t sizeInBytes, const void* pData);
-	template< typename T >
-	void SetGraphicsDynamicConstantBuffer(u32 rootIndex, const T& data)
-	{
-		SetGraphicsDynamicConstantBuffer(rootIndex, sizeof(T), &data);
-	}
-	void SetComputeDynamicConstantBuffer(u32 rootIndex, size_t sizeInBytes, const void* pData);
-	template< typename T >
-	void SetComputeDynamicConstantBuffer(u32 rootIndex, const T& data)
-	{
-		SetComputeDynamicConstantBuffer(rootIndex, sizeof(T), &data);
-	}
-
-	void SetGraphicsConstantBufferView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle);
-	void SetGraphicsShaderResourceView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle);
-	void SetComputeConstantBufferView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle);
-	void SetComputeShaderResourceView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle);
-	void SetComputeUnorderedAccessView(u32 rootIndex, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle);
-
+	virtual void StageDescriptor(const std::string& name, Arc< render::Buffer > pBuffer, u32 offset = 0) override;
+	virtual void StageDescriptor(const std::string& name, Arc< render::Texture > pTexture, Arc< render::Sampler > pSamplerInCharge, u32 offset = 0) override;
 	void StageDescriptors(
-		u32 rootIndex,
-		u32 numDescriptors,
-		u32 offset,
-		D3D12_CPU_DESCRIPTOR_HANDLE srcHandle,
+		std::vector< std::pair< std::string, D3D12_CPU_DESCRIPTOR_HANDLE > > && srcHandles,
 		D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-
 	void StageDescriptors(
 		u32 rootIndex,
 		u32 offset,
 		std::vector< D3D12_CPU_DESCRIPTOR_HANDLE >&& srcHandles,
 		D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-	void Draw(u32 vertexCount, u32 instanceCount = 1, u32 startVertex = 0, u32 startInstance = 0);
-	void DrawIndexed(u32 indexCount, u32 instanceCount = 1, u32 startIndex = 0, u32 baseVertex = 0, u32 startInstance = 0);
-	void DrawIndexedIndirect(const SceneResource& sceneResource);
+	void SetDescriptorHeaps(const std::vector< ID3D12DescriptorHeap* >& d3d12DescriptorHeaps);
 
-	void Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ);
+	void SetRenderTarget(u32 numRenderTargets, D3D12_CPU_DESCRIPTOR_HANDLE rtv, D3D12_CPU_DESCRIPTOR_HANDLE dsv = D3D12_CPU_DESCRIPTOR_HANDLE());
+	virtual void BeginRenderPass(Arc< render::RenderTarget > pRenderTarget) override;
+	virtual void EndRenderPass() override {}
 
-	template< u32 numThreadsPerGroupX >
-	void Dispatch1D(u32 numThreadsX)
-	{
-		u32 numGroupsX = RoundUpAndDivide(numThreadsX, numThreadsPerGroupX);
-		Dispatch(numGroupsX, 1, 1);
-	}
-
-	template< u32 numThreadsPerGroupX, u32 numThreadsPerGroupY >
-	void Dispatch2D(u32 numThreadsX, u32 numThreadsY)
-	{
-		u32 numGroupsX = RoundUpAndDivide(numThreadsX, numThreadsPerGroupX);
-		u32 numGroupsY = RoundUpAndDivide(numThreadsY, numThreadsPerGroupY);
-		Dispatch(numGroupsX, numGroupsY, 1);
-	}
-
-	template< u32 numThreadsPerGroupX, u32 numThreadsPerGroupY, u32 numThreadsPerGroupZ >
-	void Dispatch3D(u32 numThreadsX, u32 numThreadsY, u32 numThreadsZ)
-	{
-		u32 numGroupsX = RoundUpAndDivide(numThreadsX, numThreadsPerGroupX);
-		u32 numGroupsY = RoundUpAndDivide(numThreadsY, numThreadsPerGroupY);
-		u32 numGroupsZ = RoundUpAndDivide(numThreadsZ, numThreadsPerGroupZ);
-		Dispatch(numGroupsX, numGroupsY, numGroupsZ);
-	}
-
-private:
-	void AddBarrier(const D3D12_RESOURCE_BARRIER& barrier, bool bFlushImmediate);
-	void FlushResourceBarriers();
-
-	void BindDescriptorHeaps();
+	virtual void Draw(u32 vertexCount, u32 instanceCount = 1, u32 firstVertex = 0, u32 firstInstance = 0) override;
+	virtual void DrawIndexed(u32 indexCount, u32 instanceCount = 1, u32 firstIndex = 0, i32 vertexOffset = 0, u32 firstInstance = 0) override;
+	virtual void DrawScene(const render::SceneResource& sceneResource) override;
+	virtual void Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ) override;
 
 public:
-	D3D12_COMMAND_LIST_TYPE GetCommandListType() const { return m_Type; }
-	ID3D12GraphicsCommandList2* GetD3D12CommandList() const { return m_d3d12CommandList; }
+	bool IsComputeContext() const;
+	bool IsGraphicsContext() const;
 
-	template< typename T >
-	constexpr T RoundUpAndDivide(T Value, size_t Alignment)
-	{
-		return (T)((Value + Alignment - 1) / Alignment);
-	}
+	D3D12_COMMAND_LIST_TYPE GetCommandListType() const;
+	ID3D12GraphicsCommandList2* GetD3D12CommandList() const;
 
 private:
-	RenderDevice&           m_RenderDevice;
-	D3D12_COMMAND_LIST_TYPE m_Type = {};
-	
-	DynamicBufferAllocator* m_pDynamicBufferAllocator = nullptr;
-
-	ID3D12GraphicsCommandList2* m_d3d12CommandList      = nullptr;
-	ID3D12CommandAllocator*     m_d3d12CommandAllocator = nullptr;
-
-	RootSignature* m_pRootSignature = nullptr;
-
-	GraphicsPipeline* m_pGraphicsPipeline = nullptr;
-	ComputePipeline*  m_pComputePipeline = nullptr;
-
-	D3D_PRIMITIVE_TOPOLOGY m_PrimitiveTopology = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
-
-	DescriptorHeap*       m_pDescriptorHeaps[NUM_RESOURCE_DESCRIPTOR_TYPE]               = {};
-	ID3D12DescriptorHeap* m_CurrentDescriptorHeaps[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES] = {};
-
-	u32                    m_NumBarriersToFlush                         = 0;
-	D3D12_RESOURCE_BARRIER m_ResourceBarriers[MAX_NUM_PENDING_BARRIERS] = {};
+	class Impl;
+	Box< Impl > m_Impl;
 };
 
 }

@@ -95,9 +95,8 @@ struct LightData
     u32   numSpots;
     float ev100;
 
-    float  ambientIntensity;
     float3 ambientColor;
-    float  padding0;
+    float  ambientIntensity;
 };
 
 

@@ -13,32 +13,30 @@ namespace dx12
 
 class RenderModule;
 
-class Renderer : public render::RendererAPI
+class Renderer : public render::Renderer
 {
 public:
 	explicit Renderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext);
 	virtual ~Renderer() override;
 
 	virtual void NewFrame() override;
-	virtual void Render(SceneRenderView&& renderView) override;
 
-	virtual void OnWindowResized(i32 width, i32 height) override;
+	virtual Arc< render::CommandContext > BeginFrame() override;
+	virtual void EndFrame(Arc< render::CommandContext >&& pContext, Arc< render::Texture > pScene, bool bDrawUI) override;
 
-	virtual void SetRendererType(eRendererType type) override;
+	virtual void WaitIdle() override;
+	virtual void Resize(i32 width, i32 height) override;
+
+	virtual render::RenderDevice* GetDevice() override { return m_pRenderDevice; }
+	virtual eRendererAPI GetAPIType() const override { return eRendererAPI::D3D12; }
 
 private:
-	class CommandContext& BeginFrame();
-	void EndFrame(CommandContext& context);
-
-private:
-	class RenderDevice* m_pRenderDevice = nullptr;
-	class SwapChain*     m_pSwapChain = nullptr;
+	class Dx12RenderDevice* m_pRenderDevice = nullptr;
+	class Dx12SwapChain*    m_pSwapChain    = nullptr;
 
 	u64 m_FrameFenceValue[NUM_FRAMES_IN_FLIGHT] = {};
 
-	std::vector< RenderModule* > m_pRenderModules;
-
-	eRendererType m_type = eRendererType::Deferred;
+	Box< class ImGuiModule > m_pImGuiModule;
 };
 
 } // namespace dx12

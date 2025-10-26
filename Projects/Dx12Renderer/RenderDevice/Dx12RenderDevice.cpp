@@ -4,24 +4,27 @@
 #include "Dx12CommandContext.h"
 #include "Dx12DescriptorPool.h"
 #include "Dx12DescriptorAllocation.h"
+#include "Dx12RenderPipeline.h"
 #include "Dx12ResourceManager.h"
 #include "RenderResource/Dx12Resource.h"
 #include "RenderResource/Dx12SceneResource.h"
+#include "RenderResource/Dx12RenderTarget.h"
+#include "RenderResource/Dx12Shader.h"
 
 #include "D3D12MemAlloc.h"
 
 namespace dx12
 {
 
-RenderDevice::RenderDevice(bool bEnableGBV)
+Dx12RenderDevice::Dx12RenderDevice(bool bEnableGBV)
 {
 	CreateDevice(bEnableGBV);
 
-	m_pGraphicsCommandQueue = new CommandQueue(*this, D3D12_COMMAND_LIST_TYPE_DIRECT);
-	m_pComputeCommandQueue  = new CommandQueue(*this, D3D12_COMMAND_LIST_TYPE_COMPUTE);
-	m_pCopyCommandQueue     = new CommandQueue(*this, D3D12_COMMAND_LIST_TYPE_COPY);
+	m_pGraphicsQueue = new Dx12CommandQueue(*this, D3D12_COMMAND_LIST_TYPE_DIRECT);
+	m_pComputeQueue  = new Dx12CommandQueue(*this, D3D12_COMMAND_LIST_TYPE_COMPUTE);
+	m_pCopyQueue     = new Dx12CommandQueue(*this, D3D12_COMMAND_LIST_TYPE_COPY);
 
-	m_pResourceManager = new ResourceManager(*this); 
+	m_pResourceManager = new Dx12ResourceManager(*this); 
 
 	m_SRVDescriptorSize = m_d3d12Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	m_RTVDescriptorSize = m_d3d12Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
@@ -42,41 +45,90 @@ RenderDevice::RenderDevice(bool bEnableGBV)
 	}
 }
 
-RenderDevice::~RenderDevice()
+Dx12RenderDevice::~Dx12RenderDevice()
 {
 	RELEASE(m_pResourceManager);
 
-	RELEASE(m_pCopyCommandQueue);
-	RELEASE(m_pComputeCommandQueue);
-	RELEASE(m_pGraphicsCommandQueue);
+	RELEASE(m_pCopyQueue);
+	RELEASE(m_pComputeQueue);
+	RELEASE(m_pGraphicsQueue);
 
 	COM_RELEASE(m_dmaAllocator);
 	COM_RELEASE(m_d3d12Device);
 }
 
-void RenderDevice::Flush()
+void Dx12RenderDevice::Flush()
 {
-	if (m_pGraphicsCommandQueue)
-		m_pGraphicsCommandQueue->Flush();
+	if (m_pGraphicsQueue)
+		m_pGraphicsQueue->Flush();
 
-	if (m_pComputeCommandQueue)
-		m_pComputeCommandQueue->Flush();
+	if (m_pComputeQueue)
+		m_pComputeQueue->Flush();
 
-	if (m_pCopyCommandQueue)
-		m_pCopyCommandQueue->Flush();
+	if (m_pCopyQueue)
+		m_pCopyQueue->Flush();
 }
 
-u32 RenderDevice::Swap()
+Arc< render::Buffer > Dx12RenderDevice::CreateBuffer(const std::string& name, render::Buffer::CreationInfo&& desc)
 {
-	u8 nextContextIndex = (m_FrameIndex + 1) % NUM_FRAMES_IN_FLIGHT;
-	m_FrameIndex = nextContextIndex;
+	return Dx12Buffer::Create(*this, name, std::move(desc));
+}
+
+Arc< render::Buffer > Dx12RenderDevice::CreateEmptyBuffer(const std::string& name)
+{
+	return Dx12Buffer::CreateEmpty(*this, name);
+}
+
+Arc< render::Texture > Dx12RenderDevice::CreateTexture(const std::string& name, render::Texture::CreationInfo&& desc)
+{
+	return Dx12Texture::Create(*this, name, std::move(desc));
+}
+
+Arc< render::Texture > Dx12RenderDevice::CreateEmptyTexture(const std::string& name)
+{
+	return Dx12Texture::CreateEmpty(*this, name);
+}
+
+Arc< render::RenderTarget > Dx12RenderDevice::CreateEmptyRenderTarget(const std::string& name)
+{
+	return MakeArc< Dx12RenderTarget >(name);
+}
+
+Arc< render::Sampler > Dx12RenderDevice::CreateSampler(const std::string& name, render::Sampler::CreationInfo&& info)
+{
+	return Dx12Sampler::Create(*this, name, std::move(info));
+}
+
+Arc< render::Shader > Dx12RenderDevice::CreateShader(const std::string& name, render::Shader::CreationInfo&& info)
+{
+	return Dx12Shader::Create(*this, name, std::move(info));
+}
+
+Box< render::ComputePipeline > Dx12RenderDevice::CreateComputePipeline(const std::string& name)
+{
+	return MakeBox< Dx12ComputePipeline >(*this, name);
+}
+
+Box< render::GraphicsPipeline > Dx12RenderDevice::CreateGraphicsPipeline(const std::string& name)
+{
+	return MakeBox< Dx12GraphicsPipeline >(*this, name);
+}
+
+u32 Dx12RenderDevice::Swap()
+{
+	u8 nextContextIndex = (m_ContextIndex + 1) % NUM_FRAMES_IN_FLIGHT;
+	m_ContextIndex = nextContextIndex;
 
 	return nextContextIndex;
 }
 
-void RenderDevice::UpdateSubresources(Arc< Resource > pResource, u32 firstSubresource, u32 numSubresources, const D3D12_SUBRESOURCE_DATA* pSrcData)
+Box< render::SceneResource > Dx12RenderDevice::CreateSceneResource()
 {
-	auto& d3d12CommandQueue = GraphicsQueue();
+	return MakeBox< Dx12SceneResource >(*this);
+}
+
+void Dx12RenderDevice::UpdateSubresources(Dx12Resource* pResource, u32 firstSubresource, u32 numSubresources, const D3D12_SUBRESOURCE_DATA* pSrcData)
+{
 	u64 uploadBufferSize    = GetRequiredIntermediateSize(pResource->GetD3D12Resource(), firstSubresource, numSubresources);
 
 	auto heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
@@ -92,21 +144,20 @@ void RenderDevice::UpdateSubresources(Arc< Resource > pResource, u32 firstSubres
 		IID_PPV_ARGS(&d3d12UploadBuffer))
 	);
 
-	auto& commandList = d3d12CommandQueue.Allocate();
+	auto pContext = BeginCommand(D3D12_COMMAND_LIST_TYPE_COPY);
 	{
-		commandList.TransitionBarrier(pResource, D3D12_RESOURCE_STATE_COPY_DEST);
-		::UpdateSubresources(commandList.GetD3D12CommandList(), pResource->GetD3D12Resource(), d3d12UploadBuffer, 0, 0, numSubresources, &pSrcData[0]);
-		commandList.TransitionBarrier(pResource, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
+		// All resource state should be common in copy queue
+		//pContext->TransitionBarrier(pResource, D3D12_RESOURCE_STATE_COPY_DEST, ALL_SUBRESOURCES, true);
+		::UpdateSubresources(pContext->GetD3D12CommandList(), pResource->GetD3D12Resource(), d3d12UploadBuffer, 0, 0, numSubresources, &pSrcData[0]);
+		//pContext->TransitionBarrier(pResource, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
+		pContext->Close();
 	}
-	commandList.Close();
-
-	auto fenceValue = d3d12CommandQueue.ExecuteCommandList(&commandList);
-	d3d12CommandQueue.WaitForFenceValue(fenceValue);
+	ExecuteCommand(std::move(pContext)).Wait();
 
 	COM_RELEASE(d3d12UploadBuffer);
 }
 
-ID3D12Resource* RenderDevice::CreateRHIResource(const D3D12_RESOURCE_DESC& desc, D3D12_RESOURCE_STATES initialState, D3D12_HEAP_PROPERTIES heapProperties, const D3D12_CLEAR_VALUE* pClearValue)
+ID3D12Resource* Dx12RenderDevice::CreateRHIResource(const D3D12_RESOURCE_DESC& desc, D3D12_RESOURCE_STATES initialState, D3D12_HEAP_PROPERTIES heapProperties, const D3D12_CLEAR_VALUE* pClearValue)
 {
 	ID3D12Resource* d3d12Resource = nullptr;
 
@@ -118,25 +169,49 @@ ID3D12Resource* RenderDevice::CreateRHIResource(const D3D12_RESOURCE_DESC& desc,
 	return d3d12Resource;
 }
 
-CommandContext& RenderDevice::BeginCommand(D3D12_COMMAND_LIST_TYPE commandType) const
+Arc< Dx12CommandContext > Dx12RenderDevice::BeginCommand(D3D12_COMMAND_LIST_TYPE commandType)
 {
-	switch(commandType)
+	switch (commandType)
 	{
 	case D3D12_COMMAND_LIST_TYPE_DIRECT:
-		return m_pGraphicsCommandQueue->Allocate();
+		return m_pGraphicsQueue->Allocate();
 	case D3D12_COMMAND_LIST_TYPE_COMPUTE:
-		return m_pComputeCommandQueue->Allocate();
+		return m_pComputeQueue->Allocate();
 	case D3D12_COMMAND_LIST_TYPE_COPY:
-		return m_pCopyCommandQueue->Allocate();
+		return m_pCopyQueue->Allocate();
 
 	default:
+		__debugbreak();
 		break;
 	}
 
 	assert(false && "Invalid entry!");
+	return m_pGraphicsQueue->Allocate();
 }
 
-DXGI_SAMPLE_DESC RenderDevice::GetMultisampleQualityLevels(DXGI_FORMAT format, D3D12_MULTISAMPLE_QUALITY_LEVEL_FLAGS flags) const
+SyncObject Dx12RenderDevice::ExecuteCommand(Arc< Dx12CommandContext >&& pContext)
+{
+	switch (pContext->GetCommandListType())
+	{
+	case D3D12_COMMAND_LIST_TYPE_DIRECT:
+		return { GraphicsQueue().ExecuteCommandList(pContext), GraphicsQueue() };
+	case D3D12_COMMAND_LIST_TYPE_COMPUTE:
+		return { ComputeQueue().ExecuteCommandList(pContext), ComputeQueue() };
+	case D3D12_COMMAND_LIST_TYPE_COPY:
+		return { CopyQueue().ExecuteCommandList(pContext), CopyQueue() };
+	}
+
+	__debugbreak();
+	assert(false && "Invalid command list execution!");
+	return { 0, GraphicsQueue() };
+}
+
+render::ResourceManager& Dx12RenderDevice::GetResourceManager() const
+{
+	return *m_pResourceManager;
+}
+
+DXGI_SAMPLE_DESC Dx12RenderDevice::GetMultisampleQualityLevels(DXGI_FORMAT format, D3D12_MULTISAMPLE_QUALITY_LEVEL_FLAGS flags) const
 {
 	DXGI_SAMPLE_DESC sampleDesc = { 1, 0 };
 
@@ -159,7 +234,7 @@ DXGI_SAMPLE_DESC RenderDevice::GetMultisampleQualityLevels(DXGI_FORMAT format, D
 	return sampleDesc;
 }
 
-void RenderDevice::CreateDevice(bool bEnableGBV)
+void Dx12RenderDevice::CreateDevice(bool bEnableGBV)
 {
 	ID3D12Debug* d3d12DebugController = nullptr;
 	IDXGIFactory6* dxgiFactory = nullptr;

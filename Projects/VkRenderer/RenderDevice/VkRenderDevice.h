@@ -23,6 +23,7 @@ public:
 	virtual void Flush() override;
 
 	virtual Arc< render::Buffer > CreateBuffer(const std::string& name, render::Buffer::CreationInfo&& desc) override;
+	virtual Arc< render::Buffer > CreateEmptyBuffer(const std::string& name = "") override;
 	virtual Arc< render::Texture > CreateTexture(const std::string& name, render::Texture::CreationInfo&& desc) override;
 	virtual Arc< render::Texture > CreateEmptyTexture(const std::string& name = "") override;
 

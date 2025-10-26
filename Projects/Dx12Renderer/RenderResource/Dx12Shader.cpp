@@ -9,23 +9,90 @@
 namespace dx12
 {
 
-IDxcUtils* Shader::ms_dxcUtils = nullptr;
-IDxcCompiler3* Shader::ms_dxcCompiler = nullptr;
-u32 Shader::ms_RefCount = 0;
+IDxcUtils* Dx12Shader::ms_dxcUtils = nullptr;
+IDxcCompiler3* Dx12Shader::ms_dxcCompiler = nullptr;
+u32 Dx12Shader::ms_RefCount = 0;
 
-Shader::Shader(RenderDevice& device, const std::wstring& name, CreationInfo&& info)
-	: Super(device, name, eResourceType::Shader)
+#define DX12_SHADER_PATH(filename, stage) GetCompiledShaderPath(filename, stage)
+std::string GetCompiledShaderPath(const std::string& filename, render::eShaderStage stage)
 {
-    if (name != L"Dummy")
+	using namespace render;
+
+	std::string stageStr;
+	switch (stage)
+	{
+	case eShaderStage::Vertex:
+		stageStr = "VS";
+		break;
+	case eShaderStage::Hull:
+		stageStr = "HS";
+		break;
+	case eShaderStage::Domain:
+		stageStr = "DS";
+		break;
+	case eShaderStage::Geometry:
+		stageStr = "GS";
+		break;
+	case eShaderStage::Fragment:
+		stageStr = "PS";
+		break;
+	case eShaderStage::Compute:
+		stageStr = "CS";
+		break;
+	case eShaderStage::AllGraphics:
+	case eShaderStage::AllStage   :
+		assert(false && "Invalid shader bit for parsing cso path!");
+		break;
+
+	case eShaderStage::RayGeneration:
+    case eShaderStage::AnyHit       :
+    case eShaderStage::ClosestHit   :
+    case eShaderStage::Miss         :
+    case eShaderStage::Interaction  :
+    case eShaderStage::Callable     :
+		// TODO
+		assert(false && "Invalid shader bit for parsing cso path!");
+		break;
+
+	case eShaderStage::Task:
+		stageStr = "TS";
+		break;
+	case eShaderStage::Mesh:
+		stageStr = "MS";
+		break;
+	}
+
+	return CSO_PATH.string() + filename + stageStr + ".cso";
+}
+
+static std::string GenerateResourceKey(const D3D12_SHADER_INPUT_BIND_DESC& bindDesc)
+{
+    return std::string(bindDesc.Name) + "_" +
+        std::to_string(bindDesc.Type) + "_" +
+        std::to_string(bindDesc.BindPoint) + "_" +
+        std::to_string(bindDesc.Space);
+}
+
+
+Arc< Dx12Shader > Dx12Shader::Create(Dx12RenderDevice& rd, const std::string& name, CreationInfo&& info)
+{
+    return MakeArc< Dx12Shader >(rd, name, std::move(info));
+}
+
+Dx12Shader::Dx12Shader(Dx12RenderDevice& rd, const std::string& name, CreationInfo&& info)
+	: render::Shader(name, std::move(info))
+    , Dx12Resource(rd, name, eResourceType::Shader)
+{
+    if (name != "Dummy")
     {
-        LoadBinary(info.filepath);
+        LoadBinary(DX12_SHADER_PATH(m_CreationInfo.filename, m_CreationInfo.stage));
         Reflect();
     }
 
     ms_RefCount++;
 }
 
-Shader::~Shader()
+Dx12Shader::~Dx12Shader()
 {
     COM_RELEASE(m_d3d12ShaderReflection);
     COM_RELEASE(m_d3dShaderBlob);
@@ -41,7 +108,7 @@ Shader::~Shader()
     }
 }
 
-void Shader::LoadBinary(std::string_view filepath)
+void Dx12Shader::LoadBinary(std::string_view filepath)
 {
     std::ifstream fin(filepath.data(), std::ios::binary);
 
@@ -57,7 +124,7 @@ void Shader::LoadBinary(std::string_view filepath)
     fin.close();
 }
 
-void Shader::Reflect()
+void Dx12Shader::Reflect()
 {
     if (!ms_dxcUtils)
     {
@@ -73,15 +140,107 @@ void Shader::Reflect()
     }
 
     DxcBuffer dxcBuffer = {};
-    dxcBuffer.Ptr = m_d3dShaderBlob->GetBufferPointer();
-    dxcBuffer.Size = m_d3dShaderBlob->GetBufferSize();
+    dxcBuffer.Ptr      = m_d3dShaderBlob->GetBufferPointer();
+    dxcBuffer.Size     = m_d3dShaderBlob->GetBufferSize();
     dxcBuffer.Encoding = 0;
     ms_dxcUtils->CreateReflection(&dxcBuffer, IID_PPV_ARGS(&m_d3d12ShaderReflection));
-}
+    assert(m_d3d12ShaderReflection);
 
-Arc< Shader > Shader::Create(RenderDevice& device, const std::wstring& name, CreationInfo&& info)
-{
-    return MakeArc< Shader >(device, name, std::move(info));
+    D3D12_SHADER_DESC shaderDesc;
+    m_d3d12ShaderReflection->GetDesc(&shaderDesc);
+
+    // Handle CBV separately for root constant
+    for (UINT i = 0; i < shaderDesc.ConstantBuffers; ++i)
+    {
+        ID3D12ShaderReflectionConstantBuffer* pCBuffer = m_d3d12ShaderReflection->GetConstantBufferByIndex(i);
+        
+        D3D12_SHADER_BUFFER_DESC bufferDesc;
+        pCBuffer->GetDesc(&bufferDesc);
+        if (bufferDesc.Type != D3D_CT_CBUFFER)
+            continue;
+
+        // exclude system buffers (ex. $Globals)
+        if (bufferDesc.Name && bufferDesc.Name[0] != '$')
+        {
+            D3D12_SHADER_INPUT_BIND_DESC bindDesc;
+            for (UINT j = 0; j < shaderDesc.BoundResources; ++j)
+            {
+                m_d3d12ShaderReflection->GetResourceBindingDesc(j, &bindDesc);
+                if (bindDesc.Type == D3D_SIT_CBUFFER && strcmp(bindDesc.Name, bufferDesc.Name) == 0)
+                {
+                    DescriptorInfo& info = m_Reflection.descriptors[bindDesc.Space].emplace_back();
+                    info.name           = bindDesc.Name;
+                    info.baseRegister   = bindDesc.BindPoint;
+                    info.numDescriptors = bindDesc.Space == ROOT_CONSTANT_SPACE ? bufferDesc.Size / 4 : bindDesc.BindCount;
+                    info.inputType      = bindDesc.Type;
+                    info.rangeType      = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+                    break;
+                }
+            }
+        }
+    }
+
+    for (UINT i = 0; i < shaderDesc.BoundResources; ++i)
+    {
+        D3D12_SHADER_INPUT_BIND_DESC bindDesc;
+        m_d3d12ShaderReflection->GetResourceBindingDesc(i, &bindDesc);
+
+        switch (bindDesc.Type)
+        {
+        //case D3D_SIT_CBUFFER:
+        //case D3D_SIT_TBUFFER:
+        //{
+        //    if (bindDesc.Name && bindDesc.Name[0] != '$')
+        //    {
+        //        DescriptorInfo& info = m_Reflection.descriptors[bindDesc.Space].emplace_back();
+        //        info.name            = bindDesc.Name;
+        //        info.baseRegister    = bindDesc.BindPoint;
+        //        info.numDescriptors  = bindDesc.BindCount;
+        //        info.descType        = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+        //    }
+        //    break;
+        //}
+
+        case D3D_SIT_TEXTURE:
+        case D3D_SIT_STRUCTURED:
+        case D3D_SIT_BYTEADDRESS:
+        {
+            DescriptorInfo& info = m_Reflection.descriptors[bindDesc.Space].emplace_back();
+            info.name            = bindDesc.Name;
+            info.baseRegister    = bindDesc.BindPoint;
+            info.numDescriptors  = bindDesc.BindCount;
+            info.inputType       = bindDesc.Type;
+            info.rangeType       = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+            break;
+        }
+
+        case D3D_SIT_UAV_RWTYPED:
+        case D3D_SIT_UAV_RWSTRUCTURED:
+        case D3D_SIT_UAV_RWBYTEADDRESS:
+        case D3D_SIT_UAV_APPEND_STRUCTURED:
+        case D3D_SIT_UAV_CONSUME_STRUCTURED:
+        case D3D_SIT_UAV_RWSTRUCTURED_WITH_COUNTER:
+        {
+            DescriptorInfo& info = m_Reflection.descriptors[bindDesc.Space].emplace_back();
+            info.name            = bindDesc.Name;
+            info.baseRegister    = bindDesc.BindPoint;
+            info.numDescriptors  = bindDesc.BindCount;
+            info.inputType       = bindDesc.Type;
+            info.rangeType       = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+            break;
+        }
+        case D3D_SIT_SAMPLER:
+        {
+            DescriptorInfo& info = m_Reflection.descriptors[bindDesc.Space].emplace_back();
+            info.name            = bindDesc.Name;
+            info.baseRegister    = bindDesc.BindPoint;
+            info.numDescriptors  = bindDesc.BindCount;
+            info.inputType       = bindDesc.Type;
+            info.rangeType       = D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
+            break;
+        }
+        }
+    }
 }
 
 }

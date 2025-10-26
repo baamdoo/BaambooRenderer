@@ -7,7 +7,7 @@ namespace dx12
 class DescriptorPool
 {
 public:
-	DescriptorPool(RenderDevice& device, D3D12_DESCRIPTOR_HEAP_TYPE type, D3D12_DESCRIPTOR_HEAP_FLAGS flags, u32 maxDescriptorCount);
+	DescriptorPool(Dx12RenderDevice& rd, D3D12_DESCRIPTOR_HEAP_TYPE type, D3D12_DESCRIPTOR_HEAP_FLAGS flags, u32 maxDescriptorCount);
 	~DescriptorPool();
 
     DescriptorAllocation Allocate(u32 numDescriptors);
@@ -18,7 +18,7 @@ public:
     ID3D12DescriptorHeap* GetD3D12DescriptorHeap() const { return m_d3d12DescriptorHeap; }
 
 private:
-    RenderDevice& m_RenderDevice;
+    Dx12RenderDevice& m_RenderDevice;
 
     ID3D12DescriptorHeap* m_d3d12DescriptorHeap;
     D3D12_DESCRIPTOR_HEAP_TYPE m_d3d12HeapType;

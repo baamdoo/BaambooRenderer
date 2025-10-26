@@ -1,5 +1,6 @@
 #pragma once
 #include "RendererAPI.h"
+#include "ShaderTypes.h"
 
 #pragma warning(disable : 4251)
 
@@ -52,14 +53,17 @@ using Super = Resource;
 public:
     struct CreationInfo
     {
-        u64  sizeInBytes = 0;
-        bool bMap        = false;
+        u32  count              = 0;
+        u64  elementSizeInBytes = 0;
+        bool bMap               = false;
 
         RenderFlags bufferUsage = 0;
     };
 
     static Arc< Buffer > Create(RenderDevice& rd, const std::string& name, CreationInfo&& desc);
+    static Arc< Buffer > CreateEmpty(RenderDevice& rd, const std::string& name);
 
+    Buffer(const std::string& name);
     Buffer(const std::string& name, CreationInfo&& info);
     virtual ~Buffer() = default;
 
@@ -82,6 +86,7 @@ enum class eFormat
     RGBA32_FLOAT,
     RGBA32_UINT,
     RGBA32_SINT,
+    RGB32_FLOAT,
     RGB32_UINT,
     RGB32_SINT,
     RG32_FLOAT,
@@ -341,6 +346,7 @@ public:
     virtual void InvalidateImageLayout() {}
 
     virtual Arc< Texture > Attachment(eAttachmentPoint attachment) const { return m_pAttachments[attachment]; }
+    virtual const std::vector< Arc< Texture > >& GetAttachments() const { return m_pAttachments; }
     virtual u32 GetNumColors() const { return m_NumColors; }
 
 protected:
@@ -417,11 +423,11 @@ public:
 
     virtual ShaderBytecode ShaderModule() const { return m_ShaderBytecode; }
 
-private:
+protected:
     CreationInfo   m_CreationInfo;
     ShaderBytecode m_ShaderBytecode;
 
-    RenderFlags m_StageFlags = 0;
+    eShaderStage m_Stage;
 };
 
 
@@ -447,12 +453,6 @@ enum class eFrontFace
 {
     Clockwise        = 0,
     CounterClockwise = 1,
-};
-
-enum class eFillMode
-{
-    Solid     = 0,
-    Wireframe = 1,
 };
 
 enum class eBlendFactor
@@ -520,20 +520,23 @@ public:
     virtual ~GraphicsPipeline() = default;
 
     GraphicsPipeline& SetShaders(
-        Arc< Shader > vs,
-        Arc< Shader > fs,
-        Arc< Shader > gs = Arc< Shader >(),
-        Arc< Shader > hs = Arc< Shader >(),
-        Arc< Shader > ds = Arc< Shader >());
+        Arc< Shader > pVS,
+        Arc< Shader > pPS,
+        Arc< Shader > pGS = Arc< Shader >(),
+        Arc< Shader > pHS = Arc< Shader >(),
+        Arc< Shader > pDS = Arc< Shader >());
     GraphicsPipeline& SetMeshShaders(
-        Arc< Shader > ms,
-        Arc< Shader > ts = Arc< Shader >());
+        Arc< Shader > pMS,
+        Arc< Shader > pTS = Arc< Shader >());
 
     virtual GraphicsPipeline& SetRenderTarget(Arc< RenderTarget > renderTarget) = 0;
 
+    virtual GraphicsPipeline& SetFillMode(bool bWireframe) = 0;
+    virtual GraphicsPipeline& SetCullMode(eCullMode cullMode) = 0;
+
     virtual GraphicsPipeline& SetTopology(ePrimitiveTopology topology) = 0;
-    virtual GraphicsPipeline& SetDepthTestEnable(bool bEnable) = 0;
-    virtual GraphicsPipeline& SetDepthWriteEnable(bool bEnable) = 0;
+    virtual GraphicsPipeline& SetDepthTestEnable(bool bEnable, render::eCompareOp compareOp = render::eCompareOp::LessEqual) = 0;
+    virtual GraphicsPipeline& SetDepthWriteEnable(bool bEnable, render::eCompareOp compareOp = render::eCompareOp::LessEqual) = 0;
 
     virtual GraphicsPipeline& SetLogicOp(eLogicOp logicOp) = 0;
     virtual GraphicsPipeline& SetBlendEnable(u32 renderTargetIndex, bool bEnable) = 0;
@@ -542,22 +545,25 @@ public:
 
     virtual void Build() = 0;
 
-    virtual void* GetPipelineView() const { return nullptr; }
-    virtual void* GetPipelineLayoutView() const { return nullptr; }
+    std::pair< u32, u32 > GetResourceBindingIndex(const std::string& name);
 
 protected:
     std::string m_Name;
 
-    Arc< Shader > m_VS;
-    Arc< Shader > m_PS;
-    Arc< Shader > m_GS;
-    Arc< Shader > m_HS;
-    Arc< Shader > m_DS;
+    Arc< Shader > m_pVS;
+    Arc< Shader > m_pPS;
+    Arc< Shader > m_pGS;
+    Arc< Shader > m_pHS;
+    Arc< Shader > m_pDS;
 
-    Arc< Shader > m_TS;
-    Arc< Shader > m_MS;
+    Arc< Shader > m_pTS;
+    Arc< Shader > m_pMS;
 
     bool m_bMeshShader = false;
+
+    // [name, set:binding] - Vulkan
+    // [name, offset:rootIndex] - Dx12
+    std::unordered_map< std::string, u64 > m_ResourceBindingMap;
 };
 
 class BAAMBOO_API ComputePipeline : public ArcBase
@@ -568,18 +574,21 @@ public:
     ComputePipeline(const std::string& name);
     virtual ~ComputePipeline() = default;
 
-    ComputePipeline& SetComputeShader(Arc< Shader > cs);
+    ComputePipeline& SetComputeShader(Arc< Shader > pCS);
     //ComputePipeline& SetDescriptorLayout(Arc< DescriptorLayout > layout);
 
     virtual void Build() = 0;
 
-    virtual void* GetPipelineView() const { return nullptr; }
-    virtual void* GetPipelineLayoutView() const { return nullptr; }
+    std::pair< u32, u32 > GetResourceBindingIndex(const std::string& name);
 
 protected:
     std::string m_Name;
 
-    Arc< Shader > m_CS;
+    Arc< Shader > m_pCS;
+
+    // [name, set:binding] - Vulkan
+    // [name, offset:rootIndex] - Dx12
+    std::unordered_map< std::string, u64 > m_ResourceBindingMap;
 };
 
 
@@ -613,9 +622,9 @@ public:
 
     virtual Arc< Texture > LoadTexture(const std::string& filepath) = 0;
 
-    Arc< Texture > GetFlatWhiteTexture() const { return m_pWhiteTexture; }
-    Arc< Texture > GetFlatBlackTexture() const { return m_pBlackTexture; }
-    Arc< Texture > GetFlatGrayTexture() const { return m_pGrayTexture; }
+    virtual Arc< Texture > GetFlatWhiteTexture() { return m_pWhiteTexture; }
+    virtual Arc< Texture > GetFlatBlackTexture() { return m_pBlackTexture; }
+    virtual Arc< Texture > GetFlatGrayTexture() { return m_pGrayTexture; }
 
     /*void SetBuffer(const std::string& name, Weak< Buffer > buffer);
     void SetTexture(const std::string& name, Weak< Texture > texture);
@@ -625,7 +634,7 @@ public:
     Weak< Texture > GetTexture(const std::string& name) const;
     Arc< Sampler > GetSampler(const std::string& name) const;*/
 
-    SceneResource& GetSceneResource() { return *m_pSceneResource; }
+    virtual SceneResource& GetSceneResource() { return *m_pSceneResource; }
 
 protected:
     Arc< Texture > m_pWhiteTexture;
@@ -636,7 +645,7 @@ protected:
     std::unordered_map< std::string, Weak< Texture > > m_Textures;
     std::unordered_map< std::string, Arc< Sampler > >  m_Samplers;*/
 
-    SceneResource* m_pSceneResource;
+    SceneResource* m_pSceneResource = nullptr;
 };
 
 } // namespace render

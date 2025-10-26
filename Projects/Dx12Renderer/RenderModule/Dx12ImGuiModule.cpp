@@ -10,8 +10,8 @@
 namespace dx12
 {
 
-ImGuiModule::ImGuiModule(RenderDevice& device, ImGuiContext* pImGuiContext)
-	: Super(device)
+ImGuiModule::ImGuiModule(Dx12RenderDevice& rd, ImGuiContext* pImGuiContext)
+	: m_RenderDevice(rd)
 {
 	assert(pImGuiContext);
 	ImGui::SetCurrentContext(pImGuiContext);
@@ -20,11 +20,11 @@ ImGuiModule::ImGuiModule(RenderDevice& device, ImGuiContext* pImGuiContext)
 	desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	desc.NumDescriptors = 64;
 	desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	DX_CHECK(device.GetD3D12Device()->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&m_d3d12SrvDescHeap)) != S_OK);
+	DX_CHECK(m_RenderDevice.GetD3D12Device()->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&m_d3d12SrvDescHeap)) != S_OK);
 
 	ImGui_ImplDX12_InitInfo info      = {};
-	info.Device                       = device.GetD3D12Device();
-	info.CommandQueue                 = device.GraphicsQueue().GetD3D12CommandQueue();
+	info.Device                       = m_RenderDevice.GetD3D12Device();
+	info.CommandQueue                 = m_RenderDevice.GraphicsQueue().GetD3D12CommandQueue();
 	info.RTVFormat                    = DXGI_FORMAT_R8G8B8A8_UNORM;
 	info.NumFramesInFlight            = NUM_FRAMES_IN_FLIGHT;
 	info.SrvDescriptorHeap            = m_d3d12SrvDescHeap;
@@ -39,14 +39,12 @@ ImGuiModule::~ImGuiModule()
 	COM_RELEASE(m_d3d12SrvDescHeap);
 }
 
-void ImGuiModule::Apply(CommandContext& context, const SceneRenderView& renderView)
+void ImGuiModule::Apply(Dx12CommandContext& context, Arc< Dx12Texture > pColor)
 {
-	UNUSED(renderView);
-
-	if (ImGui::GetDrawData() && g_FrameData.pColor.valid())
+	if (ImGui::GetDrawData() && pColor)
 	{
-		context.TransitionBarrier(g_FrameData.pColor.lock(), D3D12_RESOURCE_STATE_RENDER_TARGET);
-		context.SetRenderTarget(1, g_FrameData.pColor.lock()->GetRenderTargetView());
+		context.TransitionBarrier(pColor.get(), D3D12_RESOURCE_STATE_RENDER_TARGET);
+		context.SetRenderTarget(1, pColor->GetRenderTargetView());
 		context.SetDescriptorHeaps({ m_d3d12SrvDescHeap });
 
 		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), context.GetD3D12CommandList());

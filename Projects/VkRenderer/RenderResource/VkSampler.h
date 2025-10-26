@@ -1,6 +1,5 @@
 #pragma once
 #include "VkResource.h"
-#include "RenderCommon/RenderResources.h"
 
 namespace vk
 {

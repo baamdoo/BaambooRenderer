@@ -7,7 +7,7 @@ Texture2D< float3 >   g_TransmittanceLUT   : register(t0);
 Texture2D< float3 >   g_MultiScatteringLUT : register(t1);
 RWTexture2D< float3 > g_SkyViewLUT         : register(u0);
 
-SamplerState g_LinearClampSampler : register(s0);
+SamplerState g_LinearClampSampler : register(SAMPLER_INDEX_LINEAR_CLAMP);
 
 struct PushConstants
 {
@@ -15,8 +15,6 @@ struct PushConstants
     uint maxRaySteps;
 };
 ConstantBuffer< PushConstants > g_Push : register(b0, ROOT_CONSTANT_SPACE);
-
-static const float RAY_MARCHING_MAX_DISTANCE = 1e6;
 
 float3 GetSkyViewRayDirectionFromUV(float2 uv, float viewHeight)
 {

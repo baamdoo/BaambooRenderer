@@ -8,7 +8,9 @@ class VulkanBuffer : public render::Buffer, public VulkanResource< VulkanBuffer 
 {
 public:
     static Arc< VulkanBuffer > Create(VkRenderDevice& rd, const std::string& name, CreationInfo&& desc);
+    static Arc< VulkanBuffer > CreateEmpty(VkRenderDevice& rd, const std::string& name);
 
+    VulkanBuffer(VkRenderDevice& rd, const std::string& name);
     VulkanBuffer(VkRenderDevice& rd, const std::string& name, CreationInfo&& info);
     virtual ~VulkanBuffer();
 
@@ -18,7 +20,7 @@ public:
     inline VkBuffer vkBuffer() const { return m_vkBuffer; }
 
     [[nodiscard]]
-    inline u64 SizeInBytes() const { return m_CreationInfo.sizeInBytes; }
+    inline u64 SizeInBytes() const { return m_CreationInfo.count * m_CreationInfo.elementSizeInBytes; }
 
 protected:
     VkBuffer        m_vkBuffer      = VK_NULL_HANDLE;

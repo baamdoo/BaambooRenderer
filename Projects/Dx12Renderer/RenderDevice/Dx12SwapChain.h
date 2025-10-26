@@ -8,13 +8,13 @@ namespace baamboo
 namespace dx12
 {
 
-class Texture;
+class Dx12Texture;
 
-class SwapChain
+class Dx12SwapChain
 {
 public:
-	SwapChain(RenderDevice& device, baamboo::Window& window);
-	~SwapChain();
+	Dx12SwapChain(Dx12RenderDevice& rd, baamboo::Window& window);
+	~Dx12SwapChain();
 
 	HRESULT Present();
 
@@ -22,21 +22,21 @@ public:
 
 public:
 	[[nodiscard]]
-	inline Arc< Texture > GetBackImage() const { return m_pBackImages[m_ImageIndex]; }
+	inline Arc< Dx12Texture > GetBackImage() const { return m_pBackImages[m_ImageIndex]; }
 
 protected:
 	void CreateSwapChainResources();
 
 private:
-	RenderDevice&   m_RenderDevice;
-	baamboo::Window& m_Window;
+	Dx12RenderDevice& m_RenderDevice;
+	baamboo::Window&  m_Window;
 
 	IDXGISwapChain3* m_dxgiSwapChain = nullptr;
 
 	u32  m_ImageIndex = 0;
 	bool m_vSync = true;
 
-	Arc< Texture > m_pBackImages[NUM_FRAMES_IN_FLIGHT];
+	Arc< Dx12Texture > m_pBackImages[NUM_FRAMES_IN_FLIGHT];
 };
 
 }

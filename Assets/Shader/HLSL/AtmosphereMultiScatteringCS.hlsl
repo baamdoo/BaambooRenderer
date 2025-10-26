@@ -5,7 +5,7 @@
 Texture2D< float3 >   g_TransmittanceLUT   : register(t0);
 RWTexture2D< float3 > g_MultiScatteringLUT : register(u0);
 
-SamplerState g_LinearClampSampler : register(s0);
+SamplerState g_LinearClampSampler : register(SAMPLER_INDEX_LINEAR_CLAMP);
 
 // Push constants
 struct PushConstants

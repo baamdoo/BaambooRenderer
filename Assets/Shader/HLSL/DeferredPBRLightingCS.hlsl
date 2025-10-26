@@ -11,12 +11,14 @@ Texture2D< float4 > g_GBuffer3             : register(t3); // MotionVectors.rg +
 Texture2D< float >  g_DepthBuffer          : register(t4);
 Texture2D< float4 > g_SkyViewLUT           : register(t5);
 Texture3D< float4 > g_AerialPerspectiveLUT : register(t6);
+Texture2D< float4 > g_CloudScatteringLUT   : register(t7);
 
-StructuredBuffer< MaterialData > g_Materials : register(t7);
+StructuredBuffer< MaterialData > g_Materials : register(t0, space1);
 
-RWTexture2D< float4 > g_OutputTexture : register(u0);
+RWTexture2D< float4 > g_SceneTexture : register(u0);
 
-SamplerState g_LinearClampSampler : register(s0, space0);
+SamplerState g_PointClampSampler  : register(SAMPLER_INDEX_POINT_CLAMP, space0);
+SamplerState g_LinearClampSampler : register(SAMPLER_INDEX_LINEAR_CLAMP, space0);
 
 struct PushConstants
 {
@@ -205,7 +207,7 @@ void main(uint3 tID : SV_DispatchThreadID)
     int2 texCoords = tID.xy;
 
     uint width, height;
-    g_OutputTexture.GetDimensions(width, height);
+    g_SceneTexture.GetDimensions(width, height);
 
     float2 uv = (float2(texCoords.xy) + 0.5) / float2(width, height);
 
@@ -214,7 +216,8 @@ void main(uint3 tID : SV_DispatchThreadID)
     float3 gbuffer2 = g_GBuffer2.SampleLevel(g_LinearClampSampler, uv, 0);
     float4 gbuffer3 = g_GBuffer3.SampleLevel(g_LinearClampSampler, uv, 0);
 
-    float  depth    = g_DepthBuffer.SampleLevel(g_LinearClampSampler, uv, 0);
+    float3 color = 0.0;
+    float  depth = g_DepthBuffer.SampleLevel(g_PointClampSampler, uv, 0);
     if (depth == 1.0)
     {
         // sky view
@@ -240,92 +243,92 @@ void main(uint3 tID : SV_DispatchThreadID)
         float2 skyUV = GetUvFromSkyViewRayDirection(longitude, acosFast4(cosLatitude), viewHeight, bIntersectGround);
         skyUV        = GetUnstretchedTextureUV(skyUV, texSize);
         float4 skyColor = g_SkyViewLUT.SampleLevel(g_LinearClampSampler, skyUV, 0);
-        float3 color    = skyColor.rgb + GetSunLuminance(rayDir, bIntersectGround) * skyColor.a;
-
-        // exposure correction
-        float ev100    = g_Lights.ev100;
-        float exposure = 1.0 / (1.2 * pow(2.0, ev100));
-        color *= exposure;
-
-        g_OutputTexture[texCoords] = vec4(color, 1.0);
-        return;
+               color    = skyColor.rgb + GetSunLuminance(rayDir, bIntersectGround) * skyColor.a;
     }
-
-    float3 albedo = gbuffer0.rgb;
-    float  ao     = gbuffer0.a;
-
-    float3 N          = gbuffer1.xyz;
-    uint   materialID = (uint)(gbuffer1.w * 255.0);
-    float3 emissive   = gbuffer2.rgb;
-
-    float roughness = max(gbuffer3.z, MIN_ROUGHNESS);
-    float metallic  = gbuffer3.w;
-
-    float3 posWORLD = ReconstructWorldPos(uv, depth, g_Camera.mViewProjInv);
-
-    float3 V  = normalize(g_Camera.posWORLD - posWORLD);
-    float3 F0 = lerp(float3(0.04, 0.04, 0.04), albedo, metallic);
-
-    if (materialID != INVALID_INDEX && materialID < 256) 
+    else
     {
-        MaterialData material = g_Materials[materialID];
-        if (material.ior > 1.0) 
+        float3 albedo = gbuffer0.rgb;
+        float  ao = gbuffer0.a;
+
+        float3 N = gbuffer1.xyz;
+        uint   materialID = (uint)(gbuffer1.w * 255.0);
+        float3 emissive = gbuffer2.rgb;
+
+        float roughness = max(gbuffer3.z, MIN_ROUGHNESS);
+        float metallic = gbuffer3.w;
+
+        float3 posWORLD = ReconstructWorldPos(uv, depth, g_Camera.mViewProjInv);
+
+        float3 V = normalize(g_Camera.posWORLD - posWORLD);
+        float3 F0 = lerp(float3(0.04, 0.04, 0.04), albedo, metallic);
+
+        if (materialID != INVALID_INDEX && materialID < 256)
         {
-            float f0 = pow((material.ior - 1.0) / (material.ior + 1.0), 2.0);
-            F0       = float3(f0, f0, f0);
+            MaterialData material = g_Materials[materialID];
+            if (material.ior > 1.0)
+            {
+                float f0 = pow((material.ior - 1.0) / (material.ior + 1.0), 2.0);
+                F0 = float3(f0, f0, f0);
+            }
+        }
+
+        float3 Lo = float3(0.0, 0.0, 0.0);
+        for (uint i = 0; i < g_Lights.numDirectionals; ++i)
+        {
+            Lo += ApplyDirectionalLight(g_Lights.directionals[i], N, V, albedo, metallic, roughness, F0);
+        }
+
+        for (uint i = 0; i < g_Lights.numPoints; ++i)
+        {
+            Lo += ApplyPointLight(g_Lights.points[i], posWORLD, N, V, albedo, metallic, roughness, F0);
+        }
+
+        for (uint i = 0; i < g_Lights.numSpots; ++i)
+        {
+            Lo += ApplySpotLight(g_Lights.spots[i], posWORLD, N, V, albedo, metallic, roughness, F0);
+        }
+
+        float3 ambientColor = float3(g_Lights.ambientColorR, g_Lights.ambientColorG, g_Lights.ambientColorB);
+        float3 ambient = ambientColor * g_Lights.ambientIntensity * albedo * ao;
+
+        color = ambient + Lo + emissive;
+
+        // Aerial perspective
+        {
+            float viewDistance = max(0.0, length(posWORLD - g_Camera.posWORLD));
+
+            uint3 texSize;
+            g_AerialPerspectiveLUT.GetDimensions(texSize.x, texSize.y, texSize.z);
+
+            float slice = viewDistance * (1.0 / AP_KM_PER_SLICE) * DISTANCE_SCALE;
+            float w = sqrt(slice / float(texSize.z));
+            slice = w * texSize.z;
+
+            float4 ap = g_AerialPerspectiveLUT.SampleLevel(g_LinearClampSampler, float3(uv, w), 0);
+
+            // prevents an abrupt appearance of fog on objects close to the camera
+            float weight = 1.0;
+            if (slice < sqrt(0.5))
+            {
+                weight = clamp((slice * slice * 2.0), 0.0, 1.0);
+            }
+            ap.rgb *= weight;
+            ap.a = 1.0 - weight * (1.0 - ap.a);
+
+            // FinalColor = (SurfaceColor * Transmittance) + InScatteredLight
+            color = color * ap.a + ap.rgb;
         }
     }
-
-    float3 Lo = float3(0.0, 0.0, 0.0);
-    for (uint i = 0; i < g_Lights.numDirectionals; ++i)
+    // Cloud
     {
-        Lo += ApplyDirectionalLight(g_Lights.directionals[i], N, V, albedo, metallic, roughness, F0);
-    }
+        float4 cloud = g_CloudScatteringLUT.SampleLevel(g_LinearClampSampler, uv, 0);
 
-    for (uint i = 0; i < g_Lights.numPoints; ++i)
-    {
-        Lo += ApplyPointLight(g_Lights.points[i], posWORLD, N, V, albedo, metallic, roughness, F0);
-    }
-
-    for (uint i = 0; i < g_Lights.numSpots; ++i)
-    {
-        Lo += ApplySpotLight(g_Lights.spots[i], posWORLD, N, V, albedo, metallic, roughness, F0);
-    }
-
-    float3 ambientColor = float3(g_Lights.ambientColorR, g_Lights.ambientColorG, g_Lights.ambientColorB);
-    float3 ambient      = ambientColor * g_Lights.ambientIntensity * albedo * ao;
-
-    float3 color = ambient + Lo + emissive;
-
-    // Aerial perspective
-    {
-        float viewDistance = max(0.0, length(posWORLD - g_Camera.posWORLD));
-
-        uint3 texSize;
-        g_AerialPerspectiveLUT.GetDimensions(texSize.x, texSize.y, texSize.z);
-
-        float slice = viewDistance * (1.0 / AP_KM_PER_SLICE) * DISTANCE_SCALE;
-        float w     = sqrt(slice / float(texSize.z));
-        slice       = w * texSize.z;
-
-        float4 ap = g_AerialPerspectiveLUT.SampleLevel(g_LinearClampSampler, float3(uv, w), 0);
-
-        // prevents an abrupt appearance of fog on objects close to the camera
-        float weight = 1.0;
-        if (slice < sqrt(0.5))
-        {
-            weight = clamp((slice * slice * 2.0), 0.0, 1.0);
-        }
-        ap.rgb *= weight;
-        ap.a    = 1.0 - weight * (1.0 - ap.a);
-
-        // FinalColor = (SurfaceColor * Transmittance) + InScatteredLight
-        color = color * ap.a + ap.rgb;
+        color = color * cloud.a + cloud.rgb;
     }
 
     float ev100    = g_Lights.ev100;
     float exposure = 1.0 / (1.2 * pow(2.0, ev100));
     color *= exposure;
 
-    g_OutputTexture[texCoords] = float4(color, 1.0);
+    g_SceneTexture[texCoords] = float4(color, 1.0);
 }

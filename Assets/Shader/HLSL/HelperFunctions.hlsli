@@ -15,6 +15,16 @@ float remap(float v, float inMin, float inMax, float outMin, float outMax)
 	return lerp(outMin, outMax, t);
 }
 
+float safeRemap(float value, float oldMin, float oldMax, float newMin, float newMax)
+{
+    return clamp((value - oldMin) / (oldMax - oldMin), 0.0, 1.0) * (newMax - newMin) + newMin;
+}
+
+float clampedRemap(float value, float oldMin, float oldMax, float newMin, float newMax)
+{
+    return clamp(remap(value, oldMin, oldMax, newMin, newMax), newMin, newMax);
+}
+
 float safeSqrt(float a)
 {
     return sqrt(max(a, 0.0));
@@ -58,12 +68,17 @@ float atan2Fast(float y, float x)
 
 float3 ReconstructWorldPos(float2 uv, float depth, float4x4 mViewProjInv)
 {
-    float4 posCLIP  = vec4(uv.x * 2.0 - 1.0, uv.y * -2.0 + 1.0, depth, 1.0);
+    float4 posCLIP  = float4(uv.x * 2.0 - 1.0, uv.y * -2.0 + 1.0, depth, 1.0);
     // float4 posCLIP = float4(uv * 2.0 - 1.0, depth, 1.0);
     // float4 posWORLD = mViewProjInv * posCLIP;
     float4 posWORLD = mul(mViewProjInv, posCLIP);
 
     return posWORLD.xyz / posWORLD.w;
+}
+
+float LinearizeDepth(float depth, float near, float far)
+{
+    return (near * far) / (far - depth * (far - near));
 }
 
 float ConvertColorToLuminance(float3 color)
@@ -125,6 +140,12 @@ float2 RaySphereIntersection(float3 rayOrigin, float3 rayDir, float3 sphereCente
     float root0 = (-b - sqrt(discriminant)) / (2.0 * a);
     float root1 = (-b + sqrt(discriminant)) / (2.0 * a);
     return float2(root0, root1);
+}
+
+float3 RayPlaneIntersection(float3 rayOrigin, float3 rayDir, float4 plane)
+{
+    float t = (plane.a - dot(rayOrigin, plane.xyz)) / max(dot(rayDir, plane.xyz), EPSILON);
+    return rayOrigin + t * rayDir;
 }
 
 #endif // _HLSL_HELPER_FUNCTION_HEADER

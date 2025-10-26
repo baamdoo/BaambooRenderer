@@ -61,21 +61,6 @@ VkFrontFace ConvertToVkFrontFace(render::eFrontFace face)
 	return VK_FRONT_FACE_COUNTER_CLOCKWISE;
 }
 
-#define VK_PIPELINE_FILLMODE(mode) ConvertToVkFillMode(mode)
-VkPolygonMode ConvertToVkFillMode(render::eFillMode mode)
-{
-	switch (mode)
-	{
-	case eFillMode::Solid     : return VK_POLYGON_MODE_FILL;
-	case eFillMode::Wireframe : return VK_POLYGON_MODE_LINE;
-
-	default:
-		assert(false && "Invalid fill mode!"); break;
-	}
-
-	return VK_POLYGON_MODE_FILL;
-}
-
 #define VK_PIPELINE_LOGICOP(op) ConvertToVkLogicOp(op)
 VkLogicOp ConvertToVkLogicOp(render::eLogicOp op)
 {
@@ -209,13 +194,13 @@ GraphicsPipeline& VulkanGraphicsPipeline::SetVertexInputs(std::vector< VkVertexI
 	return *this;
 }
 
-GraphicsPipeline& VulkanGraphicsPipeline::SetRenderTarget(Arc< render::RenderTarget > renderTarget)
+GraphicsPipeline& VulkanGraphicsPipeline::SetRenderTarget(Arc< render::RenderTarget > pRenderTarget)
 {
-	auto vkRenderTarget = StaticCast<VulkanRenderTarget>(renderTarget);
-	assert(vkRenderTarget);
+	auto rhiRenderTarget = StaticCast<VulkanRenderTarget>(pRenderTarget);
+	assert(rhiRenderTarget);
 
-	m_PipelineDesc.renderPass = vkRenderTarget->vkRenderPass();
-	m_PipelineDesc.blendStates.resize(vkRenderTarget->GetNumColors());
+	m_PipelineDesc.renderPass = rhiRenderTarget->vkRenderPass();
+	m_PipelineDesc.blendStates.resize(rhiRenderTarget->GetNumColors());
 	for (auto& blendStates : m_PipelineDesc.blendStates)
 	{
 		// set default values
@@ -232,21 +217,35 @@ GraphicsPipeline& VulkanGraphicsPipeline::SetRenderTarget(Arc< render::RenderTar
 	return *this;
 }
 
+GraphicsPipeline& VulkanGraphicsPipeline::SetFillMode(bool bWireframe)
+{
+	m_PipelineDesc.rasterizerInfo.polygonMode = bWireframe ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
+	return *this;
+}
+
+GraphicsPipeline& VulkanGraphicsPipeline::SetCullMode(render::eCullMode cullMode)
+{
+	m_PipelineDesc.rasterizerInfo.cullMode = VK_PIPELINE_CULLMODE(cullMode);
+	return *this;
+}
+
 GraphicsPipeline& VulkanGraphicsPipeline::SetTopology(ePrimitiveTopology topology)
 {
 	m_PipelineDesc.inputAssemblyInfo.topology = VK_PIPELINE_PRIMITIVETOPOLOGY(topology);
 	return *this;
 }
 
-GraphicsPipeline& VulkanGraphicsPipeline::SetDepthTestEnable(bool bEnable)
+GraphicsPipeline& VulkanGraphicsPipeline::SetDepthTestEnable(bool bEnable, eCompareOp compareOp)
 {
 	m_PipelineDesc.depthStencilInfo.depthTestEnable = bEnable;
+	m_PipelineDesc.depthStencilInfo.depthCompareOp  = VK_COMPAREOP(compareOp);
 	return *this;
 }
 
-GraphicsPipeline& VulkanGraphicsPipeline::SetDepthWriteEnable(bool bEnable)
+GraphicsPipeline& VulkanGraphicsPipeline::SetDepthWriteEnable(bool bEnable, eCompareOp compareOp)
 {
 	m_PipelineDesc.depthStencilInfo.depthWriteEnable = bEnable;
+	m_PipelineDesc.depthStencilInfo.depthCompareOp   = VK_COMPAREOP(compareOp);
 	return *this;
 }
 
@@ -298,8 +297,8 @@ void VulkanGraphicsPipeline::Build()
 	std::vector< VkPushConstantRange >             pushConstants;
 	if (m_bMeshShader)
 	{
-		auto ms = StaticCast<VulkanShader>(m_MS);
-		auto ts = StaticCast<VulkanShader>(m_TS);
+		auto ms = StaticCast<VulkanShader>(m_pMS);
+		auto ts = StaticCast<VulkanShader>(m_pTS);
 		assert(ms);
 
 
@@ -428,11 +427,11 @@ void VulkanGraphicsPipeline::Build()
 	}
 	else
 	{
-		auto vs = StaticCast<VulkanShader>(m_VS);
-		auto ps = StaticCast<VulkanShader>(m_PS);
-		auto gs = StaticCast<VulkanShader>(m_GS);
-		auto hs = StaticCast<VulkanShader>(m_HS);
-		auto ds = StaticCast<VulkanShader>(m_DS);
+		auto vs = StaticCast<VulkanShader>(m_pVS);
+		auto ps = StaticCast<VulkanShader>(m_pPS);
+		auto gs = StaticCast<VulkanShader>(m_pGS);
+		auto hs = StaticCast<VulkanShader>(m_pHS);
+		auto ds = StaticCast<VulkanShader>(m_pDS);
 		assert(vs && ps);
 
 		VkPipelineShaderStageCreateInfo vsStageCreateInfo = {};
@@ -820,15 +819,6 @@ void VulkanGraphicsPipeline::Build()
 	vkDestroyPipelineCache(m_RenderDevice.vkDevice(), vkPipelineCache, nullptr);
 }
 
-std::pair< u32, u32 > VulkanGraphicsPipeline::GetResourceBindingIndex(const std::string& name)
-{
-	auto iter = m_ResourceBindingMap.find(name);
-	if (iter == m_ResourceBindingMap.end())
-		return { -1, -1 };
-
-	return { (u32)(iter->second >> 32), (u32)(iter->second & 0xFFFFFFFF) };
-}
-
 
 //-------------------------------------------------------------------------
 // Compute Pipeline
@@ -860,14 +850,14 @@ void VulkanComputePipeline::Build()
 	// **
 	// Construct descriptor-set layout
 	// **
-	auto cs = StaticCast<VulkanShader>(m_CS);
-	assert(cs);
+	auto vkCS = StaticCast<VulkanShader>(m_pCS);
+	assert(vkCS);
 
 	i32 maxSet = -1;
 	std::unordered_map< u32, std::unordered_map< u32, VkDescriptorSetLayoutBinding > > descriptorSetLayoutBindingMap;
 
 	// vs
-	const auto& csReflection = cs->Reflection();
+	const auto& csReflection = vkCS->Reflection();
 	for (const auto& [set, infos] : csReflection.descriptors)
 	{
 		for (const auto& info : infos)
@@ -931,7 +921,7 @@ void VulkanComputePipeline::Build()
 	// Push constants
 	// **
 	std::vector< VkPushConstantRange > pushConstants;
-	const auto& resourceInfo = cs->Reflection();
+	const auto& resourceInfo = vkCS->Reflection();
 	pushConstants.append_range(resourceInfo.pushConstants);
 
 
@@ -978,7 +968,7 @@ void VulkanComputePipeline::Build()
 	pipelineInfo.sType              = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
 	pipelineInfo.stage.sType        = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	pipelineInfo.stage.stage        = VK_SHADER_STAGE_COMPUTE_BIT;
-	pipelineInfo.stage.module       = cs->vkModule();
+	pipelineInfo.stage.module       = vkCS->vkModule();
 	pipelineInfo.stage.pName        = "main";
 	pipelineInfo.layout             = m_vkPipelineLayout;
 	pipelineInfo.basePipelineHandle = nullptr;
@@ -1001,15 +991,6 @@ void VulkanComputePipeline::Build()
 		writeData.Deallocate();
 	}
 	vkDestroyPipelineCache(m_RenderDevice.vkDevice(), vkPipelineCache, nullptr);
-}
-
-std::pair< u32, u32 > VulkanComputePipeline::GetResourceBindingIndex(const std::string& name)
-{
-	auto iter = m_ResourceBindingMap.find(name);
-	if (iter == m_ResourceBindingMap.end())
-		return { 0, 0 };
-
-	return { (u32)(iter->second >> 32), (u32)(iter->second & 0xFFFFFFFF) };
 }
 
 } // namespace vk

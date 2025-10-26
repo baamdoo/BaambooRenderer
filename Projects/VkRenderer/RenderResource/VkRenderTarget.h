@@ -3,8 +3,6 @@
 namespace vk
 {
 
-class VulkanTexture;
-
 class VulkanRenderTarget : public render::RenderTarget
 {
 public:

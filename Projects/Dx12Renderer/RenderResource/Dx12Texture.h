@@ -4,19 +4,15 @@
 namespace dx12
 {
 
-class Texture : public Resource
+class Dx12Texture : public render::Texture, public Dx12Resource
 {
-using Super = Resource;
-
 public:
-    using CreationInfo = ResourceCreationInfo;
+    static Arc< Dx12Texture > Create(Dx12RenderDevice& rd, const std::string& name, CreationInfo&& info);
+    static Arc< Dx12Texture > CreateEmpty(Dx12RenderDevice& rd, const std::string& name);
 
-    static Arc< Texture > Create(RenderDevice& device, const std::wstring& name, CreationInfo&& info);
-    static Arc< Texture > CreateEmpty(RenderDevice& device, const std::wstring& name);
-
-    Texture(RenderDevice& device, const std::wstring& name);
-    Texture(RenderDevice& device, const std::wstring& name, CreationInfo&& info);
-    virtual ~Texture();
+    Dx12Texture(Dx12RenderDevice& rd, const std::string& name);
+    Dx12Texture(Dx12RenderDevice& rd, const std::string& name, CreationInfo&& info);
+    virtual ~Dx12Texture();
 
     virtual void Reset() override;
     virtual void SetD3D12Resource(ID3D12Resource* d3d12Resource, D3D12_RESOURCE_STATES states = D3D12_RESOURCE_STATE_COMMON) override;

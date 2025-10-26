@@ -38,7 +38,7 @@ PostProcessNode::PostProcessNode(render::RenderDevice& rd)
 			Shader::Create(m_RenderDevice, "TemporalAntiAliasingCS",
 			{
 				.stage    = eShaderStage::Compute,
-				.filename = "TemporalAA"
+				.filename = "TemporalAntiAliasing"
 			}
 		)).Build();
 

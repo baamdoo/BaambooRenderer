@@ -10,10 +10,10 @@ public:
 	VkRenderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext);
 	~VkRenderer();
 
+	virtual void NewFrame() override;
+
 	virtual Arc< render::CommandContext > BeginFrame() override;
 	virtual void EndFrame(Arc< render::CommandContext >&& context, Arc< render::Texture > scene, bool bDrawUI) override;
-
-	virtual void NewFrame() override;
 
 	virtual void WaitIdle() override;
 	virtual void Resize(i32 width, i32 height) override;
