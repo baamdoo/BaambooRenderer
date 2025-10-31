@@ -104,8 +104,6 @@ public:
 	void PushDescriptor(u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType);
 	void PushDescriptor(u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType);
 
-	void SetRenderPipeline(GraphicsPipeline* pRenderPipeline);
-	void SetRenderPipeline(ComputePipeline* pRenderPipeline);
 
 	virtual void BeginRenderPass(Arc< render::RenderTarget > renderTarget) override;
 	virtual void EndRenderPass() override;

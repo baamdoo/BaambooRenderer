@@ -332,9 +332,9 @@ void VkCommandContext::Impl::CopyBuffer(Arc< VulkanTexture > pDstTexture, Arc< V
 	VkImageSubresourceRange subresourceRange = {};
 	subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
 	subresourceRange.baseMipLevel   = 0;
-	subresourceRange.levelCount     = bAllSubresources ? VK_REMAINING_MIP_LEVELS : pDstTexture->Desc().mipLevels;
+	subresourceRange.levelCount     = bAllSubresources ? VK_REMAINING_MIP_LEVELS : 1;
 	subresourceRange.baseArrayLayer = 0;
-	subresourceRange.layerCount     = bAllSubresources ? VK_REMAINING_ARRAY_LAYERS : pDstTexture->Desc().arrayLayers;
+	subresourceRange.layerCount     = bAllSubresources ? VK_REMAINING_ARRAY_LAYERS : 1;
 
 	TransitionImageLayout(
 		pDstTexture,
@@ -343,11 +343,6 @@ void VkCommandContext::Impl::CopyBuffer(Arc< VulkanTexture > pDstTexture, Arc< V
 
 	vkCmdCopyBufferToImage(m_vkCommandBuffer, pSrcBuffer->vkBuffer(), pDstTexture->vkImage(),
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, static_cast<u32>(regions.size()), regions.data());
-
-	TransitionImageLayout(
-		pDstTexture,
-		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-		subresourceRange);
 }
 
 void VkCommandContext::Impl::CopyTexture(Arc< VulkanTexture > pDstTexture, Arc< VulkanTexture > pSrcTexture)
@@ -412,17 +407,25 @@ void VkCommandContext::Impl::BlitTexture(Arc< VulkanTexture > pDstTexture, Arc< 
 
 void VkCommandContext::Impl::GenerateMips(Arc< VulkanTexture > pTexture)
 {
+	// Assume this function is executed right after copy (staging to texture) operation
+	const auto& desc = pTexture->Desc();
+	VkImageAspectFlags aspectMask = pTexture->IsDepthTexture() ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+
 	VkImageSubresourceRange subresourceRange = {};
-	subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+	subresourceRange.aspectMask     = aspectMask;
 	subresourceRange.levelCount     = 1;
 	subresourceRange.baseArrayLayer = 0;
-	subresourceRange.layerCount     = 1;
+	subresourceRange.layerCount     = desc.arrayLayers;
 
-	const auto& desc = pTexture->Desc();
 	for (u32 level = 0; level < desc.mipLevels - 1; ++level)
 	{
-		i32 w = desc.extent.width >> level;
-		i32 h = desc.extent.height >> level;
+		i32 srcWidth  = desc.extent.width >> level;
+		i32 srcHeight = desc.extent.height >> level;
+		i32 srcDepth  = desc.extent.depth >> level;
+
+		i32 dstWidth  = srcWidth > 1 ? srcWidth / 2 : 1;
+		i32 dstHeight = srcHeight > 1 ? srcHeight / 2 : 1;
+		i32 dstDepth  = srcDepth > 1 ? srcDepth / 2 : 1;
 
 		subresourceRange.baseMipLevel = level;
 		TransitionImageLayout(
@@ -432,34 +435,29 @@ void VkCommandContext::Impl::GenerateMips(Arc< VulkanTexture > pTexture)
 
 		VkImageBlit blit = {};
 		blit.srcOffsets[0]                 = { 0, 0, 0 };
-		blit.srcOffsets[1]                 = { w, h, 1 };
-		blit.srcSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+		blit.srcOffsets[1]                 = { srcWidth, srcHeight, srcDepth };
+		blit.srcSubresource.aspectMask     = aspectMask;
 		blit.srcSubresource.mipLevel       = level;
 		blit.srcSubresource.baseArrayLayer = 0;
-		blit.srcSubresource.layerCount     = 1;
+		blit.srcSubresource.layerCount     = desc.arrayLayers;
 		blit.dstOffsets[0]                 = { 0, 0, 0 };
-		blit.dstOffsets[1]                 = { w > 1 ? w / 2 : 1, h > 1 ? h / 2 : 1, 1 };
-		blit.dstSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+		blit.dstOffsets[1]                 = { dstWidth, dstHeight, dstDepth };
+		blit.dstSubresource.aspectMask     = aspectMask;
 		blit.dstSubresource.mipLevel       = level + 1;
 		blit.dstSubresource.baseArrayLayer = 0;
-		blit.dstSubresource.layerCount     = 1;
+		blit.dstSubresource.layerCount     = desc.arrayLayers;
 
 		vkCmdBlitImage(m_vkCommandBuffer,
 			pTexture->vkImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 			pTexture->vkImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 			1, &blit,
 			VK_FILTER_LINEAR);
-
-		TransitionImageLayout(
-			pTexture,
-			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			subresourceRange);
 	}
 
 	subresourceRange.baseMipLevel = desc.mipLevels - 1;
 	TransitionImageLayout(
 		pTexture,
-		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 		subresourceRange);
 }
 
@@ -566,11 +564,6 @@ void VkCommandContext::Impl::TransitionImageLayout(
 	};
 	if (pTexture)
 	{
-		if (bFlatten)
-		{
-			pTexture->FlattenSubresourceStates();
-		}
-
 		const auto& stateBefore = pTexture->GetState();
 		if (stateBefore.GetSubresourceState(subresourceRange) != newState)
 		{

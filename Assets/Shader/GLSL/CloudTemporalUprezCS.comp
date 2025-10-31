@@ -1,0 +1,102 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#define _CAMERA
+#include "Common.hg"
+#include "HelperFunctions.hg"
+
+layout(set = SET_PUSH, binding = 1) uniform sampler2D g_CloudScatteringLUT;
+layout(set = SET_PUSH, binding = 2) uniform sampler2D g_PrevUprezzedCloudScatteringLUT;
+layout(set = SET_PUSH, binding = 3) uniform sampler2D g_DepthBuffer;
+
+layout(set = SET_PUSH, binding = 4, rgba16f) writeonly uniform image2D g_UprezzedCloudScatteringLUT;
+
+layout(push_constant) uniform Push 
+{
+    float blendFactor;
+    vec2  invLowResTexSize;
+} g_Push;
+
+
+vec4 VarianceColorClampAABB(vec4 historyColor, sampler2D cloudLUT, vec2 uv, vec2 invLowResTexSize)
+{
+    // neighborhood clamping in YCoCg space
+    vec3 historyYCoCg = RGB2YCoCg(historyColor.rgb);
+
+    vec3  m1 = vec3(0.0);
+    vec3  m2 = vec3(0.0);
+    float mAlpha1 = 0.0;
+    float mAlpha2 = 0.0;
+    
+    // sample a 3x3 neighborhood around the current pixel
+    for (float x = -1.0; x <= 1.0; x += 1.0) 
+    {
+        for (float y = -1.0; y <= 1.0; y += 1.0) 
+        {
+            vec2 sampleUV      = uv + vec2(x, y) * invLowResTexSize;
+            vec4 neighborColor = texture(cloudLUT, sampleUV);
+
+            vec3 neighborYCoCg = RGB2YCoCg(neighborColor.rgb);
+            m1 += neighborYCoCg;
+            m2 += neighborYCoCg * neighborYCoCg;
+
+            float neighborAlpha = neighborColor.a;
+            mAlpha1 += neighborAlpha;
+            mAlpha2 += neighborAlpha * neighborAlpha;
+        }
+    }
+
+    // Variance Clipping : https://developer.download.nvidia.com/gameworks/events/GDC2016/msalvi_temporal_supersampling.pdf
+    const float gamma = 5.0; // tightness of the clipping
+    vec3 mu    = m1 / 9.0;
+    vec3 sigma = sqrt(abs(m2 / 9.0 - mu * mu));
+    vec3 minc  = mu - gamma * sigma;
+    vec3 maxc  = mu + gamma * sigma;
+
+    vec3 clampedHistoryYCoCg = ClipAABB(minc, maxc, historyYCoCg);
+    vec3 clampedHistoryRGB   = YCoCg2RGB(clampedHistoryYCoCg);
+
+    //
+    const float gammaAlpha = 1.0;
+    float muAlpha    = mAlpha1 / 9.0;
+    float sigmaAlpha = sqrt(abs(mAlpha2 / 9.0 - muAlpha * muAlpha));
+    float mincAlpha  = muAlpha - gammaAlpha * sigmaAlpha;
+    float maxcAlpha  = muAlpha + gammaAlpha * sigmaAlpha;
+
+    float clampedHistoryAlpha = ClipAABB(mincAlpha, maxcAlpha, historyColor.a);
+
+    return vec4(clampedHistoryRGB, clampedHistoryAlpha);
+}
+
+layout (local_size_x = 8, local_size_y = 8) in;
+void main()
+{
+    ivec2 imgSize   = imageSize(g_UprezzedCloudScatteringLUT);
+    ivec2 pixCoords = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pixCoords, imgSize)))
+        return;
+
+    vec2 uv         = (vec2(pixCoords) + 0.5) / vec2(imgSize);
+
+    vec4 currentColor = texture(g_CloudScatteringLUT, uv);
+
+    float depth    = texture(g_DepthBuffer, uv).r;
+    vec3  posWORLD = ReconstructWorldPos(uv, depth, g_Camera.mViewProjInv);
+
+    vec4 posPrevClip = g_Camera.mViewProjUnjitteredPrev * vec4(posWORLD, 1.0);
+    vec3 posPrevNDC  = posPrevClip.xyz / posPrevClip.w;
+    vec2 prevUV      = posPrevNDC.xy * 0.5 + 0.5;
+
+    vec4 newColor = currentColor;
+    if (all(greaterThan(prevUV, vec2(0.0))) && all(lessThan(prevUV, vec2(1.0))))
+    {
+        vec2 invHighResTexSize = 1.0 / vec2(imgSize);
+
+        vec4 historyColor = texture(g_PrevUprezzedCloudScatteringLUT, prevUV);
+             //historyColor = VarianceColorClampAABB(historyColor, g_CloudScatteringLUT, uv, g_Push.invLowResTexSize);
+
+        newColor = mix(historyColor, currentColor, g_Push.blendFactor);
+    }
+    
+    imageStore(g_UprezzedCloudScatteringLUT, pixCoords, newColor);
+}

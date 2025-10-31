@@ -315,7 +315,10 @@ void ExampleApp::ConfigureSceneObjects()
 	}
 	{
 		auto cloud = m_pScene->CreateEntity("Cloud");
-		cloud.AttachComponent< CloudComponent >();
+
+		auto& cloudComponent = cloud.AttachComponent< CloudComponent >();
+		//cloudComponent.blueNoiseTex = TEXTURE_PATH.string() + "BlueNoiseR_64x64.png";
+		cloudComponent.blueNoiseTex = TEXTURE_PATH.string() + "BlueNoise_RG_128x128x64";
 	}
 
 	// Create a point light

@@ -368,6 +368,7 @@ project "VkRenderer"
 		"%{Path.Solution}Projects/ThirdParties/glm",
 		"%{Path.Solution}Projects/ThirdParties/glfw/include",
 		"%{Path.Solution}Projects/ThirdParties/imgui",
+		"%{Path.Solution}Projects/ThirdParties/gli/",
 		
 		'%{Path.Vulkan}/Include/',
 	}

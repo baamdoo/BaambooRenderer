@@ -227,7 +227,8 @@ void SwapChain::Init()
 				.format    = m_ImageFormat,
 				.extent    = { (u32)m_Window.Desc().width, (u32)m_Window.Desc().height, 1 }, 
 			}, 
-			VK_NULL_HANDLE, 
+			VK_NULL_HANDLE,
+			{},
 			VK_IMAGE_ASPECT_COLOR_BIT);
 		
 		m_BackBuffers[i] = pTex;

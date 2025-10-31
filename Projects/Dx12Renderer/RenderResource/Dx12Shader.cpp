@@ -13,56 +13,10 @@ IDxcUtils* Dx12Shader::ms_dxcUtils = nullptr;
 IDxcCompiler3* Dx12Shader::ms_dxcCompiler = nullptr;
 u32 Dx12Shader::ms_RefCount = 0;
 
-#define DX12_SHADER_PATH(filename, stage) GetCompiledShaderPath(filename, stage)
-std::string GetCompiledShaderPath(const std::string& filename, render::eShaderStage stage)
+#define DX12_SHADER_PATH(filename) GetCompiledShaderPath(filename)
+std::string GetCompiledShaderPath(const std::string& filename)
 {
-	using namespace render;
-
-	std::string stageStr;
-	switch (stage)
-	{
-	case eShaderStage::Vertex:
-		stageStr = "VS";
-		break;
-	case eShaderStage::Hull:
-		stageStr = "HS";
-		break;
-	case eShaderStage::Domain:
-		stageStr = "DS";
-		break;
-	case eShaderStage::Geometry:
-		stageStr = "GS";
-		break;
-	case eShaderStage::Fragment:
-		stageStr = "PS";
-		break;
-	case eShaderStage::Compute:
-		stageStr = "CS";
-		break;
-	case eShaderStage::AllGraphics:
-	case eShaderStage::AllStage   :
-		assert(false && "Invalid shader bit for parsing cso path!");
-		break;
-
-	case eShaderStage::RayGeneration:
-    case eShaderStage::AnyHit       :
-    case eShaderStage::ClosestHit   :
-    case eShaderStage::Miss         :
-    case eShaderStage::Interaction  :
-    case eShaderStage::Callable     :
-		// TODO
-		assert(false && "Invalid shader bit for parsing cso path!");
-		break;
-
-	case eShaderStage::Task:
-		stageStr = "TS";
-		break;
-	case eShaderStage::Mesh:
-		stageStr = "MS";
-		break;
-	}
-
-	return CSO_PATH.string() + filename + stageStr + ".cso";
+	return CSO_PATH.string() + filename + ".cso";
 }
 
 static std::string GenerateResourceKey(const D3D12_SHADER_INPUT_BIND_DESC& bindDesc)
@@ -85,7 +39,7 @@ Dx12Shader::Dx12Shader(Dx12RenderDevice& rd, const std::string& name, CreationIn
 {
     if (name != "Dummy")
     {
-        LoadBinary(DX12_SHADER_PATH(m_CreationInfo.filename, m_CreationInfo.stage));
+        LoadBinary(DX12_SHADER_PATH(m_CreationInfo.filename));
         Reflect();
     }
 

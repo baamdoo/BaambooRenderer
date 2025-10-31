@@ -620,7 +620,7 @@ class BAAMBOO_API ResourceManager
 public:
     virtual ~ResourceManager();
 
-    virtual Arc< Texture > LoadTexture(const std::string& filepath) = 0;
+    virtual Arc< Texture > LoadTexture(const std::string& filepath, bool bGenerateMips = false) = 0;
 
     virtual Arc< Texture > GetFlatWhiteTexture() { return m_pWhiteTexture; }
     virtual Arc< Texture > GetFlatBlackTexture() { return m_pBlackTexture; }

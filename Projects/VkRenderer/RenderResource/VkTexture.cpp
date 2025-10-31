@@ -16,6 +16,8 @@ inline u32 GetFormatElementSizeInBytes(VkFormat format)
 	{
 	case VK_FORMAT_R8G8B8A8_UNORM:
 	case VK_FORMAT_R8G8B8A8_SNORM:
+	case VK_FORMAT_R8G8B8A8_SRGB:
+	case VK_FORMAT_B8G8R8A8_SRGB:
 		result = 4;
 		break;
 	case VK_FORMAT_R16G16B16A16_UINT:
@@ -58,7 +60,7 @@ VkImageCreateInfo GetVkImageCreateInfo(const render::Texture::CreationInfo& info
 	desc.format        = VK_FORMAT(info.format);
 	desc.extent        = VkExtent3D(info.resolution.x, info.resolution.y, info.resolution.z);
 	desc.mipLevels     = info.bGenerateMips ?
-		baamboo::math::CalculateMipCount(info.resolution.x, info.resolution.y) : 1;
+		baamboo::math::CalculateMipCount(info.resolution.x, info.resolution.y, 1) : 1;
 	desc.arrayLayers   = info.arrayLayers;
 	desc.samples       = GetSampleCount(info.sampleCount);
 	desc.tiling        = VK_IMAGE_TILING_OPTIMAL;
@@ -244,15 +246,18 @@ void VulkanTexture::Resize(u32 width, u32 height, u32 depth)
 	CreateImageAndView(m_CreationInfo);
 }
 
-void VulkanTexture::SetResource(VkImage vkImage, VkImageView vkImageView, VkImageCreateInfo createInfo, VmaAllocation vmaAllocation, VkImageAspectFlags aspectMask)
+void VulkanTexture::SetResource(VkImage vkImage, VkImageView vkImageView, VkImageCreateInfo createInfo, VmaAllocation vmaAllocation, VmaAllocationInfo vmaAllocInfo, VkImageAspectFlags aspectMask)
 {
 	assert(!m_vkImage && !m_vkImageView);
 
-	m_vkImage       = vkImage;
-	m_vkImageView   = vkImageView;
-	m_Desc          = createInfo;
-	m_vmaAllocation = vmaAllocation;
-	m_AspectFlags   = aspectMask;
+	m_vkImage        = vkImage;
+	m_vkImageView    = vkImageView;
+	m_Desc           = createInfo;
+	m_vmaAllocation  = vmaAllocation;
+	m_AllocationInfo = vmaAllocInfo;
+	m_AspectFlags    = aspectMask;
+
+	SetDeviceObjectName((u64)m_vkImage, VK_OBJECT_TYPE_IMAGE);
 }
 
 } // namespace vk

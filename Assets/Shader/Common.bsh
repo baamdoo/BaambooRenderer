@@ -6,11 +6,11 @@
 
 #define INVALID_INDEX 0xffffffff
 
-#define PI             3.14159265359
+#define PI            (3.14159265359)
 #define PI_MUL(num)   (PI * num)
 #define PI_DIV(denom) (PI / denom)
-
-#define EPSILON    0.00001
+#define GOLDEN_RATIO  (0.61803398875)
+#define EPSILON       (0.00001)
 
 
 //-------------------------------------------------------------------------

@@ -16,9 +16,9 @@ inline T AlignUp(T size, T alignment)
 	return (size + alignment - 1) & ~(alignment - 1);
 }
 
-inline u32 CalculateMipCount(u32 width, u32 height)
+inline u32 CalculateMipCount(u32 width, u32 height, u32 depth)
 {
-	return (u32)std::floor(std::log2(glm::min(width, height))) + 1;
+	return (u32)std::floor(std::log2(glm::min(glm::min(width, height), depth))) + 1;
 }
 
 inline float3 SmoothStep(const float3& v1, const float3& v2, float t)

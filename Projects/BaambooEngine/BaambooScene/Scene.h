@@ -29,13 +29,13 @@ struct FrameData
 	Weak< render::Texture > pMultiScatteringLUT;
 	Weak< render::Texture > pSkyViewLUT;
 	Weak< render::Texture > pAerialPerspectiveLUT;
+	Weak< render::Texture > pAtmosphereAmbientLUT;
 
 	// CloudLUTs
 	Weak< render::Texture > pCloudBaseLUT;
-	Weak< render::Texture > pCloudDetailLUT;
-	Weak< render::Texture > pVerticalProfileLUT;
-	Weak< render::Texture > pWeatherMapLUT;
-	Weak< render::Texture > pBlueNoiseTexture;
+	Weak< render::Texture > pCloudErosionLUT;
+	Weak< render::Texture > pCloudTopGradientLUT;
+	Weak< render::Texture > pCloudBottomGradientLUT;
 	Weak< render::Texture > pCloudScatteringLUT;
 
 	// Scene buffers

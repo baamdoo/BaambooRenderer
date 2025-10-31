@@ -94,6 +94,12 @@ struct CloudRenderView
 {
 	CloudData data;
 
+	eCloudUprezRatio uprezRatio;
+
+	u32 numCloudRaymarchSteps;
+	u32 numLightRaymarchSteps;
+	float temporalBlendAlpha;
+
 	std::string blueNoiseTex;
 	std::string weatherMap;
 	std::string curlNoiseTex;

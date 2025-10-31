@@ -479,17 +479,41 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, bool bDrawUI) co
 	m_Registry.view< TransformComponent, CloudComponent >().each([this, &view](auto id, auto& transformComponent, auto& cloudComponent)
 		{
 			CloudRenderView cloudView = {};
-			cloudView.data.coverage         = cloudComponent.coverage;
-			cloudView.data.cloudType        = cloudComponent.cloudType;
-			cloudView.data.precipitation    = cloudComponent.precipitation;
-			cloudView.data.topLayer_km      = cloudComponent.bottomHeight_km + cloudComponent.layerThickness_km;
-			cloudView.data.bottomLayer_km   = cloudComponent.bottomHeight_km;
-			cloudView.data.baseNoiseScale   = cloudComponent.baseNoiseScale;
-			cloudView.data.baseIntensity    = cloudComponent.baseIntensity;
-			cloudView.data.detailNoiseScale = cloudComponent.detailNoiseScale;
-			cloudView.data.detailIntensity  = cloudComponent.detailIntensity;
-			cloudView.data.windDirection    = cloudComponent.windDirection;
-			cloudView.data.windSpeed_mps    = cloudComponent.windSpeed_mps;
+			cloudView.data.coverage      = cloudComponent.coverage;
+			cloudView.data.cloudType     = cloudComponent.cloudType;
+			cloudView.data.precipitation = cloudComponent.precipitation;
+
+			cloudView.data.topLayer_km    = cloudComponent.bottomHeight_km + cloudComponent.layerThickness_km;
+			cloudView.data.bottomLayer_km = cloudComponent.bottomHeight_km;
+
+			cloudView.data.extinctionStrength = cloudComponent.extinctionStrength;
+			cloudView.data.extinctionScale    = cloudComponent.extinctionScale;
+
+			cloudView.data.msContribution             = cloudComponent.msContribution;
+			cloudView.data.msOcclusion                = cloudComponent.msOcclusion;
+			cloudView.data.msEccentricity             = cloudComponent.msEccentricity;
+			cloudView.data.groundContributionStrength = cloudComponent.groundContributionStrength;
+
+			cloudView.data.coverage       = cloudComponent.coverage;
+			cloudView.data.cloudType      = cloudComponent.cloudType;
+			cloudView.data.baseNoiseScale = cloudComponent.baseNoiseScale;
+			cloudView.data.baseIntensity  = cloudComponent.baseIntensity;
+
+			cloudView.data.erosionNoiseScale               = cloudComponent.erosionNoiseScale;
+			cloudView.data.erosionIntensity                = cloudComponent.erosionIntensity;
+			cloudView.data.erosionPower                    = cloudComponent.erosionPower;
+			cloudView.data.wispiness                       = cloudComponent.wispySkewness;
+			cloudView.data.billowiness                     = cloudComponent.billowySkewness;
+			cloudView.data.erosionHeightGradientMultiplier = cloudComponent.erosionHeightGradientMultiplier;
+			cloudView.data.erosionHeightGradientPower      = cloudComponent.erosionHeightGradientPower;
+
+			cloudView.data.windDirection = cloudComponent.windDirection;
+			cloudView.data.windSpeed_mps = cloudComponent.windSpeed_mps;
+
+			cloudView.numCloudRaymarchSteps = cloudComponent.numCloudRaymarchSteps;
+			cloudView.numLightRaymarchSteps = cloudComponent.numLightRaymarchSteps;
+			cloudView.temporalBlendAlpha    = cloudComponent.temporalBlendAlpha;
+			cloudView.uprezRatio            = cloudComponent.uprezRatio;
 
 			cloudView.blueNoiseTex = cloudComponent.blueNoiseTex;
 			cloudView.weatherMap   = cloudComponent.weatherMap;

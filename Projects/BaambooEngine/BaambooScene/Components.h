@@ -269,20 +269,42 @@ struct AtmosphereComponent
 //-------------------------------------------------------------------------
 struct CloudComponent
 {
-	float coverage      = 0.5f;
-	float cloudType     = 0.2f;
-	float precipitation = 0.1f;
-
 	float bottomHeight_km   = 2.0f;
 	float layerThickness_km = 8.0f;
 
-	float baseNoiseScale   = 1e-2f;  // 100x100km^2 per tile
-	float baseIntensity    = 1.0f;
-	float detailNoiseScale = 1e-1f;  // 10x10km^2 per tile
-	float detailIntensity  = 0.2f;
+	// Light
+	float3 extinctionStrength = float3(0.82f, 0.86f, 1.0f);
+	float  extinctionScale    = 4.0f;
 
+	float msContribution             = 0.8f;
+	float msOcclusion                = 0.6f;
+	float msEccentricity             = 0.2f;
+	float groundContributionStrength = 0.3f;
+
+	float cloudType      = 0.68f;
+	float coverage       = 0.975f;
+	float baseNoiseScale = 0.021f;
+	float baseIntensity  = 1.0f;
+
+	float erosionNoiseScale               = 0.220f;
+	float erosionIntensity                = 0.15f;
+	float erosionPower                    = 0.3f;
+	float wispySkewness                   = 0.85f;
+	float billowySkewness                 = 0.85f;
+	float precipitation                   = 0.1f;
+	float erosionHeightGradientMultiplier = 1.45f;
+	float erosionHeightGradientPower      = 3.0f;
+
+	// Animation
 	float3 windDirection = float3(1.0f, 0.0f, 0.0f);
-	float  windSpeed_mps = 1.0f;
+	float  windSpeed_mps = 10.0f;
+
+	// Others
+	eCloudUprezRatio uprezRatio = eCloudUprezRatio::X2;
+
+	i32 numCloudRaymarchSteps = 64;
+	i32 numLightRaymarchSteps = 64;
+	float temporalBlendAlpha  = 0.05f;
 
 	std::string blueNoiseTex;
 	std::string weatherMap;

@@ -67,12 +67,12 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 	auto hVS = Shader::Create(m_RenderDevice, "GBufferVS", 
 		{
 			.stage    = eShaderStage::Vertex,
-			.filename = "GBuffer" 
+			.filename = "GBufferVS" 
 		});
 	auto hFS = Shader::Create(m_RenderDevice, "GBufferPS", 
 		{
 			.stage    = eShaderStage::Fragment,
-			.filename = "GBuffer"
+			.filename = "GBufferPS"
 		});
 	m_pGBufferPSO = GraphicsPipeline::Create(m_RenderDevice, "GBufferPSO");
 	m_pGBufferPSO->SetShaders(hVS, hFS)

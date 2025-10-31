@@ -22,7 +22,9 @@ public:
 		Subresource(VkImageSubresourceRange range)
 			: Subresource(range.baseMipLevel, range.levelCount, range.baseArrayLayer, range.layerCount) {}
 		bool operator==(const Subresource& other) const { return baseMip == other.baseMip && mipLevels == other.mipLevels && baseLayer == other.baseLayer && arrayLayers == other.arrayLayers; }
-		bool operator<(const Subresource& other) const { return baseMip < other.baseMip && mipLevels < other.mipLevels; } // tmp
+		bool operator<(const Subresource& other) const {
+			return std::tie(baseMip, mipLevels, baseLayer, arrayLayers) < std::tie(other.baseMip, other.baseLayer, other.baseLayer, other.arrayLayers);
+		}
 
 		u32 baseMip;
 		u32 mipLevels;
@@ -51,19 +53,6 @@ public:
 
 		[[nodiscard]]
 		bool IsValid() const { return state.layout != VK_IMAGE_LAYOUT_UNDEFINED; }
-
-		// Force to set all subresource states equal
-		void FlattenResourceState()
-		{
-			if (subresourceStates.empty())
-				return;
-
-			State state_ = subresourceStates.begin()->second;
-			for (const auto& pair : subresourceStates)
-				BB_ASSERT(state_ == pair.second, "All subresource states should be equal before flatten");
-
-			SetSubresourceState(state_, VK_ALL_SUBRESOURCES);
-		}
 
 		void SetSubresourceState(State state_, Subresource subresource)
 		{
@@ -102,7 +91,7 @@ public:
 	virtual ~VulkanTexture();
 
 	void Resize(u32 width, u32 height, u32 depth);
-	void SetResource(VkImage vkImage, VkImageView vkImageView, VkImageCreateInfo createInfo, VmaAllocation vmaAllocation, VkImageAspectFlags aspectMask);
+	void SetResource(VkImage vkImage, VkImageView vkImageView, VkImageCreateInfo createInfo, VmaAllocation vmaAllocation, VmaAllocationInfo vmaAllocInfo, VkImageAspectFlags aspectMask);
 
 	inline CreationInfo Info() const { return m_CreationInfo; }
     inline VkImage vkImage() const { return m_vkImage; }
@@ -114,8 +103,6 @@ public:
 
 	inline const ResourceState& GetState() const { return m_CurrentState; }
 	void SetState(State state, Subresource subresource = VK_ALL_SUBRESOURCES) { m_CurrentState.SetSubresourceState(state, subresource); }
-
-	void FlattenSubresourceStates() { m_CurrentState.FlattenResourceState(); }
 
 protected:
     void CreateImageAndView(const CreationInfo& info);

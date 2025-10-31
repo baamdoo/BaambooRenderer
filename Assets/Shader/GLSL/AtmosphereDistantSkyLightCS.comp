@@ -1,0 +1,204 @@
+﻿#version 460
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_GOOGLE_include_directive : require
+
+#define _ATMOSPHERE
+#include "Common.hg" 
+#include "AtmosphereCommon.hg"
+
+layout(set = SET_PUSH, binding = 2) uniform sampler2D g_TransmittanceLUT;
+layout(set = SET_PUSH, binding = 3) uniform sampler2D g_MultiScatteringLUT;
+
+layout(set = SET_PUSH, binding = 4, r11f_g11f_b10f) uniform writeonly image1D g_AtmosphereAmbientLUT;
+
+layout(push_constant) uniform PushConstants
+{
+    uint minRaySteps;
+    uint maxRaySteps;
+    uint sampleCount;
+} g_Push;
+
+
+vec3 RaymarchScattering(vec3 rayOrigin, vec3 rayDir, float maxDistance) 
+{
+    vec2 atmosphereIntersection = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, g_Atmosphere.atmosphereRadius_km);
+    if (atmosphereIntersection.y < 0.0)
+        return vec3(0.0);
+    
+    float rayStart  = max(0.0, atmosphereIntersection.x);
+    float rayLength = min(maxDistance, atmosphereIntersection.y) - rayStart;
+    if (rayLength <= 0.0)
+        return vec3(0.0);
+
+    // light illuminance
+    vec3 lightColor = vec3(g_Atmosphere.light.colorR, g_Atmosphere.light.colorG, g_Atmosphere.light.colorB);
+    if (g_Atmosphere.light.temperature_K > 0.0)
+        lightColor *= ColorTemperatureToRGB(g_Atmosphere.light.temperature_K);
+
+    vec3 E = g_Atmosphere.light.illuminance_lux * lightColor;
+
+    // phase functions
+    float cosTheta      = dot(rayDir, vec3(-g_Atmosphere.light.dirX, -g_Atmosphere.light.dirY, -g_Atmosphere.light.dirZ));
+    float phaseRayleigh = RayleighPhase(cosTheta);
+    float phaseMie      = MiePhase(cosTheta, g_Atmosphere.miePhaseG);
+
+    // variable sampling count according to rayLength
+    float numSteps = mix(float(g_Push.minRaySteps), float(g_Push.maxRaySteps), clamp(rayLength / 150.0, 0.0, 1.0));
+    float stepSize = rayLength / numSteps;
+
+    vec3 L          = vec3(0.0);
+    vec3 throughput = vec3(1.0);
+    for (uint i = 0u; i < numSteps; ++i) 
+    {
+        float t   = rayStart + (float(i) + 0.5) * stepSize;
+        vec3  pos = rayOrigin + t * rayDir;
+        
+        // skip if below ground
+        float sampleHeight = length(pos);
+        if (sampleHeight < g_Atmosphere.planetRadius_km) 
+            break;
+        // skip if above atmosphere
+        if (sampleHeight > g_Atmosphere.atmosphereRadius_km)
+            continue;
+
+        float sampleAltitude = sampleHeight - g_Atmosphere.planetRadius_km;
+        
+        // extinction(out-scattering) at sample point
+        float rayleighDensity = GetDensityAtHeight(sampleAltitude, g_Atmosphere.rayleighDensityH_km);
+        float mieDensity      = GetDensityAtHeight(sampleAltitude, g_Atmosphere.mieDensityH_km);
+        float ozoneDensity    = GetDensityOzoneAtHeight(sampleAltitude);
+
+        vec3  rayleighScattering = g_Atmosphere.rayleighScattering * rayleighDensity;
+        float mieScattering      = g_Atmosphere.mieScattering * mieDensity;
+        float mieAbsorption      = g_Atmosphere.mieAbsorption * mieDensity;
+        vec3  ozoneAbsorption    = g_Atmosphere.ozoneAbsorption * ozoneDensity;
+
+        vec3 scattering        = rayleighScattering + vec3(mieScattering);
+        vec3 extinction        = rayleighScattering + vec3(mieScattering + mieAbsorption) + ozoneAbsorption;
+        vec3 phasedScattering  = phaseRayleigh * rayleighScattering + phaseMie * mieScattering;
+        // σs(x) * p(v,l)
+        vec3 stepTransmittance = exp(-extinction * stepSize);
+        // (2) T(xa,xb) = exp(−Integral(xa~xb, σ(x)dx))
+        
+        // transmittance from sample point to sun
+        float sampleTheta        = dot(normalize(pos), vec3(-g_Atmosphere.light.dirX, -g_Atmosphere.light.dirY, -g_Atmosphere.light.dirZ));
+        vec3  transmittanceToSun = SampleTransmittanceLUT(g_TransmittanceLUT, sampleHeight, sampleTheta, g_Atmosphere.planetRadius_km, g_Atmosphere.atmosphereRadius_km);
+
+        // multi-scattering
+        vec2 msUV = clamp(
+                        vec2(sampleTheta * 0.5 + 0.5, inverseLerp(sampleHeight, g_Atmosphere.planetRadius_km, g_Atmosphere.atmosphereRadius_km)),
+                    0.0, 1.0);
+        vec3 multiScattering = texture(g_MultiScatteringLUT, msUV).rgb;
+        
+        // planet shadow
+        vec2  planetIntersection = RaySphereIntersection(pos, vec3(-g_Atmosphere.light.dirX, -g_Atmosphere.light.dirY, -g_Atmosphere.light.dirZ), PLANET_CENTER, g_Atmosphere.planetRadius_km);
+        float planetShadow       = planetIntersection.x < 0.0 ? 1.0 : 0.0;
+        
+        // Analytical integration
+        vec3 S    = (planetShadow * transmittanceToSun * phasedScattering + multiScattering * scattering) * E;
+        vec3 Sint = (S - S * stepTransmittance) / extinction;
+        L        += throughput * Sint;
+        
+        throughput *= stepTransmittance;
+    }
+    
+    return L; 
+}
+
+// hash
+float rand(vec2 co)
+{
+    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+}
+
+// Cosine-weighted hemisphere sampling
+// Reference: https://ameye.dev/notes/sampling-the-hemisphere/
+vec3 GetHemisphereSampleCos(vec3 N, uint i, uint Ns)
+{
+    float phi      = 2.0 * PI * (float(i) / float(Ns));
+    float cosTheta = sqrt(1.0 - (float(i) + 0.5) / float(Ns));
+    float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+    
+    vec3 H;
+    H.x = cos(phi) * sinTheta;
+    H.y = sin(phi) * sinTheta;
+    H.z = cosTheta;
+
+    vec3 up        = abs(N.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent   = normalize(cross(up, N));
+    vec3 bitangent = cross(N, tangent);
+    
+    return tangent * H.x + bitangent * H.y + N * H.z;
+}
+
+vec3 GetHemisphereSampleUniform(vec3 N, uint i, uint Ns)
+{
+    // Hammersley
+    float phi = 2.0 * PI * (float(i) / float(Ns));
+    float cosTheta = 1.0 - (float(i) + 0.5) / float(Ns);
+    float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+
+    vec3 H;
+    H.x = cos(phi) * sinTheta;
+    H.y = sin(phi) * sinTheta;
+    H.z = cosTheta;
+
+    vec3 up = abs(N.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = normalize(cross(up, N));
+    vec3 bitangent = cross(N, tangent);
+    
+    return tangent * H.x + bitangent * H.y + N * H.z;
+}
+
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+void main() 
+{
+    uint imgSize   = imageSize(g_AtmosphereAmbientLUT);
+    uint pixCoords = gl_GlobalInvocationID.x;
+
+    if (pixCoords >= imgSize)
+        return;
+
+    float t        = (float(pixCoords) + 0.5) / float(imgSize);
+    float altitude = t * (g_Atmosphere.atmosphereRadius_km - g_Atmosphere.planetRadius_km);
+
+    vec3 rayOrigin = vec3(0.0, g_Atmosphere.planetRadius_km + altitude, 0.0);
+    vec3 up        = vec3(0.0, 1.0, 0.0);
+
+    uint numSamples       = g_Push.sampleCount;
+    vec3 totalIlluminance = vec3(0.0);
+
+    // Integral over hemisphere
+    for (uint i = 0u; i < numSamples; ++i)
+    {
+        vec3  rayDir = GetHemisphereSampleCos(up, i, numSamples);
+        float NoL    = dot(rayDir, up);
+
+        // Ignore downward ray
+        if (NoL <= 0.0) 
+            continue;
+
+        vec2 groundIntersection = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, g_Atmosphere.planetRadius_km);
+        if (groundIntersection.x > 0.0)
+        {
+            // If ray touches the ground, assume this ray isn't inscattered 
+            // (ignore scattering of ground albedo since this shader only consider sky light)
+            continue;
+        }
+
+        vec3 inscattered = RaymarchScattering(rayOrigin, rayDir, RAY_MARCHING_MAX_DISTANCE);
+        
+        // PDF(w_i) = PI / cos(w_i)
+        // Lo = (1 / N) * Sum[ (Lin(w_i) * cos(w_i)) / PDF(w_i) ]
+        // Lo = (PI / N) * Sum[ Lin(w_i) ]
+        totalIlluminance += inscattered.rgb;
+    }
+    
+    // normalization
+    if (numSamples > 0)
+    {
+        totalIlluminance *= (PI / float(numSamples));
+    }
+    imageStore(g_AtmosphereAmbientLUT, int(pixCoords), vec4(totalIlluminance, 1.0));
+}

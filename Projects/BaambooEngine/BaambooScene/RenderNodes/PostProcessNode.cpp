@@ -38,7 +38,7 @@ PostProcessNode::PostProcessNode(render::RenderDevice& rd)
 			Shader::Create(m_RenderDevice, "TemporalAntiAliasingCS",
 			{
 				.stage    = eShaderStage::Compute,
-				.filename = "TemporalAntiAliasing"
+				.filename = "TemporalAntiAliasingCS"
 			}
 		)).Build();
 
@@ -47,7 +47,7 @@ PostProcessNode::PostProcessNode(render::RenderDevice& rd)
 			Shader::Create(m_RenderDevice, "SharpenCS",
 			{ 
 				.stage    = eShaderStage::Compute,
-				.filename = "Sharpen" 
+				.filename = "SharpenCS" 
 			}
 		)).Build();
 	}
@@ -67,7 +67,7 @@ PostProcessNode::PostProcessNode(render::RenderDevice& rd)
 			Shader::Create(m_RenderDevice, "ToneMappingCS",
 				{
 					.stage    = eShaderStage::Compute,
-					.filename = "ToneMapping" 
+					.filename = "ToneMappingCS" 
 				}
 			)).Build();
 	}

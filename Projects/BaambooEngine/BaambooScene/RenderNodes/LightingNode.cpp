@@ -27,7 +27,7 @@ LightingNode::LightingNode(render::RenderDevice& rd)
 		Shader::Create(m_RenderDevice, "DeferredPBRLightingCS",
 			{
 				.stage    = eShaderStage::Compute,
-				.filename = "DeferredPBRLighting"
+				.filename = "DeferredPBRLightingCS"
 			})).Build();
 }
 

@@ -118,26 +118,38 @@ struct AtmosphereData
 
     float3 ozoneAbsorption;
     float  ozoneCenter_km;
-    float  ozoneWidth_km;
 
     float3 groundAlbedo;
+    float  ozoneWidth_km;
 };
 
 struct CloudData
 {
-    float coverage;
-    float cloudType;
-    float precipitation;
-    float padding0;
-
     float  topLayer_km;
     float  bottomLayer_km;
-    float2 padding1;
+    float2 padding0;
 
+    float3 extinctionStrength;
+    float  extinctionScale;
+
+    float msContribution;
+    float msOcclusion;
+    float msEccentricity;
+    float groundContributionStrength;
+
+    float coverage;
+    float cloudType;
     float baseNoiseScale;
     float baseIntensity;
-    float detailNoiseScale;
-    float detailIntensity;
+
+    float erosionNoiseScale;
+    float erosionIntensity;
+    float erosionPower;
+    float wispiness;
+    float billowiness;
+    float precipitation;
+    float erosionHeightGradientMultiplier;
+    float erosionHeightGradientPower;
 
     float3 windDirection;
     float  windSpeed_mps;

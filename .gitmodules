@@ -28,3 +28,6 @@
 [submodule "Projects/ThirdParties/magic_enum"]
 	path = Projects/ThirdParties/magic_enum
 	url = https://github.com/Neargye/magic_enum.git
+[submodule "Projects/ThirdParties/gli"]
+	path = Projects/ThirdParties/gli
+	url = https://github.com/g-truc/gli.git

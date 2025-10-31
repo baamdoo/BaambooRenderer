@@ -506,7 +506,7 @@ void Engine::DrawUI()
 
 						ImGui::Text("Tint");
 						bMark |= ImGui::DragFloat3("##Tint", glm::value_ptr(component.tint), 0.01f, 0.0f, 1.0f, "%.2f");
-						ImGui::Text("Roughess");
+						ImGui::Text("Roughness");
 						bMark |= ImGui::DragFloat("##Roughness", &component.roughness, 0.01f, 0.0f, 1.0f, "%.2f");
 						ImGui::Text("Metallic");
 						bMark |= ImGui::DragFloat("##Metallic", &component.metallic, 0.01f, 0.0f, 1.0f, "%.2f");
@@ -781,31 +781,18 @@ void Engine::DrawUI()
 					{
 						auto& component = ImGui::SelectedEntity.GetComponent< CloudComponent >();
 
-						if (ImGui::CollapsingHeader("Shape"))
+						if (ImGui::CollapsingHeader("Global"))
 						{
-							bMark |= ImGui::DragFloat("Cloud Coverage", &component.coverage, 0.001f, 0.0f, 1.0f, "%.3f");
-							bMark |= ImGui::DragFloat("Cloud Type", &component.cloudType, 0.01f, 0.0f, 1.0f, "%.2f");
-							bMark |= ImGui::DragFloat("Cloud Precipitation", &component.precipitation, 0.01f, 0.0f, 1.0f, "%.2f");
 							bMark |= ImGui::DragFloat("Cloud Bottom Height (km)", &component.bottomHeight_km, 0.1f, 0.0f, 10.0f, "%.1f");
 							bMark |= ImGui::DragFloat("Cloud Thickness (km)", &component.layerThickness_km, 0.1f, 0.1f, 100.0f, "%.1f");
 
-							bMark |= ImGui::DragFloat("Base Scale", &component.baseNoiseScale, 0.001f, 0.001f, 1.0f, "%.3f");
-							if (ImGui::IsItemHovered())
-							{
-								ImGui::BeginTooltip();
-								ImGui::Text("Range(km) per tile");
-								ImGui::EndTooltip();
-							}
-							bMark |= ImGui::DragFloat("Base Intensity", &component.baseIntensity, 0.01f, 0.0f, 10.0f, "%.2f");
+							bMark |= ImGui::DragFloat3("Extinction Strength", glm::value_ptr(component.extinctionStrength), 0.001f, 0.0f, 1.0f, "%.3f");
+							bMark |= ImGui::DragFloat("Extinction Scale", &component.extinctionScale, 0.01f, 1.0f, 20.0f, "%.3f");
 
-							bMark |= ImGui::DragFloat("Detail Scale", &component.detailNoiseScale, 0.001f, 0.001f, 1.0f, "%.3f");
-							if (ImGui::IsItemHovered())
-							{
-								ImGui::BeginTooltip();
-								ImGui::Text("Range(km) per tile");
-								ImGui::EndTooltip();
-							}
-							bMark |= ImGui::DragFloat("Detail Intensity", &component.detailIntensity, 0.01f, 0.0f, 1.0f, "%.2f");
+							bMark |= ImGui::DragFloat("MultiScattering Contribution", &component.msContribution, 0.001f, 0.0f, 1.0f, "%.3f");
+							bMark |= ImGui::DragFloat("MultiScattering Occlusion", &component.msOcclusion, 0.001f, 0.0f, 1.0f, "%.3f");
+							bMark |= ImGui::DragFloat("MultiScattering Eccentricity", &component.msEccentricity, 0.001f, 0.0f, 1.0f, "%.3f");
+							bMark |= ImGui::DragFloat("Ground Contribution", &component.groundContributionStrength, 0.001f, 0.0f, 1.0f, "%.3f");
 
 							if (ImGui::DragFloat3("Wind Direction", glm::value_ptr(component.windDirection), 0.01f, 0.0f, 1.0f, "%.2f"))
 							{
@@ -814,6 +801,66 @@ void Engine::DrawUI()
 								bMark = true;
 							}
 							bMark |= ImGui::DragFloat("Wind Speed(m/s)", &component.windSpeed_mps, 0.1f, 0.0f, 1000.0f, "%.1f");
+						}
+						if (ImGui::CollapsingHeader("Shape"))
+						{
+							bMark |= ImGui::DragFloat("Cloud Coverage", &component.coverage, 0.001f, 0.0f, 1.0f, "%.3f");
+							bMark |= ImGui::DragFloat("Cloud Type", &component.cloudType, 0.01f, 0.0f, 1.0f, "%.2f");
+							bMark |= ImGui::DragFloat("Base Scale", &component.baseNoiseScale, 0.001f, 0.001f, 1.0f, "%.3f");
+							if (ImGui::IsItemHovered())
+							{
+								ImGui::BeginTooltip();
+								ImGui::Text("Range(km) per tile");
+								ImGui::EndTooltip();
+							}
+							bMark |= ImGui::DragFloat("Base Intensity", &component.baseIntensity, 0.001f, 0.0f, 10.0f, "%.3f");
+
+							bMark |= ImGui::DragFloat("Erosion Scale", &component.erosionNoiseScale, 0.001f, 0.001f, 1.0f, "%.3f");
+							if (ImGui::IsItemHovered())
+							{
+								ImGui::BeginTooltip();
+								ImGui::Text("Range(km) per tile");
+								ImGui::EndTooltip();
+							}
+							bMark |= ImGui::DragFloat("Erosion Intensity", &component.erosionIntensity, 0.001f, 0.0f, 10.0f, "%.3f");
+
+							bMark |= ImGui::DragFloat("Erosion Power", &component.erosionPower, 0.001f, 0.0f, 1.0f, "%.3f");
+							bMark |= ImGui::DragFloat("Wispiness", &component.wispySkewness, 0.001f, 0.0f, 1.0f, "%.3f");
+							bMark |= ImGui::DragFloat("Billowiness", &component.billowySkewness, 0.001f, 0.0f, 1.0f, "%.3f");
+							bMark |= ImGui::DragFloat("Cloud Precipitation", &component.precipitation, 0.01f, 0.0f, 1.0f, "%.2f");
+							bMark |= ImGui::DragFloat("Erosion Height Gradient Multiplier", &component.erosionHeightGradientMultiplier, 0.001f, 0.0f, 10.0f, "%.3f");
+							bMark |= ImGui::DragFloat("Erosion Height Gradient Power", &component.erosionHeightGradientPower, 0.001f, 0.0f, 10.0f, "%.3f");
+						}
+						if (ImGui::CollapsingHeader("Performance"))
+						{
+							auto currentType = magic_enum::enum_name(component.uprezRatio);
+							if (ImGui::BeginCombo("Cloud Up-resolution Ratio", currentType.data()))
+							{
+								if (ImGui::Selectable("Original", component.uprezRatio == eCloudUprezRatio::X1))
+								{
+									component.uprezRatio = eCloudUprezRatio::X1;
+
+									bMark = true;
+								}
+								else if (ImGui::Selectable("Half", component.uprezRatio == eCloudUprezRatio::X2))
+								{
+									component.uprezRatio = eCloudUprezRatio::X2;
+
+									bMark = true;
+								}
+								else if (ImGui::Selectable("Quarter", component.uprezRatio == eCloudUprezRatio::X4))
+								{
+									component.uprezRatio = eCloudUprezRatio::X4;
+
+									bMark = true;
+								}
+
+								ImGui::EndCombo();
+							}
+
+							bMark |= ImGui::DragInt("Steps of Raymarch to Cloud", &component.numCloudRaymarchSteps, 1, 32, 400);
+							bMark |= ImGui::DragInt("Steps of Raymarch to Light", &component.numLightRaymarchSteps, 1, 6, 128);
+							bMark |= ImGui::DragFloat("Blend Alpha for Temporal Accumulation", &component.temporalBlendAlpha, 0.001f, 0.01f, 1.0f, "%.3f");
 						}
 					}
 
@@ -1020,7 +1067,7 @@ void Engine::DrawUI()
 				}
 			}
 
-			for (auto& entry : std::filesystem::directory_iterator(m_CurrentDirectory))
+			for (auto& entry : fs::directory_iterator(m_CurrentDirectory))
 			{
 				const auto& path = entry.path();
 				auto relativePath = fs::relative(entry.path(), ASSET_PATH);
@@ -1101,7 +1148,7 @@ void Engine::DrawUI()
 										{
 											component.aoTex = path.string();
 											bMark = true;
-										};
+										}
 										break;
 									case eContentButton_Metallic:
 										if (component.metallicTex != path.string())
