@@ -193,7 +193,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
             {
                 s_CombineTexturesPSO = new Dx12ComputePipeline(m_RenderDevice, "CombineTextures");
                 Arc< Dx12Shader > pCS
-                    = Dx12Shader::Create(m_RenderDevice, "CombineTextures", { .stage = render::eShaderStage::Compute, .filename = "CombineTextures" });
+                    = Dx12Shader::Create(m_RenderDevice, "CombineTexturesCS", { .stage = render::eShaderStage::Compute, .filename = "CombineTexturesCS" });
                 s_CombineTexturesPSO->SetComputeShader(std::move(pCS)).Build();
             }
 

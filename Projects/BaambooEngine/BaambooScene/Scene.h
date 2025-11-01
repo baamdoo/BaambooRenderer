@@ -32,10 +32,6 @@ struct FrameData
 	Weak< render::Texture > pAtmosphereAmbientLUT;
 
 	// CloudLUTs
-	Weak< render::Texture > pCloudBaseLUT;
-	Weak< render::Texture > pCloudErosionLUT;
-	Weak< render::Texture > pCloudTopGradientLUT;
-	Weak< render::Texture > pCloudBottomGradientLUT;
 	Weak< render::Texture > pCloudScatteringLUT;
 
 	// Scene buffers

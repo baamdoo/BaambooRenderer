@@ -9,7 +9,7 @@ static const float  DISTANCE_SCALE               = 0.00001;       // cm-km
 static const float3 PLANET_CENTER                = 0.0;           // km
 static const float  AP_KM_PER_SLICE              = 4.0;           // km
 static const float  MIN_VIEW_HEIGHT_ABOVE_GROUND = 0.0005 * (1.0 / DISTANCE_SCALE); // km
-static const float  RAY_MARCHING_MAX_DISTANCE    = 1e4;
+static const float  RAY_MARCHING_MAX_DISTANCE    = 1e2;
 
 #ifdef _ATMOSPHERE
 struct AtmosphereData
@@ -30,15 +30,19 @@ struct AtmosphereData
     
     float3 ozoneAbsorption;
     float  ozoneCenter_km;
-    float  ozoneWidth_km;
-
     float3 groundAlbedo;
+    float  ozoneWidth_km;
 }; ConstantBuffer< AtmosphereData > g_Atmosphere : register(b1);
 
 // Reference: https://github.com/sebh/UnrealEngineSkyAtmosphere
 float GetAltitude(float3 position) 
 {
     return length(position) - g_Atmosphere.planetRadius_km;
+}
+
+float IsotropicPhase()
+{
+	return 1.0 / (4.0 * PI);
 }
 
 float RayleighPhase(float cosTheta) 

@@ -45,6 +45,11 @@ public:
 	virtual void Resize(u32 width, u32 height, u32 depth) override;
 
 private:
+	Arc< render::Texture > m_pBaseNoiseTexture;
+	Arc< render::Texture > m_pErosionNoiseTexture;
+	Arc< render::Texture > m_pDensityTopGradientTexture;
+	Arc< render::Texture > m_pDensityBottomGradientTexture;
+
 	Arc< render::Texture > m_pCloudScatteringLUT;
 	Arc< render::Texture > m_pUprezzedCloudScatteringLUT;
 	Arc< render::Texture > m_pPrevUprezzedCloudScatteringLUT;

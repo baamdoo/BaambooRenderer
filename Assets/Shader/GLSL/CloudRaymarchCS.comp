@@ -13,8 +13,8 @@
 
 layout(set = SET_PUSH, binding = 7)  uniform sampler2D g_DepthBuffer;
 layout(set = SET_PUSH, binding = 8)  uniform sampler2D g_TransmittanceLUT;
-layout(set = SET_PUSH, binding = 9)  uniform sampler2D g_MultiScatteringLUT;
-layout(set = SET_PUSH, binding = 10) uniform sampler3D g_AerialPerspectiveLUT;
+layout(set = SET_PUSH, binding = 9)  uniform sampler3D g_AerialPerspectiveLUT;
+layout(set = SET_PUSH, binding = 10) uniform sampler1D g_AtmosphereAmbientLUT;
 layout(set = SET_PUSH, binding = 11) uniform sampler2DArray g_BlueNoiseArray;
 
 layout(set = SET_PUSH, binding = 12, rgba16f) writeonly uniform image2D g_CloudScatteringLUT;
@@ -325,12 +325,7 @@ CloudResult RaymarchCloud(vec3 rayOrigin, vec3 rayDirection, float maxDistance, 
             ParticipatingMediaExtinctionContext    PMEC = SetupParticipatingMediaExtinctionContext(albedo, stepExtinction, msScatteringStrength, msExtinctionStrength);
             ParticipatingMediaTransmittanceContext PMTC = RaymarchLight(samplePos, sunDirection, VoL, msExtinctionStrength, jitter.g);
 
-            vec2 msUV = clamp(
-                            vec2(sampleTheta * 0.5 + 0.5, inverseLerp(sampleHeight, g_Atmosphere.planetRadius_km, g_Atmosphere.atmosphereRadius_km)),
-                        0.0, 1.0);
-            vec3 atmosphereMS = texture(g_MultiScatteringLUT, msUV).rgb;
-
-            vec3 ambientLit = atmosphereMS;
+            vec3 ambientLit = texture(g_AtmosphereAmbientLUT, hNorm).rgb;
             // --- Ground Contribution --- //
             if(g_Cloud.groundContributionStrength > 0.0)
             {
@@ -457,7 +452,7 @@ void main()
                   slice   = w * texSize.z;
 
             vec4 ap = texture(g_AerialPerspectiveLUT, vec3(uv, w));
-
+            
             // prevents an abrupt appearance of fog on objects close to the camera
             float weight = 1.0;
             if (slice < sqrt(0.5))

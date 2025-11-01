@@ -15,7 +15,7 @@ public:
     Dx12ResourceManager(Dx12RenderDevice& rd);
     ~Dx12ResourceManager();
 
-    virtual Arc< render::Texture > LoadTexture(const std::string& filepath) override;
+    virtual Arc< render::Texture > LoadTexture(const std::string& filepath, bool bGenerateMips = false) override;
 
     void UploadData(Dx12Resource* pResource, const void* pData, u64 sizeInBytes, u64 dstOffsetInBytes, D3D12_RESOURCE_STATES stateAfter);
     void UploadData(Arc< Dx12Buffer > pBuffer, const void* pData, u64 sizeInBytes, u64 dstOffsetInBytes, D3D12_RESOURCE_STATES stateAfter);
@@ -33,6 +33,8 @@ public:
 
 private:
     Arc< Dx12Texture > CreateFlat2DTexture(const std::string& name, u32 color);
+
+    Arc< Dx12Texture > LoadTextureArray(const fs::path& dirpath, bool bGenerateMips);
 
 private:
     Dx12RenderDevice& m_RenderDevice;

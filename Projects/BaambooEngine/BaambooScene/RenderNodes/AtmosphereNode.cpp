@@ -136,13 +136,12 @@ void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderVie
 
 		context.Dispatch2D< 8, 8 >(MULTISCATTERING_LUT_RESOLUTION.x, MULTISCATTERING_LUT_RESOLUTION.y);
 	}
-	context.TransitionBarrier(m_pTransmittanceLUT, eTextureLayout::ShaderReadOnly, 0xFFFFFFFF, true);
-	context.TransitionBarrier(m_pMultiScatteringLUT, eTextureLayout::ShaderReadOnly, 0xFFFFFFFF, true);
 
-	//
 	context.SetRenderPipeline(m_pSkyViewPSO.get());
 
-	context.TransitionBarrier(m_pSkyViewLUT, eTextureLayout::General, 0xFFFFFFFF, true);
+	context.TransitionBarrier(m_pTransmittanceLUT, eTextureLayout::ShaderReadOnly);
+	context.TransitionBarrier(m_pMultiScatteringLUT, eTextureLayout::ShaderReadOnly);
+	context.TransitionBarrier(m_pSkyViewLUT, eTextureLayout::General);
 
 	context.SetComputeConstants(sizeof(u32), &renderView.atmosphere.svMinRaySteps, 0);
 	context.SetComputeConstants(sizeof(u32), &renderView.atmosphere.svMaxRaySteps, sizeof(u32));
