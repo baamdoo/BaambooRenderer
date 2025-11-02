@@ -27,12 +27,17 @@ public:
     // Overriding to avoid resource dependency order
     // [ResourceManager] => [RenderResources]
     virtual render::SceneResource& GetSceneResource() override;
+
     virtual Arc< render::Texture > GetFlatWhiteTexture() override;
     virtual Arc< render::Texture > GetFlatBlackTexture() override;
     virtual Arc< render::Texture > GetFlatGrayTexture() override;
 
+    virtual Arc< render::Texture > GetFlatWhiteTexture3D() override;
+    virtual Arc< render::Texture > GetFlatBlackTexture3D() override;
+
 private:
     Arc< Dx12Texture > CreateFlat2DTexture(const std::string& name, u32 color);
+    Arc< Dx12Texture > CreateFlat3DTexture(const std::string& name, u32 color);
 
     Arc< Dx12Texture > LoadTextureArray(const fs::path& dirpath, bool bGenerateMips);
 

@@ -144,7 +144,7 @@ enum class eFormat
     D16_UNORM,
 };
 
-enum class eTextureType
+enum class eImageType
 {
     Texture1D   = 0,
     Texture2D   = 1,
@@ -190,7 +190,7 @@ using Super = Resource;
 public:
     struct CreationInfo
     {
-        eTextureType   type          = eTextureType::Texture2D;
+        eImageType     imageType     = eImageType::Texture2D;
         uint3          resolution    = {};
         eFormat        format        = eFormat::RGBA8_UNORM;
         RenderFlags    imageUsage    = 0;
@@ -626,6 +626,9 @@ public:
     virtual Arc< Texture > GetFlatBlackTexture() { return m_pBlackTexture; }
     virtual Arc< Texture > GetFlatGrayTexture() { return m_pGrayTexture; }
 
+    virtual Arc< Texture > GetFlatWhiteTexture3D() { return m_pWhiteTexture3D; }
+    virtual Arc< Texture > GetFlatBlackTexture3D() { return m_pBlackTexture3D; }
+
     /*void SetBuffer(const std::string& name, Weak< Buffer > buffer);
     void SetTexture(const std::string& name, Weak< Texture > texture);
     void SetSampler(const std::string& name, Arc< Sampler > sampler);
@@ -640,6 +643,9 @@ protected:
     Arc< Texture > m_pWhiteTexture;
     Arc< Texture > m_pBlackTexture;
     Arc< Texture > m_pGrayTexture;
+
+    Arc< Texture > m_pWhiteTexture3D;
+    Arc< Texture > m_pBlackTexture3D;
 
     /*std::unordered_map< std::string, Weak< Buffer > >  m_Buffers;
     std::unordered_map< std::string, Weak< Texture > > m_Textures;

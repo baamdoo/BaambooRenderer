@@ -15,11 +15,11 @@ RWTexture2D< float4 > g_CloudScatteringLUT : register(u0);
 
 cbuffer PushConstant : register(b0, ROOT_CONSTANT_SPACE)
 {
-    uint NumCloudRaymarchSteps;
-    uint NumLightRaymarchSteps;
+    uint g_NumCloudRaymarchSteps;
+    uint g_NumLightRaymarchSteps;
 
-    float    TimeSec;
-    uint64_t Frame;
+    float    g_TimeSec;
+    uint64_t g_Frame;
 };
 
 static const int MS_OCTAVES = 2;
@@ -153,7 +153,7 @@ ParticipatingMediaTransmittanceContext RaymarchLight(float3 rayOrigin, float3 ra
     float3 ExtinctionStrength = g_Cloud.extinctionStrength * g_Cloud.extinctionScale;
 
     float shadowMarchLength  = topIntersection.y;
-    float invShadowStepCount = 1.0 / (float)NumLightRaymarchSteps;
+    float invShadowStepCount = 1.0 / (float)g_NumLightRaymarchSteps;
     float startOffset        = jitter * invShadowStepCount;
 
     float tPrev = 0.0;
@@ -174,7 +174,7 @@ ParticipatingMediaTransmittanceContext RaymarchLight(float3 rayOrigin, float3 ra
 
         float stepLength = shadowMarchLength * tDelta;
 
-        float3 offset = g_Cloud.windDirection * TimeSec * g_Cloud.windSpeed_mps * 0.001;
+        float3 offset = g_Cloud.windDirection * g_TimeSec * g_Cloud.windSpeed_mps * 0.001;
 
         stepDensity[0]  = SampleCloudDensity(spos, shNorm, offset);
         opticalDepth[0] += stepDensity[0] * stepLength * ExtinctionStrength * 1000.0;
@@ -275,7 +275,7 @@ CloudResult RaymarchCloud(float3 rayOrigin, float3 rayDirection, float maxDistan
     // --- Sampling setup --- //
     float3 ExtinctionFactor = g_Cloud.extinctionStrength * g_Cloud.extinctionScale;
 
-    float stepSize = rayLength / (float)NumCloudRaymarchSteps;
+    float stepSize = rayLength / (float)g_NumCloudRaymarchSteps;
     float tSample  = rayStart + stepSize * jitter.r;
     // ---------------------- //
 
@@ -284,7 +284,7 @@ CloudResult RaymarchCloud(float3 rayOrigin, float3 rayDirection, float maxDistan
 
     float3 L          = float3(0.0, 0.0, 0.0);
     float3 throughput = float3(1.0, 1.0, 1.0);
-    for (int i = 0; i < (float)NumCloudRaymarchSteps; ++i)
+    for (int i = 0; i < (float)g_NumCloudRaymarchSteps; ++i)
     {
         float3 samplePos = rayOrigin + tSample * rayDirection;
 
@@ -295,7 +295,7 @@ CloudResult RaymarchCloud(float3 rayOrigin, float3 rayDirection, float maxDistan
         float altitude = sampleHeight - g_Atmosphere.planetRadius_km;
         float hNorm    = inverseLerp(altitude, g_Cloud.bottomLayer_km, g_Cloud.topLayer_km);
 
-        float3 offset     = g_Cloud.windDirection * TimeSec * g_Cloud.windSpeed_mps * 0.001;
+        float3 offset     = g_Cloud.windDirection * g_TimeSec * g_Cloud.windSpeed_mps * 0.001;
         float stepDensity = SampleCloudDensity(samplePos, hNorm, offset);
         if (stepDensity > 0.0f)
         {
@@ -426,9 +426,9 @@ void main(uint3 tID : SV_DispatchThreadID)
         uint3 noiseSize;
         g_BlueNoiseArray.GetDimensions(noiseSize.x, noiseSize.y, noiseSize.z);
 
-        int2 offset     = int2(float2(0.754877669, 0.569840296) * (float)Frame * float2(imgSize));
+        int2 offset     = int2(float2(0.754877669, 0.569840296) * (float)g_Frame * float2(imgSize));
         int2 noiseIdx   = (pixCoords.xy + offset) % noiseSize.xy;
-        int  noiseSlice = (int)Frame % noiseSize.z;
+        int  noiseSlice = (int)g_Frame % noiseSize.z;
 
         jitter = g_BlueNoiseArray.Load(int4(noiseIdx, noiseSlice, 0));
     }

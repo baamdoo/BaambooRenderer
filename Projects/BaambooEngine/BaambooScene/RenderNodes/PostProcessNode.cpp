@@ -130,6 +130,8 @@ void PostProcessNode::ApplyAntiAliasing(render::CommandContext& context, const S
 		context.TransitionBarrier(g_FrameData.pGBuffer3.lock(), eTextureLayout::ShaderReadOnly);
 		if (!bFirstApply)
 			context.TransitionBarrier(m_TAA.pHistoryTexture, eTextureLayout::ShaderReadOnly);
+		else
+			context.TransitionBarrier(rm.GetFlatBlackTexture(), eTextureLayout::ShaderReadOnly);
 		context.TransitionBarrier(m_TAA.pAntiAliasedTexture, eTextureLayout::General);
 
 		struct

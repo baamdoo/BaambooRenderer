@@ -36,7 +36,7 @@ CloudShapeNode::CloudShapeNode(render::RenderDevice& rd)
             m_RenderDevice,
             "CloudShape::BaseNoise",
             {
-                .type       = eTextureType::Texture3D,
+                .imageType  = eImageType::Texture3D,
                 .resolution = BASE_NOISE_TEXTURE_RESOLUTION,
                 .format     = eFormat::RGBA16_FLOAT,
                 .imageUsage = eTextureUsage_Sample | eTextureUsage_Storage
@@ -47,7 +47,7 @@ CloudShapeNode::CloudShapeNode(render::RenderDevice& rd)
             m_RenderDevice,
             "CloudShape::DetailNoise",
             {
-                .type       = eTextureType::Texture3D,
+                .imageType  = eImageType::Texture3D,
                 .resolution = DETAIL_NOISE_TEXTURE_RESOLUTION,
                 .format     = eFormat::RGBA16_FLOAT,
                 .imageUsage = eTextureUsage_Sample | eTextureUsage_Storage

@@ -204,7 +204,7 @@ D3D12_DEPTH_STENCIL_VIEW_DESC GetDSVDesc(const D3D12_RESOURCE_DESC& resDesc, UIN
     return dsvDesc;
 }
 
-D3D12_SHADER_RESOURCE_VIEW_DESC GetSRVDesc(const D3D12_RESOURCE_DESC& resDesc, UINT mip, UINT mipLevels = -1, UINT arraySlice = 0, UINT arraySize = 1, UINT planeSlice = 0, bool bTextureCube = false)
+D3D12_SHADER_RESOURCE_VIEW_DESC GetSRVDesc(const D3D12_RESOURCE_DESC& resDesc, render::eImageType imageType, UINT mip, UINT mipLevels = -1, UINT arraySlice = 0, UINT arraySize = 1, UINT planeSlice = 0)
 {
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
     srvDesc.Format = resDesc.Format;
@@ -216,16 +216,20 @@ D3D12_SHADER_RESOURCE_VIEW_DESC GetSRVDesc(const D3D12_RESOURCE_DESC& resDesc, U
         if (resDesc.DepthOrArraySize > 1)
         {
             srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE1DARRAY;
+            srvDesc.Texture1DArray.MostDetailedMip = mip;
+            srvDesc.Texture1DArray.MipLevels = mipLevels;
             srvDesc.Texture1DArray.ArraySize = arraySize;
             srvDesc.Texture1DArray.FirstArraySlice = arraySlice;
         }
         else
         {
             srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE1D;
+            srvDesc.Texture1DArray.MostDetailedMip = mip;
+            srvDesc.Texture1DArray.MipLevels = mipLevels;
         }
         break;
     case D3D12_RESOURCE_DIMENSION_TEXTURE2D:
-        if (bTextureCube)
+        if (imageType == render::eImageType::TextureCube)
         {
             if (resDesc.DepthOrArraySize / 6 > 1)
             {
@@ -344,9 +348,9 @@ Dx12Texture::Dx12Texture(Dx12RenderDevice& rd, const std::string& name, Creation
     , Dx12Resource(rd, name, 
         {
             .desc = 
-                m_CreationInfo.type == render::eTextureType::Texture1D ?
+                m_CreationInfo.imageType == render::eImageType::Texture1D ?
                     CD3DX12_RESOURCE_DESC::Tex1D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, m_CreationInfo.arrayLayers, m_CreationInfo.bGenerateMips ? 0 : 1, ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)) :
-                m_CreationInfo.type == render::eTextureType::Texture3D ?
+                m_CreationInfo.imageType == render::eImageType::Texture3D ?
                     CD3DX12_RESOURCE_DESC::Tex3D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, m_CreationInfo.resolution.y, m_CreationInfo.resolution.z, m_CreationInfo.bGenerateMips ? 0 : 1, ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)) :
                     CD3DX12_RESOURCE_DESC::Tex2D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, m_CreationInfo.resolution.y, m_CreationInfo.arrayLayers, m_CreationInfo.bGenerateMips ? 0 : 1, m_CreationInfo.sampleCount, 0, ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)),
             .initialState = ConvertToDx12ResourceStates(m_CreationInfo.imageUsage),
@@ -482,12 +486,14 @@ void Dx12Texture::CreateViews()
         {
             if (IsSRVSupported())
             {
+                auto srvDesc = GetSRVDesc(desc, m_CreationInfo.imageType, 0);
+
                 m_ShaderResourceView = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-                d3d12Device->CreateShaderResourceView(m_d3d12Resource, nullptr, m_ShaderResourceView.GetCPUHandle());
+                d3d12Device->CreateShaderResourceView(m_d3d12Resource, &srvDesc, m_ShaderResourceView.GetCPUHandle());
             }
             else if (IsTypelessFormat(m_Format))
             {
-                auto srvDesc   = GetSRVDesc(desc, 0);
+                auto srvDesc   = GetSRVDesc(desc, m_CreationInfo.imageType, 0);
                 srvDesc.Format = ConvertToViewFormat(m_Format, true);
 
                 m_ShaderResourceView = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -495,7 +501,7 @@ void Dx12Texture::CreateViews()
             }
             else if (m_DepthStencilView.IsValid() && (m_CreationInfo.imageUsage & render::eTextureUsage_Sample))
             {
-                auto srvDesc   = GetSRVDesc(desc, 0);
+                auto srvDesc   = GetSRVDesc(desc, m_CreationInfo.imageType, 0);
                 srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
 
                 m_ShaderResourceView = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);

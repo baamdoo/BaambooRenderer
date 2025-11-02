@@ -19,12 +19,14 @@ private:
 	Arc< render::Texture > m_pSkyViewLUT;
 	Arc< render::Texture > m_pAerialPerspectiveLUT;
 	Arc< render::Texture > m_pAtmosphereAmbientLUT;
+	Arc< render::Texture > m_pSkyboxLUT;
 
 	Box< render::ComputePipeline > m_pTransmittancePSO;
 	Box< render::ComputePipeline > m_pMultiScatteringPSO;
 	Box< render::ComputePipeline > m_pSkyViewPSO;
 	Box< render::ComputePipeline > m_pAerialPerspectivePSO;
 	Box< render::ComputePipeline > m_pDistantSkyLightPSO;
+	Box< render::ComputePipeline > m_pBakeSkyboxPSO;
 };
 
 } // namespace baamboo

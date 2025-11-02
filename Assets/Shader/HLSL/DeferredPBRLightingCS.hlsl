@@ -9,9 +9,9 @@ Texture2D< float4 > g_GBuffer1             : register(t1); // Normal.rgb + Mater
 Texture2D< float3 > g_GBuffer2             : register(t2); // Emissive.rgb
 Texture2D< float4 > g_GBuffer3             : register(t3); // MotionVectors.rg + Roughness.b + Metallic.a
 Texture2D< float >  g_DepthBuffer          : register(t4);
-Texture2D< float4 > g_SkyViewLUT           : register(t5);
-Texture3D< float4 > g_AerialPerspectiveLUT : register(t6);
-Texture2D< float4 > g_CloudScatteringLUT   : register(t7);
+Texture3D< float4 > g_AerialPerspectiveLUT : register(t5);
+Texture2D< float4 > g_CloudScatteringLUT   : register(t6);
+TextureCube< float4 > g_SkyboxLUT          : register(t7);
 
 StructuredBuffer< MaterialData > g_Materials : register(t0, space1);
 
@@ -19,12 +19,6 @@ RWTexture2D< float4 > g_SceneTexture : register(u0);
 
 SamplerState g_PointClampSampler  : register(SAMPLER_INDEX_POINT_CLAMP, space0);
 SamplerState g_LinearClampSampler : register(SAMPLER_INDEX_LINEAR_CLAMP, space0);
-
-struct PushConstants
-{
-    float planetRadius_km;
-};
-ConstantBuffer< PushConstants > g_Push : register(b0, ROOT_CONSTANT_SPACE);
 
 static const float MIN_ROUGHNESS = 0.045;
 
@@ -154,53 +148,6 @@ float3 ApplySpotLight(SpotLight light, float3 P, float3 N, float3 V, float3 albe
     return (kD * albedo / PI + specular) * luminance * NoL;
 }
 
-float2 GetUvFromSkyViewRayDirection(float longitude, float latitude, float viewHeight, bool bIntersectGround)
-{
-    float2 uv;
-
-    float Vhorizon = sqrt(viewHeight * viewHeight - g_Push.planetRadius_km * g_Push.planetRadius_km);
-    float cosBeta = Vhorizon / viewHeight;
-    float beta = acosFast4(cosBeta);
-    float zenithHorizonAngle = PI - beta;
-
-    if (!bIntersectGround)
-    {
-        float coord = latitude / zenithHorizonAngle;
-        coord = 1.0 - coord;
-        coord = 1.0 - safeSqrt(coord);
-
-        uv.y = 0.5 * coord;
-    }
-    else
-    {
-        float coord = (latitude - zenithHorizonAngle) / beta;
-        coord = safeSqrt(coord);
-
-        uv.y = 0.5 + 0.5 * coord;
-    }
-
-    {
-        uv.x = 0.5 * (longitude + PI) / PI;
-    }
-
-    return uv;
-}
-
-float3 GetSunLuminance(float3 rayDir, bool bIntersectGround)
-{
-    float3 L = float3(-g_Lights.directionals[0].dirX, -g_Lights.directionals[0].dirY, -g_Lights.directionals[0].dirZ);
-    if (dot(rayDir, L) > cos(0.5 * 0.505 * PI / 180.0))
-    {
-        if (!bIntersectGround)
-        {
-            const float3 SunLuminance = 1000000.0;
-            return SunLuminance;
-        }
-    }
-
-    return 0.0;
-}
-
 [numthreads(16, 16, 1)]
 void main(uint3 tID : SV_DispatchThreadID)
 {
@@ -220,30 +167,9 @@ void main(uint3 tID : SV_DispatchThreadID)
     float  depth = g_DepthBuffer.SampleLevel(g_PointClampSampler, uv, 0);
     if (depth == 1.0)
     {
-        // sky view
-        float2 texSize;
-        g_SkyViewLUT.GetDimensions(texSize.x, texSize.y);
-
-        float3 cameraPos =
-            float3(g_Camera.posWORLD.x, max(g_Camera.posWORLD.y, MIN_VIEW_HEIGHT_ABOVE_GROUND), g_Camera.posWORLD.z);
-        float3 cameraPosAbovePlanet =
-            cameraPos * DISTANCE_SCALE + float3(0.0, g_Push.planetRadius_km, 0.0);
-        float viewHeight = length(cameraPosAbovePlanet);
-
         float3 rayDir = normalize(ReconstructWorldPos(uv, 1.0, g_Camera.mViewProjInv));
-        float3 rayOrigin = cameraPosAbovePlanet;
 
-        float3  upVec = normalize(rayOrigin);
-        float cosLatitude = dot(rayDir, upVec);
-        float longitude = atan2Fast(rayDir.z, rayDir.x);
-
-        float2 groundIntersection = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, g_Push.planetRadius_km);
-        bool   bIntersectGround   = groundIntersection.x > 0.0;
-
-        float2 skyUV = GetUvFromSkyViewRayDirection(longitude, acosFast4(cosLatitude), viewHeight, bIntersectGround);
-        skyUV        = GetUnstretchedTextureUV(skyUV, texSize);
-        float4 skyColor = g_SkyViewLUT.SampleLevel(g_LinearClampSampler, skyUV, 0);
-               color    = skyColor.rgb + GetSunLuminance(rayDir, bIntersectGround) * skyColor.a;
+        color = g_SkyboxLUT.Sample(g_LinearClampSampler, rayDir).rgb;
     }
     else
     {
@@ -259,7 +185,7 @@ void main(uint3 tID : SV_DispatchThreadID)
 
         float3 posWORLD = ReconstructWorldPos(uv, depth, g_Camera.mViewProjInv);
 
-        float3 V = normalize(g_Camera.posWORLD - posWORLD);
+        float3 V  = normalize(g_Camera.posWORLD - posWORLD);
         float3 F0 = lerp(float3(0.04, 0.04, 0.04), albedo, metallic);
 
         if (materialID != INVALID_INDEX && materialID < 256)

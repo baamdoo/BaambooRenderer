@@ -95,7 +95,7 @@ public:
 
 	inline CreationInfo Info() const { return m_CreationInfo; }
     inline VkImage vkImage() const { return m_vkImage; }
-    inline VkImageView vkView() const { return m_vkImageView; }
+	VkImageView vkView() const;
     inline const VkImageCreateInfo& Desc() const { return m_Desc; }
 	inline VkImageAspectFlags AspectMask() const { return m_AspectFlags; }
 	VkClearValue ClearValue() const;
@@ -109,8 +109,11 @@ protected:
     VkImageViewCreateInfo GetViewDesc(const VkImageCreateInfo& imageDesc);
 
 private:
-    VkImage            m_vkImage     = VK_NULL_HANDLE;
-    VkImageView        m_vkImageView = VK_NULL_HANDLE;
+    VkImage     m_vkImage     = VK_NULL_HANDLE;
+    VkImageView m_vkImageView = VK_NULL_HANDLE;
+    VkImageView m_vkImageSRV  = VK_NULL_HANDLE;
+    VkImageView m_vkImageUAV  = VK_NULL_HANDLE;
+
     VkImageCreateInfo  m_Desc        = {};
 	VkImageAspectFlags m_AspectFlags = 0;
 

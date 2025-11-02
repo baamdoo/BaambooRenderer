@@ -320,7 +320,7 @@ Arc< render::Texture > Dx12ResourceManager::GetFlatBlackTexture()
 {
     if (!m_pBlackTexture)
     {
-        m_pBlackTexture = CreateFlat2DTexture("DefaultTexture::White", 0xFF000000u);
+        m_pBlackTexture = CreateFlat2DTexture("DefaultTexture::Black", 0xFF000000u);
     }
     return m_pBlackTexture;
 }
@@ -332,6 +332,24 @@ Arc< render::Texture > Dx12ResourceManager::GetFlatGrayTexture()
         m_pGrayTexture = CreateFlat2DTexture("DefaultTexture::Gray", 0xFF808080u);
     }
     return m_pGrayTexture;
+}
+
+Arc< render::Texture > Dx12ResourceManager::GetFlatWhiteTexture3D()
+{
+    if (!m_pWhiteTexture3D)
+    {
+        m_pWhiteTexture3D = CreateFlat3DTexture("DefaultTexture::White3D", 0xFFFFFFFFu);
+    }
+    return m_pWhiteTexture3D;
+}
+
+Arc< render::Texture > Dx12ResourceManager::GetFlatBlackTexture3D()
+{
+    if (!m_pBlackTexture3D)
+    {
+        m_pBlackTexture3D = CreateFlat3DTexture("DefaultTexture::Black3D", 0xFF000000u);
+    }
+    return m_pBlackTexture3D;
 }
 
 Arc< Dx12Texture > Dx12ResourceManager::CreateFlat2DTexture(const std::string& name, u32 color)
@@ -358,6 +376,33 @@ Arc< Dx12Texture > Dx12ResourceManager::CreateFlat2DTexture(const std::string& n
 
 	RELEASE(pData);
 	return pFlatTexture;
+}
+
+Arc< Dx12Texture > Dx12ResourceManager::CreateFlat3DTexture(const std::string& name, u32 color)
+{
+    using namespace render;
+
+    auto pFlatTexture =
+        Dx12Texture::Create(
+            m_RenderDevice,
+            name,
+            {
+                .imageType  = eImageType::Texture3D,
+                .resolution = { 1, 1, 1 },
+                .format     = eFormat::RGBA8_UNORM,
+            });
+
+    u32* pData = (u32*)malloc(4);
+    *pData = color;
+
+    D3D12_SUBRESOURCE_DATA subresouceData = {};
+    subresouceData.pData      = pData;
+    subresouceData.RowPitch   = 4;
+    subresouceData.SlicePitch = 4;
+    m_RenderDevice.UpdateSubresources(pFlatTexture.get(), 0, 1, &subresouceData);
+
+    RELEASE(pData);
+    return pFlatTexture;
 }
 
 } // namespace dx12

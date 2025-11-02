@@ -54,9 +54,9 @@ VkImageCreateInfo GetVkImageCreateInfo(const render::Texture::CreationInfo& info
 	using namespace render; 
 
 	VkImageCreateInfo desc = {};
-	desc.flags         = info.type == eTextureType::TextureCube ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
+	desc.flags         = info.imageType == eImageType::TextureCube ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
 	desc.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-	desc.imageType     = info.type == eTextureType::TextureCube ? VK_IMAGE_TYPE_2D : static_cast<VkImageType>(info.type);
+	desc.imageType     = info.imageType == eImageType::TextureCube ? VK_IMAGE_TYPE_2D : static_cast<VkImageType>(info.imageType);
 	desc.format        = VK_FORMAT(info.format);
 	desc.extent        = VkExtent3D(info.resolution.x, info.resolution.y, info.resolution.z);
 	desc.mipLevels     = info.bGenerateMips ?
@@ -81,7 +81,6 @@ void VulkanTexture::CreateImageAndView(const CreationInfo& info)
 	VmaAllocationCreateInfo vmaInfo = {};
 	vmaInfo.usage = VMA_MEMORY_USAGE_AUTO;
 	vmaInfo.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
-
 	VK_CHECK(vmaCreateImage(m_RenderDevice.vmaAllocator(), &m_Desc, &vmaInfo, &m_vkImage, &m_vmaAllocation, &m_AllocationInfo));
 
 
@@ -91,6 +90,12 @@ void VulkanTexture::CreateImageAndView(const CreationInfo& info)
 	auto viewInfo = GetViewDesc(m_Desc);
 	m_AspectFlags = viewInfo.subresourceRange.aspectMask;
 	VK_CHECK(vkCreateImageView(m_RenderDevice.vkDevice(), &viewInfo, nullptr, &m_vkImageView));
+
+	if (m_Desc.flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT)
+	{
+		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+		VK_CHECK(vkCreateImageView(m_RenderDevice.vkDevice(), &viewInfo, nullptr, &m_vkImageUAV));
+	}
 }
 
 VkImageViewCreateInfo VulkanTexture::GetViewDesc(const VkImageCreateInfo& imageInfo)
@@ -136,10 +141,10 @@ VkImageViewCreateInfo VulkanTexture::GetViewDesc(const VkImageCreateInfo& imageI
 	{
 		if (imageInfo.arrayLayers > 1)
 		{
-			if (m_CreationInfo.type == eTextureType::TextureCube)
+			if (m_CreationInfo.imageType == eImageType::TextureCube)
 			{
-				imageViewInfo.viewType                    = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
-				imageViewInfo.subresourceRange.layerCount = imageInfo.arrayLayers * 6;
+				imageViewInfo.viewType                    = VK_IMAGE_VIEW_TYPE_CUBE;
+				imageViewInfo.subresourceRange.layerCount = 6;
 			}
 			else
 			{
@@ -149,16 +154,8 @@ VkImageViewCreateInfo VulkanTexture::GetViewDesc(const VkImageCreateInfo& imageI
 		}
 		else
 		{
-			if (m_CreationInfo.type == eTextureType::TextureCube)
-			{
-				imageViewInfo.viewType                    = VK_IMAGE_VIEW_TYPE_CUBE;
-				imageViewInfo.subresourceRange.layerCount = 6;
-			}
-			else
-			{
-				imageViewInfo.viewType                    = VK_IMAGE_VIEW_TYPE_2D;
-				imageViewInfo.subresourceRange.layerCount = 1;
-			}
+			imageViewInfo.viewType                    = VK_IMAGE_VIEW_TYPE_2D;
+			imageViewInfo.subresourceRange.layerCount = 1;
 		}
 		break;
 	}
@@ -177,6 +174,22 @@ VkImageViewCreateInfo VulkanTexture::GetViewDesc(const VkImageCreateInfo& imageI
 	}
 
 	return imageViewInfo;
+}
+
+VkImageView VulkanTexture::vkView() const
+{
+	auto layout = GetState().GetSubresourceState().layout;
+	if (m_vkImageUAV && layout == VK_IMAGE_LAYOUT_GENERAL)
+	{
+		return m_vkImageUAV;
+	}
+
+	if (m_vkImageSRV && layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+	{
+		return m_vkImageSRV;
+	}
+
+	return m_vkImageView;
 }
 
 VkClearValue VulkanTexture::ClearValue() const
@@ -220,6 +233,11 @@ VulkanTexture::VulkanTexture(VkRenderDevice& rd, const std::string& name, Creati
 VulkanTexture::~VulkanTexture()
 {
 	vkDestroyImageView(m_RenderDevice.vkDevice(), m_vkImageView, nullptr);
+	if (m_vkImageSRV)
+		vkDestroyImageView(m_RenderDevice.vkDevice(), m_vkImageSRV, nullptr);
+	if (m_vkImageUAV)
+		vkDestroyImageView(m_RenderDevice.vkDevice(), m_vkImageUAV, nullptr);
+
 	if (m_vmaAllocation)
 		vmaDestroyImage(m_RenderDevice.vmaAllocator(), m_vkImage, m_vmaAllocation);
 }

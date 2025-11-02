@@ -12,6 +12,7 @@ static constexpr uint3 MULTISCATTERING_LUT_RESOLUTION   = { 32, 32, 1 };
 static constexpr uint3 SKYVIEW_LUT_RESOLUTION           = { 192, 104 , 1 };
 static constexpr uint3 AERIALPERSPECTIVE_LUT_RESOLUTION = { 32, 32, 32 };
 static constexpr uint3 ATMOSPHEREAMBIENT_LUT_RESOLUTION = { 64, 1, 1 };
+static constexpr uint3 SKYBOX_LUT_RESOLUTION            = { 1024, 1024, 1 };
 
 AtmosphereNode::AtmosphereNode(render::RenderDevice& rd)
 	: Super(rd, "AtmospherePass")
@@ -50,7 +51,7 @@ AtmosphereNode::AtmosphereNode(render::RenderDevice& rd)
 			m_RenderDevice,
 			"AtmospherePass::AerialPerspectiveLUT",
 			{
-				.type       = eTextureType::Texture3D,
+				.imageType  = eImageType::Texture3D,
 				.resolution = AERIALPERSPECTIVE_LUT_RESOLUTION,
 				.format     = eFormat::RGBA16_FLOAT,
 				.imageUsage = eTextureUsage_Storage | eTextureUsage_Sample
@@ -60,10 +61,21 @@ AtmosphereNode::AtmosphereNode(render::RenderDevice& rd)
 			m_RenderDevice,
 			"AtmospherePass::AtmosphereAmbientLUT",
 			{
-				.type       = eTextureType::Texture1D,
+				.imageType  = eImageType::Texture1D,
 				.resolution = ATMOSPHEREAMBIENT_LUT_RESOLUTION,
 				.format     = eFormat::RG11B10_UFLOAT,
 				.imageUsage = eTextureUsage_Storage | eTextureUsage_Sample
+			});
+	m_pSkyboxLUT =
+		Texture::Create(
+			m_RenderDevice,
+			"AtmospherePass::SkyboxLUT",
+			{
+				.imageType   = eImageType::TextureCube,
+				.resolution  = SKYBOX_LUT_RESOLUTION,
+				.format      = eFormat::RG11B10_UFLOAT,
+				.imageUsage  = eTextureUsage_Storage | eTextureUsage_Sample,
+				.arrayLayers = 6
 			});
 
 	m_pTransmittancePSO = ComputePipeline::Create(m_RenderDevice, "TransmittancePSO");
@@ -104,6 +116,14 @@ AtmosphereNode::AtmosphereNode(render::RenderDevice& rd)
 			{
 				.stage    = eShaderStage::Compute,
 				.filename = "AtmosphereDistantSkyLightCS"
+			})).Build();
+
+	m_pBakeSkyboxPSO = ComputePipeline::Create(m_RenderDevice, "BakeSkyboxPSO");
+	m_pBakeSkyboxPSO->SetComputeShader(
+		Shader::Create(m_RenderDevice, "BakeAtmosphereSkyboxCS",
+			{
+				.stage    = eShaderStage::Compute,
+				.filename = "AtmosphereSkyboxCS"
 			})).Build();
 }
 
@@ -185,11 +205,31 @@ void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderVie
 
 	context.Dispatch1D< 64 >(ATMOSPHEREAMBIENT_LUT_RESOLUTION.x);
 
+	//
+	context.SetRenderPipeline(m_pBakeSkyboxPSO.get());
+
+	context.TransitionBarrier(m_pSkyViewLUT, eTextureLayout::ShaderReadOnly);
+	context.TransitionBarrier(m_pSkyboxLUT, eTextureLayout::General);
+
+	struct
+	{
+		float3 lightDir0;
+		//float3 lightDir1;
+		float  planetRadius_km;
+	} skyboxConstant = { renderView.light.directionals[0].direction, renderView.atmosphere.data.planetRadius_km };
+	context.SetComputeConstants(sizeof(skyboxConstant), &skyboxConstant);
+	context.SetComputeDynamicUniformBuffer("g_Camera", g_FrameData.camera);
+	context.StageDescriptor("g_SkyViewLUT", m_pSkyViewLUT, g_FrameData.pLinearClamp);
+	context.StageDescriptor("g_SkyboxLUT", m_pSkyboxLUT);
+
+	context.Dispatch3D< 8, 8, 6 >(SKYBOX_LUT_RESOLUTION.x, SKYBOX_LUT_RESOLUTION.y, SKYBOX_LUT_RESOLUTION.z);
+
 	g_FrameData.pTransmittanceLUT     = m_pTransmittanceLUT;
 	g_FrameData.pMultiScatteringLUT   = m_pMultiScatteringLUT;
 	g_FrameData.pSkyViewLUT           = m_pSkyViewLUT;
 	g_FrameData.pAerialPerspectiveLUT = m_pAerialPerspectiveLUT;
 	g_FrameData.pAtmosphereAmbientLUT = m_pAtmosphereAmbientLUT;
+	g_FrameData.pSkyboxLUT            = m_pSkyboxLUT;
 }
 
 } // namespace baamboo

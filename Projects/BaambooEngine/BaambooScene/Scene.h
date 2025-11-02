@@ -22,6 +22,8 @@ struct FrameData
 
 	u64 componentMarker = 0;
 
+	bool bSkyboxMode = false;
+
 	CameraData camera = {};
 
 	// AtmosphereLUTs
@@ -30,6 +32,8 @@ struct FrameData
 	Weak< render::Texture > pSkyViewLUT;
 	Weak< render::Texture > pAerialPerspectiveLUT;
 	Weak< render::Texture > pAtmosphereAmbientLUT;
+	//
+	Weak< render::Texture > pSkyboxLUT;
 
 	// CloudLUTs
 	Weak< render::Texture > pCloudScatteringLUT;
