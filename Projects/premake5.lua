@@ -110,11 +110,12 @@ project "BaambooEngine"
 
 	libdirs {
 		"%{Path.ThirdParty}/assimp/lib/Release/",
+		"%{Path.ThirdParty}/glfw/src/Release/",
 	}
 
 	links {
 		"BaambooCommon",
-		"GLFW",
+		"glfw3.lib",
 		'assimp-vc143-mt.lib', 
 	}
 

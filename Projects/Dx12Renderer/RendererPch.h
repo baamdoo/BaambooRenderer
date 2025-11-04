@@ -28,6 +28,7 @@
 #include <map>
 #include <mutex>
 #include <vector>
+#include <array>
 
 
 //-------------------------------------------------------------------------
