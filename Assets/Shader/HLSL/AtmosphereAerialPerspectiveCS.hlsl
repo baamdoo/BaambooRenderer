@@ -120,7 +120,7 @@ void main(uint3 tID : SV_DispatchThreadID)
     slice *= float(texSize.z);
 
     float  maxDistance = AP_KM_PER_SLICE * slice;
-    float3 rayDir      = normalize(ReconstructWorldPos(uvw.xy, 0.5, g_Camera.mViewProjInv));
+    float3 rayDir      = normalize(ReconstructWorldPos(uvw.xy, 0.0, g_Camera.mViewProjInv));
     float3 rayOrigin   = cameraPosAbovePlanet;
     float3 posInFroxel = cameraPosAbovePlanet + rayDir * maxDistance;
     

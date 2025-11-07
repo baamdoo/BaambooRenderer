@@ -295,7 +295,6 @@ void BistroApp::ConfigureSceneObjects()
 		light.color = float3(1.0f, 0.95f, 0.8f);
 		light.illuminance_lux = 6.0f; //120'000.0f;
 		light.angularRadius_rad = 0.00465f;
-		light.ev100 = 0.0; // 14.965f;
 
 		auto& transformComponent = sunLight.GetComponent< TransformComponent >();
 		//transformComponent.transform.position = float3(-0.46144, 0.76831, -0.44359);
@@ -342,6 +341,7 @@ void BistroApp::ConfigureSceneObjects()
 		auto& pp = volume.AttachComponent< PostProcessComponent >();
 
 		pp.tonemap.op = eToneMappingOp::ACES;
+		pp.tonemap.ev100 = 0.0f;
 		pp.tonemap.gamma = 2.2f;
 	}
 }

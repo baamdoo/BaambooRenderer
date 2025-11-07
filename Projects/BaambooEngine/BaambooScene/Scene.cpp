@@ -6,6 +6,7 @@
 #include "Systems/TransformSystem.h"
 #include "Systems/MeshSystem.h"
 #include "Systems/MaterialSystem.h"
+#include "Systems/LightSystem.h"
 #include "Systems/AtmosphereSystem.h"
 #include "Systems/CloudSystem.h"
 #include "Systems/PostProcessSystem.h"
@@ -27,6 +28,8 @@ Scene::Scene(const std::string& name)
 	m_pTransformSystem   = new TransformSystem(m_Registry);
 	m_pStaticMeshSystem  = new StaticMeshSystem(m_Registry);
 	m_pMaterialSystem    = new MaterialSystem(m_Registry);
+	m_pSkyLightSystem    = new SkyLightSystem(m_Registry);
+	m_pLocalLightSystem  = new LocalLightSystem(m_Registry);
 	m_pAtmosphereSystem  = new AtmosphereSystem(m_Registry);
 	m_pCloudSystem       = new CloudSystem(m_Registry);
 	m_pPostProcessSystem = new PostProcessSystem(m_Registry);
@@ -40,6 +43,8 @@ Scene::~Scene()
 	RELEASE(m_pPostProcessSystem);
 	RELEASE(m_pCloudSystem);
 	RELEASE(m_pAtmosphereSystem);
+	RELEASE(m_pLocalLightSystem);
+	RELEASE(m_pSkyLightSystem);
 	RELEASE(m_pMaterialSystem);
 	RELEASE(m_pStaticMeshSystem);
 	RELEASE(m_pTransformSystem);
@@ -273,6 +278,18 @@ void Scene::Update(f32 dt)
 		dirtyMarks |= (1 << eComponentType::CMaterial);
 	}
 
+	for (auto entity : m_pSkyLightSystem->Update())
+	{
+		u64& dirtyMarks = m_EntityDirtyMasks[entity];
+		dirtyMarks |= (1 << eComponentType::CSkyLight);
+	}
+
+	for (auto entity : m_pLocalLightSystem->Update())
+	{
+		u64& dirtyMarks = m_EntityDirtyMasks[entity];
+		dirtyMarks |= (1 << eComponentType::CLight);
+	}
+
 	for (auto entity : m_pAtmosphereSystem->Update())
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
@@ -472,8 +489,6 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, bool bDrawUI) co
 				}
 				break;
 			}
-
-			view.light.ev100 = lightComponent.ev100;
 		});
 
 	m_Registry.view< TransformComponent, CloudComponent >().each([this, &view](auto id, auto& transformComponent, auto& cloudComponent)
@@ -533,6 +548,7 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, bool bDrawUI) co
 			postProcessView.aa.sharpness   = postProcessComponent.aa.sharpness;
 
 			postProcessView.tonemap.op    = postProcessComponent.tonemap.op;
+			postProcessView.tonemap.ev100 = postProcessComponent.tonemap.ev100;
 			postProcessView.tonemap.gamma = postProcessComponent.tonemap.gamma;
 
 			view.postProcess = postProcessView;

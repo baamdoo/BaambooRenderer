@@ -225,23 +225,23 @@ CloudResult RaymarchCloud(float3 rayOrigin, float3 rayDirection, float maxDistan
     float rayStart = bottomIntersection.y > 0.0 ? bottomIntersection.y : 0.0;
     float rayEnd   = topIntersection.y;
 
-    if (length(rayOrigin) >= rBottomLayer && length(rayOrigin) <= rTopLayer)
-    {
-        // camera in-between cloud layers
-        rayStart = 0.0;
-        rayEnd   = topIntersection.y > 0.0 ? min(topIntersection.y, maxDistance) : maxDistance;
-    }
-    else if (bottomIntersection.y > 0.0)
+    if (length(rayOrigin) < rBottomLayer)
     {
         // camera in-below cloud bottom layer
         rayStart = min(bottomIntersection.y, maxDistance);
         rayEnd   = min(topIntersection.y, maxDistance);
     }
-    else if (topIntersection.x > 0.0 && topIntersection.x < maxDistance)
+    else if (length(rayOrigin) < rTopLayer)
+    {
+        // camera in-between cloud layers
+        rayStart = 0.0;
+        rayEnd   = bottomIntersection.x > 0.0 ? min(bottomIntersection.x, maxDistance) : topIntersection.y;
+    }
+    else if (topIntersection.x > 0.0)
     {
         // camera in-above cloud top layer
         rayStart = topIntersection.x;
-        rayEnd   = min(bottomIntersection.y, maxDistance);
+        rayEnd   = min(bottomIntersection.x, maxDistance);
     }
     else
     {
@@ -414,12 +414,12 @@ void main(uint3 tID : SV_DispatchThreadID)
         cameraPos * DISTANCE_SCALE + float3(0.0, g_Atmosphere.planetRadius_km, 0.0);
 
     float3 posWORLD     = ReconstructWorldPos(uv, depth, g_Camera.mViewProjInv);
-    float3 rayDirection = normalize(posWORLD - g_Camera.posWORLD);
+    float3 rayDirection = normalize(posWORLD);
     float3 rayOrigin    = cameraPosAbovePlanet;
 
     float2 groundIntersection = RaySphereIntersection(rayOrigin, rayDirection, PLANET_CENTER, g_Atmosphere.planetRadius_km);
     float maxDistance         = groundIntersection.x > 0.0 ? groundIntersection.x : groundIntersection.y > 0.0 ? groundIntersection.y : RAY_MARCHING_MAX_DISTANCE;
-          maxDistance         = min(maxDistance, depth == 1.0 ? RAY_MARCHING_MAX_DISTANCE : length(posWORLD - g_Camera.posWORLD) * DISTANCE_SCALE);
+          maxDistance         = min(maxDistance, depth == 0.0 ? RAY_MARCHING_MAX_DISTANCE : length(posWORLD) * DISTANCE_SCALE);
 
     float2 jitter;
     {

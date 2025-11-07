@@ -6,11 +6,12 @@
 
 #define INVALID_INDEX 0xffffffff
 
-#define PI            (3.14159265359)
-#define PI_MUL(num)   (PI * num)
-#define PI_DIV(denom) (PI / denom)
-#define GOLDEN_RATIO  (0.61803398875)
-#define EPSILON       (0.00001)
+#define PI               (3.14159265359)
+#define PI_MUL(num)      (PI * num)
+#define PI_DIV(denom)    (PI / denom)
+#define GOLDEN_RATIO     (0.61803398875)
+#define EPSILON          (0.00001)
+#define MAX_VIEWDISTANCE (1e2) //km
 
 
 //-------------------------------------------------------------------------
@@ -151,7 +152,7 @@ struct SpotLight
 	float padding0, padding1;
 };
 
-#define MAX_DIRECTIONAL_LIGHT 4
+#define MAX_DIRECTIONAL_LIGHT 2
 #define MAX_POINT_LIGHT       512
 #define MAX_SPOT_LIGHT        32
 struct LightingData
@@ -163,7 +164,7 @@ struct LightingData
 	uint  numDirectionals;
 	uint  numPoints;
 	uint  numSpots;
-	float ev100;
+	float padding0;
 
 	float ambientColorR, ambientColorG, ambientColorB;
 	float ambientIntensity;

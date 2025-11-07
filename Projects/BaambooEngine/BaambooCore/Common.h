@@ -19,3 +19,10 @@
 #include "Primitives.h"
 #include "MathTypes.h"
 #include "Pointer.hpp"
+
+enum class eWorldDistanceScaleType
+{
+	CM,
+	M,
+	KM
+};

@@ -312,17 +312,26 @@ void Dx12CommandContext::Impl::SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY primi
 void Dx12CommandContext::Impl::ClearTexture(const Arc< Dx12Texture >& pTexture)
 {
 	assert(pTexture);
-	static constexpr float clearColor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	float clearColor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	if (auto pClearValue = pTexture->GetClearValue())
+	{
+		memcpy(clearColor, pClearValue->Color, sizeof(clearColor));
+	}
 
 	TransitionBarrier(pTexture.get(), D3D12_RESOURCE_STATE_RENDER_TARGET);
-	m_d3d12CommandList2->ClearRenderTargetView(pTexture->GetRenderTargetView(), pTexture->GetClearValue() ? pTexture->GetClearValue()->Color : clearColor, 0, nullptr);
+	m_d3d12CommandList2->ClearRenderTargetView(pTexture->GetRenderTargetView(), clearColor, 0, nullptr);
 }
 
 void Dx12CommandContext::Impl::ClearDepthStencilTexture(const Arc< Dx12Texture >& pTexture, D3D12_CLEAR_FLAGS clearFlags)
 {
 	assert(pTexture);
-	static constexpr float clearDepth = 1.0f;
-	static constexpr u8 clearStencil = 0;
+	float clearDepth   = 1.0f;
+	u8    clearStencil = 0;
+	if (auto pClearValue = pTexture->GetClearValue())
+	{
+		clearDepth   = pTexture->GetClearValue()->DepthStencil.Depth;
+		clearStencil = pTexture->GetClearValue()->DepthStencil.Stencil;
+	}
 
 	TransitionBarrier(pTexture.get(), D3D12_RESOURCE_STATE_DEPTH_WRITE);
 	m_d3d12CommandList2->ClearDepthStencilView(pTexture->GetDepthStencilView(), clearFlags, clearDepth, clearStencil, 0, nullptr);

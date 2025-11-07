@@ -11,6 +11,8 @@ class EditorCamera;
 class TransformSystem;
 class StaticMeshSystem;
 class MaterialSystem;
+class SkyLightSystem;
+class LocalLightSystem;
 class AtmosphereSystem;
 class CloudSystem;
 class PostProcessSystem;
@@ -115,6 +117,8 @@ private:
 	TransformSystem*   m_pTransformSystem   = nullptr;
 	StaticMeshSystem*  m_pStaticMeshSystem  = nullptr;
 	MaterialSystem*    m_pMaterialSystem    = nullptr;
+	SkyLightSystem*    m_pSkyLightSystem    = nullptr;
+	LocalLightSystem*  m_pLocalLightSystem  = nullptr;
 	AtmosphereSystem*  m_pAtmosphereSystem  = nullptr;
 	CloudSystem*       m_pCloudSystem       = nullptr;
 	PostProcessSystem* m_pPostProcessSystem = nullptr;

@@ -534,6 +534,7 @@ void Engine::DrawUI()
 
 			if (ImGui::SelectedEntity.HasAll< LightComponent >())
 			{
+				bool bMark = false;
 				if (ImGui::CollapsingHeader("Light"))
 				{
 					auto& component = ImGui::SelectedEntity.GetComponent< LightComponent >();
@@ -558,12 +559,9 @@ void Engine::DrawUI()
 						}
 					}
 
-					ImGui::ColorEdit3("Color", &component.color.x);
+					bMark |= ImGui::ColorEdit3("Color", &component.color.x);
 
-					if (ImGui::DragFloat("Temperature (K)", &component.temperature_K, 10.0f, 0.0f, 10000.0f))
-					{
-						// Temperature of 0 means use RGB color
-					}
+					bMark |= ImGui::DragFloat("Temperature (K)", &component.temperature_K, 10.0f, 0.0f, 10000.0f);
 					if (ImGui::IsItemHovered())
 					{
 						ImGui::BeginTooltip();
@@ -576,7 +574,7 @@ void Engine::DrawUI()
 
 					case eLightType::Directional:
 					{
-						ImGui::DragFloat("Illuminance (lux)", &component.illuminance_lux, 0.1f, 0.0f, 10.0f, "%.1f");
+						bMark |= ImGui::DragFloat("Illuminance (lux)", &component.illuminance_lux, 0.1f, 0.0f, 10.0f, "%.1f");
 						if (ImGui::IsItemHovered())
 						{
 							ImGui::BeginTooltip();
@@ -587,24 +585,26 @@ void Engine::DrawUI()
 						if (ImGui::DragFloat("Angular Radius (deg)", &angularRadius, 0.01f, 0.0f, 10.0f, "%.3f"))
 						{
 							component.angularRadius_rad = glm::radians(angularRadius);
+
+							bMark = true;
 						}
 						break;
 					}
 					case eLightType::Point:
 					{
-						ImGui::DragFloat("Power (lm)", &component.luminousFlux_lm, 10.0f, 0.0f, 10000.0f, "%.0f");
+						bMark |= ImGui::DragFloat("Power (lm)", &component.luminousFlux_lm, 10.0f, 0.0f, 10000.0f, "%.0f");
 						if (ImGui::IsItemHovered())
 						{
 							ImGui::BeginTooltip();
 							ImGui::EndTooltip();
 						}
-						ImGui::DragFloat("Source Radius (m)", &component.radius_m, 0.001f, 0.001f, 1.0f, "%.3f");
+						bMark |= ImGui::DragFloat("Source Radius (m)", &component.radius_m, 0.001f, 0.001f, 1.0f, "%.3f");
 						break;
 					}
 					case eLightType::Spot:
 					{
-						ImGui::DragFloat("Power (lumens)", &component.luminousFlux_lm, 10.0f, 0.0f, 10000.0f, "%.0f");
-						ImGui::DragFloat("Source Radius (m)", &component.radius_m, 0.001f, 0.001f, 1.0f, "%.3f");
+						bMark |= ImGui::DragFloat("Power (lumens)", &component.luminousFlux_lm, 10.0f, 0.0f, 10000.0f, "%.0f");
+						bMark |= ImGui::DragFloat("Source Radius (m)", &component.radius_m, 0.001f, 0.001f, 1.0f, "%.3f");
 
 						float innerAngle = glm::degrees(component.innerConeAngle_rad);
 						float outerAngle = glm::degrees(component.outerConeAngle_rad);
@@ -615,6 +615,8 @@ void Engine::DrawUI()
 
 							if (component.outerConeAngle_rad <= component.innerConeAngle_rad)
 								component.outerConeAngle_rad = component.innerConeAngle_rad + glm::radians(1.0f);
+
+							bMark = true;
 						}
 
 						if (ImGui::DragFloat("Outer Angle (deg)", &outerAngle, 1.0f, 0.0f, 90.0f, "%.1f"))
@@ -623,13 +625,18 @@ void Engine::DrawUI()
 
 							if (component.innerConeAngle_rad >= component.outerConeAngle_rad)
 								component.innerConeAngle_rad = component.outerConeAngle_rad - glm::radians(1.0f);
+
+							bMark = true;
 						}
 						break;
 					}
 
 					}
+				}
 
-					ImGui::DragFloat("EV100", &component.ev100, 0.01f, -15.0f, 15.0f, "%.2f");
+				if (bMark)
+				{
+					m_pScene->Registry().patch< LightComponent >(ImGui::SelectedEntity.ID(), [](auto&) {});
 				}
 			}
 
@@ -961,6 +968,7 @@ void Engine::DrawUI()
 								ImGui::EndCombo();
 							}
 
+							bMark |= ImGui::DragFloat("EV100", &component.tonemap.ev100, 0.01f, -15.0f, 15.0f, "%.2f");
 							bMark |= ImGui::DragFloat("Gamma", &component.tonemap.gamma, 0.1f, 0.1f, 10.0f, "%.1f");
 						}
 					}

@@ -12,9 +12,10 @@ enum eComponentType
 	CDynamicMesh = 2,
 	CMaterial    = 3,
 	CLight       = 4,
-	CAtmosphere  = 5,
-	CCloud       = 6,
-	CPostProcess = 7,
+	CSkyLight    = 5,
+	CAtmosphere  = 6,
+	CCloud       = 7,
+	CPostProcess = 8,
 
 	// ...
 	NumComponents
@@ -137,6 +138,7 @@ struct PostProcessRenderView
 	{
 		eToneMappingOp op;
 
+		float ev100;
 		float gamma;
 	} tonemap;
 };

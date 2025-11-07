@@ -35,12 +35,14 @@ public:
 	[[nodiscard]]
 	mat4 GetProj() const 
 	{ 
-		return m_type == eType::Perspective ? 
-			glm::perspectiveFovLH_ZO(glm::radians(fov), (float)m_ViewportWidth, (float)m_ViewportHeight, zNear, zFar) :
+		return m_Type == eType::Perspective ?
+			infinitePerspectiveFovReverseZLH_ZO(glm::radians(fov), (float)m_ViewportWidth, (float)m_ViewportHeight, zNear) :
 			glm::orthoLH_ZO(0.0f, (float)m_ViewportWidth, 0.0f, (float)m_ViewportHeight, zNear, zFar);
 	}
 	[[nodiscard]]
 	float3 GetPosition() const { return m_Controller.GetPosition(); }
+	[[nodiscard]]
+	bool IsPerspective() const { return m_Type == eType::Perspective; }
 
 	float zNear = 0.1f;
 	float zFar  = 1000.0f;
@@ -49,7 +51,7 @@ public:
 private:
 	CameraController& m_Controller;
 
-	enum class eType { Orthographic, Perspective } m_type = eType::Perspective;
+	enum class eType { Orthographic, Perspective } m_Type = eType::Perspective;
 
 	u32 m_ViewportWidth;
 	u32 m_ViewportHeight;
@@ -75,7 +77,7 @@ public:
 	void SetLookAt(const float3& pos, const float3& target) 
 	{
 		m_Transform.position = pos;
-		m_Transform.SetOrientation(glm::lookAtLH(pos, target, float3(0, 1, 0)));
+		m_Transform.SetOrientation(glm::lookAtLH(float3(0.0f), target - pos, float3(0, 1, 0)));
 	}
 
 	struct

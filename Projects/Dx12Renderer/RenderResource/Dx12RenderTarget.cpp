@@ -31,7 +31,8 @@ void Dx12RenderTarget::ClearTexture(Dx12CommandContext& context, render::eAttach
         {
             const auto& desc = pDepthTex->Desc();
 
-            const D3D12_CLEAR_FLAGS flags = desc.Format == DXGI_FORMAT_D32_FLOAT ? D3D12_CLEAR_FLAG_DEPTH : D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL;
+            const D3D12_CLEAR_FLAGS flags = (desc.Format == DXGI_FORMAT_D32_FLOAT || desc.Format == DXGI_FORMAT_D16_UNORM) ? 
+                D3D12_CLEAR_FLAG_DEPTH : D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL;
             context.ClearDepthStencilTexture(pDepthTex, flags);
         }
     }

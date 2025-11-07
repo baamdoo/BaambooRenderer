@@ -8,8 +8,9 @@ SamplerState g_LinearClampSampler : register(SAMPLER_INDEX_LINEAR_CLAMP);
 
 cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
-    uint  tonemapOperator; // 0: Reinhard, 1: ACES, 2: Uncharted2
-    float gamma;
+    uint  g_TonemapOperator; // 0: Reinhard, 1: ACES, 2: Uncharted2
+    float g_EV100;
+    float g_Gamma;
 };
 
 float3 ACESFilm(float3 x)
@@ -46,8 +47,13 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     float2 uv       = (float2(pixelCoord) + 0.5) / float2(imageSize);
     float3 hdrColor = g_SceneTexture.SampleLevel(g_LinearClampSampler, uv, 0).rgb;
 
+    // exposure correction
+    float ev100    = g_EV100;
+    float exposure = 1.0 / pow(2.0, ev100);
+    hdrColor *= exposure;
+
     float3 toneMapped;
-    switch (tonemapOperator)
+    switch (g_TonemapOperator)
     {
     case 0: // Reinhard
         toneMapped = hdrColor / (1.0 + hdrColor);
@@ -72,7 +78,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
         break;
     }
 
-    float3 gammaCorrected = pow(toneMapped, float3(1.0 / gamma, 1.0 / gamma, 1.0 / gamma));
+    float3 gammaCorrected = pow(toneMapped, float3(1.0 / g_Gamma, 1.0 / g_Gamma, 1.0 / g_Gamma));
 
     g_OutputImage[pixelCoord] = float4(gammaCorrected, 1.0);
 }

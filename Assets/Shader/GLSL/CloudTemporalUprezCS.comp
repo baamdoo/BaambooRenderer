@@ -76,14 +76,15 @@ void main()
     if (any(greaterThanEqual(pixCoords, imgSize)))
         return;
 
-    vec2 uv         = (vec2(pixCoords) + 0.5) / vec2(imgSize);
+    vec2  uv        = (vec2(pixCoords) + 0.5) / vec2(imgSize);
+    float depth     = texture(g_DepthBuffer, uv).r;
 
     vec4 currentColor = texture(g_CloudScatteringLUT, uv);
 
-    float depth    = texture(g_DepthBuffer, uv).r;
-    vec3  posWORLD = ReconstructWorldPos(uv, depth, g_Camera.mViewProjInv);
+    vec4 posCLIP        = vec4(uv * 2.0 - 1.0, depth, 1.0);
+    vec4 posHOMOGENEOUS = g_Camera.mViewProjInv * posCLIP;
 
-    vec4 posPrevClip = g_Camera.mViewProjUnjitteredPrev * vec4(posWORLD, 1.0);
+    vec4 posPrevClip = g_Camera.mViewProjUnjitteredPrev * posHOMOGENEOUS;
     vec3 posPrevNDC  = posPrevClip.xyz / posPrevClip.w;
     vec2 prevUV      = posPrevNDC.xy * 0.5 + 0.5;
 

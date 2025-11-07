@@ -7,6 +7,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #define PI            (3.14159265359f)
 #define PI_MUL(num)   (PI * num)
@@ -31,6 +32,28 @@ using mat3 = glm::mat3x3;
 using mat4 = glm::mat4x4;
 
 using quat = glm::quat;
+
+static glm::mat4x4 perspectiveFovReverseZLH_ZO(float fov, float width, float height, float zNear, float zFar)
+{
+    return glm::perspectiveFovLH_ZO(fov, width, height, zFar, zNear);
+};
+
+static glm::mat4 infinitePerspectiveFovReverseZLH_ZO(float fov, float width, float height, float zNear)
+{
+    const float aspectRatio = width / height;
+
+    const float h = 1.0f / glm::tan(0.5f * fov);
+    const float w = h / aspectRatio;
+
+    glm::mat4 mResult = glm::zero<glm::mat4>();
+    mResult[0][0] = w;
+    mResult[1][1] = h;
+    mResult[2][2] = 0.0f;
+    mResult[2][3] = 1.0f;
+    mResult[3][2] = zNear;
+    return mResult;
+};
+
 
 struct VertexP3
 {

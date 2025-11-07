@@ -192,8 +192,6 @@ struct LightComponent
 	float innerConeAngle_rad = PI_DIV(4.0f);
 	float outerConeAngle_rad = PI_DIV(3.0f);
 
-	float ev100 = 0.0f;
-
 	bool bDirtyMark;
 
 	void SetDefaultDirectionalLight()
@@ -348,6 +346,7 @@ struct PostProcessComponent
 	{
 		eToneMappingOp op;
 
+		float ev100;
 		float gamma;
 	} tonemap;
 };

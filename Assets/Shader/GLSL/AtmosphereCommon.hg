@@ -5,9 +5,9 @@
 #include "../Common.bsh"
 #include "HelperFunctions.hg"
 
-const float DISTANCE_SCALE               = 0.00001;       // cm-km
+const float DISTANCE_SCALE               = 0.001;       // m-km
 const vec3  PLANET_CENTER                = vec3(0, 0, 0); // km
-const float AP_KM_PER_SLICE              = 6.0;           // km
+const float AP_KM_PER_SLICE              = 4.0;           // km
 const float MIN_VIEW_HEIGHT_ABOVE_GROUND = 0.0005 * (1.0 / DISTANCE_SCALE); // km
 const float RAY_MARCHING_MAX_DISTANCE    = 1e2;
 

@@ -338,8 +338,8 @@ Arc< Dx12Texture > Dx12Texture::CreateEmpty(Dx12RenderDevice& device, const std:
 }
 
 Dx12Texture::Dx12Texture(Dx12RenderDevice& rd, const std::string& name)
-	: Dx12Resource(rd, name, eResourceType::Texture)
-    , render::Texture(name)
+	: render::Texture(name)
+	, Dx12Resource(rd, name, eResourceType::Texture)
 {
 }
 

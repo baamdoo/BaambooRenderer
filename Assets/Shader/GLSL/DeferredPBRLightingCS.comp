@@ -198,9 +198,9 @@ void main()
 
     vec3  color = vec3(0.0);
     float depth = texture(g_DepthBuffer, uv).r;
-    if (depth == 1.0)
+    if (depth == 0.0)
     {
-        vec3 rayDir = normalize(ReconstructWorldPos(uv, 1.0, g_Camera.mViewProjInv));
+        vec3 rayDir = normalize(ReconstructWorldPos(uv, 0.0, g_Camera.mViewProjInv));
 
         color = texture(g_SkyboxLUT, rayDir).rgb;
     }
@@ -218,7 +218,7 @@ void main()
 
         vec3 posWORLD = ReconstructWorldPos(uv, depth, g_Camera.mViewProjInv);
 
-        vec3 V  = normalize(g_Camera.posWORLD - posWORLD);
+        vec3 V  = normalize(posWORLD);
         vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
         if (materialID != INVALID_INDEX && materialID < 256)
@@ -257,7 +257,7 @@ void main()
 
         // Aerial perspective
         {
-            float viewDistance = max(0.0, length(posWORLD - g_Camera.posWORLD));
+            float viewDistance = max(0.0, length(posWORLD));
 
             ivec3 texSize = textureSize(g_AerialPerspectiveLUT, 0);
             float slice   = viewDistance * (1.0 / AP_KM_PER_SLICE) * DISTANCE_SCALE;
@@ -286,11 +286,6 @@ void main()
 
         color = color * cloud.a + cloud.rgb;
     }
-
-    // exposure correction
-    float ev100    = g_LightBuffer.lightingData.ev100;
-    float exposure = 1.0 / pow(2.0, ev100);
-    color *= exposure;
     
     imageStore(g_SceneTexture, pixCoords, vec4(color, 1.0));
 }

@@ -7,6 +7,7 @@
 #ifdef _CAMERA
 struct CameraData
 {
+    // Camera-relative matrices
     float4x4 mView;
     float4x4 mProj;
     float4x4 mViewProj;

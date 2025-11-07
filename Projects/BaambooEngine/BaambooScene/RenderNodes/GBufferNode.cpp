@@ -53,9 +53,10 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 			m_RenderDevice,
 			"GBufferPass::AttachmentDepth",
 			{
-				.resolution = { m_RenderDevice.WindowWidth(), m_RenderDevice.WindowHeight(), 1 },
-				.format     = eFormat::D32_FLOAT,
-				.imageUsage = eTextureUsage_DepthStencilAttachment | eTextureUsage_Sample
+				.resolution      = { m_RenderDevice.WindowWidth(), m_RenderDevice.WindowHeight(), 1 },
+				.format          = eFormat::D32_FLOAT,
+				.imageUsage      = eTextureUsage_DepthStencilAttachment | eTextureUsage_Sample,
+				.depthClearValue = 0.0f // reversed-z
 			});
 	m_pRenderTarget = RenderTarget::CreateEmpty(m_RenderDevice, "GBufferPass::RenderPass");
 	m_pRenderTarget->AttachTexture(eAttachmentPoint::Color0, pAttachment0)
@@ -77,7 +78,7 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 	m_pGBufferPSO = GraphicsPipeline::Create(m_RenderDevice, "GBufferPSO");
 	m_pGBufferPSO->SetShaders(hVS, hFS)
 		          .SetRenderTarget(m_pRenderTarget)
-		          .SetDepthWriteEnable(true).Build();
+		          .SetDepthWriteEnable(true, eCompareOp::Greater).Build();
 }
 
 void GBufferNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)

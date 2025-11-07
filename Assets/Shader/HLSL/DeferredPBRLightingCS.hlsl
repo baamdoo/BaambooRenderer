@@ -165,9 +165,9 @@ void main(uint3 tID : SV_DispatchThreadID)
 
     float3 color = 0.0;
     float  depth = g_DepthBuffer.SampleLevel(g_PointClampSampler, uv, 0);
-    if (depth == 1.0)
+    if (depth == 0.0)
     {
-        float3 rayDir = normalize(ReconstructWorldPos(uv, 1.0, g_Camera.mViewProjInv));
+        float3 rayDir = normalize(ReconstructWorldPos(uv, 0.0, g_Camera.mViewProjInv));
 
         color = g_SkyboxLUT.Sample(g_LinearClampSampler, rayDir).rgb;
     }
@@ -185,7 +185,7 @@ void main(uint3 tID : SV_DispatchThreadID)
 
         float3 posWORLD = ReconstructWorldPos(uv, depth, g_Camera.mViewProjInv);
 
-        float3 V  = normalize(g_Camera.posWORLD - posWORLD);
+        float3 V  = normalize(posWORLD);
         float3 F0 = lerp(float3(0.04, 0.04, 0.04), albedo, metallic);
 
         if (materialID != INVALID_INDEX && materialID < 256)
@@ -221,7 +221,7 @@ void main(uint3 tID : SV_DispatchThreadID)
 
         // Aerial perspective
         {
-            float viewDistance = max(0.0, length(posWORLD - g_Camera.posWORLD));
+            float viewDistance = max(0.0, length(posWORLD));
 
             uint3 texSize;
             g_AerialPerspectiveLUT.GetDimensions(texSize.x, texSize.y, texSize.z);
@@ -251,10 +251,6 @@ void main(uint3 tID : SV_DispatchThreadID)
 
         color = color * cloud.a + cloud.rgb;
     }
-
-    float ev100    = g_Lights.ev100;
-    float exposure = 1.0 / (1.2 * pow(2.0, ev100));
-    color *= exposure;
 
     g_SceneTexture[texCoords] = float4(color, 1.0);
 }

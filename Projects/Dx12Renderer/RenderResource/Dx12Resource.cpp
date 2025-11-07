@@ -37,13 +37,19 @@ Dx12Resource::Dx12Resource(Dx12RenderDevice& rd, const std::string& name, Dx12Re
 
 	case eResourceType::Texture:
 		m_pClearValue = nullptr;
-		if ((info.desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET) || (info.desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL))
+		if (info.desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET)
 		{
 			//assert(info.clearValue.Format == info.desc.Format);
 
 			m_pClearValue         = new D3D12_CLEAR_VALUE();
 			m_pClearValue->Format = info.clearValue.Format;
 			memcpy(&(m_pClearValue->Color), &info.clearValue.Color[0], sizeof(info.clearValue.Color));
+		}
+		else if (info.desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL)
+		{
+			m_pClearValue         = new D3D12_CLEAR_VALUE();
+			m_pClearValue->Format = info.clearValue.Format;
+			memcpy(&(m_pClearValue->DepthStencil), &info.clearValue.DepthStencil, sizeof(info.clearValue.DepthStencil));
 		}
 
 		ThrowIfFailed(d3d12Device->CreateCommittedResource(

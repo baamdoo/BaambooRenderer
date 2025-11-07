@@ -84,9 +84,10 @@ void main(uint3 tID : SV_DispatchThreadID)
     float4 currentColor = g_CloudScatteringLUT.Sample(g_LinearClampSampler, uv);
     float  depth        = g_DepthBuffer.Sample(g_PointClampSampler, uv).r;
 
-    float3 posWORLD = ReconstructWorldPos(uv, depth, g_Camera.mViewProjInv);
+    float4 posCLIP        = vec4(uv.x * 2.0 - 1.0, uv.y * -2.0 + 1.0, depth, 1.0);
+    float4 posHOMOGENEOUS = mul(g_Camera.mViewProjInv, posCLIP);
 
-    float4 posPrevClip = mul(g_Camera.mViewProjUnjitteredPrev, float4(posWORLD, 1.0));
+    float4 posPrevClip = mul(g_Camera.mViewProjUnjitteredPrev, posHOMOGENEOUS);
     float3 posPrevNDC  = posPrevClip.xyz / posPrevClip.w;
     float2 prevUV      = posPrevNDC.xy * 0.5 + 0.5;
            prevUV.y    = 1.0 - prevUV.y;

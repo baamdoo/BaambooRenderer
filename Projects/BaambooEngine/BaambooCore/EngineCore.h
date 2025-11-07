@@ -48,7 +48,7 @@ inline bool LoadRenderer(eRendererAPI eApi, baamboo::Window* pWindow, struct ImG
 		__debugbreak();
 	}
 
-	//system("PAUSE");
+	system("PAUSE");
 
 	CreateInstance fnCreateInstance = (CreateInstance)GetProcAddress(hEngineDLL, "DllCreateInstance");
 	return fnCreateInstance(pWindow, pImGuiContext, ppRenderer);

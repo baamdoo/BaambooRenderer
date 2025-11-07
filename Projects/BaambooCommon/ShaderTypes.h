@@ -81,7 +81,7 @@ struct SpotLight
     float2 padding;
 };
 
-#define MAX_DIRECTIONAL_LIGHT 4
+#define MAX_DIRECTIONAL_LIGHT 2
 #define MAX_POINT_LIGHT       512
 #define MAX_SPOT_LIGHT        32
 struct LightData
@@ -93,7 +93,7 @@ struct LightData
     u32   numDirectionals;
     u32   numPoints;
     u32   numSpots;
-    float ev100;
+    float padding0;
 
     float3 ambientColor;
     float  ambientIntensity;

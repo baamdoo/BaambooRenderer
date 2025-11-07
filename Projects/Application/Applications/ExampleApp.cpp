@@ -208,20 +208,24 @@ void ExampleApp::DrawUI()
 
 			ImGui::Text("Boosting Speed");
 			ImGui::DragFloat("##Boosting", &cameraConfig.boostingSpeed, 1.0f, 1.0f, 100.0f, "%.1f");
-			
+
+			static eWorldDistanceScaleType cameraScaleCache = eWorldDistanceScaleType::M;
 			if (ImGui::BeginCombo("##Scale", "Movement Scale"))
 			{
-				if (ImGui::Selectable("cm", cameraConfig.movementScale == 1.0f))
+				if (ImGui::Selectable("cm", cameraScaleCache == eWorldDistanceScaleType::CM))
+				{
+					cameraConfig.movementScale = 0.01f;
+					cameraScaleCache = eWorldDistanceScaleType::CM;
+				}
+				if (ImGui::Selectable("m", cameraScaleCache == eWorldDistanceScaleType::M))
 				{
 					cameraConfig.movementScale = 1.0f;
+					cameraScaleCache = eWorldDistanceScaleType::M;
 				}
-				if (ImGui::Selectable("m", cameraConfig.movementScale == 100.0f))
+				if (ImGui::Selectable("km", cameraScaleCache == eWorldDistanceScaleType::KM))
 				{
-					cameraConfig.movementScale = 100.0f;
-				}
-				if (ImGui::Selectable("km", cameraConfig.movementScale == 100'000.0f))
-				{
-					cameraConfig.movementScale = 100'000.0f;
+					cameraConfig.movementScale = 1000.0f;
+					cameraScaleCache = eWorldDistanceScaleType::KM;
 				}
 
 				ImGui::EndCombo();
@@ -304,7 +308,6 @@ void ExampleApp::ConfigureSceneObjects()
 		light.color = float3(1.0f, 0.95f, 0.8f);
 		light.illuminance_lux = 6.0f; //120'000.0f;
 		light.angularRadius_rad = 0.00465f;
-		light.ev100 = 0.0; // 14.965f;
 
 		auto& transformComponent = sunLight.GetComponent< TransformComponent >();
 		//transformComponent.transform.position = float3(-0.46144, 0.76831, -0.44359);
@@ -360,7 +363,8 @@ void ExampleApp::ConfigureSceneObjects()
 		auto  volume = m_pScene->CreateEntity("PostProcessVolume");
 		auto& pp = volume.AttachComponent< PostProcessComponent >();
 
-		pp.tonemap.op = eToneMappingOp::ACES;
+		pp.tonemap.op    = eToneMappingOp::ACES;
+		pp.tonemap.ev100 = 0.0f;
 		pp.tonemap.gamma = 2.2f;
 	}
 }

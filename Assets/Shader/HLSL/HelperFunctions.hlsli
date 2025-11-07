@@ -72,6 +72,10 @@ float3 ReconstructWorldPos(float2 uv, float depth, float4x4 mViewProjInv)
     // float4 posCLIP = float4(uv * 2.0 - 1.0, depth, 1.0);
     // float4 posWORLD = mViewProjInv * posCLIP;
     float4 posWORLD = mul(mViewProjInv, posCLIP);
+    if (abs(posWORLD.w) < EPSILON)
+    {
+        return posWORLD.xyz * MAX_VIEWDISTANCE;
+    }
 
     return posWORLD.xyz / posWORLD.w;
 }
@@ -79,6 +83,12 @@ float3 ReconstructWorldPos(float2 uv, float depth, float4x4 mViewProjInv)
 float LinearizeDepth(float depth, float near, float far)
 {
     return (near * far) / (far - depth * (far - near));
+}
+
+float LinearizeDepth(float depth, float near)
+{
+    // infinite far plane
+    return near / depth;
 }
 
 float ConvertColorToLuminance(float3 color)

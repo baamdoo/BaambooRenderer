@@ -79,14 +79,14 @@ float4 RayMarchScattering(float3 rayOrigin, float3 rayDir, float maxDistance)
     float phaseMie      = MiePhase(cosTheta, g_Atmosphere.miePhaseG);
 
     // variable sampling count according to rayLength
-    float numSteps = lerp(float(g_Push.minRaySteps), float(g_Push.maxRaySteps), clamp(rayLength / 150.0, 0.0, 1.0));
+    float numSteps = float(g_Push.maxRaySteps);// lerp(float(g_Push.minRaySteps), float(g_Push.maxRaySteps), clamp(rayLength / 150.0, 0.0, 1.0));
     float stepSize = rayLength / numSteps;
 
     float3 L          = 0.0;
     float3 throughput = 1.0;
-    for (uint i = 0u; i < numSteps; ++i) 
+    for (float i = 0.0; i < numSteps; i += 1.0)
     {
-        float  t   = rayStart + (float(i) + 0.5) * stepSize;
+        float  t   = rayStart + (i + 0.5) * stepSize;
         float3 pos = rayOrigin + t * rayDir;
         
         // skip if below ground

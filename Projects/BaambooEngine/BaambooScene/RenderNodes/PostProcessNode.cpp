@@ -188,8 +188,9 @@ void PostProcessNode::ApplyToneMapping(render::CommandContext& context, const Sc
 	struct
 	{
 		u32   tonemapOp; // 0: Reinhard, 1: ACES, 2: Uncharted2
+		float ev100;
 		float gamma;
-	} constant = { (u32)renderView.postProcess.tonemap.op, renderView.postProcess.tonemap.gamma };
+	} constant = { (u32)renderView.postProcess.tonemap.op, renderView.postProcess.tonemap.ev100, renderView.postProcess.tonemap.gamma };
 	context.SetComputeConstants(sizeof(constant), &constant);
 	context.StageDescriptor("g_SceneTexture", g_FrameData.pColor.lock(), g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_OutputImage", m_ToneMapping.pResolvedTexture);
