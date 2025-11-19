@@ -43,8 +43,10 @@ void AtmosphereSystem::OnComponentDestroyed(entt::registry& registry, entt::enti
 	Super::OnComponentDestroyed(registry, entity);
 }
 
-std::vector< u64 > AtmosphereSystem::Update()
+std::vector< u64 > AtmosphereSystem::Update(const EditorCamera& edCamera)
 {
+	UNUSED(edCamera);
+
 	std::vector< u64 > markedEntities;
 	m_Registry.view< AtmosphereComponent >().each([&](auto entity, auto& atmosphereComponent)
 		{

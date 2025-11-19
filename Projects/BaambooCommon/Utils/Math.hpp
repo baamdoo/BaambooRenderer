@@ -56,6 +56,23 @@ inline glm::vec2 GetHaltonSequence(uint32_t idx)
 	return HALTON_SEQUENCE[idx % MAX_HALTON_SEQUENCE];
 }
 
+static float2 RaySphereIntersection(float3 rayOrigin, float3 rayDir, float3 sphereCenter, float sphereRadius)
+{
+	float3 centerToOrigin = rayOrigin - sphereCenter;
+
+	float a = dot(rayDir, rayDir);
+	float b = 2.0f * dot(centerToOrigin, rayDir);
+	float c = dot(centerToOrigin, centerToOrigin) - sphereRadius * sphereRadius;
+	float discriminant = b * b - 4.0f * a * c;
+
+	if (discriminant < 0.0)
+		return float2(-1.0f, -1.0f);
+
+	float root0 = (-b - sqrt(discriminant)) / (2.0f * a);
+	float root1 = (-b + sqrt(discriminant)) / (2.0f * a);
+	return float2(root0, root1);
+}
+
 }
 
 } // namespace baamboo

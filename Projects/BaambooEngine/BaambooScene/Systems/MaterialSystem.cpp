@@ -35,8 +35,10 @@ void MaterialSystem::OnComponentDestroyed(entt::registry& registry, entt::entity
 	Super::OnComponentDestroyed(registry, entity);
 }
 
-std::vector< u64 > MaterialSystem::Update()
+std::vector< u64 > MaterialSystem::Update(const EditorCamera& edCamera)
 {
+	UNUSED(edCamera);
+
 	std::vector< u64 > markedEntities;
 	m_Registry.view< MaterialComponent >().each([&](auto entity, auto& materialComponent)
 		{

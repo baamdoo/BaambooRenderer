@@ -15,7 +15,7 @@ public:
     virtual void OnComponentUpdated(entt::registry& registry, entt::entity entity) override;
     virtual void OnComponentDestroyed(entt::registry& registry, entt::entity entity) override;
 
-    virtual std::vector< u64 > Update() override;
+    virtual std::vector< u64 > Update(const EditorCamera& edCamera) override;
 };
 
 
@@ -30,7 +30,7 @@ public:
     virtual void OnComponentUpdated(entt::registry& registry, entt::entity entity) override;
     virtual void OnComponentDestroyed(entt::registry& registry, entt::entity entity) override;
 
-    virtual std::vector< u64 > Update() override;
+    virtual std::vector< u64 > Update(const EditorCamera& edCamera) override;
 };
 
 } // namespace baamboo

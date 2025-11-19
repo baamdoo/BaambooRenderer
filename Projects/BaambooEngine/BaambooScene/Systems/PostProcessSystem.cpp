@@ -37,8 +37,10 @@ void PostProcessSystem::OnComponentDestroyed(entt::registry& registry, entt::ent
 	Super::OnComponentDestroyed(registry, entity);
 }
 
-std::vector< u64 > PostProcessSystem::Update()
+std::vector< u64 > PostProcessSystem::Update(const EditorCamera& edCamera)
 {
+	UNUSED(edCamera);
+
 	std::vector< u64 > markedEntities;
 	m_Registry.view< PostProcessComponent >().each([&](auto entity, auto& postProcessComponent)
 		{

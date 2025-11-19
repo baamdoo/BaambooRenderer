@@ -8,7 +8,6 @@ namespace baamboo
 class TransformSystem : public SceneSystem< TransformComponent >
 {
 using Super = SceneSystem< TransformComponent >;
-
 public:
 	TransformSystem(entt::registry& registry);
 
@@ -16,7 +15,7 @@ public:
 	virtual void OnComponentUpdated(entt::registry& registry, entt::entity entity) override;
 	virtual void OnComponentDestroyed(entt::registry& registry, entt::entity entity) override;
 
-	virtual std::vector< u64 > Update() override;
+	virtual std::vector< u64 > Update(const EditorCamera& edCamera) override;
 
 	void AttachChild(entt::entity parent, entt::entity child);
 	void DetachChild(entt::entity child);

@@ -154,3 +154,10 @@ struct CloudData
     float3 windDirection;
     float  windSpeed_mps;
 };
+
+struct CloudShadowData
+{
+    mat4 mSunView;
+    mat4 mSunViewProj;
+    mat4 mSunViewProjInv;
+};

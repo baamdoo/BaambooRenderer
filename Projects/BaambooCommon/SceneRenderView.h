@@ -36,6 +36,8 @@ struct CameraRenderView
 	float3 pos;
 	float  zNear;
 	float  zFar;
+
+	float maxVisibleDistance;
 };
 
 struct StaticMeshRenderView
@@ -85,20 +87,25 @@ struct AtmosphereRenderView
 	u64            id;
 	AtmosphereData data;
 
-	u32  msIsoSampleCount;
-	u32  msNumRaySteps;
-	u32  svMinRaySteps;
-	u32  svMaxRaySteps;
+	u32 msIsoSampleCount;
+	u32 msNumRaySteps;
+	u32 svMinRaySteps;
+	u32 svMaxRaySteps;
+
+	u32   numFogRaymarchSteps;
+	float volumetricFogDistanceMeter;
 };
 
 struct CloudRenderView
 {
-	CloudData data;
+	CloudData       data;
+	CloudShadowData shadow;
 
 	eCloudUprezRatio uprezRatio;
 
 	u32 numCloudRaymarchSteps;
 	u32 numLightRaymarchSteps;
+	float frontDepthBias;
 	float temporalBlendAlpha;
 
 	std::string blueNoiseTex;

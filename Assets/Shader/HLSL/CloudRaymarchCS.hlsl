@@ -9,14 +9,21 @@ Texture2D< float >  g_DepthBuffer          : register(t4);
 Texture2D< float3 > g_TransmittanceLUT     : register(t5);
 Texture3D< float4 > g_AerialPerspectiveLUT : register(t6);
 Texture1D< float3 > g_AtmosphereAmbientLUT : register(t7);
-Texture2DArray< float2 > g_BlueNoiseArray  : register(t8);
+Texture2D< float3 > g_CloudShadowMap       : register(t8);
+Texture2DArray< float2 > g_BlueNoiseArray  : register(t9);
+
+SamplerState g_PointWrapSampler : register(SAMPLER_INDEX_POINT_WRAP);
 
 RWTexture2D< float4 > g_CloudScatteringLUT : register(u0);
 
 cbuffer PushConstant : register(b0, ROOT_CONSTANT_SPACE)
 {
-    uint g_NumCloudRaymarchSteps;
-    uint g_NumLightRaymarchSteps;
+    float4x4 g_mSunView;
+    float4x4 g_mSunViewProj;
+
+    uint  g_NumCloudRaymarchSteps;
+    uint  g_NumLightRaymarchSteps;
+    float g_FrontDepthBias;
 
     float    g_TimeSec;
     uint64_t g_Frame;
@@ -127,6 +134,54 @@ float InscatterProbability(float density, float hNorm, float cosTheta)
     return inscatter;
 }
 
+float3 SampleBSM(Texture2D< float3 > ShadowMap, SamplerState Sampler, float2 shadowUV, float d)
+{
+    float3 BSM = ShadowMap.SampleLevel(Sampler, shadowUV, 0);
+
+    float frontDepth      = BSM.r;
+    float meanExtinction  = BSM.g;
+    float maxOpticalDepth = BSM.b;
+
+    float opticalDepth = min(maxOpticalDepth, meanExtinction * max(0.0, d - frontDepth + g_FrontDepthBias));
+    return opticalDepth;
+}
+
+ParticipatingMediaTransmittanceContext VolumetricShadow(float3 rayOrigin, float msExtinctionStrength)
+{
+    ParticipatingMediaTransmittanceContext PMTC;
+
+    int ms = 0;
+    float3 opticalDepth[SCATTERING_OCTAVES];
+
+    for (ms = 0; ms < SCATTERING_OCTAVES; ++ms)
+    {
+        opticalDepth[ms] = 0.0;
+    }
+
+    float4 sunPosVIEW = mul(g_mSunView, float4(rayOrigin, 1.0));
+    float4 sunPosCLIP = mul(g_mSunViewProj, float4(rayOrigin, 1.0));
+    float3 sunPosNDC  = sunPosCLIP.xyz / sunPosCLIP.w;
+
+    float2 shadowUV = float2(sunPosNDC.x * 0.5 + 0.5, sunPosNDC.y * -0.5 + 0.5);
+    opticalDepth[0] = SampleBSM(g_CloudShadowMap, g_PointWrapSampler, shadowUV, sunPosVIEW.z);
+
+    float MsExtinctionStrength = msExtinctionStrength;
+    for (ms = 1; ms < SCATTERING_OCTAVES; ++ms)
+    {
+        opticalDepth[ms] += opticalDepth[ms - 1] * MsExtinctionStrength;
+
+        MsExtinctionStrength *= MsExtinctionStrength;
+    }
+
+    for (ms = 0; ms < SCATTERING_OCTAVES; ++ms)
+    {
+        // https://www.guerrilla-games.com/read/nubis-authoring-real-time-volumetric-cloudscapes-with-the-decima-engine
+        PMTC.transmittanceToLight0[ms] = max(exp(-opticalDepth[ms]), exp(-opticalDepth[ms] * 0.25) * 0.7);
+    }
+
+    return PMTC;
+}
+
 ParticipatingMediaTransmittanceContext RaymarchLight(float3 rayOrigin, float3 rayDirection, float VoL, float msExtinctionStrength, float jitter)
 {
     ParticipatingMediaTransmittanceContext PMTC;
@@ -138,7 +193,7 @@ ParticipatingMediaTransmittanceContext RaymarchLight(float3 rayOrigin, float3 ra
     for (ms = 0; ms < SCATTERING_OCTAVES; ++ms)
     {
         stepDensity[ms]  = 0.0;
-        opticalDepth[ms] = float3(0.0, 0.0, 0.0);
+        opticalDepth[ms] = 0.0;
     }
 
     float rTopLayer = g_Atmosphere.planetRadius_km + g_Cloud.topLayer_km;

@@ -254,55 +254,55 @@ u32 Scene::StoreAnimationClip(const AnimationClip& clip)
 	return id;
 }
 
-void Scene::Update(f32 dt)
+void Scene::Update(f32 dt, const EditorCamera& edCamera)
 {
 	std::lock_guard< std::mutex > lock(m_SceneMutex);
 
 	s_SceneRunningTime += dt;
 
-	for (auto entity : m_pTransformSystem->Update())
+	for (auto entity : m_pTransformSystem->Update(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
 		dirtyMarks |= (1 << eComponentType::CTransform);
 	}
 
-	for (auto entity : m_pStaticMeshSystem->Update())
+	for (auto entity : m_pStaticMeshSystem->Update(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
 		dirtyMarks |= (1 << eComponentType::CStaticMesh);
 	}
 
-	for (auto entity : m_pMaterialSystem->Update())
+	for (auto entity : m_pMaterialSystem->Update(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
 		dirtyMarks |= (1 << eComponentType::CMaterial);
 	}
 
-	for (auto entity : m_pSkyLightSystem->Update())
+	for (auto entity : m_pSkyLightSystem->Update(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
 		dirtyMarks |= (1 << eComponentType::CSkyLight);
 	}
 
-	for (auto entity : m_pLocalLightSystem->Update())
+	for (auto entity : m_pLocalLightSystem->Update(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
 		dirtyMarks |= (1 << eComponentType::CLight);
 	}
 
-	for (auto entity : m_pAtmosphereSystem->Update())
+	for (auto entity : m_pAtmosphereSystem->Update(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
 		dirtyMarks |= (1 << eComponentType::CAtmosphere);
 	}
 
-	for (auto entity : m_pCloudSystem->Update())
+	for (auto entity : m_pCloudSystem->Update(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
 		dirtyMarks |= (1 << eComponentType::CCloud);
 	}
 
-	for (auto entity : m_pPostProcessSystem->Update())
+	for (auto entity : m_pPostProcessSystem->Update(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
 		dirtyMarks |= (1 << eComponentType::CPostProcess);
@@ -332,11 +332,12 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, bool bDrawUI) co
 	view.pSceneMutex       = &m_SceneMutex;
 	view.pEntityDirtyMarks = bMarkedAny ? &m_EntityDirtyMasks : nullptr;
 
-	view.camera.mView = edCamera.GetView();
-	view.camera.mProj = edCamera.GetProj();
-	view.camera.pos   = edCamera.GetPosition();
-	view.camera.zNear = edCamera.zNear;
-	view.camera.zFar  = edCamera.zFar;
+	view.camera.mView              = edCamera.GetView();
+	view.camera.mProj              = edCamera.GetProj();
+	view.camera.pos                = edCamera.GetPosition();
+	view.camera.zNear              = edCamera.zNear;
+	view.camera.zFar               = edCamera.zFar;
+	view.camera.maxVisibleDistance = edCamera.maxVisibleDistance;
 
 	m_Registry.view< TransformComponent >().each([this, &view](auto id, auto& transformComponent)
 		{
@@ -490,7 +491,7 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, bool bDrawUI) co
 				break;
 			}
 		});
-
+	
 	m_Registry.view< TransformComponent, CloudComponent >().each([this, &view](auto id, auto& transformComponent, auto& cloudComponent)
 		{
 			CloudRenderView cloudView = {};
@@ -527,6 +528,7 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, bool bDrawUI) co
 
 			cloudView.numCloudRaymarchSteps = cloudComponent.numCloudRaymarchSteps;
 			cloudView.numLightRaymarchSteps = cloudComponent.numLightRaymarchSteps;
+			cloudView.frontDepthBias        = cloudComponent.frontDepthBias;
 			cloudView.temporalBlendAlpha    = cloudComponent.temporalBlendAlpha;
 			cloudView.uprezRatio            = cloudComponent.uprezRatio;
 
@@ -537,6 +539,110 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, bool bDrawUI) co
 			view.cloud = cloudView;
 		});
 
+	// update cloud shadow
+	//auto fov         = edCamera.fov;
+	//auto aspectRatio = edCamera.GetAspectRatio();
+
+	//float tanTheta = tanf(fov * 0.5f);
+	//float tanPhi   = tanTheta * aspectRatio;
+
+	//const float shadowMapFarKm  = (view.cloud.data.topLayer_km - view.cloud.data.bottomLayer_km) * 10.0f;
+	//const float shadowMapNearKm = 0.001f;
+
+	//float yf = shadowMapFarKm * tanPhi;
+	//float xf = shadowMapFarKm * tanTheta;
+	//float yn = shadowMapNearKm * tanPhi;
+	//float xn = shadowMapNearKm * tanTheta;
+	//float3 cameraFrustumCorners[8] =
+	//{
+	//	float3(-xn,  yn, shadowMapNearKm),
+	//	float3( xn,  yn, shadowMapNearKm),
+	//	float3( xn, -yn, shadowMapNearKm),
+	//	float3(-xn, -yn, shadowMapNearKm),
+
+	//	float3(-xf,  yf, shadowMapFarKm),
+	//	float3( xf,  yf, shadowMapFarKm),
+	//	float3( xf, -yf, shadowMapFarKm),
+	//	float3(-xf, -yf, shadowMapFarKm)
+	//};
+
+	//const auto& mViewInv = glm::inverse(edCamera.GetView());
+
+	//float3 minAABB(std::numeric_limits<float>::max());
+	//float3 maxAABB(std::numeric_limits<float>::lowest());
+	//for (u32 i = 0; i < 8; ++i)
+	//{
+	//	// Camera frustum to world space
+	//	cameraFrustumCorners[i] = mViewInv * float4(cameraFrustumCorners[i], 1.0f);
+
+	//	minAABB = glm::min(minAABB, cameraFrustumCorners[i]);
+	//	maxAABB = glm::max(maxAABB, cameraFrustumCorners[i]);
+	//}
+	//minAABB.y = std::max(minAABB.y, view.cloud.data.bottomLayer_km) + view.atmosphere.data.planetRadius_km;
+	//maxAABB.y = std::min(maxAABB.y, view.cloud.data.topLayer_km) + view.atmosphere.data.planetRadius_km;
+
+	//float3 aabbCenter = (minAABB + maxAABB) * 0.5f;
+	//float sphereRadius = glm::length(maxAABB - minAABB) * 0.5f;
+	float sphereRadius = 150.0f;
+
+	float3 sunDirection = view.atmosphere.data.light.direction;
+	float3 ray          = -sunDirection;
+
+	float3 camPos = edCamera.GetPosition() * 0.001f + float3{ 0.0f, view.atmosphere.data.planetRadius_km + 0.00005f, 0.0f };
+	float2 t = math::RaySphereIntersection(camPos, ray, float3(0.0f), view.cloud.data.topLayer_km + view.atmosphere.data.planetRadius_km);
+
+	float texelSize = (sphereRadius * 2.0f) / 2048.0f;
+
+	/*aabbCenter.x = floor(aabbCenter.x / texelSize) * texelSize;
+	aabbCenter.y = floor(aabbCenter.y / texelSize) * texelSize;
+	aabbCenter.z = floor(aabbCenter.z / texelSize) * texelSize;*/
+
+
+	float3 sunLookAt   = camPos;
+	float3 sunPosition = camPos + (t.x > 0.0f ? t.x : t.y) * ray;
+
+	float3 upVec    = float3(0, 1, 0);
+	float3 rightVec = glm::normalize(glm::cross(upVec, sunDirection));
+	if (glm::length(rightVec) < 0.001f)
+		rightVec = glm::normalize(glm::cross(float3(0.0f, 0.0f, 1.0f), sunDirection));
+	upVec = glm::normalize(glm::cross(sunDirection, rightVec));
+
+	auto mSunView = glm::lookAtLH(sunPosition, sunLookAt, upVec);
+
+	/*float3 minLightSpace(std::numeric_limits<float>::max());
+	float3 maxLightSpace(std::numeric_limits<float>::lowest());
+	float3 lightFrustumCorners[8] =
+	{
+		float3(minAABB.x, minAABB.y, minAABB.z),
+		float3(minAABB.x, maxAABB.y, minAABB.z),
+		float3(maxAABB.x, minAABB.y, minAABB.z),
+		float3(maxAABB.x, maxAABB.y, minAABB.z),
+
+		float3(minAABB.x, minAABB.y, maxAABB.z),
+		float3(minAABB.x, maxAABB.y, maxAABB.z),
+		float3(maxAABB.x, minAABB.y, maxAABB.z),
+		float3(maxAABB.x, maxAABB.y, maxAABB.z),
+	};
+	for (auto& lightFrustumCorner : lightFrustumCorners)
+	{
+		lightFrustumCorner = glm::vec3(mSunView * glm::vec4(lightFrustumCorner, 1.0));
+
+		minLightSpace = glm::min(minLightSpace, lightFrustumCorner);
+		maxLightSpace = glm::max(maxLightSpace, lightFrustumCorner);
+	}*/
+
+	// Reverse-Z
+	auto mSunProj = glm::orthoLH_ZO(
+		-sphereRadius, sphereRadius,
+		-sphereRadius, sphereRadius,
+		sphereRadius * 2.0f,
+		0.0f
+	);
+	view.cloud.shadow.mSunView        = mSunView;
+	view.cloud.shadow.mSunViewProj    = mSunProj * mSunView;
+	view.cloud.shadow.mSunViewProjInv = glm::inverse(view.cloud.shadow.mSunViewProj);
+
+	//
 	m_Registry.view< PostProcessComponent >().each([this, &view](auto id, auto& postProcessComponent)
 		{
 			PostProcessRenderView postProcessView = {};

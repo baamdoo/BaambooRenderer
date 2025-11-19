@@ -4,10 +4,9 @@
 namespace baamboo
 {
 
-class CloudSystem : public SceneSystem<CloudComponent>
+class CloudSystem : public SceneSystem< CloudComponent >
 {
-    using Super = SceneSystem<CloudComponent>;
-
+using Super = SceneSystem< CloudComponent >;
 public:
     CloudSystem(entt::registry& registry);
 
@@ -15,7 +14,7 @@ public:
     virtual void OnComponentUpdated(entt::registry& registry, entt::entity entity) override;
     virtual void OnComponentDestroyed(entt::registry& registry, entt::entity entity) override;
 
-    virtual std::vector< u64 > Update() override;
+    virtual std::vector< u64 > Update(const EditorCamera& edCamera) override;
 };
 
 } // namespace baamboo

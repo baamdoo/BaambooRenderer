@@ -302,7 +302,9 @@ struct CloudComponent
 
 	i32 numCloudRaymarchSteps = 64;
 	i32 numLightRaymarchSteps = 64;
+	float frontDepthBias      = 0.05f;
 	float temporalBlendAlpha  = 0.05f;
+
 
 	std::string blueNoiseTex;
 	std::string weatherMap;

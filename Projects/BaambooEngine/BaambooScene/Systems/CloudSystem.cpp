@@ -1,6 +1,8 @@
 #include "BaambooPch.h"
 #include "CloudSystem.h"
 
+#include "BaambooScene/Camera.h"
+
 namespace baamboo
 {
 
@@ -30,10 +32,10 @@ void CloudSystem::OnComponentDestroyed(entt::registry& registry, entt::entity en
     Super::OnComponentDestroyed(registry, entity);
 }
 
-std::vector< u64 > CloudSystem::Update()
+std::vector< u64 > CloudSystem::Update(const EditorCamera& edCamera)
 {
     std::vector< u64 > markedEntities;
-    m_Registry.view<CloudComponent>().each([&](auto entity, auto& cloudComponent)
+    m_Registry.view< CloudComponent >().each([&](auto entity, auto& cloudComponent)
         {
             if (m_DirtyEntities.contains(entity))
             {

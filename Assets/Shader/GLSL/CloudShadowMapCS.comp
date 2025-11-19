@@ -1,0 +1,116 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#extension GL_ARB_gpu_shader_int64 : enable
+
+#include "AtmosphereCommon.hg"
+#define _CLOUD
+#include "CloudCommon.hg"
+
+layout(set = SET_PUSH, binding = 7, r11f_g11f_b10f) writeonly uniform image2D g_CloudShadowMap; // R: FrontDepth, G: MeanExtinction, B: MaxOpticalDepth
+
+layout(set = SET_PUSH, binding = 8) uniform CloudShadowUBO
+{
+    mat4 mSunView;
+    mat4 mSunViewProj;
+    mat4 mSunViewProjInv;
+} g_CloudShadow;
+
+layout(push_constant) uniform Push
+{
+    uint  numLightRaymarchSteps;
+    float planetRadiusKm;
+
+    float    timeSec;
+    uint64_t frame;
+} g_Push;
+
+
+// Reference: https://blog.selfshadow.com/publications/s2020-shading-course/hillaire/s2020_pbs_hillaire_slides.pdf
+vec3 RaymarchBSM(vec3 rayOrigin, vec3 rayDirection)
+{
+    float frontDepth      = 1e30;
+    float extinctionSum   = 0.0;
+    float extinctionCount = 0.0;
+    float maxOpticalDepth = 0.0;
+
+    bool bFirstHit = false;
+
+    float rBottomLayer      = g_Push.planetRadiusKm + g_Cloud.bottomLayer_km;
+    vec2 bottomIntersection = 
+        RaySphereIntersection(rayOrigin, rayDirection, PLANET_CENTER, rBottomLayer);
+    if (all(lessThan(bottomIntersection, vec2(0.0, 0.0))))
+    {
+        return vec3(frontDepth, 0.0, 0.0);
+    }
+    float rayLength = bottomIntersection.x > 0.0 ? bottomIntersection.x : bottomIntersection.y;
+
+
+    float ExtinctionStrength = (g_Cloud.extinctionStrength.r + g_Cloud.extinctionStrength.g + g_Cloud.extinctionStrength.b) / 3.0;
+          ExtinctionStrength *= g_Cloud.extinctionScale;
+
+    vec3  offset = g_Cloud.windDirection * g_Push.timeSec * g_Cloud.windSpeed_mps * 0.001;
+
+    float numSteps = float(g_Push.numLightRaymarchSteps);
+    float stepSize = rayLength / numSteps;
+
+    for(float i = 0.5; i < numSteps; i += 1.0)
+    {
+        float st   = i * stepSize;
+        vec3  spos = rayOrigin + st * rayDirection;
+
+        float saltitude = length(spos) - g_Push.planetRadiusKm;
+        float shNorm    = inverseLerp(saltitude, g_Cloud.bottomLayer_km, g_Cloud.topLayer_km);
+        if (shNorm > 1.0 || shNorm < 0.0)
+        {
+            continue;
+        }
+
+        float stepDensity = SampleCloudDensity(spos, shNorm, offset);
+        if (stepDensity > 0.0)
+        {
+            if (!bFirstHit)
+            {
+                //frontDepth = st;
+                vec4 sposVIEW = g_CloudShadow.mSunView * vec4(spos, 1.0);
+                frontDepth    = sposVIEW.z;
+
+                bFirstHit = true;
+            }
+
+            float stepExtinction = stepDensity * ExtinctionStrength * 1000.0;
+
+            extinctionSum   += stepExtinction;
+            extinctionCount += 1.0;
+
+            maxOpticalDepth += stepExtinction * stepSize;
+        }
+    }
+
+    return vec3(frontDepth, (extinctionCount > 0.0) ? (extinctionSum / extinctionCount) : 0.0, maxOpticalDepth);
+}
+
+
+layout (local_size_x = 8, local_size_y = 8) in;
+void main()
+{
+    ivec2 imgSize   = imageSize(g_CloudShadowMap);
+    ivec2 pixCoords = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(pixCoords, imgSize)))
+        return;
+
+    vec2 uv         = (vec2(pixCoords) + 0.5) / vec2(imgSize);
+    
+    vec4 posNearCLIP  = vec4(uv.x * 2.0f - 1.0f, 1.0f - uv.y * 2.0f, 1.0f, 1.0f); // Reverse-Z
+    vec4 posNearWORLD = g_CloudShadow.mSunViewProjInv * posNearCLIP;
+    
+    vec4 posFarCLIP  = vec4(uv.x * 2.0f - 1.0f, 1.0f - uv.y * 2.0f, 0.0f, 1.0f); // Reverse-Z
+    vec4 posFarWORLD = g_CloudShadow.mSunViewProjInv * posFarCLIP;
+
+    vec3 rayOrigin    = posNearWORLD.xyz / posNearWORLD.w;
+    vec3 rayTarget    = posFarWORLD.xyz / posFarWORLD.w;
+    vec3 rayDirection = normalize(rayTarget - rayOrigin);
+
+    vec3 BSM = RaymarchBSM(rayOrigin, rayDirection);
+
+    imageStore(g_CloudShadowMap, pixCoords, vec4(BSM, 1.0));
+}

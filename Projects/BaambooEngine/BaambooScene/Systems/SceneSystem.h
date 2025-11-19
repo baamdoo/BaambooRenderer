@@ -4,6 +4,8 @@
 namespace baamboo
 {
 
+class EditorCamera;
+
 template< typename TComponent >
 class SceneSystem
 {
@@ -30,7 +32,7 @@ public:
         m_DirtyEntities.erase(entity);
     }
 
-    virtual std::vector< u64 > Update() { return std::vector< u64 >(); }
+    virtual std::vector< u64 > Update(const EditorCamera& edCamera) { return std::vector< u64 >(); }
 
 protected:
     virtual void MarkDirty(entt::entity entity)

@@ -209,7 +209,7 @@ void Engine::GameLoop(float dt)
 
 	std::lock_guard< std::mutex > lock(m_ImGuiMutex);
 
-	m_pScene->Update(dt);
+	m_pScene->Update(dt, *m_pCamera);
 
 	if (m_RenderViewQueue.size() >= NUM_TOLERANCE_ASYNC_FRAME_GAME_TO_RENDER)
 		m_RenderViewQueue.replace(m_pScene->RenderView(*m_pCamera, m_bDrawUI));
@@ -866,7 +866,8 @@ void Engine::DrawUI()
 							}
 
 							bMark |= ImGui::DragInt("Steps of Raymarch to Cloud", &component.numCloudRaymarchSteps, 1, 32, 400);
-							bMark |= ImGui::DragInt("Steps of Raymarch to Light", &component.numLightRaymarchSteps, 1, 6, 128);
+							bMark |= ImGui::DragInt("Steps of Raymarch to Light", &component.numLightRaymarchSteps, 1, 6, 400);
+							bMark |= ImGui::DragFloat("Front Depth Bias", &component.frontDepthBias, 0.001f, 0.001f, 1.0f, "%.3f");
 							bMark |= ImGui::DragFloat("Blend Alpha for Temporal Accumulation", &component.temporalBlendAlpha, 0.001f, 0.01f, 1.0f, "%.3f");
 						}
 					}

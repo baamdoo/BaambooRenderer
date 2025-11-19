@@ -36,8 +36,10 @@ struct FrameData
 	Weak< render::Texture > pAtmosphereAmbientLUT;
 	//
 	Weak< render::Texture > pSkyboxLUT;
+	Weak< render::Texture > pVolumetricFogLUT;
 
 	// CloudLUTs
+	Weak< render::Texture > pCloudShadowMap;
 	Weak< render::Texture > pCloudScatteringLUT;
 
 	// Scene buffers
@@ -70,7 +72,7 @@ public:
 
 	void AddRenderNode(Arc< render::RenderNode > pNode);
 
-	void Update(float dt);
+	void Update(float dt, const EditorCamera& edCamera);
 
 	void OnWindowResized(u32 width, u32 height);
 

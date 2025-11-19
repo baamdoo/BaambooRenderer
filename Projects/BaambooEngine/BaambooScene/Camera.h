@@ -40,13 +40,23 @@ public:
 			glm::orthoLH_ZO(0.0f, (float)m_ViewportWidth, 0.0f, (float)m_ViewportHeight, zNear, zFar);
 	}
 	[[nodiscard]]
+	mat4 GetProj(float zFar_) const
+	{
+		return m_Type == eType::Perspective ?
+			perspectiveFovReverseZLH_ZO(glm::radians(fov), (float)m_ViewportWidth, (float)m_ViewportHeight, zNear, zFar_) :
+			glm::orthoLH_ZO(0.0f, (float)m_ViewportWidth, 0.0f, (float)m_ViewportHeight, zNear, zFar);
+	}
+	[[nodiscard]]
 	float3 GetPosition() const { return m_Controller.GetPosition(); }
 	[[nodiscard]]
 	bool IsPerspective() const { return m_Type == eType::Perspective; }
+	[[nodiscard]]
+	float GetAspectRatio() const { return float(m_ViewportWidth) / float(m_ViewportHeight); }
 
 	float zNear = 0.1f;
 	float zFar  = 1000.0f;
 	float fov   = 45.0f;
+	float maxVisibleDistance = 100.0f;
 
 private:
 	CameraController& m_Controller;

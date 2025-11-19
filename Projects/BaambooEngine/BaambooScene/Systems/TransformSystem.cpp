@@ -36,8 +36,10 @@ void TransformSystem::OnComponentDestroyed(entt::registry& registry, entt::entit
     m_IndexAllocator.release(transform.world);
 }
 
-std::vector< u64 > TransformSystem::Update()
+std::vector< u64 > TransformSystem::Update(const EditorCamera& edCamera)
 {
+    UNUSED(edCamera);
+
     // Sort by depth to ensure parents are processed before children
     m_Registry.sort< TransformComponent >([](const auto& lhs, const auto& rhs)
         {

@@ -15,14 +15,19 @@ layout(set = SET_PUSH, binding = 7)  uniform sampler2D g_DepthBuffer;
 layout(set = SET_PUSH, binding = 8)  uniform sampler2D g_TransmittanceLUT;
 layout(set = SET_PUSH, binding = 9)  uniform sampler3D g_AerialPerspectiveLUT;
 layout(set = SET_PUSH, binding = 10) uniform sampler1D g_AtmosphereAmbientLUT;
-layout(set = SET_PUSH, binding = 11) uniform sampler2DArray g_BlueNoiseArray;
+layout(set = SET_PUSH, binding = 11) uniform sampler2D g_CloudShadowMap;
+layout(set = SET_PUSH, binding = 12) uniform sampler2DArray g_BlueNoiseArray;
 
-layout(set = SET_PUSH, binding = 12, rgba16f) writeonly uniform image2D g_CloudScatteringLUT;
+layout(set = SET_PUSH, binding = 13, rgba16f) writeonly uniform image2D g_CloudScatteringLUT;
 
 layout(push_constant) uniform Push 
 {
-    uint numCloudRaymarchSteps;
-    uint numLightRaymarchSteps;
+    mat4 mSunView;
+    mat4 mSunViewProj;
+
+    uint  numCloudRaymarchSteps;
+    uint  numLightRaymarchSteps;
+    float frontDepthBias;
 
     float    time_s;
     uint64_t frame;
@@ -135,6 +140,54 @@ float InscatterProbability(float density, float hNorm, float cosTheta)
     return inscatter;
 }
 
+vec3 SampleBSM(sampler2D ShadowMap, vec2 shadowUV, float d)
+{
+    vec3 BSM = texture(ShadowMap, shadowUV).rgb;
+
+    float frontDepth      = BSM.r;
+    float meanExtinction  = BSM.g;
+    float maxOpticalDepth = BSM.b;
+
+    float opticalDepth = min(maxOpticalDepth, meanExtinction * max(0.0, d - frontDepth + g_Push.frontDepthBias));
+    return vec3(opticalDepth);
+}
+
+ParticipatingMediaTransmittanceContext VolumetricShadow(vec3 rayOrigin, float msExtinctionStrength)
+{
+    ParticipatingMediaTransmittanceContext PMTC;
+
+    int ms = 0;
+	vec3 opticalDepth[SCATTERING_OCTAVES];
+
+	for (ms = 0; ms < SCATTERING_OCTAVES; ++ms)
+	{
+		opticalDepth[ms] = vec3(0.0);
+	}
+
+    vec4 sunPosVIEW = g_Push.mSunView * vec4(rayOrigin, 1.0);
+    vec4 sunPosCLIP = g_Push.mSunViewProj * vec4(rayOrigin, 1.0);
+    vec3 sunPosNDC  = sunPosCLIP.xyz / sunPosCLIP.w;
+
+    vec2 shadowUV   = vec2(sunPosNDC.x * 0.5 + 0.5, sunPosNDC.y * -0.5 + 0.5);
+    opticalDepth[0] = SampleBSM(g_CloudShadowMap, shadowUV, sunPosVIEW.z);
+
+    float MsExtinctionStrength = msExtinctionStrength;
+    for (ms = 1; ms < SCATTERING_OCTAVES; ++ms)
+	{
+	    opticalDepth[ms] += opticalDepth[ms - 1] * MsExtinctionStrength;
+    
+        MsExtinctionStrength *= MsExtinctionStrength;
+	}
+
+    for (ms = 0; ms < SCATTERING_OCTAVES; ++ms)
+	{
+        // https://www.guerrilla-games.com/read/nubis-authoring-real-time-volumetric-cloudscapes-with-the-decima-engine
+		PMTC.transmittanceToLight0[ms] = max(exp(-opticalDepth[ms]), exp(-opticalDepth[ms] * 0.25) * 0.7);
+	}
+
+    return PMTC;
+}
+
 ParticipatingMediaTransmittanceContext RaymarchLight(vec3 rayOrigin, vec3 rayDirection, float VoL, float msExtinctionStrength, float jitter)
 {
     ParticipatingMediaTransmittanceContext PMTC;
@@ -169,32 +222,32 @@ ParticipatingMediaTransmittanceContext RaymarchLight(vec3 rayOrigin, vec3 rayDir
         float tCurr   = st * st;   // non-linear shadow sample distribution
         float tDelta  = tCurr - tPrev;
         float tShadow = shadowMarchLength * (tCurr - 0.5 * tDelta);
-
+    
         vec3 spos = rayOrigin + tShadow * rayDirection;
-
+    
         float saltitude = length(spos) - g_Atmosphere.planetRadius_km;
         float shNorm    = inverseLerp(saltitude, g_Cloud.bottomLayer_km, g_Cloud.topLayer_km);
         if (shNorm > 1.0)
         {
             break;
         }
-
+    
         float stepLength = shadowMarchLength * tDelta;
-
+    
         vec3 offset = g_Cloud.windDirection * g_Push.time_s * g_Cloud.windSpeed_mps * 0.001;
-
+    
         stepDensity[0]   = SampleCloudDensity(spos, shNorm, offset);
         opticalDepth[0] += stepDensity[0] * stepLength * ExtinctionStrength * 1000.0;
-
+    
         float MsExtinctionStrength = msExtinctionStrength;
         for (ms = 1; ms < SCATTERING_OCTAVES; ++ms)
-		{
+	    {
             stepDensity[ms]   = stepDensity[ms - 1] * MsExtinctionStrength;
-			opticalDepth[ms] += stepDensity[ms] * stepLength * ExtinctionStrength * 1000.0;
-
+		    opticalDepth[ms] += stepDensity[ms] * stepLength * ExtinctionStrength * 1000.0;
+    
             MsExtinctionStrength *= MsExtinctionStrength;
-		}
-
+	    }
+    
         tPrev = tCurr;
 	}
 
@@ -231,6 +284,7 @@ CloudResult RaymarchCloud(vec3 rayOrigin, vec3 rayDirection, float maxDistance, 
     float rayStart = bottomIntersection.y > 0.0 ? bottomIntersection.y : 0.0;
     float rayEnd   = topIntersection.y;
 
+    bool bAboveCloudLayer = false;
     if (length(rayOrigin) < rBottomLayer)
     {
         // camera in-below cloud bottom layer
@@ -248,6 +302,8 @@ CloudResult RaymarchCloud(vec3 rayOrigin, vec3 rayDirection, float maxDistance, 
         // camera in-above cloud top layer
         rayStart = topIntersection.x;
         rayEnd   = min(bottomIntersection.x, maxDistance);
+
+        bAboveCloudLayer = true;
     }
     else
     {
@@ -323,7 +379,7 @@ CloudResult RaymarchCloud(vec3 rayOrigin, vec3 rayDirection, float maxDistance, 
             float msExtinctionStrength = g_Cloud.msOcclusion;
 
             ParticipatingMediaExtinctionContext    PMEC = SetupParticipatingMediaExtinctionContext(albedo, stepExtinction, msScatteringStrength, msExtinctionStrength);
-            ParticipatingMediaTransmittanceContext PMTC = RaymarchLight(samplePos, sunDirection, VoL, msExtinctionStrength, jitter.g);
+            ParticipatingMediaTransmittanceContext PMTC = bAboveCloudLayer ? VolumetricShadow(samplePos, msExtinctionStrength) : RaymarchLight(samplePos, sunDirection, VoL, msExtinctionStrength, jitter.g);
 
             vec3 ambientLit = texture(g_AtmosphereAmbientLUT, hNorm).rgb;
             // --- Ground Contribution --- //

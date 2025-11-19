@@ -26,8 +26,10 @@ void SkyLightSystem::OnComponentDestroyed(entt::registry& registry, entt::entity
     Super::OnComponentDestroyed(registry, entity);
 }
 
-std::vector< u64 > SkyLightSystem::Update()
+std::vector< u64 > SkyLightSystem::Update(const EditorCamera& edCamera)
 {
+    UNUSED(edCamera);
+
     std::vector< u64 > markedEntities;
     m_Registry.view< LightComponent >().each([&](auto entity, auto& component)
         {
@@ -68,8 +70,10 @@ void LocalLightSystem::OnComponentDestroyed(entt::registry& registry, entt::enti
     Super::OnComponentDestroyed(registry, entity);
 }
 
-std::vector< u64 > LocalLightSystem::Update()
+std::vector< u64 > LocalLightSystem::Update(const EditorCamera& edCamera)
 {
+    UNUSED(edCamera);
+
     std::vector< u64 > markedEntities;
     m_Registry.view< LightComponent >().each([&](auto entity, auto& component)
         {

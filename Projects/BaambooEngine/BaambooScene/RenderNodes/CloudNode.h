@@ -50,12 +50,14 @@ private:
 	Arc< render::Texture > m_pDensityTopGradientTexture;
 	Arc< render::Texture > m_pDensityBottomGradientTexture;
 
+	Arc< render::Texture > m_pCloudShadowMap;
 	Arc< render::Texture > m_pCloudScatteringLUT;
 	Arc< render::Texture > m_pUprezzedCloudScatteringLUT;
 	Arc< render::Texture > m_pPrevUprezzedCloudScatteringLUT;
 
 	Arc< render::Texture > m_pBlueNoiseTexture;
 
+	Box< render::ComputePipeline > m_pCloudShadowPSO;
 	Box< render::ComputePipeline > m_pCloudRaymarchPSO;
 	Box< render::ComputePipeline > m_pCloudTemporalUprezPSO;
 

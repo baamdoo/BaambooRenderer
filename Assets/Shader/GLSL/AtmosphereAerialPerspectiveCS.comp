@@ -7,10 +7,9 @@
 #define _ATMOSPHERE
 #include "AtmosphereCommon.hg"
 
-layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
-
 layout(set = SET_PUSH, binding = 2) uniform sampler2D g_TransmittanceLUT;
 layout(set = SET_PUSH, binding = 3) uniform sampler2D g_MultiScatteringLUT;
+
 layout(set = SET_PUSH, binding = 4, rgba16f) uniform writeonly image3D g_AerialPerspectiveLUT;
 
 vec4 ComputeAerialPerspective(vec3 rayOrigin, vec3 rayDir, float maxDistance, uint rayMarchSteps) 
@@ -103,7 +102,8 @@ vec4 ComputeAerialPerspective(vec3 rayOrigin, vec3 rayDir, float maxDistance, ui
     return vec4(L, dot(throughput, vec3(1.0 / 3.0)));
 }
 
-void main() 
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+void main()
 {
     ivec3 imgSize   = imageSize(g_AerialPerspectiveLUT);
     ivec3 pixCoords = ivec3(gl_GlobalInvocationID.xyz);

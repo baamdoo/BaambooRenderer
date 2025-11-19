@@ -27,8 +27,10 @@ void StaticMeshSystem::OnComponentDestroyed(entt::registry& registry, entt::enti
 	// TODO. reduce ref-count of currently referring assets
 }
 
-std::vector< u64 > StaticMeshSystem::Update()
+std::vector< u64 > StaticMeshSystem::Update(const EditorCamera& edCamera)
 {
+	UNUSED(edCamera);
+
 	std::vector< u64 > markedEntities;
 	m_Registry.view< StaticMeshComponent >().each([&](auto entity, auto& meshComponent)
 		{
