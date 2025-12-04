@@ -1,13 +1,6 @@
-﻿#include "Common.hlsli"
-#define _ATMOSPHERE
+﻿#define _SCENEENVIRONMENT
 #include "AtmosphereCommon.hlsli"
 
-Texture2D< float3 >   g_TransmittanceLUT   : register(t0);
-RWTexture2D< float3 > g_MultiScatteringLUT : register(u0);
-
-SamplerState g_LinearClampSampler : register(SAMPLER_INDEX_LINEAR_CLAMP);
-
-// Push constants
 struct PushConstants
 {
     uint isoSampleCount;
@@ -15,8 +8,17 @@ struct PushConstants
 };
 ConstantBuffer< PushConstants > g_Push : register(b0, ROOT_CONSTANT_SPACE);
 
+ConstantBuffer< DescriptorHeapIndex > g_TransmittanceLUT      : register(b1, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_OutMultiScatteringLUT : register(b2, ROOT_CONSTANT_SPACE);
+
+
 float3 ComputeMultiScattering(float viewHeight, float cosZenithAngle)
 {
+    AtmosphereData Atmosphere = GetAtmosphereData();
+
+    Texture2D< float3 > TransmittanceLUT = GetResource(g_TransmittanceLUT.index);
+
+
     float3 rayOrigin = float3(0.0, viewHeight, 0.0);
     float3 sunDir    = float3(safeSqrt(1.0 - cosZenithAngle * cosZenithAngle), cosZenithAngle, 0.0);
     
@@ -41,8 +43,8 @@ float3 ComputeMultiScattering(float viewHeight, float cosZenithAngle)
         
         // compute ray length
         float  rayLength              = 0.0;
-        float2 planetIntersection     = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, g_Atmosphere.planetRadius_km);
-        float2 atmosphereIntersection = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, g_Atmosphere.atmosphereRadius_km);
+        float2 planetIntersection     = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, Atmosphere.planetRadiusKm);
+        float2 atmosphereIntersection = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, Atmosphere.atmosphereRadiusKm);
         if (atmosphereIntersection.y < 0.0) 
             continue;
         else if (planetIntersection.x < 0.0)
@@ -62,20 +64,20 @@ float3 ComputeMultiScattering(float viewHeight, float cosZenithAngle)
 
             // skip if below ground
             float sampleHeight = length(pos);
-            if (sampleHeight < g_Atmosphere.planetRadius_km)
+            if (sampleHeight < Atmosphere.planetRadiusKm)
                 break;
             
-            float sampleAltitude = sampleHeight - g_Atmosphere.planetRadius_km;
+            float sampleAltitude = sampleHeight - Atmosphere.planetRadiusKm;
 
             // extinction(out-scattering) at sample point
-            float rayleighDensity = GetDensityAtHeight(sampleAltitude, g_Atmosphere.rayleighDensityH_km);
-            float mieDensity      = GetDensityAtHeight(sampleAltitude, g_Atmosphere.mieDensityH_km);
-            float ozoneDensity    = GetDensityOzoneAtHeight(sampleAltitude);
+            float rayleighDensity = GetDensityAtHeight(sampleAltitude, Atmosphere.rayleighDensityKm);
+            float mieDensity      = GetDensityAtHeight(sampleAltitude, Atmosphere.mieDensityKm);
+            float ozoneDensity    = GetDensityOzoneAtHeight(sampleAltitude, Atmosphere.ozoneCenterKm, Atmosphere.ozoneWidthKm);
             
-            float3 rayleighScattering = g_Atmosphere.rayleighScattering * rayleighDensity;
-            float  mieScattering      = g_Atmosphere.mieScattering * mieDensity;
-            float  mieAbsorption      = g_Atmosphere.mieAbsorption * mieDensity;
-            float3 ozoneAbsorption    = g_Atmosphere.ozoneAbsorption * ozoneDensity;
+            float3 rayleighScattering = Atmosphere.rayleighScattering * rayleighDensity;
+            float  mieScattering      = Atmosphere.mieScattering * mieDensity;
+            float  mieAbsorption      = Atmosphere.mieAbsorption * mieDensity;
+            float3 ozoneAbsorption    = Atmosphere.ozoneAbsorption * ozoneDensity;
 
             float3 scattering        = rayleighScattering + mieScattering;
             float3 extinction        = rayleighScattering + (mieScattering + mieAbsorption) + ozoneAbsorption;
@@ -83,10 +85,10 @@ float3 ComputeMultiScattering(float viewHeight, float cosZenithAngle)
 
             // transmittance from sample point to sun
             float  sampleTheta        = dot(normalize(pos), sunDir);
-            float3 transmittanceToSun = SampleTransmittanceLUT(g_TransmittanceLUT, g_LinearClampSampler, sampleHeight, sampleTheta, g_Atmosphere.planetRadius_km, g_Atmosphere.atmosphereRadius_km);
+            float3 transmittanceToSun = SampleTransmittanceLUT(TransmittanceLUT, g_LinearClampSampler, sampleHeight, sampleTheta, Atmosphere.planetRadiusKm, Atmosphere.atmosphereRadiusKm);
 
             // planet shadow
-            float2 planetIntersection = RaySphereIntersection(pos, rayDir, PLANET_CENTER, g_Atmosphere.planetRadius_km);
+            float2 planetIntersection = RaySphereIntersection(pos, rayDir, PLANET_CENTER, Atmosphere.planetRadiusKm);
             float  planetShadow       = planetIntersection.x < 0.0 ? 1.0 : 0.0;
 
             // (4) S(x,l) = Vis(l) * T(x,x+t*l)
@@ -108,11 +110,11 @@ float3 ComputeMultiScattering(float viewHeight, float cosZenithAngle)
 
 	    	// transmittance from sample point to sun
             float  sampleTheta        = dot(upVec, sunDir);
-            float3 transmittanceToSun = SampleTransmittanceLUT(g_TransmittanceLUT, g_LinearClampSampler, sampleHeight, sampleTheta, g_Atmosphere.planetRadius_km, g_Atmosphere.atmosphereRadius_km);
+            float3 transmittanceToSun = SampleTransmittanceLUT(TransmittanceLUT, g_LinearClampSampler, sampleHeight, sampleTheta, Atmosphere.planetRadiusKm, Atmosphere.atmosphereRadiusKm);
 
             // L'(x,v) = T(x,p) * Lo(p,v), where Lo : diffuse response according to ground albedo
 	    	L += throughput * transmittanceToSun * NoL * float3(0.40981, 0.40981, 0.40981) / PI;
-	    	// L += transmittanceToSun * throughput * NoL * g_Atmosphere.groundAlbedo / PI;
+	    	// L += transmittanceToSun * throughput * NoL * Atmosphere.groundAlbedo / PI;
 	    }
         
         // (5) L2ndOrder_i = L'(xs, -w) * pu * dw
@@ -130,17 +132,21 @@ float3 ComputeMultiScattering(float viewHeight, float cosZenithAngle)
 [numthreads(8, 8, 1)]
 void main(uint2 tID : SV_DispatchThreadID)
 {
+    RWTexture2D< float3 > OutMultiScatteringLUT = GetResource(g_OutMultiScatteringLUT.index);
+
     uint2 texSize;
-    g_MultiScatteringLUT.GetDimensions(texSize.x, texSize.y);
+    OutMultiScatteringLUT.GetDimensions(texSize.x, texSize.y);
     if (tID.x >= texSize.x || tID.y >= texSize.y)
         return;
 
     float2 uv = float2(tID.xy + 0.5) / float2(texSize);
-    
+
+    AtmosphereData Atmosphere = GetAtmosphereData();
+
     float cosZenithAngle = 2.0 * uv.x - 1.0;
-    float viewHeight     = lerp(g_Atmosphere.planetRadius_km, g_Atmosphere.atmosphereRadius_km, uv.y);
+    float viewHeight     = lerp(Atmosphere.planetRadiusKm, Atmosphere.atmosphereRadiusKm, uv.y);
     
     float3 multiScattering = ComputeMultiScattering(viewHeight, cosZenithAngle);
     
-    g_MultiScatteringLUT[tID.xy] = multiScattering;
+    OutMultiScatteringLUT[tID.xy] = multiScattering;
 }

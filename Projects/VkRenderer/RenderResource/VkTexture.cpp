@@ -216,13 +216,13 @@ u64 VulkanTexture::SizeInBytes() const
 	return m_Desc.extent.width * m_Desc.extent.height * m_Desc.extent.depth * GetFormatElementSizeInBytes(m_Desc.format);
 }
 
-VulkanTexture::VulkanTexture(VkRenderDevice& rd, const std::string& name)
+VulkanTexture::VulkanTexture(VkRenderDevice& rd, const char* name)
 	: render::Texture(name)
 	, VulkanResource(rd, name)
 {
 }
 
-VulkanTexture::VulkanTexture(VkRenderDevice& rd, const std::string& name, CreationInfo&& info)
+VulkanTexture::VulkanTexture(VkRenderDevice& rd, const char* name, CreationInfo&& info)
 	: render::Texture(name, std::move(info))
 	, VulkanResource(rd, name)
 {
@@ -242,12 +242,12 @@ VulkanTexture::~VulkanTexture()
 		vmaDestroyImage(m_RenderDevice.vmaAllocator(), m_vkImage, m_vmaAllocation);
 }
 
-Arc< VulkanTexture > VulkanTexture::Create(VkRenderDevice& rd, const std::string& name, CreationInfo&& desc)
+Arc< VulkanTexture > VulkanTexture::Create(VkRenderDevice& rd, const char* name, CreationInfo&& desc)
 {
 	return MakeArc< VulkanTexture >(rd, name, std::move(desc));
 }
 
-Arc< VulkanTexture > VulkanTexture::CreateEmpty(VkRenderDevice& rd, const std::string& name)
+Arc< VulkanTexture > VulkanTexture::CreateEmpty(VkRenderDevice& rd, const char* name)
 {
 	return MakeArc< VulkanTexture >(rd, name);
 }

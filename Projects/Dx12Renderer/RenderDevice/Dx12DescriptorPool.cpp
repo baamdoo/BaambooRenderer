@@ -14,8 +14,8 @@ DescriptorPool::DescriptorPool(Dx12RenderDevice& rd, D3D12_DESCRIPTOR_HEAP_TYPE 
 
     D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
     heapDesc.NumDescriptors = m_NumDescriptors;
-    heapDesc.Type = type;
-    heapDesc.Flags = flags;
+    heapDesc.Type           = type;
+    heapDesc.Flags          = flags;
 
     ThrowIfFailed(d3d12Device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_d3d12DescriptorHeap)));
 
@@ -53,8 +53,8 @@ DescriptorAllocation DescriptorPool::Allocate(u32 numDescriptors)
     {
         if (it->second >= numDescriptors) 
         {
-            u32 offset = it->first;
-            it->first += numDescriptors;
+            auto offset = it->first;
+            it->first  += static_cast<i32>(numDescriptors);
             it->second -= numDescriptors;
 
             if (it->second == 0)
@@ -70,7 +70,7 @@ DescriptorAllocation DescriptorPool::Allocate(u32 numDescriptors)
         }
     }
 
-    assert("Failed to allocate descriptor");
+    __debugbreak();
     return DescriptorAllocation();
 }
 
@@ -85,7 +85,7 @@ void DescriptorPool::Free(DescriptorAllocation& allocation)
     std::sort(m_AvailableDescriptors.begin(), m_AvailableDescriptors.end());
     for (auto it = m_AvailableDescriptors.begin(); it != m_AvailableDescriptors.end() - 1;)
     {
-        if (it->first + it->second == (it + 1)->first)
+        if (it->first + static_cast<i32>(it->second) == (it + 1)->first)
         {
             it->second += (it + 1)->second;
             m_AvailableDescriptors.erase(it + 1);

@@ -83,11 +83,11 @@ public:
 		std::map< Subresource, State > subresourceStates;
 	};
 
-	static Arc< VulkanTexture > Create(VkRenderDevice& rd, const std::string& name, CreationInfo&& desc);
-	static Arc< VulkanTexture > CreateEmpty(VkRenderDevice& rd, const std::string& name);
+	static Arc< VulkanTexture > Create(VkRenderDevice& rd, const char* name, CreationInfo&& desc);
+	static Arc< VulkanTexture > CreateEmpty(VkRenderDevice& rd, const char* name);
 
-	VulkanTexture(VkRenderDevice& rd, const std::string& name);
-	VulkanTexture(VkRenderDevice& rd, const std::string& name, CreationInfo&& info);
+	VulkanTexture(VkRenderDevice& rd, const char* name);
+	VulkanTexture(VkRenderDevice& rd, const char* name, CreationInfo&& info);
 	virtual ~VulkanTexture();
 
 	void Resize(u32 width, u32 height, u32 depth);

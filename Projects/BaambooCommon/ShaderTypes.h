@@ -12,7 +12,6 @@ struct BoneTransformData
     mat4 mBones[MAX_BONES];
 };
 
-
 struct MaterialData
 {
     float3 tint;
@@ -104,29 +103,29 @@ struct AtmosphereData
 {
     DirectionalLight light;
 
-    float  planetRadius_km;
-    float  atmosphereRadius_km;
+    float  planetRadiusKm;
+    float  atmosphereRadiusKm;
     float2 padding0;
 
     float3 rayleighScattering;
-    float  rayleighDensityH_km;
+    float  rayleighDensityKm;
 
     float mieScattering;
     float mieAbsorption;
-    float mieDensityH_km;
+    float mieDensityKm;
     float miePhaseG;
 
     float3 ozoneAbsorption;
-    float  ozoneCenter_km;
+    float  ozoneCenterKm;
 
     float3 groundAlbedo;
-    float  ozoneWidth_km;
+    float  ozoneWidthKm;
 };
 
 struct CloudData
 {
-    float  topLayer_km;
-    float  bottomLayer_km;
+    float  topLayerKm;
+    float  bottomLayerKm;
     float2 padding0;
 
     float3 extinctionStrength;
@@ -152,7 +151,12 @@ struct CloudData
     float erosionHeightGradientPower;
 
     float3 windDirection;
-    float  windSpeed_mps;
+    float  windSpeedMps;
+};
+struct SceneEnvironmentData
+{
+    AtmosphereData atmosphere;
+    CloudData      cloud;
 };
 
 struct CloudShadowData

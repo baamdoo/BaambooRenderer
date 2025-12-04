@@ -237,8 +237,6 @@ void BistroApp::ConfigureRenderGraph()
 	m_pScene->AddRenderNode(MakeArc< GBufferNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< LightingNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< PostProcessNode >(*m_pRendererBackend->GetDevice()));
-
-	g_FrameData.bSkyboxMode = true;
 }
 
 void BistroApp::ConfigureSceneObjects()

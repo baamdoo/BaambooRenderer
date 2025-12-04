@@ -68,6 +68,9 @@ struct StaticMeshComponent
 {
 	std::string path;
 
+	BoundingBox    aabb;
+	BoundingSphere sphere;
+
 	Vertex* pVertices   = nullptr;
 	u32     numVertices = 0;
 	Index*  pIndices    = nullptr;
@@ -244,20 +247,20 @@ enum class eRaymarchResolution
 
 struct AtmosphereComponent
 {
-	float planetRadius_km     = 6360.0f;
-	float atmosphereRadius_km = 6460.0f;
+	float planetRadiusKm     = 6360.0f;
+	float atmosphereRadiusKm = 6460.0f;
 
 	float3 rayleighScattering  = { 5.802e-3f, 13.558e-3f, 33.1e-3f };
-	float  rayleighDensityH_km = 8.0f;
+	float  rayleighDensityKm = 8.0f;
 
 	float mieScattering  = 3.996e-3f;
 	float mieAbsorption  = 4.4e-3f;
-	float mieDensityH_km = 1.2f;
+	float mieDensityKm = 1.2f;
 	float miePhaseG      = 0.80f;
 
 	float3 ozoneAbsorption = { 0.650e-3f, 1.881e-3f, 0.085e-3f };
-	float  ozoneCenter_km  = 25.0f;
-	float  ozoneWidth_km   = 30.0f;
+	float  ozoneCenterKm  = 25.0f;
+	float  ozoneWidthKm   = 30.0f;
 
 	eRaymarchResolution raymarchResolution = eRaymarchResolution::Middle;
 };
@@ -295,7 +298,7 @@ struct CloudComponent
 
 	// Animation
 	float3 windDirection = float3(1.0f, 0.0f, 0.0f);
-	float  windSpeed_mps = 10.0f;
+	float  windSpeedMps = 10.0f;
 
 	// Others
 	eCloudUprezRatio uprezRatio = eCloudUprezRatio::X2;

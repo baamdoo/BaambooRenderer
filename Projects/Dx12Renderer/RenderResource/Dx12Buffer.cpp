@@ -10,33 +10,33 @@ namespace dx12
 //-------------------------------------------------------------------------
 // Base Buffer
 //-------------------------------------------------------------------------
-Arc< Dx12Buffer > Dx12Buffer::Create(Dx12RenderDevice& rd, const std::string& name, CreationInfo&& desc)
+Arc< Dx12Buffer > Dx12Buffer::Create(Dx12RenderDevice& rd, const char* name, CreationInfo&& desc)
 {
 	return MakeArc< Dx12Buffer >(rd, name, std::move(desc));
 }
 
-Arc< Dx12Buffer > Dx12Buffer::CreateEmpty(Dx12RenderDevice& rd, const std::string& name)
+Arc< Dx12Buffer > Dx12Buffer::CreateEmpty(Dx12RenderDevice& rd, const char* name)
 {
 	return MakeArc< Dx12Buffer >(rd, name);
 }
 
-Dx12Buffer::Dx12Buffer(Dx12RenderDevice& rd, const std::string& name)
+Dx12Buffer::Dx12Buffer(Dx12RenderDevice& rd, const char* name)
 	: render::Buffer(name)
 	, Dx12Resource(rd, name)
 {
 }
 
-Dx12Buffer::Dx12Buffer(Dx12RenderDevice& rd, const std::string& name, CreationInfo&& info, eBufferType type)
+Dx12Buffer::Dx12Buffer(Dx12RenderDevice& rd, const char* name, CreationInfo&& info, eBufferType type)
 	: render::Buffer(name, std::move(info))
 	, Dx12Resource(rd, name, 
 		{
-			.desc         = CD3DX12_RESOURCE_DESC::Buffer(m_CreationInfo.count * m_CreationInfo.elementSizeInBytes),
+			.desc         = CD3DX12_RESOURCE_DESC::Buffer(baamboo::math::AlignUp(m_CreationInfo.count * m_CreationInfo.elementSizeInBytes, (u64)D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT)),
 			.heapProps    = m_CreationInfo.bMap ? D3D12_HEAP_TYPE_UPLOAD : D3D12_HEAP_TYPE_DEFAULT,
 			.initialState = D3D12_RESOURCE_STATE_COMMON // Buffers are effectively created in state D3D12_RESOURCE_STATE_COMMON
 		}, eResourceType::Buffer)
 	, m_Count(m_CreationInfo.count)
-	, m_ElementSize(m_CreationInfo.elementSizeInBytes)
 	, m_Type(type)
+	, m_ElementSize(baamboo::math::AlignUp(m_CreationInfo.elementSizeInBytes, (u64)D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT))
 {
 	if (m_CreationInfo.bMap)
 	{
@@ -56,12 +56,12 @@ void Dx12Buffer::Resize(u64 sizeInBytes, bool bReset)
 //-------------------------------------------------------------------------
 // Vertex Buffer
 //------------------------------------------------------------------------- 
-Arc< Dx12VertexBuffer > Dx12VertexBuffer::Create(Dx12RenderDevice& rd, const std::string& name, u32 numVertices)
+Arc< Dx12VertexBuffer > Dx12VertexBuffer::Create(Dx12RenderDevice& rd, const char* name, u32 numVertices)
 {
 	return MakeArc< Dx12VertexBuffer >(rd, name, numVertices);
 }
 
-Dx12VertexBuffer::Dx12VertexBuffer(Dx12RenderDevice& rd, const std::string& name, u32 numVertices)
+Dx12VertexBuffer::Dx12VertexBuffer(Dx12RenderDevice& rd, const char* name, u32 numVertices)
 	: Super(rd, name, 
 		{
 			.count              = numVertices,
@@ -79,12 +79,12 @@ Dx12VertexBuffer::Dx12VertexBuffer(Dx12RenderDevice& rd, const std::string& name
 //-------------------------------------------------------------------------
 // Index Buffer
 //-------------------------------------------------------------------------
-Arc< Dx12IndexBuffer > Dx12IndexBuffer::Create(Dx12RenderDevice& rd, const std::string& name, u32 numIndices)
+Arc< Dx12IndexBuffer > Dx12IndexBuffer::Create(Dx12RenderDevice& rd, const char* name, u32 numIndices)
 {
 	return MakeArc< Dx12IndexBuffer >(rd, name, numIndices);
 }
 
-Dx12IndexBuffer::Dx12IndexBuffer(Dx12RenderDevice& rd, const std::string& name, u32 numIndices)
+Dx12IndexBuffer::Dx12IndexBuffer(Dx12RenderDevice& rd, const char* name, u32 numIndices)
 	: Super(rd, name, 
 		{
 			.count              = numIndices,
@@ -102,12 +102,12 @@ Dx12IndexBuffer::Dx12IndexBuffer(Dx12RenderDevice& rd, const std::string& name, 
 //-------------------------------------------------------------------------
 // Constant Buffer
 //-------------------------------------------------------------------------
-Arc< Dx12ConstantBuffer > Dx12ConstantBuffer::Create(Dx12RenderDevice& rd, const std::string& name, u64 sizeInBytes, RenderFlags additionalUsage)
+Arc< Dx12ConstantBuffer > Dx12ConstantBuffer::Create(Dx12RenderDevice& rd, const char* name, u64 sizeInBytes, RenderFlags additionalUsage)
 {
 	return MakeArc< Dx12ConstantBuffer >(rd, name, sizeInBytes, additionalUsage);
 }
 
-Dx12ConstantBuffer::Dx12ConstantBuffer(Dx12RenderDevice& rd, const std::string& name, u64 sizeInBytes, RenderFlags additionalUsage) 
+Dx12ConstantBuffer::Dx12ConstantBuffer(Dx12RenderDevice& rd, const char* name, u64 sizeInBytes, RenderFlags additionalUsage)
 	: Super(rd, name, 
 		{
 			.count              = 1,
@@ -123,7 +123,7 @@ Dx12ConstantBuffer::Dx12ConstantBuffer(Dx12RenderDevice& rd, const std::string& 
 
 	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
 	cbvDesc.BufferLocation = m_d3d12Resource->GetGPUVirtualAddress();
-	cbvDesc.SizeInBytes    = static_cast<u32>(baamboo::math::AlignUp(SizeInBytes(), (u64)D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT));
+	cbvDesc.SizeInBytes    = static_cast<u32>(SizeInBytes());
 	d3d12Device->CreateConstantBufferView(&cbvDesc, m_CBVAllocation.GetCPUHandle());
 }
 
@@ -136,12 +136,12 @@ Dx12ConstantBuffer::~Dx12ConstantBuffer()
 //-------------------------------------------------------------------------
 // Structured Buffer
 //-------------------------------------------------------------------------
-Arc< Dx12StructuredBuffer > Dx12StructuredBuffer::Create(Dx12RenderDevice& rd, const std::string& name, u64 sizeInBytes, RenderFlags additionalUsage)
+Arc< Dx12StructuredBuffer > Dx12StructuredBuffer::Create(Dx12RenderDevice& rd, const char* name, u64 sizeInBytes, RenderFlags additionalUsage)
 {
 	return MakeArc< Dx12StructuredBuffer >(rd, name, sizeInBytes, additionalUsage);
 }
 
-Dx12StructuredBuffer::Dx12StructuredBuffer(Dx12RenderDevice& rd, const std::string& name, u64 sizeInBytes, RenderFlags additionalUsage)
+Dx12StructuredBuffer::Dx12StructuredBuffer(Dx12RenderDevice& rd, const char* name, u64 sizeInBytes, RenderFlags additionalUsage)
 	: Super(rd, name, 
 		{
 			.count              = 1,

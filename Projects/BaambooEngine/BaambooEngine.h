@@ -59,6 +59,7 @@ protected:
 	bool m_bDrawUI = true;
 
 private:
+	u64    m_Frame       = 0;
 	double m_RunningTime = 0.0;
 
 	std::thread                    m_RenderThread;

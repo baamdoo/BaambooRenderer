@@ -182,6 +182,9 @@ Entity Scene::ImportModel(Entity rootEntity, const fs::path& filepath, MeshDescr
 					auto& mesh = meshEntity.AttachComponent< StaticMeshComponent >();
 					mesh.path  = filepath.string();
 
+					mesh.aabb   = meshData.aabb;
+					mesh.sphere = BoundingSphere(meshData.aabb);
+
 					mesh.numVertices  = static_cast<u32>(meshData.vertices.size());
 					mesh.numIndices   = static_cast<u32>(meshData.indices.size());
 					mesh.pVertices    = const_cast<Vertex*>(meshData.vertices.data());
@@ -227,7 +230,12 @@ Entity Scene::ImportModel(Entity rootEntity, const fs::path& filepath, MeshDescr
 
 void Scene::AddRenderNode(Arc< render::RenderNode > pNode)
 {
-	m_RenderNodes.push_back(pNode);
+	m_RenderGraph.AddRenderNode(pNode);
+}
+
+void Scene::RemoveRenderNode(const std::string& nodeName)
+{
+	m_RenderGraph.RemoveRenderNode(nodeName);
 }
 
 u32 Scene::StoreMeshData(const MeshData& meshData)
@@ -311,12 +319,12 @@ void Scene::Update(f32 dt, const EditorCamera& edCamera)
 
 void Scene::OnWindowResized(u32 width, u32 height)
 {
-	for (auto node : m_RenderNodes)
+	for (auto node : m_RenderGraph.GetRenderNodes())
 		if (node)
 			node->Resize(width, height);
 }
 
-SceneRenderView Scene::RenderView(const EditorCamera& edCamera, bool bDrawUI) const
+SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport, u64 frame, bool bDrawUI) const
 {
 	bool bMarkedAny = false;
 	for (const auto& pair : m_EntityDirtyMasks)
@@ -325,10 +333,13 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, bool bDrawUI) co
 	}
 
 	SceneRenderView view = {};
-	view.time              = s_SceneRunningTime;
-	view.frame             = g_FrameData.frame;
-	view.bDrawUI           = bDrawUI;
-	view.rg                = m_RenderNodes;
+	view.time     = s_SceneRunningTime;
+	view.frame    = frame;
+	view.viewport = viewport;
+	view.bDrawUI  = bDrawUI;
+
+	view.rg = m_RenderGraph.GetRenderNodes();
+
 	view.pSceneMutex       = &m_SceneMutex;
 	view.pEntityDirtyMarks = bMarkedAny ? &m_EntityDirtyMasks : nullptr;
 
@@ -356,6 +367,8 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, bool bDrawUI) co
 			StaticMeshRenderView meshView = {};
 			meshView.id     = entt::to_integral(id);
 			meshView.tag    = tagComponent.tag;
+			meshView.aabb   = meshComponent.aabb;
+			meshView.sphere = meshComponent.sphere;
 			meshView.vData  = meshComponent.pVertices;
 			meshView.vCount = meshComponent.numVertices;
 			meshView.iData  = meshComponent.pIndices;
@@ -424,17 +437,17 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, bool bDrawUI) co
 						auto& atmosphereComponent  = m_Registry.get< AtmosphereComponent >(id);
 						view.atmosphere.id                       = entt::to_integral(id);
 						view.atmosphere.data.light               = dirLight;
-						view.atmosphere.data.planetRadius_km     = atmosphereComponent.planetRadius_km;
-						view.atmosphere.data.atmosphereRadius_km = atmosphereComponent.atmosphereRadius_km;
+						view.atmosphere.data.planetRadiusKm     = atmosphereComponent.planetRadiusKm;
+						view.atmosphere.data.atmosphereRadiusKm = atmosphereComponent.atmosphereRadiusKm;
 						view.atmosphere.data.rayleighScattering  = atmosphereComponent.rayleighScattering;
-						view.atmosphere.data.rayleighDensityH_km = atmosphereComponent.rayleighDensityH_km;
+						view.atmosphere.data.rayleighDensityKm = atmosphereComponent.rayleighDensityKm;
 						view.atmosphere.data.mieScattering       = atmosphereComponent.mieScattering;
 						view.atmosphere.data.mieAbsorption       = atmosphereComponent.mieAbsorption;
-						view.atmosphere.data.mieDensityH_km      = atmosphereComponent.mieDensityH_km;
+						view.atmosphere.data.mieDensityKm      = atmosphereComponent.mieDensityKm;
 						view.atmosphere.data.miePhaseG           = atmosphereComponent.miePhaseG;
 						view.atmosphere.data.ozoneAbsorption     = atmosphereComponent.ozoneAbsorption;
-						view.atmosphere.data.ozoneCenter_km      = atmosphereComponent.ozoneCenter_km;
-						view.atmosphere.data.ozoneWidth_km       = atmosphereComponent.ozoneWidth_km;
+						view.atmosphere.data.ozoneCenterKm      = atmosphereComponent.ozoneCenterKm;
+						view.atmosphere.data.ozoneWidthKm       = atmosphereComponent.ozoneWidthKm;
 						// TODO
 						view.atmosphere.data.groundAlbedo        = float3(0.40198f, 0.40198f, 0.40198f);
 
@@ -499,8 +512,8 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, bool bDrawUI) co
 			cloudView.data.cloudType     = cloudComponent.cloudType;
 			cloudView.data.precipitation = cloudComponent.precipitation;
 
-			cloudView.data.topLayer_km    = cloudComponent.bottomHeight_km + cloudComponent.layerThickness_km;
-			cloudView.data.bottomLayer_km = cloudComponent.bottomHeight_km;
+			cloudView.data.topLayerKm    = cloudComponent.bottomHeight_km + cloudComponent.layerThickness_km;
+			cloudView.data.bottomLayerKm = cloudComponent.bottomHeight_km;
 
 			cloudView.data.extinctionStrength = cloudComponent.extinctionStrength;
 			cloudView.data.extinctionScale    = cloudComponent.extinctionScale;
@@ -524,7 +537,7 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, bool bDrawUI) co
 			cloudView.data.erosionHeightGradientPower      = cloudComponent.erosionHeightGradientPower;
 
 			cloudView.data.windDirection = cloudComponent.windDirection;
-			cloudView.data.windSpeed_mps = cloudComponent.windSpeed_mps;
+			cloudView.data.windSpeedMps = cloudComponent.windSpeedMps;
 
 			cloudView.numCloudRaymarchSteps = cloudComponent.numCloudRaymarchSteps;
 			cloudView.numLightRaymarchSteps = cloudComponent.numLightRaymarchSteps;
@@ -540,65 +553,15 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, bool bDrawUI) co
 		});
 
 	// update cloud shadow
-	//auto fov         = edCamera.fov;
-	//auto aspectRatio = edCamera.GetAspectRatio();
-
-	//float tanTheta = tanf(fov * 0.5f);
-	//float tanPhi   = tanTheta * aspectRatio;
-
-	//const float shadowMapFarKm  = (view.cloud.data.topLayer_km - view.cloud.data.bottomLayer_km) * 10.0f;
-	//const float shadowMapNearKm = 0.001f;
-
-	//float yf = shadowMapFarKm * tanPhi;
-	//float xf = shadowMapFarKm * tanTheta;
-	//float yn = shadowMapNearKm * tanPhi;
-	//float xn = shadowMapNearKm * tanTheta;
-	//float3 cameraFrustumCorners[8] =
-	//{
-	//	float3(-xn,  yn, shadowMapNearKm),
-	//	float3( xn,  yn, shadowMapNearKm),
-	//	float3( xn, -yn, shadowMapNearKm),
-	//	float3(-xn, -yn, shadowMapNearKm),
-
-	//	float3(-xf,  yf, shadowMapFarKm),
-	//	float3( xf,  yf, shadowMapFarKm),
-	//	float3( xf, -yf, shadowMapFarKm),
-	//	float3(-xf, -yf, shadowMapFarKm)
-	//};
-
-	//const auto& mViewInv = glm::inverse(edCamera.GetView());
-
-	//float3 minAABB(std::numeric_limits<float>::max());
-	//float3 maxAABB(std::numeric_limits<float>::lowest());
-	//for (u32 i = 0; i < 8; ++i)
-	//{
-	//	// Camera frustum to world space
-	//	cameraFrustumCorners[i] = mViewInv * float4(cameraFrustumCorners[i], 1.0f);
-
-	//	minAABB = glm::min(minAABB, cameraFrustumCorners[i]);
-	//	maxAABB = glm::max(maxAABB, cameraFrustumCorners[i]);
-	//}
-	//minAABB.y = std::max(minAABB.y, view.cloud.data.bottomLayer_km) + view.atmosphere.data.planetRadius_km;
-	//maxAABB.y = std::min(maxAABB.y, view.cloud.data.topLayer_km) + view.atmosphere.data.planetRadius_km;
-
-	//float3 aabbCenter = (minAABB + maxAABB) * 0.5f;
-	//float sphereRadius = glm::length(maxAABB - minAABB) * 0.5f;
-	float sphereRadius = 150.0f;
+	float sphereRadius = 100.0f;
 
 	float3 sunDirection = view.atmosphere.data.light.direction;
 	float3 ray          = -sunDirection;
 
-	float3 camPos = edCamera.GetPosition() * 0.001f + float3{ 0.0f, view.atmosphere.data.planetRadius_km + 0.00005f, 0.0f };
-	float2 t = math::RaySphereIntersection(camPos, ray, float3(0.0f), view.cloud.data.topLayer_km + view.atmosphere.data.planetRadius_km);
+	float3 camPos = edCamera.GetPosition() * 0.001f + float3{ 0.0f, view.atmosphere.data.planetRadiusKm + 0.00005f, 0.0f };
+	float2 t      = math::RaySphereIntersection(camPos, ray, float3(0.0f), view.cloud.data.topLayerKm + view.atmosphere.data.planetRadiusKm);
 
-	float texelSize = (sphereRadius * 2.0f) / 2048.0f;
-
-	/*aabbCenter.x = floor(aabbCenter.x / texelSize) * texelSize;
-	aabbCenter.y = floor(aabbCenter.y / texelSize) * texelSize;
-	aabbCenter.z = floor(aabbCenter.z / texelSize) * texelSize;*/
-
-
-	float3 sunLookAt   = camPos;
+	float3 sunLookAt   = float3(0.0f, 0.0f, 0.0f);
 	float3 sunPosition = camPos + (t.x > 0.0f ? t.x : t.y) * ray;
 
 	float3 upVec    = float3(0, 1, 0);
@@ -608,28 +571,6 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, bool bDrawUI) co
 	upVec = glm::normalize(glm::cross(sunDirection, rightVec));
 
 	auto mSunView = glm::lookAtLH(sunPosition, sunLookAt, upVec);
-
-	/*float3 minLightSpace(std::numeric_limits<float>::max());
-	float3 maxLightSpace(std::numeric_limits<float>::lowest());
-	float3 lightFrustumCorners[8] =
-	{
-		float3(minAABB.x, minAABB.y, minAABB.z),
-		float3(minAABB.x, maxAABB.y, minAABB.z),
-		float3(maxAABB.x, minAABB.y, minAABB.z),
-		float3(maxAABB.x, maxAABB.y, minAABB.z),
-
-		float3(minAABB.x, minAABB.y, maxAABB.z),
-		float3(minAABB.x, maxAABB.y, maxAABB.z),
-		float3(maxAABB.x, minAABB.y, maxAABB.z),
-		float3(maxAABB.x, maxAABB.y, maxAABB.z),
-	};
-	for (auto& lightFrustumCorner : lightFrustumCorners)
-	{
-		lightFrustumCorner = glm::vec3(mSunView * glm::vec4(lightFrustumCorner, 1.0));
-
-		minLightSpace = glm::min(minLightSpace, lightFrustumCorner);
-		maxLightSpace = glm::max(maxLightSpace, lightFrustumCorner);
-	}*/
 
 	// Reverse-Z
 	auto mSunProj = glm::orthoLH_ZO(

@@ -95,12 +95,13 @@ DynamicBufferAllocator::Page::~Page()
 DynamicBufferAllocator::Allocation DynamicBufferAllocator::Page::Allocate(VkDeviceSize sizeInBytes, VkDeviceSize alignment)
 {
 	VkDeviceSize alignedSize = baamboo::math::AlignUp(sizeInBytes, alignment);
+
 	m_Offset = baamboo::math::AlignUp(m_Offset, alignment);
 
-	Allocation allocation;
-	allocation.vkBuffer = m_vkBuffer;
-	allocation.offset = m_Offset;
-	allocation.size = alignedSize;
+	Allocation allocation = {};
+	allocation.vkBuffer  = m_vkBuffer;
+	allocation.offset    = m_Offset;
+	allocation.size      = alignedSize;
 	allocation.cpuHandle = static_cast<u8*>(m_BaseCpuHandle) + m_Offset;
 
 	m_Offset += alignedSize;
@@ -136,7 +137,7 @@ StaticBufferAllocator::StaticBufferAllocator(VkRenderDevice& rd, VkDeviceSize bu
 		           VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
 		           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 
-	Resize(bufferSize);
+	Resize(std::min(bufferSize, m_RenderDevice.DeviceMaintenance3Props().maxMemoryAllocationSize));
 }
 
 StaticBufferAllocator::~StaticBufferAllocator()
@@ -178,7 +179,7 @@ VkDescriptorBufferInfo StaticBufferAllocator::GetDescriptorInfo(u64 offset) cons
 	VkDescriptorBufferInfo descriptorInfo = {};
 	descriptorInfo.buffer = vkBuffer();
 	descriptorInfo.offset = offset;
-	descriptorInfo.range = GetAllocatedSize();
+	descriptorInfo.range  = GetAllocatedSize();
 	return descriptorInfo;
 }
 

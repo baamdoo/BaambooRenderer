@@ -48,16 +48,8 @@ void DynamicSkyboxNode::Apply(render::CommandContext& context, const SceneRender
 	context.TransitionBarrier(g_FrameData.pSkyViewLUT.lock(), eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(m_pSkyboxLUT, eTextureLayout::General);
 
-	struct
-	{
-		float3 lightDir0;
-		//float3 lightDir1;
-		float  planetRadius_km;
-	} skyboxConstant = { renderView.light.directionals[0].direction, renderView.atmosphere.data.planetRadius_km };
-	context.SetComputeConstants(sizeof(skyboxConstant), &skyboxConstant);
-	context.SetComputeDynamicUniformBuffer("g_Camera", g_FrameData.camera);
 	context.StageDescriptor("g_SkyViewLUT", g_FrameData.pSkyViewLUT.lock(), g_FrameData.pLinearClamp);
-	context.StageDescriptor("g_SkyboxLUT", m_pSkyboxLUT);
+	context.StageDescriptor("g_OutSkyboxLUT", m_pSkyboxLUT);
 
 	context.Dispatch3D< 8, 8, 6 >(SKYBOX_LUT_RESOLUTION.x, SKYBOX_LUT_RESOLUTION.y, SKYBOX_LUT_RESOLUTION.z);
 

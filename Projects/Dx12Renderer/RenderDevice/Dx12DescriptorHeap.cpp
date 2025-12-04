@@ -36,10 +36,33 @@ void Dx12DescriptorHeap::Reset()
     }
 }
 
-void Dx12DescriptorHeap::ParseRootSignature(Arc< Dx12RootSignature > pRootsignature)
+void Dx12DescriptorHeap::ParseRootSignature(Arc< Dx12RootSignature > pRootSignature)
 {
-	assert(pRootsignature);
-    m_pCurrentRS = pRootsignature;
+	assert(pRootSignature);
+    m_pCurrentRS = pRootSignature;
+
+    m_DescriptorTableBitMask = m_pCurrentRS->GetDescriptorTableBitMask(m_Type);
+    m_CachedDescriptorAllocations.emplace(m_pCurrentRS.get(), std::array< DescriptorAllocation, MAX_ROOT_INDEX >{});
+
+    auto mask = m_DescriptorTableBitMask;
+    DWORD rootIndex;
+    while (_BitScanForward64(&rootIndex, mask))
+    {
+        auto numDescriptors = m_pCurrentRS->GetNumDescriptors(rootIndex);
+        // Allocate bindless descriptors on-demand
+        if (numDescriptors < UINT_MAX)
+        {
+            m_CachedDescriptorAllocations[m_pCurrentRS.get()][rootIndex] = m_pDescriptorPool->Allocate(numDescriptors);
+        }
+
+        mask ^= (1LL << rootIndex);
+    }
+}
+
+void Dx12DescriptorHeap::ParseGlobalRootSignature(Arc< Dx12RootSignature > pRootSignature)
+{
+    assert(pRootSignature);
+    m_pCurrentRS = pRootSignature;
 
     m_DescriptorTableBitMask = m_pCurrentRS->GetDescriptorTableBitMask(m_Type);
     m_CachedDescriptorAllocations.emplace(m_pCurrentRS.get(), std::array< DescriptorAllocation, MAX_ROOT_INDEX >{});
@@ -72,8 +95,8 @@ u32 Dx12DescriptorHeap::StageDescriptor(u32 rootIndex, u32 numDescriptors, u32 o
         m_CachedDescriptorAllocations[m_pCurrentRS.get()][rootIndex] = m_pDescriptorPool->Allocate(numDescriptors);
     }
 
-    auto& allocation  = m_CachedDescriptorAllocations[m_pCurrentRS.get()][rootIndex];
-    auto  dstHandle   = allocation.GetCPUHandle(offset);
+    auto& allocation = m_CachedDescriptorAllocations[m_pCurrentRS.get()][rootIndex];
+    auto  dstHandle  = allocation.GetCPUHandle(offset);
     d3d12Device->CopyDescriptorsSimple(numDescriptors, dstHandle, srcHandle, m_Type);
 
     m_DescriptorTableDirtyFlags |= (1LL << rootIndex);

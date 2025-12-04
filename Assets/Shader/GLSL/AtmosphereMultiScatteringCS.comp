@@ -2,13 +2,12 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_GOOGLE_include_directive : require
 
-#define _ATMOSPHERE
+#define _SCENEENVIRONMENT
 #include "AtmosphereCommon.hg"
 
-layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+layout(set = 1, binding = 0) uniform sampler2D g_TransmittanceLUT;
 
-layout(set = SET_PUSH, binding = 2) uniform sampler2D g_TransmittanceLUT;
-layout(set = SET_PUSH, binding = 3, r11f_g11f_b10f) uniform writeonly image2D g_MultiScatteringLUT;
+layout(set = 1, binding = 1, r11f_g11f_b10f) uniform writeonly image2D g_OutMultiScatteringLUT;
 
 // Push constants
 layout(push_constant) uniform PushConstants 
@@ -19,6 +18,8 @@ layout(push_constant) uniform PushConstants
 
 vec3 ComputeMultiScattering(float viewHeight, float cosZenithAngle) 
 {
+    AtmosphereData Atmosphere = GetAtmosphereData();
+
     vec3 rayOrigin = vec3(0.0, viewHeight, 0.0);
     vec3 sunDir    = vec3(safeSqrt(1.0 - cosZenithAngle * cosZenithAngle), cosZenithAngle, 0.0);
     
@@ -43,8 +44,8 @@ vec3 ComputeMultiScattering(float viewHeight, float cosZenithAngle)
         
         // compute ray length
         float rayLength              = 0.0;
-        vec2  planetIntersection     = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, g_Atmosphere.planetRadius_km);
-        vec2  atmosphereIntersection = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, g_Atmosphere.atmosphereRadius_km);
+        vec2  planetIntersection     = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, Atmosphere.planetRadiusKm);
+        vec2  atmosphereIntersection = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, Atmosphere.atmosphereRadiusKm);
         if (atmosphereIntersection.y < 0.0) 
             continue;
         else if (planetIntersection.x < 0.0)
@@ -64,20 +65,20 @@ vec3 ComputeMultiScattering(float viewHeight, float cosZenithAngle)
 
             // skip if below ground
             float sampleHeight = length(pos);
-            if (sampleHeight < g_Atmosphere.planetRadius_km) 
+            if (sampleHeight < Atmosphere.planetRadiusKm) 
                 break;
             
-            float sampleAltitude = sampleHeight - g_Atmosphere.planetRadius_km;
+            float sampleAltitude = sampleHeight - Atmosphere.planetRadiusKm;
 
             // extinction(out-scattering) at sample point
-            float rayleighDensity = GetDensityAtHeight(sampleAltitude, g_Atmosphere.rayleighDensityH_km);
-            float mieDensity      = GetDensityAtHeight(sampleAltitude, g_Atmosphere.mieDensityH_km);
-            float ozoneDensity    = GetDensityOzoneAtHeight(sampleAltitude);
+            float rayleighDensity = GetDensityAtHeight(sampleAltitude, Atmosphere.rayleighDensityKm);
+            float mieDensity      = GetDensityAtHeight(sampleAltitude, Atmosphere.mieDensityKm);
+            float ozoneDensity    = GetDensityOzoneAtHeight(sampleAltitude, Atmosphere.ozoneCenterKm, Atmosphere.ozoneWidthKm);
             
-            vec3  rayleighScattering = g_Atmosphere.rayleighScattering * rayleighDensity;
-            float mieScattering      = g_Atmosphere.mieScattering * mieDensity;
-            float mieAbsorption      = g_Atmosphere.mieAbsorption * mieDensity;
-            vec3  ozoneAbsorption    = g_Atmosphere.ozoneAbsorption * ozoneDensity;
+            vec3  rayleighScattering = Atmosphere.rayleighScattering * rayleighDensity;
+            float mieScattering      = Atmosphere.mieScattering * mieDensity;
+            float mieAbsorption      = Atmosphere.mieAbsorption * mieDensity;
+            vec3  ozoneAbsorption    = Atmosphere.ozoneAbsorption * ozoneDensity;
 
             vec3 scattering        = rayleighScattering + vec3(mieScattering);
             vec3 extinction        = rayleighScattering + vec3(mieScattering + mieAbsorption) + ozoneAbsorption;
@@ -85,10 +86,10 @@ vec3 ComputeMultiScattering(float viewHeight, float cosZenithAngle)
 
             // transmittance from sample point to sun
             float sampleTheta        = dot(normalize(pos), sunDir);
-            vec3  transmittanceToSun = SampleTransmittanceLUT(g_TransmittanceLUT, sampleHeight, sampleTheta, g_Atmosphere.planetRadius_km, g_Atmosphere.atmosphereRadius_km);
+            vec3  transmittanceToSun = SampleTransmittanceLUT(g_TransmittanceLUT, sampleHeight, sampleTheta, Atmosphere.planetRadiusKm, Atmosphere.atmosphereRadiusKm);
 
             // planet shadow
-            vec2  planetIntersection = RaySphereIntersection(pos, rayDir, PLANET_CENTER, g_Atmosphere.planetRadius_km);
+            vec2  planetIntersection = RaySphereIntersection(pos, rayDir, PLANET_CENTER, Atmosphere.planetRadiusKm);
             float planetShadow       = planetIntersection.x < 0.0 ? 1.0 : 0.0;
 
             // (4) S(x,l) = Vis(l) * T(x,x+t*l)
@@ -110,11 +111,11 @@ vec3 ComputeMultiScattering(float viewHeight, float cosZenithAngle)
 
 	    	// transmittance from sample point to sun
             float sampleTheta        = dot(upVec, sunDir);
-            vec3  transmittanceToSun = SampleTransmittanceLUT(g_TransmittanceLUT, sampleHeight, sampleTheta, g_Atmosphere.planetRadius_km, g_Atmosphere.atmosphereRadius_km);
+            vec3  transmittanceToSun = SampleTransmittanceLUT(g_TransmittanceLUT, sampleHeight, sampleTheta, Atmosphere.planetRadiusKm, Atmosphere.atmosphereRadiusKm);
 
             // L'(x,v) = T(x,p) * Lo(p,v), where Lo : diffuse response according to ground albedo
 	    	L += throughput * transmittanceToSun * NoL * vec3(0.40981, 0.40981, 0.40981) / PI;
-	    	// L += transmittanceToSun * throughput * NoL * g_Atmosphere.groundAlbedo / PI;
+	    	// L += transmittanceToSun * throughput * NoL * Atmosphere.groundAlbedo / PI;
 	    }
         
         // (5) L2ndOrder_i = L'(xs, -w) * pu * dw
@@ -129,19 +130,22 @@ vec3 ComputeMultiScattering(float viewHeight, float cosZenithAngle)
     return L2ndOrder / (vec3(1.0) - fms);
 }
 
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 void main() 
 {
-    ivec2 imgSize   = imageSize(g_MultiScatteringLUT);
+    ivec2 imgSize   = imageSize(g_OutMultiScatteringLUT);
     ivec2 pixCoords = ivec2(gl_GlobalInvocationID.xy);
     if (any(greaterThanEqual(pixCoords, imgSize)))
         return;
 
     vec2  uv        = (vec2(pixCoords) + 0.5) / vec2(imgSize);
     
+    AtmosphereData Atmosphere = GetAtmosphereData();
+
     float cosZenithAngle = 2.0 * uv.x - 1.0;
-    float viewHeight     = mix(g_Atmosphere.planetRadius_km, g_Atmosphere.atmosphereRadius_km, uv.y);
+    float viewHeight     = mix(Atmosphere.planetRadiusKm, Atmosphere.atmosphereRadiusKm, uv.y);
     
     vec3 multiScattering = ComputeMultiScattering(viewHeight, cosZenithAngle);
     
-    imageStore(g_MultiScatteringLUT, ivec2(gl_GlobalInvocationID.xy), vec4(multiScattering, 1.0));
+    imageStore(g_OutMultiScatteringLUT, ivec2(gl_GlobalInvocationID.xy), vec4(multiScattering, 1.0));
 }

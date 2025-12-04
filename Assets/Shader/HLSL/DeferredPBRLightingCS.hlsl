@@ -1,26 +1,21 @@
 #define _CAMERA
+#define _LIGHT
 #include "Common.hlsli"
 #include "AtmosphereCommon.hlsli"
 
-ConstantBuffer< LightingData > g_Lights : register(b1, space0);
-
-Texture2D< float4 > g_GBuffer0             : register(t0); // Albedo.rgb + AO.a
-Texture2D< float4 > g_GBuffer1             : register(t1); // Normal.rgb + MaterialID.a
-Texture2D< float3 > g_GBuffer2             : register(t2); // Emissive.rgb
-Texture2D< float4 > g_GBuffer3             : register(t3); // MotionVectors.rg + Roughness.b + Metallic.a
-Texture2D< float >  g_DepthBuffer          : register(t4);
-Texture3D< float4 > g_AerialPerspectiveLUT : register(t5);
-Texture2D< float4 > g_CloudScatteringLUT   : register(t6);
-TextureCube< float4 > g_SkyboxLUT          : register(t7);
-
-StructuredBuffer< MaterialData > g_Materials : register(t0, space1);
-
-RWTexture2D< float4 > g_SceneTexture : register(u0);
-
-SamplerState g_PointClampSampler  : register(SAMPLER_INDEX_POINT_CLAMP, space0);
-SamplerState g_LinearClampSampler : register(SAMPLER_INDEX_LINEAR_CLAMP, space0);
+ConstantBuffer< DescriptorHeapIndex > g_Materials            : register(b1, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_GBuffer0             : register(b2, ROOT_CONSTANT_SPACE);  // Albedo.rgb + AO.a
+ConstantBuffer< DescriptorHeapIndex > g_GBuffer1             : register(b3, ROOT_CONSTANT_SPACE);  // Normal.rgb + MaterialID.a
+ConstantBuffer< DescriptorHeapIndex > g_GBuffer2             : register(b4, ROOT_CONSTANT_SPACE);  // Emissive.rgb
+ConstantBuffer< DescriptorHeapIndex > g_GBuffer3             : register(b5, ROOT_CONSTANT_SPACE);  // MotionVectors.rg + Roughness.b + Metallic.a
+ConstantBuffer< DescriptorHeapIndex > g_DepthBuffer          : register(b6, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_AerialPerspectiveLUT : register(b7, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_CloudScatteringLUT   : register(b8, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_SkyboxLUT            : register(b9, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_OutSceneTexture      : register(b10, ROOT_CONSTANT_SPACE);
 
 static const float MIN_ROUGHNESS = 0.045;
+
 
 float3 FresnelSchlick(float cosTheta, float3 F0)
 {
@@ -151,37 +146,49 @@ float3 ApplySpotLight(SpotLight light, float3 P, float3 N, float3 V, float3 albe
 [numthreads(16, 16, 1)]
 void main(uint3 tID : SV_DispatchThreadID)
 {
+    RWTexture2D< float4 > OutSceneTexture = GetResource(g_OutSceneTexture.index);
+
     int2 texCoords = tID.xy;
 
     uint width, height;
-    g_SceneTexture.GetDimensions(width, height);
+    OutSceneTexture.GetDimensions(width, height);
 
     float2 uv = (float2(texCoords.xy) + 0.5) / float2(width, height);
 
-    float4 gbuffer0 = g_GBuffer0.SampleLevel(g_LinearClampSampler, uv, 0);
-    float4 gbuffer1 = g_GBuffer1.SampleLevel(g_LinearClampSampler, uv, 0);
-    float3 gbuffer2 = g_GBuffer2.SampleLevel(g_LinearClampSampler, uv, 0);
-    float4 gbuffer3 = g_GBuffer3.SampleLevel(g_LinearClampSampler, uv, 0);
+    Texture2D< float4 > GBuffer0    = GetResource(g_GBuffer0.index);
+    Texture2D< float4 > GBuffer1    = GetResource(g_GBuffer1.index);
+    Texture2D< float3 > GBuffer2    = GetResource(g_GBuffer2.index);
+    Texture2D< float4 > GBuffer3    = GetResource(g_GBuffer3.index);
+    Texture2D< float >  DepthBuffer = GetResource(g_DepthBuffer.index);
+
+    float4 gbuffer0 = GBuffer0.SampleLevel(g_LinearClampSampler, uv, 0);
+    float4 gbuffer1 = GBuffer1.SampleLevel(g_LinearClampSampler, uv, 0);
+    float3 gbuffer2 = GBuffer2.SampleLevel(g_LinearClampSampler, uv, 0);
+    float4 gbuffer3 = GBuffer3.SampleLevel(g_LinearClampSampler, uv, 0);
 
     float3 color = 0.0;
-    float  depth = g_DepthBuffer.SampleLevel(g_PointClampSampler, uv, 0);
+    float  depth = DepthBuffer.SampleLevel(g_PointClampSampler, uv, 0);
     if (depth == 0.0)
     {
+        TextureCube< float4 > SkyboxLUT = GetResource(g_SkyboxLUT.index);
+
         float3 rayDir = normalize(ReconstructWorldPos(uv, 0.0, g_Camera.mViewProjInv));
 
-        color = g_SkyboxLUT.Sample(g_LinearClampSampler, rayDir).rgb;
+        color = SkyboxLUT.Sample(g_LinearClampSampler, rayDir).rgb;
     }
     else
     {
-        float3 albedo = gbuffer0.rgb;
-        float  ao = gbuffer0.a;
+        StructuredBuffer< MaterialData > Materials = GetResource(g_Materials.index);
 
-        float3 N = gbuffer1.xyz;
+        float3 albedo = gbuffer0.rgb;
+        float  ao     = gbuffer0.a;
+
+        float3 N          = gbuffer1.xyz;
         uint   materialID = (uint)(gbuffer1.w * 255.0);
-        float3 emissive = gbuffer2.rgb;
+        float3 emissive   = gbuffer2.rgb;
 
         float roughness = max(gbuffer3.z, MIN_ROUGHNESS);
-        float metallic = gbuffer3.w;
+        float metallic  = gbuffer3.w;
 
         float3 posWORLD = ReconstructWorldPos(uv, depth, g_Camera.mViewProjInv);
 
@@ -190,7 +197,7 @@ void main(uint3 tID : SV_DispatchThreadID)
 
         if (materialID != INVALID_INDEX && materialID < 256)
         {
-            MaterialData material = g_Materials[materialID];
+            MaterialData material = Materials[materialID];
             if (material.ior > 1.0)
             {
                 float f0 = pow((material.ior - 1.0) / (material.ior + 1.0), 2.0);
@@ -221,16 +228,18 @@ void main(uint3 tID : SV_DispatchThreadID)
 
         // Aerial perspective
         {
+            Texture3D< float4 > AerialPerspectiveLUT = GetResource(g_AerialPerspectiveLUT.index);
+
             float viewDistance = max(0.0, length(posWORLD));
 
             uint3 texSize;
-            g_AerialPerspectiveLUT.GetDimensions(texSize.x, texSize.y, texSize.z);
+            AerialPerspectiveLUT.GetDimensions(texSize.x, texSize.y, texSize.z);
 
             float slice = viewDistance * (1.0 / AP_KM_PER_SLICE) * DISTANCE_SCALE;
             float w = sqrt(slice / float(texSize.z));
             slice = w * texSize.z;
 
-            float4 ap = g_AerialPerspectiveLUT.SampleLevel(g_LinearClampSampler, float3(uv, w), 0);
+            float4 ap = AerialPerspectiveLUT.SampleLevel(g_LinearClampSampler, float3(uv, w), 0);
 
             // prevents an abrupt appearance of fog on objects close to the camera
             float weight = 1.0;
@@ -247,10 +256,12 @@ void main(uint3 tID : SV_DispatchThreadID)
     }
     // Cloud
     {
-        float4 cloud = g_CloudScatteringLUT.SampleLevel(g_LinearClampSampler, uv, 0);
+        Texture2D< float4 > CloudScatteringLUT = GetResource(g_CloudScatteringLUT.index);
+
+        float4 cloud = CloudScatteringLUT.SampleLevel(g_LinearClampSampler, uv, 0);
 
         color = color * cloud.a + cloud.rgb;
     }
 
-    g_SceneTexture[texCoords] = float4(color, 1.0);
+    OutSceneTexture[texCoords] = float4(color, 1.0);
 }

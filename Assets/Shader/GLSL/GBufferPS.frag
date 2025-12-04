@@ -2,13 +2,8 @@
 #extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_nonuniform_qualifier : enable
 
-#include "Common.hg"
-
-layout(set = SET_STATIC, binding = 0) uniform  sampler2D g_SceneTextures[];
-layout(set = SET_STATIC, binding = 4) readonly buffer    MaterialBuffer 
-{
-    MaterialData materials[];
-} g_MaterialBuffer;
+#define _MATERIAL
+#include "DescriptorCommon.hg"
 
 layout(location = 0) in vec3 inPosWORLD;
 layout(location = 1) in vec2 inUv;

@@ -86,12 +86,12 @@ float ConvertToDx12SamplerBorderColor(eBorderColor color)
 }
 
 
-Arc< Dx12Sampler > Dx12Sampler::Create(Dx12RenderDevice& rd, const std::string& name, CreationInfo&& info)
+Arc< Dx12Sampler > Dx12Sampler::Create(Dx12RenderDevice& rd, const char* name, CreationInfo&& info)
 {
     return MakeArc< Dx12Sampler >(rd, name, std::move(info));
 }
 
-Arc< Dx12Sampler > Dx12Sampler::CreateLinearRepeat(Dx12RenderDevice& rd, const std::string& name) {
+Arc< Dx12Sampler > Dx12Sampler::CreateLinearRepeat(Dx12RenderDevice& rd, const char* name) {
     return Create(rd, name,
         {
             .filter      = eFilterMode::Linear,
@@ -99,7 +99,7 @@ Arc< Dx12Sampler > Dx12Sampler::CreateLinearRepeat(Dx12RenderDevice& rd, const s
         });
 }
 
-Arc< Dx12Sampler > Dx12Sampler::CreateLinearClamp(Dx12RenderDevice& rd, const std::string& name)
+Arc< Dx12Sampler > Dx12Sampler::CreateLinearClamp(Dx12RenderDevice& rd, const char* name)
 {
     return Create(rd, name,
         {
@@ -108,7 +108,7 @@ Arc< Dx12Sampler > Dx12Sampler::CreateLinearClamp(Dx12RenderDevice& rd, const st
         });
 }
 
-Arc< Dx12Sampler > Dx12Sampler::CreatePointRepeat(Dx12RenderDevice& rd, const std::string& name)
+Arc< Dx12Sampler > Dx12Sampler::CreatePointRepeat(Dx12RenderDevice& rd, const char* name)
 {
     return Create(rd, name,
         {
@@ -118,7 +118,7 @@ Arc< Dx12Sampler > Dx12Sampler::CreatePointRepeat(Dx12RenderDevice& rd, const st
         });
 }
 
-Arc< Dx12Sampler > Dx12Sampler::CreatePointClamp(Dx12RenderDevice& rd, const std::string& name)
+Arc< Dx12Sampler > Dx12Sampler::CreatePointClamp(Dx12RenderDevice& rd, const char* name)
 {
     return Create(rd, name,
         {
@@ -128,7 +128,7 @@ Arc< Dx12Sampler > Dx12Sampler::CreatePointClamp(Dx12RenderDevice& rd, const std
         });
 }
 
-Arc< Dx12Sampler > Dx12Sampler::CreateLinearClampCmp(Dx12RenderDevice& rd, const std::string& name)
+Arc< Dx12Sampler > Dx12Sampler::CreateLinearClampCmp(Dx12RenderDevice& rd, const char* name)
 {
     return Create(rd, name,
         {
@@ -140,14 +140,14 @@ Arc< Dx12Sampler > Dx12Sampler::CreateLinearClampCmp(Dx12RenderDevice& rd, const
         });
 }
 
-Dx12Sampler::Dx12Sampler(Dx12RenderDevice& rd, const std::string& name, CreationInfo&& info)
+Dx12Sampler::Dx12Sampler(Dx12RenderDevice& rd, const char* name, CreationInfo&& info)
 	: render::Sampler(name, std::move(info))
     , Dx12Resource(rd, name, eResourceType::Sampler)
 {
 	D3D12_SAMPLER_DESC desc = {};
 	desc.Filter         = DX12_SAMPLER_FILTER(m_CreationInfo.filter, m_CreationInfo.mipmapMode);
 	desc.MipLODBias     = m_CreationInfo.mipLodBias;
-	desc.MaxAnisotropy  = m_CreationInfo.maxAnisotropy;
+	desc.MaxAnisotropy  = static_cast<UINT>(m_CreationInfo.maxAnisotropy);
 	desc.ComparisonFunc = DX12_SAMPLER_COMPAREOP(m_CreationInfo.compareOp);
 	desc.MinLOD         = m_CreationInfo.minLod;
 	desc.MaxLOD         = m_CreationInfo.maxLod;

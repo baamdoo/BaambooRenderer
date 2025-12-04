@@ -106,6 +106,7 @@ enum : u8
 	ePhysicalDeviceFeature_Sync2,
 	ePhysicalDeviceFeature_IndexTypeUint8,
 	ePhysicalDeviceFeature_SwapChainMaintenance,
+	ePhysicalDeviceFeature_MeshShader,
 };
 class DeviceBuilder
 {
@@ -127,6 +128,7 @@ public:
 	VkPhysicalDeviceVulkan12Features	     physicalDevice12Features = VkPhysicalDeviceVulkan12Features();
 	VkPhysicalDeviceVulkan13Features	     physicalDevice13Features = VkPhysicalDeviceVulkan13Features();
 	VkPhysicalDeviceProperties			     physicalDeviceProperties = VkPhysicalDeviceProperties();
+	VkPhysicalDeviceMaintenance3Properties   physicalDeviceMaintenance3Properties = VkPhysicalDeviceMaintenance3Properties();
 
 public:
 	//-------------------------------------------------------------------------

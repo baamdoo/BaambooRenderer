@@ -130,24 +130,24 @@ D3D12_RENDER_TARGET_VIEW_DESC GetRTVDesc(const D3D12_RESOURCE_DESC& resDesc, UIN
     case D3D12_RESOURCE_DIMENSION_TEXTURE1D:
         if (resDesc.DepthOrArraySize > 1)
         {
-            rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE1DARRAY;
-            rtvDesc.Texture1DArray.ArraySize = 1;
+            rtvDesc.ViewDimension                  = D3D12_RTV_DIMENSION_TEXTURE1DARRAY;
+            rtvDesc.Texture1DArray.ArraySize       = resDesc.DepthOrArraySize;
             rtvDesc.Texture1DArray.FirstArraySlice = arraySlice;
-            rtvDesc.Texture1DArray.MipSlice = mip;
+            rtvDesc.Texture1DArray.MipSlice        = mip;
         }
         else
         {
-            rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE1D;
+            rtvDesc.ViewDimension      = D3D12_RTV_DIMENSION_TEXTURE1D;
             rtvDesc.Texture1D.MipSlice = mip;
         }
         break;
     case D3D12_RESOURCE_DIMENSION_TEXTURE2D:
         if (resDesc.DepthOrArraySize > 1)
         {
-            rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
-            rtvDesc.Texture2DArray.ArraySize = 1;
+            rtvDesc.ViewDimension                  = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
+            rtvDesc.Texture2DArray.ArraySize       = resDesc.DepthOrArraySize;
             rtvDesc.Texture2DArray.FirstArraySlice = arraySlice;
-            rtvDesc.Texture2DArray.MipSlice = mip;
+            rtvDesc.Texture2DArray.MipSlice        = mip;
         }
         else
         {
@@ -162,7 +162,7 @@ D3D12_RENDER_TARGET_VIEW_DESC GetRTVDesc(const D3D12_RESOURCE_DESC& resDesc, UIN
     return rtvDesc;
 }
 
-D3D12_DEPTH_STENCIL_VIEW_DESC GetDSVDesc(const D3D12_RESOURCE_DESC& resDesc, UINT mip, UINT arraySlice = 0, UINT arraySize = 1)
+D3D12_DEPTH_STENCIL_VIEW_DESC GetDSVDesc(const D3D12_RESOURCE_DESC& resDesc, UINT mip, UINT arraySlice = 0)
 {
     D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
     dsvDesc.Format = resDesc.Format;
@@ -172,10 +172,10 @@ D3D12_DEPTH_STENCIL_VIEW_DESC GetDSVDesc(const D3D12_RESOURCE_DESC& resDesc, UIN
     case D3D12_RESOURCE_DIMENSION_TEXTURE1D:
         if (resDesc.DepthOrArraySize > 1)
         {
-            dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE1DARRAY;
-            dsvDesc.Texture1DArray.ArraySize = arraySize;
+            dsvDesc.ViewDimension                  = D3D12_DSV_DIMENSION_TEXTURE1DARRAY;
+            dsvDesc.Texture1DArray.ArraySize       = resDesc.DepthOrArraySize;
             dsvDesc.Texture1DArray.FirstArraySlice = arraySlice;
-            dsvDesc.Texture1DArray.MipSlice = mip;
+            dsvDesc.Texture1DArray.MipSlice        = mip;
         }
         else
         {
@@ -186,14 +186,14 @@ D3D12_DEPTH_STENCIL_VIEW_DESC GetDSVDesc(const D3D12_RESOURCE_DESC& resDesc, UIN
     case D3D12_RESOURCE_DIMENSION_TEXTURE2D:
         if (resDesc.DepthOrArraySize > 1)
         {
-            dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DARRAY;
-            dsvDesc.Texture2DArray.ArraySize = arraySize;
+            dsvDesc.ViewDimension                  = D3D12_DSV_DIMENSION_TEXTURE2DARRAY;
+            dsvDesc.Texture2DArray.ArraySize       = resDesc.DepthOrArraySize;
             dsvDesc.Texture2DArray.FirstArraySlice = arraySlice;
-            dsvDesc.Texture2DArray.MipSlice = mip;
+            dsvDesc.Texture2DArray.MipSlice        = mip;
         }
         else
         {
-            dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+            dsvDesc.ViewDimension      = D3D12_DSV_DIMENSION_TEXTURE2D;
             dsvDesc.Texture2D.MipSlice = mip;
         }
         break;
@@ -204,7 +204,7 @@ D3D12_DEPTH_STENCIL_VIEW_DESC GetDSVDesc(const D3D12_RESOURCE_DESC& resDesc, UIN
     return dsvDesc;
 }
 
-D3D12_SHADER_RESOURCE_VIEW_DESC GetSRVDesc(const D3D12_RESOURCE_DESC& resDesc, render::eImageType imageType, UINT mip, UINT mipLevels = -1, UINT arraySlice = 0, UINT arraySize = 1, UINT planeSlice = 0)
+D3D12_SHADER_RESOURCE_VIEW_DESC GetSRVDesc(const D3D12_RESOURCE_DESC& resDesc, render::eImageType imageType, UINT mip, UINT mipLevels = -1, UINT arraySlice = 0, UINT planeSlice = 0)
 {
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
     srvDesc.Format = resDesc.Format;
@@ -215,17 +215,17 @@ D3D12_SHADER_RESOURCE_VIEW_DESC GetSRVDesc(const D3D12_RESOURCE_DESC& resDesc, r
     case D3D12_RESOURCE_DIMENSION_TEXTURE1D:
         if (resDesc.DepthOrArraySize > 1)
         {
-            srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE1DARRAY;
+            srvDesc.ViewDimension                  = D3D12_SRV_DIMENSION_TEXTURE1DARRAY;
             srvDesc.Texture1DArray.MostDetailedMip = mip;
-            srvDesc.Texture1DArray.MipLevels = mipLevels;
-            srvDesc.Texture1DArray.ArraySize = arraySize;
+            srvDesc.Texture1DArray.MipLevels       = mipLevels;
+            srvDesc.Texture1DArray.ArraySize       = resDesc.DepthOrArraySize;
             srvDesc.Texture1DArray.FirstArraySlice = arraySlice;
         }
         else
         {
-            srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE1D;
+            srvDesc.ViewDimension                  = D3D12_SRV_DIMENSION_TEXTURE1D;
             srvDesc.Texture1DArray.MostDetailedMip = mip;
-            srvDesc.Texture1DArray.MipLevels = mipLevels;
+            srvDesc.Texture1DArray.MipLevels       = mipLevels;
         }
         break;
     case D3D12_RESOURCE_DIMENSION_TEXTURE2D:
@@ -233,15 +233,15 @@ D3D12_SHADER_RESOURCE_VIEW_DESC GetSRVDesc(const D3D12_RESOURCE_DESC& resDesc, r
         {
             if (resDesc.DepthOrArraySize / 6 > 1)
             {
-                srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBEARRAY;
-                srvDesc.TextureCubeArray.MipLevels = mipLevels;
-                srvDesc.TextureCubeArray.MostDetailedMip = mip;
+                srvDesc.ViewDimension                     = D3D12_SRV_DIMENSION_TEXTURECUBEARRAY;
+                srvDesc.TextureCubeArray.MipLevels        = mipLevels;
+                srvDesc.TextureCubeArray.MostDetailedMip  = mip;
                 srvDesc.TextureCubeArray.First2DArrayFace = arraySlice;
-                srvDesc.TextureCubeArray.NumCubes = resDesc.DepthOrArraySize / 6;
+                srvDesc.TextureCubeArray.NumCubes         = resDesc.DepthOrArraySize / 6;
             }
             else
             {
-                srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
+                srvDesc.ViewDimension         = D3D12_SRV_DIMENSION_TEXTURECUBE;
                 srvDesc.TextureCube.MipLevels = mipLevels;
             }
         }
@@ -249,25 +249,25 @@ D3D12_SHADER_RESOURCE_VIEW_DESC GetSRVDesc(const D3D12_RESOURCE_DESC& resDesc, r
         {
             if (resDesc.DepthOrArraySize > 1)
             {
-                srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
-                srvDesc.Texture2DArray.MipLevels = mipLevels;
+                srvDesc.ViewDimension                  = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
+                srvDesc.Texture2DArray.MipLevels       = mipLevels;
                 srvDesc.Texture2DArray.MostDetailedMip = mip;
-                srvDesc.Texture2DArray.ArraySize = arraySize;
+                srvDesc.Texture2DArray.ArraySize       = resDesc.DepthOrArraySize;
                 srvDesc.Texture2DArray.FirstArraySlice = arraySlice;
-                srvDesc.Texture2DArray.PlaneSlice = planeSlice;
+                srvDesc.Texture2DArray.PlaneSlice      = planeSlice;
             }
             else
             {
-                srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+                srvDesc.ViewDimension             = D3D12_SRV_DIMENSION_TEXTURE2D;
                 srvDesc.Texture2D.MostDetailedMip = mip;
-                srvDesc.Texture2D.PlaneSlice = planeSlice;
-                srvDesc.Texture2D.MipLevels = mipLevels;
+                srvDesc.Texture2D.PlaneSlice      = planeSlice;
+                srvDesc.Texture2D.MipLevels       = mipLevels;
             }
         }
         break;
     case D3D12_RESOURCE_DIMENSION_TEXTURE3D:
-        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE3D;
-        srvDesc.Texture3D.MipLevels = mipLevels;
+        srvDesc.ViewDimension             = D3D12_SRV_DIMENSION_TEXTURE3D;
+        srvDesc.Texture3D.MipLevels       = mipLevels;
         srvDesc.Texture3D.MostDetailedMip = mip;
         break;
     default:
@@ -327,32 +327,32 @@ D3D12_UNORDERED_ACCESS_VIEW_DESC GetUAVDesc(const D3D12_RESOURCE_DESC& resDesc, 
     return uavDesc;
 }
 
-Arc< Dx12Texture > Dx12Texture::Create(Dx12RenderDevice& rd, const std::string& name, CreationInfo&& desc)
+Arc< Dx12Texture > Dx12Texture::Create(Dx12RenderDevice& rd, const char* name, CreationInfo&& desc)
 {
     return MakeArc< Dx12Texture >(rd, name, std::move(desc));
 }
 
-Arc< Dx12Texture > Dx12Texture::CreateEmpty(Dx12RenderDevice& device, const std::string& name)
+Arc< Dx12Texture > Dx12Texture::CreateEmpty(Dx12RenderDevice& device, const char* name)
 {
     return MakeArc< Dx12Texture >(device, name);
 }
 
-Dx12Texture::Dx12Texture(Dx12RenderDevice& rd, const std::string& name)
+Dx12Texture::Dx12Texture(Dx12RenderDevice& rd, const char* name)
 	: render::Texture(name)
 	, Dx12Resource(rd, name, eResourceType::Texture)
 {
 }
 
-Dx12Texture::Dx12Texture(Dx12RenderDevice& rd, const std::string& name, CreationInfo&& info)
+Dx12Texture::Dx12Texture(Dx12RenderDevice& rd, const char* name, CreationInfo&& info)
     : render::Texture(name, std::move(info))
     , Dx12Resource(rd, name, 
         {
             .desc = 
                 m_CreationInfo.imageType == render::eImageType::Texture1D ?
-                    CD3DX12_RESOURCE_DESC::Tex1D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, m_CreationInfo.arrayLayers, m_CreationInfo.bGenerateMips ? 0 : 1, ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)) :
+                    CD3DX12_RESOURCE_DESC::Tex1D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, static_cast<UINT16>(m_CreationInfo.arrayLayers), m_CreationInfo.bGenerateMips ? 0 : 1, ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)) :
                 m_CreationInfo.imageType == render::eImageType::Texture3D ?
-                    CD3DX12_RESOURCE_DESC::Tex3D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, m_CreationInfo.resolution.y, m_CreationInfo.resolution.z, m_CreationInfo.bGenerateMips ? 0 : 1, ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)) :
-                    CD3DX12_RESOURCE_DESC::Tex2D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, m_CreationInfo.resolution.y, m_CreationInfo.arrayLayers, m_CreationInfo.bGenerateMips ? 0 : 1, m_CreationInfo.sampleCount, 0, ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)),
+                    CD3DX12_RESOURCE_DESC::Tex3D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, m_CreationInfo.resolution.y, static_cast<UINT16>(m_CreationInfo.resolution.z), m_CreationInfo.bGenerateMips ? 0 : 1, ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)) :
+                    CD3DX12_RESOURCE_DESC::Tex2D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, m_CreationInfo.resolution.y, static_cast<UINT16>(m_CreationInfo.arrayLayers), m_CreationInfo.bGenerateMips ? 0 : 1, m_CreationInfo.sampleCount, 0, ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)),
             .initialState = ConvertToDx12ResourceStates(m_CreationInfo.imageUsage),
             .clearValue   = IsDepthTexture() == false ? 
                 D3D12_CLEAR_VALUE
@@ -403,7 +403,7 @@ void Dx12Texture::SetD3D12Resource(ID3D12Resource* d3d12Resource, D3D12_RESOURCE
 {
     Dx12Resource::SetD3D12Resource(d3d12Resource, states);
 
-    m_Width = static_cast<u32>(m_ResourceDesc.Width);
+    m_Width  = static_cast<u32>(m_ResourceDesc.Width);
     m_Height = static_cast<u32>(m_ResourceDesc.Height);
     m_Format = m_ResourceDesc.Format;
 

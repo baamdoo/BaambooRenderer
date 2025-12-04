@@ -5,20 +5,20 @@
 namespace dx12
 {
 
-Dx12Resource::Dx12Resource(Dx12RenderDevice& rd, const std::string& name)
+Dx12Resource::Dx12Resource(Dx12RenderDevice& rd, const char* name)
 	: m_RenderDevice(rd)
 	, m_Name(ConvertToWString(name))
 {
 }
 
-Dx12Resource::Dx12Resource(Dx12RenderDevice& rd, const std::string& name, eResourceType type)
+Dx12Resource::Dx12Resource(Dx12RenderDevice& rd, const char* name, eResourceType type)
 	: m_RenderDevice(rd)
 	, m_Name(ConvertToWString(name))
 	, m_Type(type)
 {
 }
 
-Dx12Resource::Dx12Resource(Dx12RenderDevice& rd, const std::string& name, Dx12ResourceCreationInfo&& info, eResourceType type)
+Dx12Resource::Dx12Resource(Dx12RenderDevice& rd, const char* name, Dx12ResourceCreationInfo&& info, eResourceType type)
 	: m_RenderDevice(rd)
 	, m_Name(ConvertToWString(name))
 	, m_Type(type)

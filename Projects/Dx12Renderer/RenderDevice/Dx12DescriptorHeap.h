@@ -14,7 +14,8 @@ public:
 	~Dx12DescriptorHeap();
 
 	void Reset();
-	void ParseRootSignature(Arc< Dx12RootSignature > pRootsignature);
+	void ParseRootSignature(Arc< Dx12RootSignature > pRootSignature);
+	void ParseGlobalRootSignature(Arc< Dx12RootSignature > pRootSignature);
 
 	u32 StageDescriptor(u32 rootIndex, u32 numDescriptors, u32 offset, D3D12_CPU_DESCRIPTOR_HANDLE srcHandle);
 	u32 StageDescriptors(u32 rootIndex, u32 offset, std::vector< D3D12_CPU_DESCRIPTOR_HANDLE >&& srcHandles);

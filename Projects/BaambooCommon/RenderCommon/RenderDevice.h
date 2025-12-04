@@ -12,19 +12,19 @@ public:
     virtual void Flush() = 0;
 
     // Resource creation
-    virtual Arc< Buffer > CreateBuffer(const std::string& name, Buffer::CreationInfo&& desc) = 0;
-    virtual Arc< Buffer > CreateEmptyBuffer(const std::string& name = "") = 0;
-    virtual Arc< Texture > CreateTexture(const std::string& name, Texture::CreationInfo&& desc) = 0;
-    virtual Arc< Texture > CreateEmptyTexture(const std::string& name = "") = 0;
+    virtual Arc< Buffer > CreateBuffer(const char* name, Buffer::CreationInfo&& desc) = 0;
+    virtual Arc< Buffer > CreateEmptyBuffer(const char* name = "") = 0;
+    virtual Arc< Texture > CreateTexture(const char* name, Texture::CreationInfo&& desc) = 0;
+    virtual Arc< Texture > CreateEmptyTexture(const char* name = "") = 0;
 
-    virtual Arc< RenderTarget > CreateEmptyRenderTarget(const std::string& name = "") = 0;
+    virtual Arc< RenderTarget > CreateEmptyRenderTarget(const char* name = "") = 0;
 
-    virtual Arc< Sampler > CreateSampler(const std::string& name, Sampler::CreationInfo&& info) = 0;
+    virtual Arc< Sampler > CreateSampler(const char* name, Sampler::CreationInfo&& info) = 0;
 
-    virtual Arc< Shader > CreateShader(const std::string& name, Shader::CreationInfo&& info) = 0;
+    virtual Arc< Shader > CreateShader(const char* name, Shader::CreationInfo&& info) = 0;
 
-    virtual Box< GraphicsPipeline > CreateGraphicsPipeline(const std::string& name) = 0;
-    virtual Box< ComputePipeline > CreateComputePipeline(const std::string& name) = 0;
+    virtual Box< GraphicsPipeline > CreateGraphicsPipeline(const char* name) = 0;
+    virtual Box< ComputePipeline > CreateComputePipeline(const char* name) = 0;
 
     virtual Box< render::SceneResource > CreateSceneResource() = 0;
 

@@ -2,22 +2,8 @@
 #extension GL_GOOGLE_include_directive: require
 
 #define _CAMERA
-#include "Common.hg"
-
-layout(set = SET_STATIC, binding = 1) readonly buffer VertexBuffer 
-{
-    Vertex vertices[];
-} g_VertexBuffer;
-
-layout(set = SET_STATIC, binding = 2) readonly buffer DrawBuffer 
-{
-    DrawData draws[];
-} g_DrawBuffer;
-
-layout(set = SET_STATIC, binding = 3) readonly buffer Transform 
-{
-    TransformData transforms[];
-} g_TransformBuffer;
+#define _MESH
+#include "DescriptorCommon.hg"
 
 layout(location = 0) out vec3 outPosWORLD;
 layout(location = 1) out vec2 outUv;

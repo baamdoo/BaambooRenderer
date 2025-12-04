@@ -45,15 +45,12 @@ inline fs::path GetSpirvPath()
 //-------------------------------------------------------------------------
 // Pre-defined Values
 //-------------------------------------------------------------------------
-constexpr u32 MAX_FRAMES_IN_FLIGHT = 3;
-constexpr u32 DEFAULT_DESCRIPTOR_POOL_SIZE = 1024;
-constexpr u32 MAX_BINDLESS_DESCRIPTOR_RESOURCE_COUNT = 1024;
-enum eDescriptorSetIndexType : u8
-{
-	eDescriptorSet_Static = 0,
-	eDescriptorSet_Push = 1,
-	eNumPreallocatedSetIndex,
-};
+constexpr u32 MAX_FRAMES_IN_FLIGHT = 3u;
+constexpr u32 DEFAULT_DESCRIPTOR_POOL_SIZE = 1024u;
+constexpr u32 MAX_BINDLESS_DESCRIPTOR_RESOURCE_COUNT = 1024u;
+constexpr u32 MAX_SHADERRESOURCE_ARRAY_SIZE   = 1024u;
+
+constexpr u32 COMMON_DESCRIPTORSET_INDEX = 0u;
 
 
 //-------------------------------------------------------------------------
@@ -71,10 +68,7 @@ struct IndirectDrawData
 	u32 transformID;
 	u32 transformCount;
 
-	u32 boneTransformID;
-	u32 bSkinning;
-
-	float2 padding0;
+	float4 sphereBounds;
 };
 
 

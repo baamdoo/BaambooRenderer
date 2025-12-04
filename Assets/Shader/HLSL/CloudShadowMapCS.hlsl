@@ -1,9 +1,6 @@
-#include "Common.hlsli"
+#define _SCENEENVIRONMENT
 #include "AtmosphereCommon.hlsli"
-#define _CLOUD
 #include "CloudCommon.hlsli"
-
-RWTexture2D< float3 > g_CloudShadowMap : register(u0);
 
 struct CloudShadowData
 {
@@ -11,20 +8,25 @@ struct CloudShadowData
     float4x4 mSunViewProj;
     float4x4 mSunViewProjInv;
 };
-ConstantBuffer< CloudShadowData > g_CloudShadow : register(b3);
+ConstantBuffer< CloudShadowData > g_CloudShadow : register(b0, space1);
 
 cbuffer PushConstant : register(b0, ROOT_CONSTANT_SPACE)
 {
-    uint  g_NumLightRaymarchSteps;
-    float g_PlanetRadiusKm;
+    uint g_NumLightRaymarchSteps;
 
     float    g_TimeSec;
     uint64_t g_Frame;
 };
 
+ConstantBuffer< DescriptorHeapIndex > g_OutCloudShadowMap : register(b5, ROOT_CONSTANT_SPACE);
+
+
 // Reference: https://blog.selfshadow.com/publications/s2020-shading-course/hillaire/s2020_pbs_hillaire_slides.pdf
 float3 RaymarchBSM(float3 rayOrigin, float3 rayDirection)
 {
+    CloudData      Cloud      = GetCloudData();
+    AtmosphereData Atmosphere = GetAtmosphereData();
+
     float frontDepth = 1e30;
     float extinctionSum = 0.0;
     float extinctionCount = 0.0;
@@ -32,7 +34,7 @@ float3 RaymarchBSM(float3 rayOrigin, float3 rayDirection)
 
     bool bFirstHit = false;
 
-    float rBottomLayer = g_PlanetRadiusKm + g_Cloud.bottomLayer_km;
+    float rBottomLayer = Atmosphere.planetRadiusKm + Cloud.bottomLayerKm;
 
     float2 bottomIntersection = RaySphereIntersection(rayOrigin, rayDirection, PLANET_CENTER, rBottomLayer);
     if (all(bottomIntersection < 0.0))
@@ -41,10 +43,10 @@ float3 RaymarchBSM(float3 rayOrigin, float3 rayDirection)
     }
     float rayLength = bottomIntersection.x > 0.0 ? bottomIntersection.x : bottomIntersection.y;
 
-    float ExtinctionStrength = (g_Cloud.extinctionStrength.r + g_Cloud.extinctionStrength.g + g_Cloud.extinctionStrength.b) / 3.0;
-    ExtinctionStrength *= g_Cloud.extinctionScale;
+    float ExtinctionStrength = (Cloud.extinctionStrength.r + Cloud.extinctionStrength.g + Cloud.extinctionStrength.b) / 3.0;
+    ExtinctionStrength *= Cloud.extinctionScale;
 
-    float3 offset = g_Cloud.windDirection * g_TimeSec * g_Cloud.windSpeed_mps * 0.001;
+    float3 offset = Cloud.windDirection * g_TimeSec * Cloud.windSpeedMps * 0.001;
 
     float numSteps = (float)g_NumLightRaymarchSteps;
     float stepSize = rayLength / numSteps;
@@ -54,15 +56,15 @@ float3 RaymarchBSM(float3 rayOrigin, float3 rayDirection)
         float st = i * stepSize;
         float3 spos = rayOrigin + st * rayDirection;
 
-        float saltitude = length(spos) - g_PlanetRadiusKm;
+        float saltitude = length(spos) - Atmosphere.planetRadiusKm;
 
-        float shNorm = inverseLerp(saltitude, g_Cloud.bottomLayer_km, g_Cloud.topLayer_km);
+        float shNorm = inverseLerp(saltitude, Cloud.bottomLayerKm, Cloud.topLayerKm);
         if (shNorm > 1.0 || shNorm < 0.0)
         {
             continue;
         }
 
-        float stepDensity = SampleCloudDensity(spos, shNorm, offset);
+        float stepDensity = SampleCloudDensity(spos, shNorm, offset, Cloud);
         if (stepDensity > 0.0)
         {
             if (!bFirstHit)
@@ -88,8 +90,10 @@ float3 RaymarchBSM(float3 rayOrigin, float3 rayDirection)
 [numthreads(8, 8, 1)]
 void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 {
+    RWTexture2D< float3 > OutCloudShadowMap = GetResource(g_OutCloudShadowMap.index);
+
     uint width, height;
-    g_CloudShadowMap.GetDimensions(width, height);
+    OutCloudShadowMap.GetDimensions(width, height);
     int2 imgSize = int2(width, height);
     int2 pixCoords = int2(dispatchThreadID.xy);
 
@@ -111,5 +115,5 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 
     float3 BSM = RaymarchBSM(rayOrigin, rayDirection);
 
-    g_CloudShadowMap[pixCoords] = BSM;
+    OutCloudShadowMap[pixCoords] = BSM;
 }

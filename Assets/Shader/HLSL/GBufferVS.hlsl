@@ -1,12 +1,13 @@
 #define _CAMERA
+#define _TRANSFORM
 #include "Common.hlsli"
 
-StructuredBuffer< TransformData > g_Transforms : register(t0, space0);
-
-cbuffer RootConstants : register(b1, ROOT_CONSTANT_SPACE)
+cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
     uint g_TransformIndex;
+    uint g_MaterialIndex;
 };
+
 
 struct VSInput 
 {
@@ -31,7 +32,9 @@ VSOutput main(VSInput IN)
 {
     VSOutput output = (VSOutput)0;
 
-    TransformData transform = g_Transforms[g_TransformIndex];
+    StructuredBuffer< TransformData > Transforms = GetResource(g_Transforms.index);
+
+    TransformData transform = Transforms[g_TransformIndex];
 
     float4 posWORLD     = mul(transform.mWorldToView, float4(IN.position, 1.0));
     float4 normalWORLD  = mul(transform.mWorldToView, float4(IN.normal, 0.0));

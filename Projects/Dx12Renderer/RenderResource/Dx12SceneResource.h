@@ -45,7 +45,6 @@ struct Dx12SceneResource : public render::SceneResource
     [[nodiscard]]
     inline u32 NumMeshes() const { return m_NumMeshes; }
 
-    std::vector< D3D12_CPU_DESCRIPTOR_HANDLE > sceneTexSRVs;
     std::unordered_map< std::string, u64 > resourceBindingMapTemp;
 
 private:
@@ -61,6 +60,10 @@ private:
     Box< StaticBufferAllocator > m_pTransformAllocator;
     Box< StaticBufferAllocator > m_pMaterialAllocator;
     Box< StaticBufferAllocator > m_pLightAllocator;
+
+    CameraData                m_CameraCache = {};
+    Arc< Dx12ConstantBuffer > m_pCameraBuffer;
+    Arc< Dx12ConstantBuffer > m_pSceneEnvironmentBuffer;
 
     std::unordered_map< std::string, Arc< Dx12VertexBuffer > > m_VertexCache;
     std::unordered_map< std::string, Arc< Dx12IndexBuffer > >  m_IndexCache;

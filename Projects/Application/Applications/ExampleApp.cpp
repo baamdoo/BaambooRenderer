@@ -252,10 +252,10 @@ void ExampleApp::ConfigureSceneObjects()
 	// static mesh
 	{
 		MeshDescriptor descriptor = {};
-		descriptor.rootPath = GetModelPath();
-		descriptor.bOptimize = true;
+		descriptor.rootPath    = GetModelPath();
+		descriptor.bOptimize   = true;
 		descriptor.rendererAPI = s_RendererAPI;
-		descriptor.bWindingCW = true;
+		descriptor.bWindingCW  = true;
 
 		auto entity = m_pScene->ImportModel(MODEL_PATH.append("kitten.obj"), descriptor);
 		entity.AttachComponent< ScriptComponent >();
@@ -316,7 +316,7 @@ void ExampleApp::ConfigureSceneObjects()
 		transformComponent.transform.position = float3(0.0f, 1.0f, 0.0f);
 
 		auto& atmosphere = sunLight.GetComponent< AtmosphereComponent >();
-		atmosphere.atmosphereRadius_km = 6420.0f;
+		atmosphere.atmosphereRadiusKm = 6420.0f;
 	}
 	{
 		auto cloud = m_pScene->CreateEntity("Cloud");

@@ -22,19 +22,19 @@ public:
 
 	virtual void Flush() override;
 
-	virtual Arc< render::Buffer > CreateBuffer(const std::string& name, render::Buffer::CreationInfo&& desc) override;
-	virtual Arc< render::Buffer > CreateEmptyBuffer(const std::string& name = "") override;
-	virtual Arc< render::Texture > CreateTexture(const std::string& name, render::Texture::CreationInfo&& desc) override;
-	virtual Arc< render::Texture > CreateEmptyTexture(const std::string& name = "") override;
+	virtual Arc< render::Buffer > CreateBuffer(const char* name, render::Buffer::CreationInfo&& desc) override;
+	virtual Arc< render::Buffer > CreateEmptyBuffer(const char* name = "") override;
+	virtual Arc< render::Texture > CreateTexture(const char* name, render::Texture::CreationInfo&& desc) override;
+	virtual Arc< render::Texture > CreateEmptyTexture(const char* name = "") override;
 
-	virtual Arc< render::RenderTarget > CreateEmptyRenderTarget(const std::string& name = "") override;
+	virtual Arc< render::RenderTarget > CreateEmptyRenderTarget(const char* name = "") override;
 
-	virtual Arc< render::Sampler > CreateSampler(const std::string& name, render::Sampler::CreationInfo&& info) override;
+	virtual Arc< render::Sampler > CreateSampler(const char* name, render::Sampler::CreationInfo&& info) override;
 
-	virtual Arc< render::Shader > CreateShader(const std::string& name, render::Shader::CreationInfo&& info) override;
+	virtual Arc< render::Shader > CreateShader(const char* name, render::Shader::CreationInfo&& info) override;
 
-	virtual Box< render::ComputePipeline > CreateComputePipeline(const std::string& name) override;
-	virtual Box< render::GraphicsPipeline > CreateGraphicsPipeline(const std::string& name) override;
+	virtual Box< render::ComputePipeline > CreateComputePipeline(const char* name) override;
+	virtual Box< render::GraphicsPipeline > CreateGraphicsPipeline(const char* name) override;
 
 	virtual Box< render::SceneResource > CreateSceneResource() override;
 
@@ -44,6 +44,7 @@ public:
 	inline VkDevice vkDevice() const { return m_vkDevice; }
 	inline VkPhysicalDevice vkPhysicalDevice() const { return m_vkPhysicalDevice; }
 	inline const VkPhysicalDeviceProperties& DeviceProps() const { return m_PhysicalDeviceProperties; }
+	inline const VkPhysicalDeviceMaintenance3Properties& DeviceMaintenance3Props() const { return m_PhysicalDeviceMaintenance3Properties; }
 
 	CommandQueue& GetQueue(eCommandType cmdType) const;
 	inline CommandQueue& GraphicsQueue() const { return *m_pGraphicsQueue; }
@@ -68,9 +69,11 @@ private:
 	VkInstance					m_vkInstance       = VK_NULL_HANDLE;
 	VkDebugUtilsMessengerEXT	m_vkDebugMessenger = VK_NULL_HANDLE;
 								
-	VkPhysicalDevice			m_vkPhysicalDevice = VK_NULL_HANDLE;
-	VkPhysicalDeviceProperties	m_PhysicalDeviceProperties;
-	VkDevice					m_vkDevice = VK_NULL_HANDLE;
+	VkPhysicalDevice			           m_vkPhysicalDevice = VK_NULL_HANDLE;
+	VkPhysicalDeviceProperties	           m_PhysicalDeviceProperties;
+	VkPhysicalDeviceMaintenance3Properties m_PhysicalDeviceMaintenance3Properties;
+
+	VkDevice m_vkDevice = VK_NULL_HANDLE;
 
 	CommandQueue* m_pGraphicsQueue = nullptr;
 	CommandQueue* m_pComputeQueue  = nullptr;

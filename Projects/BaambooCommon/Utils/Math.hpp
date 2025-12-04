@@ -73,6 +73,9 @@ static float2 RaySphereIntersection(float3 rayOrigin, float3 rayDir, float3 sphe
 	return float2(root0, root1);
 }
 
+	
+
+
 }
 
 } // namespace baamboo

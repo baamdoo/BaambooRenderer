@@ -79,6 +79,7 @@ public:
 		bool bFlushImmediate = true,
 		bool bFlatten = false);
 
+	virtual void ClearTexture(Arc< render::Texture > pTexture, render::eTextureLayout newLayout) override;
 	void ClearTexture(
 		Arc< VulkanTexture > texture,
 		VkImageLayout newLayout,
@@ -101,8 +102,8 @@ public:
 	virtual void StageDescriptor(const std::string& name, Arc< render::Buffer > buffer, u32 offset = 0) override;
 	virtual void StageDescriptor(const std::string& name, Arc< render::Texture > texture, Arc< render::Sampler > samplerInCharge, u32 offset = 0) override;
 
-	void PushDescriptor(u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType);
-	void PushDescriptor(u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType);
+	void PushDescriptor(u32 set, u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType);
+	void PushDescriptor(u32 set, u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType);
 
 
 	virtual void BeginRenderPass(Arc< render::RenderTarget > renderTarget) override;

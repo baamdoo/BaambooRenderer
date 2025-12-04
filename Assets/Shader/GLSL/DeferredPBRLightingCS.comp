@@ -3,29 +3,21 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 
 #define _CAMERA
-#include "Common.hg"
+#define _MATERIAL
+#define _LIGHT
+#include "DescriptorCommon.hg"
 #include "AtmosphereCommon.hg"
 
-layout(set = SET_STATIC, binding = 4) readonly buffer MaterialBuffer 
-{
-	MaterialData materials[];
-} g_MaterialBuffer;
+layout(set = 1, binding = 1) uniform sampler2D g_GBuffer0;    // Albedo.rgb + AO.a
+layout(set = 1, binding = 2) uniform sampler2D g_GBuffer1;    // Normal.rgb + MaterialID.a
+layout(set = 1, binding = 3) uniform sampler2D g_GBuffer2;    // Emissive.rgb
+layout(set = 1, binding = 4) uniform sampler2D g_GBuffer3;    // MotionVectors.rg + Roughness.b + Metallic.a
+layout(set = 1, binding = 5) uniform sampler2D g_DepthBuffer;
+layout(set = 1, binding = 6) uniform sampler3D g_AerialPerspectiveLUT;
+layout(set = 1, binding = 7) uniform sampler2D g_CloudScatteringLUT;
+layout(set = 1, binding = 8) uniform samplerCube g_SkyboxLUT;
 
-layout(set = SET_STATIC, binding = 5) readonly buffer LightBuffer
-{
-	LightingData lightingData;
-} g_LightBuffer;
-
-layout(set = SET_PUSH, binding = 1) uniform sampler2D g_GBuffer0;    // Albedo.rgb + AO.a
-layout(set = SET_PUSH, binding = 2) uniform sampler2D g_GBuffer1;    // Normal.rgb + MaterialID.a
-layout(set = SET_PUSH, binding = 3) uniform sampler2D g_GBuffer2;    // Emissive.rgb
-layout(set = SET_PUSH, binding = 4) uniform sampler2D g_GBuffer3;    // MotionVectors.rg + Roughness.b + Metallic.a
-layout(set = SET_PUSH, binding = 5) uniform sampler2D g_DepthBuffer;
-layout(set = SET_PUSH, binding = 6) uniform sampler3D g_AerialPerspectiveLUT;
-layout(set = SET_PUSH, binding = 7) uniform sampler2D g_CloudScatteringLUT;
-layout(set = SET_PUSH, binding = 8) uniform samplerCube g_SkyboxLUT;
-
-layout(set = SET_PUSH, binding = 9, rgba16f) writeonly uniform image2D g_SceneTexture;
+layout(set = 1, binding = 9, rgba16f) writeonly uniform image2D g_OutSceneTexture;
 
 const float MIN_ROUGHNESS = 0.045;
 
@@ -184,7 +176,7 @@ vec3 ApplySpotLight(SpotLight light, vec3 P, vec3 N, vec3 V, vec3 albedo, float 
 layout (local_size_x = 16, local_size_y = 16) in;
 void main() 
 {
-    ivec2 imgSize   = imageSize(g_SceneTexture);
+    ivec2 imgSize   = imageSize(g_OutSceneTexture);
     ivec2 pixCoords = ivec2(gl_GlobalInvocationID.xy);
     if (any(greaterThanEqual(pixCoords, imgSize)))
         return;
@@ -287,5 +279,5 @@ void main()
         color = color * cloud.a + cloud.rgb;
     }
     
-    imageStore(g_SceneTexture, pixCoords, vec4(color, 1.0));
+    imageStore(g_OutSceneTexture, pixCoords, vec4(color, 1.0));
 }

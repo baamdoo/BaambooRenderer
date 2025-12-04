@@ -138,3 +138,16 @@ inline u32 GetVertexSize(eVertexFormat format)
 
 using Vertex = VertexP3U2N3T3;
 using Index = u32;
+
+struct Meshlet
+{
+    u32 vertexOffset;
+    u32 triangleOffset;
+    u32 vertexCount;
+    u32 triangleCount;
+
+    float3 center;
+    float  radius;
+    float3 coneAxis;
+    float  coneCutoff;
+};

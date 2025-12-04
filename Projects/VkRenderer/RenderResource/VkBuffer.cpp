@@ -8,23 +8,23 @@ namespace vk
 //-------------------------------------------------------------------------
 // Base Buffer
 //-------------------------------------------------------------------------
-Arc< VulkanBuffer > VulkanBuffer::Create(VkRenderDevice& rd, const std::string& name, CreationInfo&& desc)
+Arc< VulkanBuffer > VulkanBuffer::Create(VkRenderDevice& rd, const char* name, CreationInfo&& desc)
 {
 	return MakeArc< VulkanBuffer >(rd, name, std::move(desc));
 }
 
-Arc< VulkanBuffer > VulkanBuffer::CreateEmpty(VkRenderDevice& rd, const std::string& name)
+Arc< VulkanBuffer > VulkanBuffer::CreateEmpty(VkRenderDevice& rd, const char* name)
 {
 	return MakeArc< VulkanBuffer >(rd, name);
 }
 
-VulkanBuffer::VulkanBuffer(VkRenderDevice& rd, const std::string& name)
+VulkanBuffer::VulkanBuffer(VkRenderDevice& rd, const char* name)
 	: render::Buffer(name)
 	, VulkanResource(rd, name)
 {
 }
 
-VulkanBuffer::VulkanBuffer(VkRenderDevice& rd, const std::string& name, CreationInfo&& info)
+VulkanBuffer::VulkanBuffer(VkRenderDevice& rd, const char* name, CreationInfo&& info)
 	: render::Buffer(name, std::move(info))
 	, VulkanResource(rd, name)
 {
@@ -92,12 +92,12 @@ void VulkanBuffer::Resize(u64 sizeInBytes, bool bReset)
 //-------------------------------------------------------------------------
 // Index Buffer
 //-------------------------------------------------------------------------
-Arc< VulkanIndexBuffer > VulkanIndexBuffer::Create(VkRenderDevice& rd, const std::string& name, u32 numIndices, VkIndexType type)
+Arc< VulkanIndexBuffer > VulkanIndexBuffer::Create(VkRenderDevice& rd, const char* name, u32 numIndices, VkIndexType type)
 {
 	return MakeArc< VulkanIndexBuffer >(rd, name, numIndices, type);
 }
 
-VulkanIndexBuffer::VulkanIndexBuffer(VkRenderDevice& rd, const std::string& name, u32 numIndices, VkIndexType type)
+VulkanIndexBuffer::VulkanIndexBuffer(VkRenderDevice& rd, const char* name, u32 numIndices, VkIndexType type)
 	: m_IndexType(type)
 	, Super(rd, name,
 		{
@@ -113,12 +113,12 @@ VulkanIndexBuffer::VulkanIndexBuffer(VkRenderDevice& rd, const std::string& name
 //-------------------------------------------------------------------------
 // Uniform Buffer
 //-------------------------------------------------------------------------
-Arc< VulkanUniformBuffer > VulkanUniformBuffer::Create(VkRenderDevice& rd, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags usage)
+Arc< VulkanUniformBuffer > VulkanUniformBuffer::Create(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags usage)
 {
 	return MakeArc< VulkanUniformBuffer >(rd, name, sizeInBytes, usage);
 }
 
-VulkanUniformBuffer::VulkanUniformBuffer(VkRenderDevice& rd, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage)
+VulkanUniformBuffer::VulkanUniformBuffer(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage)
 	: Super(rd, name,
 		{
 			.count              = 1,
@@ -133,12 +133,12 @@ VulkanUniformBuffer::VulkanUniformBuffer(VkRenderDevice& rd, const std::string& 
 //-------------------------------------------------------------------------
 // Storage Buffer
 //-------------------------------------------------------------------------
-Arc< VulkanStorageBuffer > VulkanStorageBuffer::Create(VkRenderDevice& rd, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags usage)
+Arc< VulkanStorageBuffer > VulkanStorageBuffer::Create(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags usage)
 {
 	return MakeArc< VulkanStorageBuffer >(rd, name, sizeInBytes, usage);
 }
 
-VulkanStorageBuffer::VulkanStorageBuffer(VkRenderDevice& rd, const std::string& name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage)
+VulkanStorageBuffer::VulkanStorageBuffer(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage)
 	: Super(rd, name,
 		{
 			.count              = 1,

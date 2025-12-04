@@ -29,6 +29,7 @@ struct VkSceneResource : public render::SceneResource
 
     BufferHandle GetOrUpdateVertex(u64 entity, const std::string& filepath, const void* pData, u32 count);
     BufferHandle GetOrUpdateIndex(u64 entity, const std::string& filepath, const void* pData, u32 count);
+    BufferHandle GetOrUpdateMeshlets(u64 entity, const std::string& filepath, const void* pData, u32 count);
     Arc< VulkanTexture > GetOrLoadTexture(u64 entity, const std::string& filepath);
     Arc< VulkanTexture > GetTexture(const std::string& filepath);
 
@@ -46,13 +47,15 @@ struct VkSceneResource : public render::SceneResource
 
 private:
     void ResetFrameBuffers();
-    void UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator& targetBuffer);
+    void UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator& targetBuffer, VkPipelineStageFlags2 dstStageMask);
 
 private:
     VkRenderDevice& m_RenderDevice;
 
-    VkDescriptorSetLayout m_vkSetLayout     = VK_NULL_HANDLE;
-    DescriptorPool*       m_pDescriptorPool = nullptr;
+    VkDescriptorSetLayout m_vkSetLayout            = VK_NULL_HANDLE;
+    VkPipelineLayout      m_vkGlobalPipelineLayout = VK_NULL_HANDLE;
+
+	DescriptorPool*       m_pDescriptorPool = nullptr;
 
     Box< StaticBufferAllocator > m_pVertexAllocator;
     Box< StaticBufferAllocator > m_pIndexAllocator;
@@ -61,9 +64,21 @@ private:
     Box< StaticBufferAllocator > m_pMaterialAllocator;
     Box< StaticBufferAllocator > m_pLightAllocator;
 
+    CameraData                 m_CameraCache = {};
+    Arc< VulkanUniformBuffer > m_pCameraBuffer;
+    Arc< VulkanUniformBuffer > m_pSceneEnvironmentBuffer;
+
+    Box< StaticBufferAllocator > m_pMeshletAllocator;
+    Box< StaticBufferAllocator > m_pMeshletVertexAllocator;
+    Box< StaticBufferAllocator > m_pMeshletTriangleAllocator;
+
     std::unordered_map< std::string, BufferHandle >         m_VertexCache;
     std::unordered_map< std::string, BufferHandle >         m_IndexCache;
     std::unordered_map< std::string, Arc< VulkanTexture > > m_TextureCache;
+
+    std::unordered_map< std::string, BufferHandle > m_MeshletCache;
+    std::unordered_map< std::string, BufferHandle > m_MeshletVertexCache;
+    std::unordered_map< std::string, BufferHandle > m_MeshletTriangleCache;
 
     Arc< VulkanSampler > m_pDefaultSampler;
 };

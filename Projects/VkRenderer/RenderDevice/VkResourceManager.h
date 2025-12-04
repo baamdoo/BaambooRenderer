@@ -28,8 +28,8 @@ public:
     void UploadData(Arc< VulkanTexture > pTexture, const void* pData, u64 sizeInBytes, VkBufferImageCopy region, bool bGenerateMips = false);
 
 private:
-    Arc< render::Texture > CreateFlat2DTexture(const std::string& name, u32 color);
-    Arc< render::Texture > CreateFlat3DTexture(const std::string& name, u32 color);
+    Arc< render::Texture > CreateFlat2DTexture(const char* name, u32 color);
+    Arc< render::Texture > CreateFlat3DTexture(const char* name, u32 color);
     Arc< render::Texture > CreateFlatWhiteTexture();
     Arc< render::Texture > CreateFlatBlackTexture();
 

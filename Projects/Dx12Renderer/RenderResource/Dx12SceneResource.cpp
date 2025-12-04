@@ -11,12 +11,13 @@
 #include "RenderResource/Dx12Texture.h"
 #include "RenderResource/Dx12Shader.h"
 #include "SceneRenderView.h"
+#include "Utils/Math.hpp"
 
 namespace dx12
 {
 
 static Dx12ComputePipeline* s_CombineTexturesPSO = nullptr;
-Arc< Dx12Texture > CombineTextures(Dx12RenderDevice& rd, const std::string& name, Arc< Dx12Texture > pTextureR, Arc< Dx12Texture > pTextureG, Arc< Dx12Texture > pTextureB)
+Arc< Dx12Texture > CombineTextures(Dx12RenderDevice& rd, const char* name, Arc< Dx12Texture > pTextureR, Arc< Dx12Texture > pTextureG, Arc< Dx12Texture > pTextureB)
 {
     using namespace render;
 
@@ -43,12 +44,12 @@ Arc< Dx12Texture > CombineTextures(Dx12RenderDevice& rd, const std::string& name
         pContext->TransitionBarrier(pTextureB.get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, false);
         pContext->TransitionBarrier(pCombinedTexture.get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 
-        pContext->StageDescriptors(0, 0,
+        pContext->StageDescriptors(
             {
-                pTextureR->GetShaderResourceView(),
-                pTextureG->GetShaderResourceView(),
-                pTextureB->GetShaderResourceView(),
-                pCombinedTexture->GetUnorderedAccessView(0)
+                { "g_TextureR", pTextureR->GetShaderResourceHandle() },
+                { "g_TextureG", pTextureG->GetShaderResourceHandle() },
+                { "g_TextureB", pTextureB->GetShaderResourceHandle() },
+                { "g_OutCombinedTexture", pCombinedTexture->GetUnorderedAccessHandle(0) }
             });
 
         pContext->Dispatch2D< 16, 16 >(width, height);
@@ -68,6 +69,9 @@ Dx12SceneResource::Dx12SceneResource(Dx12RenderDevice& rd)
     // **
     // scene buffers
     // **
+    m_pCameraBuffer           = Dx12ConstantBuffer::Create(m_RenderDevice, "CameraBuffer", sizeof(CameraData), render::eBufferUsage_TransferDest);
+    m_pSceneEnvironmentBuffer = Dx12ConstantBuffer::Create(m_RenderDevice, "SceneEnvironmentBuffer", sizeof(SceneEnvironmentData), render::eBufferUsage_TransferDest);
+
     m_pIndirectDrawAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, "IndirectDrawPool", sizeof(IndirectDrawData) * _KB(8));
     m_pTransformAllocator    = MakeBox< StaticBufferAllocator >(m_RenderDevice, "TransformPool", sizeof(TransformData) * _KB(8));
     m_pMaterialAllocator     = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MaterialPool", sizeof(MaterialData) * _KB(8));
@@ -75,35 +79,16 @@ Dx12SceneResource::Dx12SceneResource(Dx12RenderDevice& rd)
 
 
     // **
-    // root signature for scene draw
-    // **
-    m_pRootSignature = MakeArc< Dx12RootSignature >(m_RenderDevice, "SceneResourceRS");
-
-    const u32 transformRootIdx = m_pRootSignature->AddConstants(1, 1, D3D12_SHADER_VISIBILITY_VERTEX);
-    const u32 materialRootIdx  = m_pRootSignature->AddConstants(1, 1, D3D12_SHADER_VISIBILITY_PIXEL);
-    auto rootIndex = m_pRootSignature->AddCBV(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_ALL);    // g_Camera
-    resourceBindingMapTemp["g_Camera"] = rootIndex;
-    rootIndex = m_pRootSignature->AddSRV(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_VERTEX); // g_Transforms
-    resourceBindingMapTemp["g_Transforms"] = rootIndex;
-    rootIndex = m_pRootSignature->AddSRV(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY_PIXEL);  // g_Materials
-    resourceBindingMapTemp["g_Materials"] = rootIndex;
-    m_pRootSignature->AddDescriptorTable(
-        DescriptorTable()
-            .AddSRVRange(0, 100, UINT_MAX, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE | D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE, 0), // g_SceneTextures
-        D3D12_SHADER_VISIBILITY_PIXEL
-    );
-    m_pRootSignature->AddSampler(0, 0, D3D12_FILTER_MIN_MAG_MIP_LINEAR, D3D12_TEXTURE_ADDRESS_MODE_WRAP, 1);
-    m_pRootSignature->Build();
-
-
-    // **
     // command signature
     // **
+    auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
+    m_pRootSignature = rm.GetGlobalRootSignature();
+
     m_pCommandSignature = new CommandSignature(
         m_RenderDevice,
         CommandSignatureDesc(5, sizeof(IndirectDrawData))
-            .AddConstant(transformRootIdx, 0, 1)
-            .AddConstant(materialRootIdx, 0, 1)
+            .AddConstant(0, 0, 1)
+            .AddConstant(0, 1, 1)
             .AddVertexBufferView(0)
             .AddIndexBufferView()
             .AddDrawIndexed(),
@@ -119,7 +104,7 @@ Dx12SceneResource::~Dx12SceneResource()
 
 void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 {
-    auto& rm = m_RenderDevice.GetResourceManager();
+    auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
 
     ResetFrameBuffers();
 
@@ -134,7 +119,6 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
     }
     UpdateFrameBuffer(transforms.data(), (u32)transforms.size(), sizeof(TransformData), *m_pTransformAllocator, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
 
-    sceneTexSRVs.clear();
     std::vector< MaterialData > materials;
     materials.reserve(sceneView.materials.size());
     std::unordered_map< Dx12Texture*, u32 > srvIndexCache;
@@ -157,8 +141,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
             }
             else
             {
-                sceneTexSRVs.push_back(pAlbedo->GetShaderResourceView());
-                material.albedoID = (u32)sceneTexSRVs.size() - 1;
+                material.albedoID = pAlbedo->GetShaderResourceHandle();
                 srvIndexCache.emplace(pAlbedo.get(), material.albedoID);
             }
         }
@@ -173,8 +156,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
             }
             else
             {
-                sceneTexSRVs.push_back(pNormal->GetShaderResourceView());
-                material.normalID = (u32)sceneTexSRVs.size() - 1;
+                material.normalID = pNormal->GetShaderResourceHandle();
                 srvIndexCache.emplace(pNormal.get(), material.normalID);
             }
         }
@@ -223,8 +205,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
         }
         else
         {
-            sceneTexSRVs.push_back(pORM->GetShaderResourceView());
-            material.metallicRoughnessAoID = (u32)sceneTexSRVs.size() - 1;
+            material.metallicRoughnessAoID = pORM->GetShaderResourceHandle();
             srvIndexCache.emplace(pORM.get(), material.metallicRoughnessAoID);
         }
 
@@ -238,8 +219,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
             }
             else
             {
-                sceneTexSRVs.push_back(pEmission->GetShaderResourceView());
-                material.emissionID = (u32)sceneTexSRVs.size() - 1;
+                material.emissionID = pEmission->GetShaderResourceHandle();
                 srvIndexCache.emplace(pEmission.get(), material.emissionID);
             }
         }
@@ -272,6 +252,8 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
             assert(IsValidIndex(data.transform) && data.transform < sceneView.transforms.size());
             indirect.transformID = data.transform;
 
+            //indirect.sphereBounds = float4(meshView.sphere.Center(), meshView.sphere.Radius());
+
             indirect.materialID = INVALID_INDEX;
             if (IsValidIndex(data.material))
             {
@@ -286,23 +268,66 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
     UpdateFrameBuffer(indirects.data(), (u32)indirects.size(), sizeof(IndirectDrawData), *m_pIndirectDrawAllocator, D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
 
     UpdateFrameBuffer(&sceneView.light, 1, sizeof(LightData), *m_pLightAllocator, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
+
+    auto ApplyJittering = [viewport = sceneView.viewport](const mat4& m_, float2 jitter)
+        {
+            mat4 m = m_;
+            m[2][0] += (jitter.x * 2.0f - 1.0f) / viewport.x;
+            m[2][1] += (jitter.y * 2.0f - 1.0f) / viewport.y;
+
+            return m;
+        };
+
+    CameraData camera = {};
+    camera.mView = sceneView.camera.mView;
+    camera.mProj = sceneView.postProcess.effectBits & (1 << ePostProcess::AntiAliasing) ?
+        ApplyJittering(sceneView.camera.mProj, baamboo::math::GetHaltonSequence((u32)sceneView.frame)) : sceneView.camera.mProj;
+    camera.mViewProj = camera.mProj * camera.mView;
+    camera.mViewProjInv = glm::inverse(camera.mViewProj);
+    camera.mViewProjUnjittered = sceneView.camera.mProj * camera.mView;
+    camera.mViewProjUnjitteredPrev =
+        m_CameraCache.mViewProjUnjittered == glm::identity< mat4 >() ? camera.mViewProjUnjittered : m_CameraCache.mViewProjUnjittered;
+    camera.position = sceneView.camera.pos;
+    camera.zNear = sceneView.camera.zNear;
+    camera.zFar = sceneView.camera.zFar;
+    m_CameraCache = std::move(camera);
+    memcpy(m_pCameraBuffer->GetSystemMemoryAddress(), &m_CameraCache, sizeof(m_CameraCache));
+
+    SceneEnvironmentData sceneEnvironmentData =
+    {
+        .atmosphere = sceneView.atmosphere.data,
+        .cloud      = sceneView.cloud.data
+    };
+    memcpy(m_pSceneEnvironmentBuffer->GetSystemMemoryAddress(), &sceneEnvironmentData, sizeof(sceneEnvironmentData));
 }
 
 void Dx12SceneResource::BindSceneResources(render::CommandContext& context)
 {
+    auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
+    const auto& pGlobalRootSignature = rm.GetGlobalRootSignature();
+
     Dx12CommandContext& rhicontext = static_cast<Dx12CommandContext&>(context);
-    if (rhicontext.IsComputeContext())
-    {
-        rhicontext.SetComputeShaderResourceView("g_Transforms", GetTransformBuffer()->GpuAddress());
-        rhicontext.SetComputeShaderResourceView("g_Materials", GetMaterialBuffer()->GpuAddress());
-        rhicontext.SetComputeConstantBufferView("g_Lights", GetLightBuffer()->GpuAddress());
-    }
-    else
-    {
-        rhicontext.SetGraphicsShaderResourceView("g_Transforms", GetTransformBuffer()->GpuAddress());
-        rhicontext.SetGraphicsShaderResourceView("g_Materials", GetMaterialBuffer()->GpuAddress());
-        rhicontext.StageDescriptors(5, 0, std::move(sceneTexSRVs));
-    }
+    const auto& d3d12CommandList2 = rhicontext.GetD3D12CommandList();
+
+    auto cameraRootIdx = pGlobalRootSignature->GetRootIndex(GLOBAL_DESCRIPTOR_SPACE, 0);
+    d3d12CommandList2->SetComputeRootConstantBufferView(cameraRootIdx, m_pCameraBuffer->GpuAddress());
+    d3d12CommandList2->SetGraphicsRootConstantBufferView(cameraRootIdx, m_pCameraBuffer->GpuAddress());
+
+    auto transformBufferIdx = pGlobalRootSignature->GetRootIndex(GLOBAL_DESCRIPTOR_SPACE, 1);
+    d3d12CommandList2->SetComputeRoot32BitConstant(transformBufferIdx, GetTransformBuffer()->GetShaderResourceHandle(), 0);
+    d3d12CommandList2->SetGraphicsRoot32BitConstant(transformBufferIdx, GetTransformBuffer()->GetShaderResourceHandle(), 0);
+
+    auto materialBufferIdx = pGlobalRootSignature->GetRootIndex(GLOBAL_DESCRIPTOR_SPACE, 2);
+    d3d12CommandList2->SetComputeRoot32BitConstant(materialBufferIdx, GetMaterialBuffer()->GetShaderResourceHandle(), 0);
+    d3d12CommandList2->SetGraphicsRoot32BitConstant(materialBufferIdx, GetMaterialBuffer()->GetShaderResourceHandle(), 0);
+
+    auto lightRootIdx = pGlobalRootSignature->GetRootIndex(GLOBAL_DESCRIPTOR_SPACE, 3);
+    d3d12CommandList2->SetComputeRootConstantBufferView(lightRootIdx, GetLightBuffer()->GpuAddress());
+    d3d12CommandList2->SetGraphicsRootConstantBufferView(lightRootIdx, GetLightBuffer()->GpuAddress());
+
+    auto sceneEnvironmentRootIdx = pGlobalRootSignature->GetRootIndex(GLOBAL_DESCRIPTOR_SPACE, 4);
+    d3d12CommandList2->SetComputeRootConstantBufferView(sceneEnvironmentRootIdx, m_pSceneEnvironmentBuffer->GpuAddress());
+    d3d12CommandList2->SetGraphicsRootConstantBufferView(sceneEnvironmentRootIdx, m_pSceneEnvironmentBuffer->GpuAddress());
 }
 
 Arc< Dx12VertexBuffer > Dx12SceneResource::GetOrUpdateVertex(u64 entity, const std::string& filepath, const void* pData, u32 count)

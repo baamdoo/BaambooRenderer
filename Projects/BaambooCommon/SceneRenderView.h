@@ -1,4 +1,5 @@
 #pragma once
+#include "Boundings.h"
 #include "ShaderTypes.h"
 #include "ComponentTypes.h"
 #include "RenderCommon/RenderNode.h"
@@ -44,6 +45,9 @@ struct StaticMeshRenderView
 {
 	u64         id;
 	std::string tag;
+
+	BoundingBox    aabb;
+	BoundingSphere sphere;
 
 	const void* vData;
 	u32         vCount;
@@ -150,6 +154,12 @@ struct PostProcessRenderView
 	} tonemap;
 };
 
+struct DebugRenderView
+{
+	u64 id;
+	u64 effectBits;
+};
+
 //-------------------------------------------------------------------------
 // SceneRenderView : Holds all the scene data
 //                   required for rendering in a refined state.
@@ -159,7 +169,10 @@ struct SceneRenderView
 	float time;
 	u64   frame;
 
+	float2 viewport;
+
 	bool bDrawUI;
+
 	std::vector< Arc< render::RenderNode > > rg;
 
 	std::vector< TransformRenderView >  transforms;
@@ -173,6 +186,7 @@ struct SceneRenderView
 	AtmosphereRenderView  atmosphere;
 	CloudRenderView       cloud;
 	PostProcessRenderView postProcess;
+	DebugRenderView       debug;
 
 	// for sync producer(SceneRenderView)-consumer(Renderer)
 	std::mutex* pSceneMutex;

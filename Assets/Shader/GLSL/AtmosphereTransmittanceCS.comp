@@ -2,12 +2,10 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_GOOGLE_include_directive : require
 
-#define _ATMOSPHERE
+#define _SCENEENVIRONMENT
 #include "AtmosphereCommon.hg"
 
-layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
-
-layout(set = SET_PUSH, binding = 2, r11f_g11f_b10f) uniform writeonly image2D g_TransmittanceLUT;
+layout(set = 1, binding = 2, r11f_g11f_b10f) uniform writeonly image2D g_OutTransmittanceLUT;
 
 void GenerateTransmittanceCoordsFromUV(vec2 uv, float bottomRadius, float topRadius, out float cosZenithAngle, out float viewHeight)
 {
@@ -27,6 +25,8 @@ void GenerateTransmittanceCoordsFromUV(vec2 uv, float bottomRadius, float topRad
 
 vec3 ComputeExtinction(vec3 rayOrigin, vec3 rayDir, float rayLength, int numSamples) 
 {
+    AtmosphereData Atmosphere = GetAtmosphereData();
+
     float stepSize   = rayLength / float(numSamples);
     vec3  extinction = vec3(0.0);
     
@@ -35,40 +35,43 @@ vec3 ComputeExtinction(vec3 rayOrigin, vec3 rayDir, float rayLength, int numSamp
         float t   = (float(i) + 0.5) * stepSize;
         vec3  pos = rayOrigin + t * rayDir;
 
-        float altitude = GetAltitude(pos);
+        float altitude = GetAltitude(pos, Atmosphere.planetRadiusKm);
         
-        float rayleighDensity = GetDensityAtHeight(altitude, g_Atmosphere.rayleighDensityH_km);
-        extinction += g_Atmosphere.rayleighScattering * rayleighDensity * stepSize;
+        float rayleighDensity = GetDensityAtHeight(altitude, Atmosphere.rayleighDensityKm);
+        extinction += Atmosphere.rayleighScattering * rayleighDensity * stepSize;
         
-        float mieDensity = GetDensityAtHeight(altitude, g_Atmosphere.mieDensityH_km);
-        extinction += (g_Atmosphere.mieScattering + g_Atmosphere.mieAbsorption) * mieDensity * stepSize;
+        float mieDensity = GetDensityAtHeight(altitude, Atmosphere.mieDensityKm);
+        extinction += (Atmosphere.mieScattering + Atmosphere.mieAbsorption) * mieDensity * stepSize;
         
-        float ozoneDensity = GetDensityOzoneAtHeight(altitude);
-        extinction += g_Atmosphere.ozoneAbsorption * ozoneDensity * stepSize;
+        float ozoneDensity = GetDensityOzoneAtHeight(altitude, Atmosphere.ozoneCenterKm, Atmosphere.ozoneWidthKm);
+        extinction += Atmosphere.ozoneAbsorption * ozoneDensity * stepSize;
     }
     
     return extinction;
 }
 
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 void main() 
 {
-    ivec2 imgSize   = imageSize(g_TransmittanceLUT);
+    ivec2 imgSize   = imageSize(g_OutTransmittanceLUT);
     ivec2 pixCoords = ivec2(gl_GlobalInvocationID.xy);
     if (any(greaterThanEqual(pixCoords, imgSize)))
         return;
 
     vec2  uv        = (vec2(pixCoords) + 0.5) / vec2(imgSize);
     
+    AtmosphereData Atmosphere = GetAtmosphereData();
+
     float cosZenithAngle, viewHeight;
     GenerateTransmittanceCoordsFromUV(
-        uv, g_Atmosphere.planetRadius_km, g_Atmosphere.atmosphereRadius_km, cosZenithAngle, viewHeight
+        uv, Atmosphere.planetRadiusKm, Atmosphere.atmosphereRadiusKm, cosZenithAngle, viewHeight
     );
     
     vec3 rayOrigin = vec3(0.0, viewHeight, 0.0);
     vec3 rayDir    = vec3(safeSqrt(1.0 - cosZenithAngle * cosZenithAngle), cosZenithAngle, 0.0);
     
-    vec2 groundIntersection     = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, g_Atmosphere.planetRadius_km);
-    vec2 atmosphereIntersection = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, g_Atmosphere.atmosphereRadius_km);
+    vec2 groundIntersection     = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, Atmosphere.planetRadiusKm);
+    vec2 atmosphereIntersection = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, Atmosphere.atmosphereRadiusKm);
     
     float rayLength;
     if (groundIntersection.x > 0.0) 
@@ -83,7 +86,7 @@ void main()
     
     if (rayLength <= 0.0) 
     {
-        imageStore(g_TransmittanceLUT, ivec2(uv), vec4(0.0, 0.0, 0.0, 1.0));
+        imageStore(g_OutTransmittanceLUT, ivec2(uv), vec4(0.0, 0.0, 0.0, 1.0));
         return;
     }
     
@@ -91,5 +94,5 @@ void main()
     vec3 extinction    = ComputeExtinction(rayOrigin, rayDir, rayLength, numSamples);
     vec3 transmittance = exp(-extinction); // (2) T(xa,xb) = exp(−Integral(xa~xb, σ(x)dx))
     
-    imageStore(g_TransmittanceLUT, pixCoords, vec4(transmittance, 1.0));
+    imageStore(g_OutTransmittanceLUT, pixCoords, vec4(transmittance, 1.0));
 }

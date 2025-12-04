@@ -6,7 +6,7 @@ namespace vk
 class VulkanRenderTarget : public render::RenderTarget
 {
 public:
-    VulkanRenderTarget(VkRenderDevice& rd, const std::string& name);
+    VulkanRenderTarget(VkRenderDevice& rd, const char* name);
     ~VulkanRenderTarget();
 
     VulkanRenderTarget& AttachTexture(render::eAttachmentPoint attachmentPoint, Arc< render::Texture > tex);

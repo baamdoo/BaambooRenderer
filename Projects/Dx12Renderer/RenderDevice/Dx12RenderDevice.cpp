@@ -69,47 +69,47 @@ void Dx12RenderDevice::Flush()
 		m_pCopyQueue->Flush();
 }
 
-Arc< render::Buffer > Dx12RenderDevice::CreateBuffer(const std::string& name, render::Buffer::CreationInfo&& desc)
+Arc< render::Buffer > Dx12RenderDevice::CreateBuffer(const char* name, render::Buffer::CreationInfo&& desc)
 {
 	return Dx12Buffer::Create(*this, name, std::move(desc));
 }
 
-Arc< render::Buffer > Dx12RenderDevice::CreateEmptyBuffer(const std::string& name)
+Arc< render::Buffer > Dx12RenderDevice::CreateEmptyBuffer(const char* name)
 {
 	return Dx12Buffer::CreateEmpty(*this, name);
 }
 
-Arc< render::Texture > Dx12RenderDevice::CreateTexture(const std::string& name, render::Texture::CreationInfo&& desc)
+Arc< render::Texture > Dx12RenderDevice::CreateTexture(const char* name, render::Texture::CreationInfo&& desc)
 {
 	return Dx12Texture::Create(*this, name, std::move(desc));
 }
 
-Arc< render::Texture > Dx12RenderDevice::CreateEmptyTexture(const std::string& name)
+Arc< render::Texture > Dx12RenderDevice::CreateEmptyTexture(const char* name)
 {
 	return Dx12Texture::CreateEmpty(*this, name);
 }
 
-Arc< render::RenderTarget > Dx12RenderDevice::CreateEmptyRenderTarget(const std::string& name)
+Arc< render::RenderTarget > Dx12RenderDevice::CreateEmptyRenderTarget(const char* name)
 {
 	return MakeArc< Dx12RenderTarget >(name);
 }
 
-Arc< render::Sampler > Dx12RenderDevice::CreateSampler(const std::string& name, render::Sampler::CreationInfo&& info)
+Arc< render::Sampler > Dx12RenderDevice::CreateSampler(const char* name, render::Sampler::CreationInfo&& info)
 {
 	return Dx12Sampler::Create(*this, name, std::move(info));
 }
 
-Arc< render::Shader > Dx12RenderDevice::CreateShader(const std::string& name, render::Shader::CreationInfo&& info)
+Arc< render::Shader > Dx12RenderDevice::CreateShader(const char* name, render::Shader::CreationInfo&& info)
 {
 	return Dx12Shader::Create(*this, name, std::move(info));
 }
 
-Box< render::ComputePipeline > Dx12RenderDevice::CreateComputePipeline(const std::string& name)
+Box< render::ComputePipeline > Dx12RenderDevice::CreateComputePipeline(const char* name)
 {
 	return MakeBox< Dx12ComputePipeline >(*this, name);
 }
 
-Box< render::GraphicsPipeline > Dx12RenderDevice::CreateGraphicsPipeline(const std::string& name)
+Box< render::GraphicsPipeline > Dx12RenderDevice::CreateGraphicsPipeline(const char* name)
 {
 	return MakeBox< Dx12GraphicsPipeline >(*this, name);
 }

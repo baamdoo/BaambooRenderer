@@ -7,22 +7,22 @@ namespace render
 //-------------------------------------------------------------------------
 // Buffer
 //-------------------------------------------------------------------------
-Arc< Buffer > Buffer::Create(RenderDevice& rd, const std::string& name, CreationInfo&& desc)
+Arc< Buffer > Buffer::Create(RenderDevice& rd, const char* name, CreationInfo&& desc)
 {
 	return rd.CreateBuffer(name, std::move(desc));
 }
 
-Arc< Buffer > Buffer::CreateEmpty(RenderDevice& rd, const std::string& name)
+Arc< Buffer > Buffer::CreateEmpty(RenderDevice& rd, const char* name)
 {
 	return rd.CreateEmptyBuffer(name);
 }
 
-Buffer::Buffer(const std::string& name)
+Buffer::Buffer(const char* name)
 	: Super(name, eResourceType::Buffer)
 {
 }
 
-Buffer::Buffer(const std::string& name, CreationInfo&& desc)
+Buffer::Buffer(const char* name, CreationInfo&& desc)
 	: Super(name, eResourceType::Buffer)
 	, m_CreationInfo(std::move(desc))
 {
@@ -32,22 +32,22 @@ Buffer::Buffer(const std::string& name, CreationInfo&& desc)
 //-------------------------------------------------------------------------
 // Texture
 //-------------------------------------------------------------------------
-Arc< Texture > Texture::Create(RenderDevice& rd, const std::string& name, CreationInfo&& desc)
+Arc< Texture > Texture::Create(RenderDevice& rd, const char* name, CreationInfo&& desc)
 {
 	return rd.CreateTexture(name, std::move(desc));
 }
 
-Arc< Texture > Texture::CreateEmpty(RenderDevice& rd, const std::string& name)
+Arc< Texture > Texture::CreateEmpty(RenderDevice& rd, const char* name)
 {
 	return rd.CreateEmptyTexture(name);
 }
 
-Texture::Texture(const std::string& name)
+Texture::Texture(const char* name)
 	: Super(name, eResourceType::Texture)
 {
 }
 
-Texture::Texture(const std::string& name, CreationInfo&& info)
+Texture::Texture(const char* name, CreationInfo&& info)
 	: Super(name, eResourceType::Texture)
 	, m_CreationInfo(info)
 {
@@ -62,12 +62,12 @@ bool Texture::IsDepthTexture() const
 //-------------------------------------------------------------------------
 // Sampler
 //-------------------------------------------------------------------------
-Arc< Sampler > Sampler::Create(RenderDevice& rd, const std::string& name, CreationInfo&& info)
+Arc< Sampler > Sampler::Create(RenderDevice& rd, const char* name, CreationInfo&& info)
 {
 	return rd.CreateSampler(name, std::move(info));
 }
 
-Arc< Sampler > Sampler::CreateLinearRepeat(RenderDevice& rd, const std::string& name) {
+Arc< Sampler > Sampler::CreateLinearRepeat(RenderDevice& rd, const char* name) {
 	return Create(rd, name,
 		{
 			.filter      = eFilterMode::Linear,
@@ -75,7 +75,7 @@ Arc< Sampler > Sampler::CreateLinearRepeat(RenderDevice& rd, const std::string& 
 		});
 }
 
-Arc< Sampler > Sampler::CreateLinearClamp(RenderDevice& rd, const std::string& name)
+Arc< Sampler > Sampler::CreateLinearClamp(RenderDevice& rd, const char* name)
 {
 	return Create(rd, name,
 		{
@@ -84,7 +84,7 @@ Arc< Sampler > Sampler::CreateLinearClamp(RenderDevice& rd, const std::string& n
 		});
 }
 
-Arc< Sampler > Sampler::CreatePointRepeat(RenderDevice& rd, const std::string& name)
+Arc< Sampler > Sampler::CreatePointRepeat(RenderDevice& rd, const char* name)
 {
 	return Create(rd, name,
 		{
@@ -94,7 +94,7 @@ Arc< Sampler > Sampler::CreatePointRepeat(RenderDevice& rd, const std::string& n
 		});
 }
 
-Arc< Sampler > Sampler::CreatePointClamp(RenderDevice& rd, const std::string& name)
+Arc< Sampler > Sampler::CreatePointClamp(RenderDevice& rd, const char* name)
 {
 	return Create(rd, name,
 		{
@@ -104,7 +104,7 @@ Arc< Sampler > Sampler::CreatePointClamp(RenderDevice& rd, const std::string& na
 		});
 }
 
-Arc< Sampler > Sampler::CreateLinearClampCmp(RenderDevice& rd, const std::string& name)
+Arc< Sampler > Sampler::CreateLinearClampCmp(RenderDevice& rd, const char* name)
 {
 	return Create(rd, name,
 		{
@@ -116,7 +116,7 @@ Arc< Sampler > Sampler::CreateLinearClampCmp(RenderDevice& rd, const std::string
 		});
 }
 
-Sampler::Sampler(const std::string& name, CreationInfo&& info)
+Sampler::Sampler(const char* name, CreationInfo&& info)
 	: Super(name, eResourceType::Sampler)
 	, m_CreationInfo(std::move(info))
 {
@@ -126,12 +126,12 @@ Sampler::Sampler(const std::string& name, CreationInfo&& info)
 //-------------------------------------------------------------------------
 // Render Target
 //-------------------------------------------------------------------------
-Arc< RenderTarget > RenderTarget::CreateEmpty(RenderDevice& rd, const std::string& name)
+Arc< RenderTarget > RenderTarget::CreateEmpty(RenderDevice& rd, const char* name)
 {
 	return rd.CreateEmptyRenderTarget(name);
 }
 
-RenderTarget::RenderTarget(const std::string& name)
+RenderTarget::RenderTarget(const char* name)
 	: Super(name, eResourceType::RenderTarget)
 	, m_pAttachments(eAttachmentPoint::NumAttachmentPoints)
 {
@@ -154,12 +154,12 @@ RenderTarget& RenderTarget::SetLoadAttachment(eAttachmentPoint attachmentPoint)
 //-------------------------------------------------------------------------
 // Shader
 //-------------------------------------------------------------------------
-Arc< Shader > Shader::Create(RenderDevice& rd, const std::string& name, CreationInfo&& info)
+Arc< Shader > Shader::Create(RenderDevice& rd, const char* name, CreationInfo&& info)
 {
 	return rd.CreateShader(name, std::move(info));
 }
 
-Shader::Shader(const std::string& name, CreationInfo&& info)
+Shader::Shader(const char* name, CreationInfo&& info)
 	: Super(name, eResourceType::Shader)
 	, m_CreationInfo(info)
 {
@@ -169,13 +169,13 @@ Shader::Shader(const std::string& name, CreationInfo&& info)
 //-------------------------------------------------------------------------
 // Pipelines
 //-------------------------------------------------------------------------
-Box< GraphicsPipeline > GraphicsPipeline::Create(RenderDevice& rd, const std::string& name)
+Box< GraphicsPipeline > GraphicsPipeline::Create(RenderDevice& rd, const char* name)
 {
 	return rd.CreateGraphicsPipeline(name);
 }
 
-GraphicsPipeline::GraphicsPipeline(const std::string& name)
-	: m_Name(name.c_str())
+GraphicsPipeline::GraphicsPipeline(const char* name)
+	: m_Name(name)
 {
 }
 
@@ -198,10 +198,12 @@ GraphicsPipeline& GraphicsPipeline::SetShaders(
 }
 GraphicsPipeline& GraphicsPipeline::SetMeshShaders(
 	Arc< Shader > pMS,
+	Arc< Shader > pPS,
 	Arc< Shader > pTS)
 {
-	m_pMS = pMS;
 	m_pTS = pTS;
+	m_pMS = pMS;
+	m_pPS = pPS;
 
 	m_bMeshShader = true;
 
@@ -218,13 +220,13 @@ std::pair< u32, u32 > GraphicsPipeline::GetResourceBindingIndex(const std::strin
 }
 
 
-Box< ComputePipeline > ComputePipeline::Create(RenderDevice& rd, const std::string& name)
+Box< ComputePipeline > ComputePipeline::Create(RenderDevice& rd, const char* name)
 {
 	return rd.CreateComputePipeline(name);
 }
 
-ComputePipeline::ComputePipeline(const std::string& name)
-	: m_Name(name.c_str())
+ComputePipeline::ComputePipeline(const char* name)
+	: m_Name(name)
 {
 }
 

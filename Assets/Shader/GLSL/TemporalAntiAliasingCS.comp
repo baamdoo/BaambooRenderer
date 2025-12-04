@@ -1,14 +1,14 @@
 #version 460
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_GOOGLE_include_directive : require
-#include "../Common.bsh"
+
 #include "HelperFunctions.hg"
 
-layout (set = SET_PUSH, binding = 0) uniform sampler2D g_SceneTexture;
-layout (set = SET_PUSH, binding = 1) uniform sampler2D g_VelocityTexture; // MotionVectors.xy + Roughness.z + Metallic.w
-layout (set = SET_PUSH, binding = 2) uniform sampler2D g_HistoryTexture;
+layout (set = 1, binding = 0) uniform sampler2D g_SceneTexture;
+layout (set = 1, binding = 1) uniform sampler2D g_VelocityTexture; // MotionVectors.xy + Roughness.z + Metallic.w
+layout (set = 1, binding = 2) uniform sampler2D g_HistoryTexture;
 
-layout (set = SET_PUSH, binding = 3, rgba16f) uniform writeonly image2D g_OutputImage;
+layout (set = 1, binding = 3, rgba16f) uniform writeonly image2D g_OutputImage;
 
 layout(push_constant) uniform PushConstants
 {

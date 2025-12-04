@@ -130,6 +130,7 @@ AtmosphereNode::AtmosphereNode(render::RenderDevice& rd)
 void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)
 {
 	using namespace render;
+	auto& rm = m_RenderDevice.GetResourceManager();
 
 	if (g_FrameData.componentMarker & (1 << eComponentType::CAtmosphere))
 	{
@@ -137,9 +138,8 @@ void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderVie
 
 		context.TransitionBarrier(m_pTransmittanceLUT, eTextureLayout::General);
 
-		context.SetComputeDynamicUniformBuffer("g_Atmosphere", renderView.atmosphere.data);
-		context.StageDescriptor("g_TransmittanceLUT", m_pTransmittanceLUT);
-
+		context.StageDescriptor("g_OutTransmittanceLUT", m_pTransmittanceLUT);
+		
 		context.Dispatch2D< 8, 8 >(TRANSMITTANCE_LUT_RESOLUTION.x, TRANSMITTANCE_LUT_RESOLUTION.y);
 
 		//
@@ -150,10 +150,9 @@ void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderVie
 
 		context.SetComputeConstants(sizeof(u32), &renderView.atmosphere.msIsoSampleCount, 0);
 		context.SetComputeConstants(sizeof(u32), &renderView.atmosphere.msNumRaySteps, sizeof(u32));
-		context.SetComputeDynamicUniformBuffer("g_Atmosphere", renderView.atmosphere.data);
 		context.StageDescriptor("g_TransmittanceLUT", m_pTransmittanceLUT, g_FrameData.pLinearClamp);
-		context.StageDescriptor("g_MultiScatteringLUT", m_pMultiScatteringLUT);
-
+		context.StageDescriptor("g_OutMultiScatteringLUT", m_pMultiScatteringLUT);
+		
 		context.Dispatch2D< 8, 8 >(MULTISCATTERING_LUT_RESOLUTION.x, MULTISCATTERING_LUT_RESOLUTION.y);
 	}
 
@@ -165,12 +164,10 @@ void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderVie
 
 	context.SetComputeConstants(sizeof(u32), &renderView.atmosphere.svMinRaySteps, 0);
 	context.SetComputeConstants(sizeof(u32), &renderView.atmosphere.svMaxRaySteps, sizeof(u32));
-	context.SetComputeDynamicUniformBuffer("g_Camera", g_FrameData.camera);
-	context.SetComputeDynamicUniformBuffer("g_Atmosphere", renderView.atmosphere.data);
 	context.StageDescriptor("g_TransmittanceLUT", m_pTransmittanceLUT, g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_MultiScatteringLUT", m_pMultiScatteringLUT, g_FrameData.pLinearClamp);
-	context.StageDescriptor("g_SkyViewLUT", m_pSkyViewLUT);
-
+	context.StageDescriptor("g_OutSkyViewLUT", m_pSkyViewLUT);
+	
 	context.Dispatch2D< 8, 8 >(SKYVIEW_LUT_RESOLUTION.x, SKYVIEW_LUT_RESOLUTION.y);
 
 	//
@@ -178,11 +175,9 @@ void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderVie
 
 	context.TransitionBarrier(m_pAerialPerspectiveLUT, eTextureLayout::General);
 
-	context.SetComputeDynamicUniformBuffer("g_Camera", g_FrameData.camera);
-	context.SetComputeDynamicUniformBuffer("g_Atmosphere", renderView.atmosphere.data);
 	context.StageDescriptor("g_TransmittanceLUT", m_pTransmittanceLUT, g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_MultiScatteringLUT", m_pMultiScatteringLUT, g_FrameData.pLinearClamp);
-	context.StageDescriptor("g_AerialPerspectiveLUT", m_pAerialPerspectiveLUT);
+	context.StageDescriptor("g_OutAerialPerspectiveLUT", m_pAerialPerspectiveLUT);
 
 	context.Dispatch3D< 4, 4, 4 >(AERIALPERSPECTIVE_LUT_RESOLUTION.x, AERIALPERSPECTIVE_LUT_RESOLUTION.y, AERIALPERSPECTIVE_LUT_RESOLUTION.z);
 
@@ -198,10 +193,9 @@ void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderVie
 		u32 sampleCount;
 	} constant = { renderView.atmosphere.svMinRaySteps, renderView.atmosphere.svMaxRaySteps, renderView.atmosphere.msIsoSampleCount };
 	context.SetComputeConstants(sizeof(constant), &constant);
-	context.SetComputeDynamicUniformBuffer("g_Atmosphere", renderView.atmosphere.data);
 	context.StageDescriptor("g_TransmittanceLUT", m_pTransmittanceLUT, g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_MultiScatteringLUT", m_pMultiScatteringLUT, g_FrameData.pLinearClamp);
-	context.StageDescriptor("g_AtmosphereAmbientLUT", m_pAtmosphereAmbientLUT);
+	context.StageDescriptor("g_OutAtmosphereAmbientLUT", m_pAtmosphereAmbientLUT);
 
 	context.Dispatch1D< 64 >(ATMOSPHEREAMBIENT_LUT_RESOLUTION.x);
 
@@ -211,16 +205,8 @@ void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderVie
 	context.TransitionBarrier(m_pSkyViewLUT, eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(m_pSkyboxLUT, eTextureLayout::General);
 
-	struct
-	{
-		float3 lightDir0;
-		//float3 lightDir1;
-		float  planetRadius_km;
-	} skyboxConstant = { renderView.light.directionals[0].direction, renderView.atmosphere.data.planetRadius_km };
-	context.SetComputeConstants(sizeof(skyboxConstant), &skyboxConstant);
-	context.SetComputeDynamicUniformBuffer("g_Camera", g_FrameData.camera);
 	context.StageDescriptor("g_SkyViewLUT", m_pSkyViewLUT, g_FrameData.pLinearClamp);
-	context.StageDescriptor("g_SkyboxLUT", m_pSkyboxLUT);
+	context.StageDescriptor("g_OutSkyboxLUT", m_pSkyboxLUT);
 
 	context.Dispatch3D< 8, 8, 6 >(SKYBOX_LUT_RESOLUTION.x, SKYBOX_LUT_RESOLUTION.y, SKYBOX_LUT_RESOLUTION.z);
 

@@ -16,11 +16,11 @@ enum class eBufferType
 class Dx12Buffer : public render::Buffer, public Dx12Resource
 {
 public:
-    static Arc< Dx12Buffer > Create(Dx12RenderDevice& rd, const std::string& name, CreationInfo&& desc);
-    static Arc< Dx12Buffer > CreateEmpty(Dx12RenderDevice& rd, const std::string& name);
+    static Arc< Dx12Buffer > Create(Dx12RenderDevice& rd, const char* name, CreationInfo&& desc);
+    static Arc< Dx12Buffer > CreateEmpty(Dx12RenderDevice& rd, const char* name);
 
-    Dx12Buffer(Dx12RenderDevice& rd, const std::string& name);
-    Dx12Buffer(Dx12RenderDevice& rd, const std::string& name, CreationInfo&& info, eBufferType type = eBufferType::None);
+    Dx12Buffer(Dx12RenderDevice& rd, const char* name);
+    Dx12Buffer(Dx12RenderDevice& rd, const char* name, CreationInfo&& info, eBufferType type = eBufferType::None);
     virtual ~Dx12Buffer() = default;
 
     virtual void Resize(u64 sizeInBytes, bool bReset = false) override;
@@ -45,9 +45,9 @@ class Dx12VertexBuffer final : public Dx12Buffer
 {
 using Super = Dx12Buffer;
 public:
-    static Arc< Dx12VertexBuffer > Create(Dx12RenderDevice& rd, const std::string& name, u32 numVertices);
+    static Arc< Dx12VertexBuffer > Create(Dx12RenderDevice& rd, const char* name, u32 numVertices);
 
-    Dx12VertexBuffer(Dx12RenderDevice& rd, const std::string& name, u32 numVertices);
+    Dx12VertexBuffer(Dx12RenderDevice& rd, const char* name, u32 numVertices);
     virtual ~Dx12VertexBuffer() = default;
 
     [[nodiscard]]
@@ -61,9 +61,9 @@ class Dx12IndexBuffer final : public Dx12Buffer
 {
 using Super = Dx12Buffer;
 public:
-    static Arc< Dx12IndexBuffer > Create(Dx12RenderDevice& rd, const std::string& name, u32 numIndices);
+    static Arc< Dx12IndexBuffer > Create(Dx12RenderDevice& rd, const char* name, u32 numIndices);
 
-    Dx12IndexBuffer(Dx12RenderDevice& rd, const std::string& name, u32 numIndices);
+    Dx12IndexBuffer(Dx12RenderDevice& rd, const char* name, u32 numIndices);
     virtual ~Dx12IndexBuffer() = default;
 
     [[nodiscard]]
@@ -77,9 +77,9 @@ class Dx12ConstantBuffer : public Dx12Buffer
 {
 using Super = Dx12Buffer;
 public:
-    static Arc< Dx12ConstantBuffer > Create(Dx12RenderDevice& rd, const std::string& name, u64 sizeInBytes, RenderFlags additionalUsage = 0);
+    static Arc< Dx12ConstantBuffer > Create(Dx12RenderDevice& rd, const char* name, u64 sizeInBytes, RenderFlags additionalUsage = 0);
 
-    Dx12ConstantBuffer(Dx12RenderDevice& rd, const std::string& name, u64 sizeInBytes, RenderFlags additionalUsage = 0);
+    Dx12ConstantBuffer(Dx12RenderDevice& rd, const char* name, u64 sizeInBytes, RenderFlags additionalUsage = 0);
     virtual ~Dx12ConstantBuffer();
 
     [[nodiscard]]
@@ -93,23 +93,19 @@ class Dx12StructuredBuffer : public Dx12Buffer
 {
 using Super = Dx12Buffer;
 public:
-    static Arc< Dx12StructuredBuffer > Create(Dx12RenderDevice& rd, const std::string& name, u64 sizeInBytes, RenderFlags additionalUsage = 0);
+    static Arc< Dx12StructuredBuffer > Create(Dx12RenderDevice& rd, const char* name, u64 sizeInBytes, RenderFlags additionalUsage = 0);
 
-    Dx12StructuredBuffer(Dx12RenderDevice& rd, const std::string& name, u64 sizeInBytes, RenderFlags additionalUsage = 0);
+    Dx12StructuredBuffer(Dx12RenderDevice& rd, const char* name, u64 sizeInBytes, RenderFlags additionalUsage = 0);
     virtual ~Dx12StructuredBuffer();
 
-    [[nodiscard]]
     D3D12_CPU_DESCRIPTOR_HANDLE GetShaderResourceView() const { return m_SRVAllocation.GetCPUHandle(); }
-    [[nodiscard]]
     D3D12_CPU_DESCRIPTOR_HANDLE GetUnorderedAccessView() const { return m_UAVAllocation.GetCPUHandle(); }
-    [[nodiscard]]
-    u8* GetSystemMemoryAddress() const { return m_pSystemMemory; }
+    u32 GetShaderResourceHandle(u32 offset = 0) const { return m_SRVAllocation.Index(offset); }
+    u32 GetUnorderedAccessHandle(u32 offset = 0) const { return m_UAVAllocation.Index(offset); }
 
 private:
     DescriptorAllocation m_SRVAllocation = {};
     DescriptorAllocation m_UAVAllocation = {};
-
-    u8* m_pSystemMemory = nullptr;
 };
 
 }

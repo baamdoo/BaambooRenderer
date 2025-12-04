@@ -35,6 +35,7 @@ project "Application"
 		"%{Path.Solution}Projects/ThirdParties/entt/single_include",
 		"%{Path.Solution}Projects/ThirdParties/assimp/include",
 		"%{Path.Solution}Projects/ThirdParties/magic_enum/include",
+		"%{Path.Solution}Projects/ThirdParties/meshoptimizer/src",
 	}
 
 	links {
@@ -42,7 +43,7 @@ project "Application"
 	}
 
 	debugenvs { 
-		"PATH=Projects/ThirdParties/assimp/bin/Release/;Output/Binaries/Debug/windows/BaambooCommon;%PATH%"
+		"PATH=Projects/ThirdParties/assimp/bin/Release/;Output/Binaries/%{cfg.buildcfg}/%{cfg.system}/BaambooCommon;%PATH%"
 	}
 
 	filter 'system:windows'
@@ -106,21 +107,24 @@ project "BaambooEngine"
 		"%{Path.Solution}Projects/ThirdParties/entt/single_include",
 		"%{Path.Solution}Projects/ThirdParties/assimp/include",
 		"%{Path.Solution}Projects/ThirdParties/magic_enum/include",
+		"%{Path.Solution}Projects/ThirdParties/meshoptimizer/src",
 	}
 
 	libdirs {
-		"%{Path.ThirdParty}/assimp/lib/Release/",
-		"%{Path.ThirdParty}/glfw/src/Release/",
+		"%{Path.ThirdParty}/assimp/lib/Release",
+		"%{Path.ThirdParty}/glfw/src/Release",
+		"%{Path.Solution}Projects/ThirdParties/meshoptimizer/Release",
 	}
 
 	links {
 		"BaambooCommon",
 		"glfw3.lib",
 		'assimp-vc143-mt.lib', 
+		'meshoptimizer.lib', 
 	}
 
 	debugenvs { 
-		"PATH=Projects/ThirdParties/assimp/bin/Release/;Output/Binaries/Debug/windows/BaambooCommon;%PATH%"
+		"PATH=Projects/ThirdParties/assimp/bin/Release/;Output/Binaries/%{cfg.buildcfg}/%{cfg.system}/BaambooCommon;%PATH%"
 	}
 
 	filter { "files:ThirdParties/imgui/**.cpp" }

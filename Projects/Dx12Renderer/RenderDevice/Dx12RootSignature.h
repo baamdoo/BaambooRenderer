@@ -3,8 +3,6 @@
 namespace dx12
 {
 
-constexpr u32 MAX_ROOT_INDEX = D3D12_MAX_ROOT_COST;
-
 class DescriptorTable
 {
 public:
@@ -43,10 +41,11 @@ private:
 class Dx12RootSignature : public ArcBase
 {
 public:
-	Dx12RootSignature(Dx12RenderDevice& rd, const std::string& name);
+	Dx12RootSignature(Dx12RenderDevice& rd, const std::string& name, D3D12_ROOT_SIGNATURE_FLAGS flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 	~Dx12RootSignature();
 
 	u32 AddConstants(u32 reg, u32 numConstants, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
+	u32 AddConstants(u32 reg, u32 space, u32 numConstants, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
 	u32 AddCBV(u32 reg, u32 space, D3D12_ROOT_DESCRIPTOR_FLAGS flags = D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
 	u32 AddSRV(u32 reg, u32 space, D3D12_ROOT_DESCRIPTOR_FLAGS flags = D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
 	u32 AddUAV(u32 reg, u32 space, D3D12_ROOT_DESCRIPTOR_FLAGS flags = D3D12_ROOT_DESCRIPTOR_FLAG_NONE, D3D12_SHADER_VISIBILITY visibility = D3D12_SHADER_VISIBILITY_ALL);
@@ -76,7 +75,9 @@ public:
 
 	const std::vector< CD3DX12_ROOT_PARAMETER1 >& GetParameters() const { return m_RootParameters; }
 
-protected:
+	u32 GetRootIndex(u32 space, u32 reg) const;
+
+private:
 	u32 AddParameter(const CD3DX12_ROOT_PARAMETER1& param);
 
 private:
@@ -88,12 +89,18 @@ private:
 	std::vector< CD3DX12_ROOT_PARAMETER1 >	   m_RootParameters;
 	std::vector< CD3DX12_STATIC_SAMPLER_DESC > m_StaticSamplers;
 
+	std::unordered_map< LONG, u32 > m_RootIndexMap;
+
+	// -- To be deprecated -- //
 	std::vector< u32 >             m_DescriptorTableIndices;
 	std::vector< DescriptorTable > m_DescriptorTables;
 
 	u32	m_NumDescriptorsPerTable[MAX_ROOT_INDEX] = {};
 	u64	m_SamplerTableBitMask    = 0;
 	u64	m_DescriptorTableBitMask = 0;
+
+	D3D12_ROOT_SIGNATURE_FLAGS m_Flags;
+	////////////////////////////
 };
 
 }

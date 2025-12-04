@@ -5,7 +5,7 @@
 namespace vk
 {
 
-VulkanRenderTarget::VulkanRenderTarget(VkRenderDevice& rd, const std::string& name)
+VulkanRenderTarget::VulkanRenderTarget(VkRenderDevice& rd, const char* name)
 	: render::RenderTarget(name)
 	, m_RenderDevice(rd)
 {

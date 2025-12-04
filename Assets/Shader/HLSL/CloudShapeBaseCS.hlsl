@@ -1,14 +1,16 @@
 #include "Common.hlsli"
+#include "NoiseCommon.hlsli"
 #include "HelperFunctions.hlsli"
-#include "Noise.hlsli"
 
-RWTexture3D< float4 > g_BaseNoise : register(u0);
+ConstantBuffer< DescriptorHeapIndex > g_OutBaseNoise : register(b1, ROOT_CONSTANT_SPACE);
 
 [numthreads(8, 8, 8)]
 void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 {
+    RWTexture3D< float4 > OutBaseNoise = GetResource(g_OutBaseNoise.index);
+
     uint width, height, depth;
-    g_BaseNoise.GetDimensions(width, height, depth);
+    OutBaseNoise.GetDimensions(width, height, depth);
     int3 imgSize = int3(width, height, depth);
 
     int3 pixCoords = (int3)dispatchThreadID.xyz;
@@ -36,5 +38,5 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     float perlinWorley = remap(perlin, 0.0, 1.0, worley0, 1.0);
 
     float4 value = float4(perlinWorley, worley0, worley1, worley2);
-    g_BaseNoise[pixCoords] = value;
+    OutBaseNoise[pixCoords] = value;
 }

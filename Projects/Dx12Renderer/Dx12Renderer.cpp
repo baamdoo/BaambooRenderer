@@ -4,6 +4,8 @@
 #include "RenderDevice/Dx12DescriptorPool.h"
 #include "RenderDevice/Dx12CommandQueue.h"
 #include "RenderDevice/Dx12CommandContext.h"
+#include "RenderDevice/Dx12RootSignature.h"
+#include "RenderDevice/Dx12ResourceManager.h"
 #include "RenderModule/Dx12ImGuiModule.h"
 #include "RenderResource/Dx12Texture.h"
 #include "RenderResource/Dx12SceneResource.h"

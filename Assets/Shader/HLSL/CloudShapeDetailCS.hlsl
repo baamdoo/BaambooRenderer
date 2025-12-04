@@ -1,8 +1,6 @@
 #include "Common.hlsli"
+#include "NoiseCommon.hlsli"
 #include "HelperFunctions.hlsli"
-#include "Noise.hlsli"
-
-RWTexture3D< float4 > g_DetailNoise : register(u0);
 
 cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
@@ -28,11 +26,16 @@ cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
     float bLacunarity;
 };
 
+ConstantBuffer< DescriptorHeapIndex > g_OutDetailNoise : register(b1, ROOT_CONSTANT_SPACE);
+
+
 [numthreads(8, 8, 8)]
 void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 {
+    RWTexture3D< float4 > OutDetailNoise = GetResource(g_OutDetailNoise.index);
+
     uint width, height, depth;
-    g_DetailNoise.GetDimensions(width, height, depth);
+    OutDetailNoise.GetDimensions(width, height, depth);
     int3 imgSize = int3(width, height, depth);
 
     int3 pixCoords = (int3)dispatchThreadID.xyz;
@@ -48,5 +51,5 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     float a = max(0.0, 1.0 - (r * rWeight + g * gWeight + b * bWeight) / 1.75);
 
     float4 value = float4(r, g, b, a);
-    g_DetailNoise[pixCoords] = value;
+    OutDetailNoise[pixCoords] = value;
 }

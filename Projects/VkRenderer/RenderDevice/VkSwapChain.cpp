@@ -218,7 +218,7 @@ void SwapChain::Init()
 		};
 		VK_CHECK(vkCreateImageView(m_RenderDevice.vkDevice(), &imageViewInfo, nullptr, &imageViews[i]));
 
-		auto pTex = VulkanTexture::CreateEmpty(m_RenderDevice, "SwapChainBuffer_" + std::to_string(i));
+		auto pTex = VulkanTexture::CreateEmpty(m_RenderDevice, std::string("SwapChainBuffer_" + std::to_string(i)).c_str());
 		pTex->SetResource(
 			images[i],
 			imageViews[i],

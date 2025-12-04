@@ -4,8 +4,6 @@
 #include <fstream>
 #include <spirv_cross/spirv_cross.hpp>
 
-static constexpr u32 MAX_DYNAMIC_ARRAY_SIZE = 1024u;
-
 namespace vk
 {
 
@@ -129,7 +127,7 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, VulkanShader::Sh
 			u32 set       = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
 			u32 binding   = compiler.get_decoration(resource.id, spv::DecorationBinding);
 			// u32 size = (u32)compiler.get_declared_struct_size(type);
-			u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_DYNAMIC_ARRAY_SIZE : type.array[0]; // assume utilize only 1d-array for now
+			u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_SHADERRESOURCE_ARRAY_SIZE + 1 : type.array[0]; // assume utilize only 1d-array for now
 
 			VulkanShader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
 			descriptorInfo.binding        = binding;
@@ -149,7 +147,7 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, VulkanShader::Sh
 			const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
 			u32 set       = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
 			u32 binding   = compiler.get_decoration(resource.id, spv::DecorationBinding);
-			u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_DYNAMIC_ARRAY_SIZE : type.array[0]; // assume utilize only 1d-array for now
+			u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_SHADERRESOURCE_ARRAY_SIZE + 1 : type.array[0]; // assume utilize only 1d-array for now
 
 			VulkanShader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
 			descriptorInfo.binding        = binding;
@@ -162,11 +160,11 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, VulkanShader::Sh
 	for (const auto& resource : resources.sampled_images)
 	{
 		std::string instanceName = compiler.get_name(resource.id);
-
+		
 		const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
 		u32 set       = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
 		u32 binding   = compiler.get_decoration(resource.id, spv::DecorationBinding);
-		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_DYNAMIC_ARRAY_SIZE : type.array[0]; // assume utilize only 1d-array for now
+		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_SHADERRESOURCE_ARRAY_SIZE + 1 : type.array[0]; // assume utilize only 1d-array for now
 
 		VulkanShader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
 		descriptorInfo.binding        = binding;
@@ -182,7 +180,7 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, VulkanShader::Sh
 		const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
 		u32 set = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
 		u32 binding = compiler.get_decoration(resource.id, spv::DecorationBinding);
-		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_DYNAMIC_ARRAY_SIZE : type.array[0]; // assume utilize only 1d-array for now
+		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_SHADERRESOURCE_ARRAY_SIZE + 1 : type.array[0]; // assume utilize only 1d-array for now
 
 		VulkanShader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
 		descriptorInfo.binding        = binding;
@@ -210,12 +208,12 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, VulkanShader::Sh
 	return stage;
 }
 
-Arc< VulkanShader > VulkanShader::Create(VkRenderDevice& rd, const std::string& name, CreationInfo&& info)
+Arc< VulkanShader > VulkanShader::Create(VkRenderDevice& rd, const char* name, CreationInfo&& info)
 {
 	return MakeArc< VulkanShader >(rd, name, std::move(info));
 }
 
-VulkanShader::VulkanShader(VkRenderDevice& rd, const std::string& name, CreationInfo&& info)
+VulkanShader::VulkanShader(VkRenderDevice& rd, const char* name, CreationInfo&& info)
 	: render::Shader(name, std::move(info))
 	, VulkanResource(rd, name)
 {

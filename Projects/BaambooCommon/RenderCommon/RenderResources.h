@@ -20,8 +20,8 @@ enum class eResourceType : u8
 class BAAMBOO_API Resource : public ArcBase
 {
 public:
-    Resource(const std::string& name, eResourceType type)
-        : m_Name(name.c_str()), m_Type(type) {}
+    Resource(const char* name, eResourceType type)
+        : m_Name(name), m_Type(type) {}
     virtual ~Resource() = default;
 
 protected:
@@ -60,18 +60,18 @@ public:
         RenderFlags bufferUsage = 0;
     };
 
-    static Arc< Buffer > Create(RenderDevice& rd, const std::string& name, CreationInfo&& desc);
-    static Arc< Buffer > CreateEmpty(RenderDevice& rd, const std::string& name);
+    static Arc< Buffer > Create(RenderDevice& rd, const char* name, CreationInfo&& desc);
+    static Arc< Buffer > CreateEmpty(RenderDevice& rd, const char* name);
 
-    Buffer(const std::string& name);
-    Buffer(const std::string& name, CreationInfo&& info);
+    Buffer(const char* name);
+    Buffer(const char* name, CreationInfo&& info);
     virtual ~Buffer() = default;
 
     virtual void Resize(u64 sizeInBytes, bool bReset = false) = 0;
 
     virtual u64 SizeInBytes() const { return 0; }
 
-protected:
+public:
     CreationInfo m_CreationInfo = {};
 };
 
@@ -206,11 +206,11 @@ public:
         bool bGenerateMips = false;
     };
 
-    static Arc< Texture > Create(RenderDevice& rd, const std::string& name, CreationInfo&& desc);
-    static Arc< Texture > CreateEmpty(RenderDevice& rd, const std::string& name);
+    static Arc< Texture > Create(RenderDevice& rd, const char* name, CreationInfo&& desc);
+    static Arc< Texture > CreateEmpty(RenderDevice& rd, const char* name);
 
-    Texture(const std::string& name);
-    Texture(const std::string& name, CreationInfo&& info);
+    Texture(const char* name);
+    Texture(const char* name, CreationInfo&& info);
     virtual ~Texture() = default;
 
     virtual void Resize(u32 width, u32 height, u32 depth) = 0;
@@ -291,15 +291,15 @@ public:
         eBorderColor borderColor   = eBorderColor::TransparentBlack_Float;
     };
 
-    static Arc< Sampler > Create(RenderDevice& rd, const std::string& name, CreationInfo&& info);
+    static Arc< Sampler > Create(RenderDevice& rd, const char* name, CreationInfo&& info);
 
-    static Arc< Sampler > CreateLinearRepeat(RenderDevice& rd, const std::string& name = "LinearRepeat");
-    static Arc< Sampler > CreateLinearClamp(RenderDevice& rd, const std::string& name = "LinearClamp");
-    static Arc< Sampler > CreatePointRepeat(RenderDevice& rd, const std::string& name = "PointRepeat");
-    static Arc< Sampler > CreatePointClamp(RenderDevice& rd, const std::string& name = "PointClamp");
-    static Arc< Sampler > CreateLinearClampCmp(RenderDevice& rd, const std::string& name = "Shadow");
+    static Arc< Sampler > CreateLinearRepeat(RenderDevice& rd, const char* name = "LinearRepeat");
+    static Arc< Sampler > CreateLinearClamp(RenderDevice& rd, const char* name = "LinearClamp");
+    static Arc< Sampler > CreatePointRepeat(RenderDevice& rd, const char* name = "PointRepeat");
+    static Arc< Sampler > CreatePointClamp(RenderDevice& rd, const char* name = "PointClamp");
+    static Arc< Sampler > CreateLinearClampCmp(RenderDevice& rd, const char* name = "Shadow");
 
-    Sampler(const std::string& name, CreationInfo&& info);
+    Sampler(const char* name, CreationInfo&& info);
     virtual ~Sampler() = default;
 
 protected:
@@ -332,9 +332,9 @@ class BAAMBOO_API RenderTarget : public Resource
 {
 using Super = Resource;
 public:
-    static Arc< RenderTarget > CreateEmpty(RenderDevice& rd, const std::string& name);
+    static Arc< RenderTarget > CreateEmpty(RenderDevice& rd, const char* name);
 
-    RenderTarget(const std::string& name);
+    RenderTarget(const char* name);
     ~RenderTarget() = default;
 
     RenderTarget& AttachTexture(eAttachmentPoint attachmentPoint, Arc< Texture > tex);
@@ -416,9 +416,9 @@ public:
         std::string  filename;
     };
 
-    static Arc< Shader > Create(RenderDevice& rd, const std::string& name, CreationInfo&& info);
+    static Arc< Shader > Create(RenderDevice& rd, const char* name, CreationInfo&& info);
 
-    Shader(const std::string& name, CreationInfo&& info);
+    Shader(const char* name, CreationInfo&& info);
     virtual ~Shader() = default;
 
     virtual ShaderBytecode ShaderModule() const { return m_ShaderBytecode; }
@@ -514,9 +514,9 @@ DLLEXPORT_TEMPLATE template class BAAMBOO_API Arc< Shader >;
 class BAAMBOO_API GraphicsPipeline : public ArcBase
 {
 public:
-    static Box< GraphicsPipeline > Create(RenderDevice& device, const std::string& name);
+    static Box< GraphicsPipeline > Create(RenderDevice& rd, const char* name);
 
-    GraphicsPipeline(const std::string& name);
+    GraphicsPipeline(const char* name);
     virtual ~GraphicsPipeline() = default;
 
     GraphicsPipeline& SetShaders(
@@ -527,6 +527,7 @@ public:
         Arc< Shader > pDS = Arc< Shader >());
     GraphicsPipeline& SetMeshShaders(
         Arc< Shader > pMS,
+        Arc< Shader > pPS,
         Arc< Shader > pTS = Arc< Shader >());
 
     virtual GraphicsPipeline& SetRenderTarget(Arc< RenderTarget > renderTarget) = 0;
@@ -546,6 +547,8 @@ public:
     virtual void Build() = 0;
 
     std::pair< u32, u32 > GetResourceBindingIndex(const std::string& name);
+
+    inline bool IsMeshPipeline() const { return m_bMeshShader; }
 
 protected:
     std::string m_Name;
@@ -569,9 +572,9 @@ protected:
 class BAAMBOO_API ComputePipeline : public ArcBase
 {
 public:
-    static Box< ComputePipeline > Create(RenderDevice& device, const std::string& name);
+    static Box< ComputePipeline > Create(RenderDevice& rd, const char* name);
 
-    ComputePipeline(const std::string& name);
+    ComputePipeline(const char* name);
     virtual ~ComputePipeline() = default;
 
     ComputePipeline& SetComputeShader(Arc< Shader > pCS);

@@ -137,10 +137,9 @@ DXGI_FORMAT GetDXGIFormat(D3D_REGISTER_COMPONENT_TYPE componentType, BYTE mask)
 //-------------------------------------------------------------------------
 // Graphics pipeline
 //-------------------------------------------------------------------------
-Dx12GraphicsPipeline::Dx12GraphicsPipeline(Dx12RenderDevice& rd, const std::string& name)
+Dx12GraphicsPipeline::Dx12GraphicsPipeline(Dx12RenderDevice& rd, const char* name)
     : render::GraphicsPipeline(name)
     , m_RenderDevice(rd)
-    , m_pRootSignature(MakeArc< Dx12RootSignature >(m_RenderDevice, name + "_RS"))
 {
     // Default desc values
     m_PipelineDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
@@ -157,9 +156,8 @@ Dx12GraphicsPipeline::Dx12GraphicsPipeline(Dx12RenderDevice& rd, const std::stri
     m_PipelineDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     m_PipelineDesc.SampleDesc.Count      = 1;
 
-    auto& rhiSceneResource = static_cast<Dx12SceneResource&>(m_RenderDevice.GetResourceManager().GetSceneResource());
-    m_pRootSignature     = rhiSceneResource.GetSceneRootSignature();
-    m_ResourceBindingMap = std::move(rhiSceneResource.resourceBindingMapTemp);
+    auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
+    m_pRootSignature = rm.GetGlobalRootSignature();
 }
 
 Dx12GraphicsPipeline::~Dx12GraphicsPipeline()
@@ -291,13 +289,11 @@ void Dx12GraphicsPipeline::Build()
     SetVertexInputLayout(d3d12VS->GetD3D12ShaderReflection());
 
     // Root Signature
-    // Currently graphics pipeline is used for scene indirect-rendering only
-    /*AppendRootSignature(d3d12VS->Reflection(), D3D12_SHADER_VISIBILITY_VERTEX);
-    AppendRootSignature(d3d12PS->Reflection(), D3D12_SHADER_VISIBILITY_PIXEL);
-    if (d3d12GS) AppendRootSignature(d3d12GS->Reflection(), D3D12_SHADER_VISIBILITY_GEOMETRY);
-    if (d3d12HS) AppendRootSignature(d3d12HS->Reflection(), D3D12_SHADER_VISIBILITY_HULL);
-    if (d3d12DS) AppendRootSignature(d3d12DS->Reflection(), D3D12_SHADER_VISIBILITY_DOMAIN);
-    m_pRootSignature->Build();*/
+    ParseRootParameters(d3d12VS->Reflection());
+    ParseRootParameters(d3d12PS->Reflection());
+    if (d3d12GS) ParseRootParameters(d3d12GS->Reflection());
+    if (d3d12HS) ParseRootParameters(d3d12HS->Reflection());
+    if (d3d12DS) ParseRootParameters(d3d12DS->Reflection());
     m_PipelineDesc.pRootSignature = m_pRootSignature->GetD3D12RootSignature();
 
     auto d3d12Device = m_RenderDevice.GetD3D12Device();
@@ -331,150 +327,25 @@ void Dx12GraphicsPipeline::SetVertexInputLayout(ID3D12ShaderReflection* d3d12Sha
     m_PipelineDesc.InputLayout = { m_InputLayoutDesc.data(), static_cast<u32>(m_InputLayoutDesc.size())};
 }
 
-void Dx12GraphicsPipeline::AppendRootSignature(const Dx12Shader::ShaderReflection& reflection, D3D12_SHADER_VISIBILITY visibility)
+void Dx12GraphicsPipeline::ParseRootParameters(const Dx12Shader::ShaderReflection& reflection)
 {
-    constexpr D3D12_ROOT_DESCRIPTOR_FLAGS  UnboundedRootFlag  = D3D12_ROOT_DESCRIPTOR_FLAG_DATA_VOLATILE | D3D12_ROOT_DESCRIPTOR_FLAG_DATA_STATIC_WHILE_SET_AT_EXECUTE;
-    constexpr D3D12_DESCRIPTOR_RANGE_FLAGS UnboundedRangeFlag = D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE | D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE;
-    auto IsUnbounded = [](u32 numDescriptors) 
-        {
-            return numDescriptors == 0 || numDescriptors == UINT_MAX;
-        };
-
     for (const auto& [space, descriptors] : reflection.descriptors)
     {
-        u32 tableOffset = 0;
-        u32 tableOffsetBindless = 0;
-        std::unordered_map< std::string, u32 > offsetCache;
-        std::unordered_map< std::string, u32 > offsetCacheBindless;
-
-        DescriptorTable descriptorTable;
-        DescriptorTable descriptorTableBindless;
         for (const auto& descriptor : descriptors)
         {
-            if (m_ResourceBindingMap.count(descriptor.name))
-            {
-                const auto index = m_ResourceBindingMap[descriptor.name];
-                m_pRootSignature->UpdateVisibility((u32)index, D3D12_SHADER_VISIBILITY_ALL);
-                continue;
-            }
-
-            bool bIsBindless = IsUnbounded(descriptor.numDescriptors);
             switch (descriptor.rangeType)
             {
             case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
-            {
-                if (descriptor.inputType == D3D_SIT_STRUCTURED || D3D_SIT_BYTEADDRESS)
-                {
-                    auto rootIndex = m_pRootSignature->AddSRV(
-                        descriptor.baseRegister,
-                        space,
-                        IsUnbounded(descriptor.numDescriptors) ? UnboundedRootFlag : D3D12_ROOT_DESCRIPTOR_FLAG_NONE,
-                        visibility
-                    );
-
-                    m_ResourceBindingMap.emplace(descriptor.name, rootIndex);
-                }
-                else
-                {
-                    if (bIsBindless)
-                    {
-                        descriptorTableBindless.AddSRVRange(
-                            descriptor.baseRegister,
-                            space,
-                            UINT_MAX,
-                            UnboundedRangeFlag,
-                            visibility
-                        );
-
-                        offsetCacheBindless.emplace(descriptor.name, tableOffsetBindless++);
-                    }
-                    else
-                    {
-                        descriptorTable.AddSRVRange(
-                            descriptor.baseRegister,
-                            space,
-                            descriptor.numDescriptors,
-                            D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
-                            visibility
-                        );
-
-                        offsetCache.emplace(descriptor.name, tableOffset++);
-                    }
-                }
-                break;
-            }
             case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
-            {
-                if (bIsBindless)
-                {
-                    descriptorTableBindless.AddUAVRange(
-                        descriptor.baseRegister,
-                        space,
-                        UINT_MAX,
-                        UnboundedRangeFlag,
-                        visibility
-                    );
-
-                    offsetCacheBindless.emplace(descriptor.name, tableOffsetBindless++);
-                }
-                else
-                {
-                    descriptorTable.AddUAVRange(
-                        descriptor.baseRegister,
-                        space,
-                        descriptor.numDescriptors,
-                        D3D12_DESCRIPTOR_RANGE_FLAG_NONE,
-                        visibility
-                    );
-
-                    offsetCache.emplace(descriptor.name, tableOffset++);
-                }
-                break;
-            }
             case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
             {
-                if (space == ROOT_CONSTANT_SPACE)
-                {
-                    m_ConstantRootIndex = m_pRootSignature->AddConstants(
-                        descriptor.baseRegister, 
-                        descriptor.numDescriptors,
-                        visibility
-                    );
-                }
-                else
-                {
-                    auto rootIndex = m_pRootSignature->AddCBV(
-                        descriptor.baseRegister, 
-                        space, 
-                        IsUnbounded(descriptor.numDescriptors) ? UnboundedRootFlag : D3D12_ROOT_DESCRIPTOR_FLAG_NONE,
-                        visibility
-                    );
+                auto rootIndex = m_pRootSignature->GetRootIndex(space, descriptor.baseRegister);
 
-                    m_ResourceBindingMap.emplace(descriptor.name, rootIndex);
-                }
+                m_ResourceBindingMap.emplace(descriptor.name, rootIndex);
                 break;
             }
             case D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER:
-                // Assume all samplers are static
-                m_pRootSignature->AddSamplerPreset(descriptor.baseRegister);
                 break;
-            }
-        }
-
-        if (descriptorTable.Size() > 0)
-        {
-            auto rootIndex = m_pRootSignature->AddDescriptorTable(descriptorTable);
-            for (const auto& [name, offset] : offsetCache)
-            {
-                m_ResourceBindingMap.emplace(name, (static_cast<u64>(offset) << 32) | rootIndex);
-            }
-        }
-        if (descriptorTableBindless.Size() > 0)
-        {
-            auto rootIndexBindless = m_pRootSignature->AddDescriptorTable(descriptorTableBindless);
-            for (const auto& [name, offset] : offsetCacheBindless)
-            {
-                m_ResourceBindingMap.emplace(name, (static_cast<u64>(offset) << 32) | rootIndexBindless);
             }
         }
     }
@@ -484,11 +355,12 @@ void Dx12GraphicsPipeline::AppendRootSignature(const Dx12Shader::ShaderReflectio
 //-------------------------------------------------------------------------
 // Compute pipeline
 //-------------------------------------------------------------------------
-Dx12ComputePipeline::Dx12ComputePipeline(Dx12RenderDevice& rd, const std::string& name)
+Dx12ComputePipeline::Dx12ComputePipeline(Dx12RenderDevice& rd, const char* name)
 	: render::ComputePipeline(name)
     , m_RenderDevice(rd)
-    , m_pRootSignature(MakeArc< Dx12RootSignature >(m_RenderDevice, name + "_RS"))
 {
+    auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
+    m_pRootSignature = rm.GetGlobalRootSignature();
 }
 
 Dx12ComputePipeline::~Dx12ComputePipeline()
@@ -504,8 +376,7 @@ void Dx12ComputePipeline::Build()
     m_PipelineDesc.CS = CD3DX12_SHADER_BYTECODE(d3d12CS->GetShaderBufferPointer(), d3d12CS->GetShaderBufferSize());
 
     // Root Signature
-    AppendRootSignature(d3d12CS->Reflection());
-    m_pRootSignature->Build();
+    ParseRootParameters(d3d12CS->Reflection());
     m_PipelineDesc.pRootSignature = m_pRootSignature->GetD3D12RootSignature();
 
     auto d3d12Device = m_RenderDevice.GetD3D12Device();
@@ -514,97 +385,25 @@ void Dx12ComputePipeline::Build()
     );
 }
 
-void Dx12ComputePipeline::AppendRootSignature(const Dx12Shader::ShaderReflection& reflection)
+void Dx12ComputePipeline::ParseRootParameters(const Dx12Shader::ShaderReflection& reflection)
 {
-    constexpr D3D12_ROOT_DESCRIPTOR_FLAGS  UnboundedRootFlag  = D3D12_ROOT_DESCRIPTOR_FLAG_DATA_VOLATILE | D3D12_ROOT_DESCRIPTOR_FLAG_DATA_STATIC_WHILE_SET_AT_EXECUTE;
-    constexpr D3D12_DESCRIPTOR_RANGE_FLAGS UnboundedRangeFlag = D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE | D3D12_DESCRIPTOR_RANGE_FLAG_DATA_VOLATILE;
-    auto IsUnbounded = [](u32 numDescriptors)
-        {
-            return numDescriptors == 0 || numDescriptors == UINT_MAX;
-        };
-
     for (const auto& [space, descriptors] : reflection.descriptors)
     {
-        u32 tableOffset = 0;
-        std::unordered_map< std::string, u32 > offsetCache;
-
-        DescriptorTable descriptorTable;
-
         for (const auto& descriptor : descriptors)
         {
             switch (descriptor.rangeType)
             {
             case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
-            {
-                if (descriptor.inputType == D3D_SIT_STRUCTURED || descriptor.inputType == D3D_SIT_BYTEADDRESS)
-                {
-                    auto rootIndex = m_pRootSignature->AddSRV(
-                        descriptor.baseRegister,
-                        space,
-                        IsUnbounded(descriptor.numDescriptors) ? UnboundedRootFlag : D3D12_ROOT_DESCRIPTOR_FLAG_NONE
-                    );
-
-                    m_ResourceBindingMap.emplace(descriptor.name, rootIndex);
-                }
-                else
-                {
-                    descriptorTable.AddSRVRange(
-                        descriptor.baseRegister,
-                        space,
-                        descriptor.numDescriptors,
-                        IsUnbounded(descriptor.numDescriptors) ? UnboundedRangeFlag : D3D12_DESCRIPTOR_RANGE_FLAG_NONE
-                    );
-
-                    offsetCache.emplace(descriptor.name, tableOffset++);
-                }
-                break;
-            }
             case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
-            {
-                descriptorTable.AddUAVRange(
-                    descriptor.baseRegister,
-                    space,
-                    descriptor.numDescriptors,
-                    IsUnbounded(descriptor.numDescriptors) ? UnboundedRangeFlag : D3D12_DESCRIPTOR_RANGE_FLAG_NONE
-                );
-
-                offsetCache.emplace(descriptor.name, tableOffset++);
-                break;
-            }
             case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
             {
-                if (space == ROOT_CONSTANT_SPACE)
-                {
-                    m_ConstantRootIndex = m_pRootSignature->AddConstants(
-                        descriptor.baseRegister, 
-                        descriptor.numDescriptors
-                    );
-                }
-                else
-                {
-                    auto rootIndex = m_pRootSignature->AddCBV(
-                        descriptor.baseRegister,
-                        space,
-                        IsUnbounded(descriptor.numDescriptors) ? UnboundedRootFlag : D3D12_ROOT_DESCRIPTOR_FLAG_NONE
-                    );
+                auto rootIndex = m_pRootSignature->GetRootIndex(space, descriptor.baseRegister);
 
-                    m_ResourceBindingMap.emplace(descriptor.name, rootIndex);
-                }
+                m_ResourceBindingMap.emplace(descriptor.name, rootIndex);
                 break;
             }
             case D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER:
-                // Assume all samplers are static
-                m_pRootSignature->AddSamplerPreset(descriptor.baseRegister);
                 break;
-            }
-        }
-
-        if (descriptorTable.Size() > 0)
-        {
-            auto rootIndex = m_pRootSignature->AddDescriptorTable(descriptorTable);
-            for (const auto& [name, offset] : offsetCache)
-            {
-                m_ResourceBindingMap.emplace(name, (static_cast<u64>(offset) << 32) | rootIndex);
             }
         }
     }

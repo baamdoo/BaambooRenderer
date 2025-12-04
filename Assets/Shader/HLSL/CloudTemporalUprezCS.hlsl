@@ -2,20 +2,17 @@
 #include "Common.hlsli"
 #include "HelperFunctions.hlsli"
 
-Texture2D< float4 > g_CloudScatteringLUT             : register(t0);
-Texture2D< float4 > g_PrevUprezzedCloudScatteringLUT : register(t1);
-Texture2D< float >  g_DepthBuffer                    : register(t2);
-
-RWTexture2D< float4 > g_UprezzedCloudScatteringLUT : register(u0);
-
-SamplerState g_LinearClampSampler : register(SAMPLER_INDEX_LINEAR_CLAMP);
-SamplerState g_PointClampSampler  : register(SAMPLER_INDEX_POINT_CLAMP);
-
 cbuffer Push : register(b0, ROOT_CONSTANT_SPACE)
 {
     float  g_BlendFactor;
     float2 g_InvLowResTexSize;
 };
+
+ConstantBuffer< DescriptorHeapIndex > g_CloudScatteringLUT             : register(b1, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_PrevUprezzedCloudScatteringLUT : register(b2, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_DepthBuffer                    : register(b3, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_OutUprezzedCloudScatteringLUT  : register(b4, ROOT_CONSTANT_SPACE);
+
 
 float4 VarianceColorClampAABB(float4 historyColor, Texture2D cloudLUT, float2 uv, float2 invLowResTexSize)
 {
@@ -73,18 +70,24 @@ float4 VarianceColorClampAABB(float4 historyColor, Texture2D cloudLUT, float2 uv
 [numthreads(8, 8, 1)]
 void main(uint3 tID : SV_DispatchThreadID)
 {
+    RWTexture2D< float4 > OutUprezzedCloudScatteringLUT = GetResource(g_OutUprezzedCloudScatteringLUT.index);
+
     uint2 imgSize;
     uint2 pixCoords = tID.xy;
-    g_UprezzedCloudScatteringLUT.GetDimensions(imgSize.x, imgSize.y);
+    OutUprezzedCloudScatteringLUT.GetDimensions(imgSize.x, imgSize.y);
     if (tID.x >= imgSize.x || tID.y >= imgSize.y)
         return;
 
     float2 uv       = (float2(pixCoords) + 0.5) / float2(imgSize);
 
-    float4 currentColor = g_CloudScatteringLUT.Sample(g_LinearClampSampler, uv);
-    float  depth        = g_DepthBuffer.Sample(g_PointClampSampler, uv).r;
+    Texture2D< float >  DepthBuffer                    = GetResource(g_DepthBuffer.index);
+    Texture2D< float4 > CloudScatteringLUT             = GetResource(g_CloudScatteringLUT.index);
+    Texture2D< float4 > PrevUprezzedCloudScatteringLUT = GetResource(g_PrevUprezzedCloudScatteringLUT.index);
 
-    float4 posCLIP        = vec4(uv.x * 2.0 - 1.0, uv.y * -2.0 + 1.0, depth, 1.0);
+    float4 currentColor = CloudScatteringLUT.Sample(g_LinearClampSampler, uv);
+    float  depth        = DepthBuffer.Sample(g_PointClampSampler, uv).r;
+
+    float4 posCLIP        = float4(uv.x * 2.0 - 1.0, uv.y * -2.0 + 1.0, depth, 1.0);
     float4 posHOMOGENEOUS = mul(g_Camera.mViewProjInv, posCLIP);
 
     float4 posPrevClip = mul(g_Camera.mViewProjUnjitteredPrev, posHOMOGENEOUS);
@@ -95,11 +98,13 @@ void main(uint3 tID : SV_DispatchThreadID)
     float4 newColor = currentColor;
     if (all(prevUV > float2(0.0, 0.0)) && all(prevUV < float2(1.0, 1.0)))
     {
-        float4 historyColor = g_PrevUprezzedCloudScatteringLUT.Sample(g_LinearClampSampler, prevUV);
+        float4 historyColor = PrevUprezzedCloudScatteringLUT.Sample(g_LinearClampSampler, prevUV);
         // historyColor = VarianceColorClampAABB(historyColor, g_CloudScatteringLUT, uv, g_InvLowResTexSize);
 
+        if (any(isnan(historyColor)))
+            historyColor = float4(0.0, 0.0, 0.0, 1.0);
         newColor = lerp(historyColor, currentColor, g_BlendFactor);
     }
 
-    g_UprezzedCloudScatteringLUT[pixCoords] = newColor;
+    OutUprezzedCloudScatteringLUT[pixCoords] = newColor;
 }

@@ -141,10 +141,13 @@ namespace StaticSamplerPresets
 }
 static D3D12_STATIC_SAMPLER_DESC s_StaticSamplerPresets[static_cast<u32>(eSamplerIndex::MaxIndex)];
 
-Dx12RootSignature::Dx12RootSignature(Dx12RenderDevice& rd, const std::string& name)
+Dx12RootSignature::Dx12RootSignature(Dx12RenderDevice& rd, const std::string& name, D3D12_ROOT_SIGNATURE_FLAGS flags)
 	: m_RenderDevice(rd)
 	, m_Name(name)
+	, m_Flags(flags)
 {
+	//InitCommonDescriptors();
+
 	s_StaticSamplerPresets[static_cast<u32>(eSamplerIndex::PointWrap)]          = StaticSamplerPresets::PointWrap;
 	s_StaticSamplerPresets[static_cast<u32>(eSamplerIndex::PointClamp)]         = StaticSamplerPresets::PointClamp;
 	s_StaticSamplerPresets[static_cast<u32>(eSamplerIndex::LinearWrap)]         = StaticSamplerPresets::LinearWrap;
@@ -164,8 +167,13 @@ Dx12RootSignature::~Dx12RootSignature()
 
 u32 Dx12RootSignature::AddConstants(u32 reg, u32 numConstants, D3D12_SHADER_VISIBILITY visibility)
 {
+	return AddConstants(reg, ROOT_CONSTANT_SPACE, numConstants, visibility);
+}
+
+u32 Dx12RootSignature::AddConstants(u32 reg, u32 space, u32 numConstants, D3D12_SHADER_VISIBILITY visibility)
+{
 	CD3DX12_ROOT_PARAMETER1 param = {};
-	param.InitAsConstants(numConstants, reg, ROOT_CONSTANT_SPACE, visibility);
+	param.InitAsConstants(numConstants, reg, space, visibility);
 	return AddParameter(param);
 }
 
@@ -270,7 +278,7 @@ void Dx12RootSignature::Build()
 		m_RootParameters.data(), 
 		static_cast<u32>(m_StaticSamplers.size()), 
 		m_StaticSamplers.data(), 
-		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
+		m_Flags
 	);
 
 	D3D_ROOT_SIGNATURE_VERSION highestVersion = m_RenderDevice.GetHighestRootSignatureVersion();
@@ -334,10 +342,45 @@ u64 Dx12RootSignature::GetDescriptorTableBitMask(D3D12_DESCRIPTOR_HEAP_TYPE type
 	return mask;
 }
 
+u32 Dx12RootSignature::GetRootIndex(u32 space, u32 reg) const
+{
+	const auto& it = m_RootIndexMap.find(MAKELONG(space, reg));
+	if (it == m_RootIndexMap.end())
+	{
+		return INVALID_INDEX;
+	}
+
+	return it->second;
+}
+
 u32 Dx12RootSignature::AddParameter(const CD3DX12_ROOT_PARAMETER1& param)
 {
 	m_RootParameters.emplace_back(param);
-	return static_cast<u32>(m_RootParameters.size()) - 1;
+	u32 rootIndex = static_cast<u32>(m_RootParameters.size()) - 1;
+
+	u32 reg   = INVALID_INDEX;
+	u32 space = INVALID_INDEX;
+	switch (param.ParameterType)
+	{
+	case D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS:
+		reg   = param.Constants.ShaderRegister;
+		space = param.Constants.RegisterSpace;
+		break;
+	case D3D12_ROOT_PARAMETER_TYPE_CBV:
+	case D3D12_ROOT_PARAMETER_TYPE_SRV:
+	case D3D12_ROOT_PARAMETER_TYPE_UAV:
+		reg   = param.Descriptor.ShaderRegister;
+		space = param.Descriptor.RegisterSpace;
+		break;
+	case D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE:
+		assert(param.DescriptorTable.NumDescriptorRanges > 0);
+		reg   = param.DescriptorTable.pDescriptorRanges[0].BaseShaderRegister;
+		space = param.DescriptorTable.pDescriptorRanges[0].RegisterSpace;
+		break;
+	}
+	m_RootIndexMap.emplace(MAKELONG(space, reg), rootIndex);
+
+	return rootIndex;
 }
 
 DescriptorTable& DescriptorTable::AddCBVRange(u32 reg, u32 space, u32 numDescriptors, D3D12_DESCRIPTOR_RANGE_FLAGS flags, u32 offset)

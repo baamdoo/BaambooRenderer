@@ -6,7 +6,7 @@ namespace dx12
 class Dx12RenderTarget : public render::RenderTarget
 {
 public:
-    Dx12RenderTarget(const std::string& name);
+    Dx12RenderTarget(const char* name);
     ~Dx12RenderTarget();
 
     void ClearTexture(Dx12CommandContext& context, render::eAttachmentPoint attachmentPoint);

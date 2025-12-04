@@ -36,6 +36,10 @@ struct MeshData
 	std::vector< float4 > boneWeights;
 	bool bHasSkinnedData = false;
 
+	std::vector< Meshlet > meshlets;
+	std::vector< u32 >     meshletVertices;
+	std::vector< u8 >      meshletTriangles;
+
 	inline u32 GetVertexCount() const
 	{
 		return bHasSkinnedData ? static_cast<u32>(skinnedVertices.size()) : static_cast<u32>(vertices.size());
@@ -80,9 +84,10 @@ struct MeshDescriptor
 
 	float scale = 1.0f;
 
-	bool bLoadAnimations = true;
-	bool bOptimize = true;
-	bool bWindingCW = false;
+	bool bLoadAnimations   = false;
+	bool bOptimize         = false;
+	bool bWindingCW        = false;
+	bool bGenerateMeshlets = false;
 };
 
 struct ModelNode
@@ -124,6 +129,8 @@ private:
 	void ProcessBoneHierarchy(aiNode* node, const aiScene* scene, i32 parentIndex = -1);
 	void ProcessBoneWeights(aiMesh* mesh, MeshData& meshData);
 	AnimationClip ProcessAnimationClip(aiAnimation* animation);
+
+	void GenerateMeshlets(MeshData& meshData, bool bOptimizeVertexCache);
 
 	std::string GetTextureFilename(aiMaterial* mat, aiTextureType type);
 

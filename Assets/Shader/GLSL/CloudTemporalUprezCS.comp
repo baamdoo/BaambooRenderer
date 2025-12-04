@@ -2,14 +2,14 @@
 #extension GL_GOOGLE_include_directive : require
 
 #define _CAMERA
-#include "Common.hg"
+#include "DescriptorCommon.hg"
 #include "HelperFunctions.hg"
 
-layout(set = SET_PUSH, binding = 1) uniform sampler2D g_CloudScatteringLUT;
-layout(set = SET_PUSH, binding = 2) uniform sampler2D g_PrevUprezzedCloudScatteringLUT;
-layout(set = SET_PUSH, binding = 3) uniform sampler2D g_DepthBuffer;
+layout(set = 1, binding = 0) uniform sampler2D g_CloudScatteringLUT;
+layout(set = 1, binding = 1) uniform sampler2D g_PrevUprezzedCloudScatteringLUT;
+layout(set = 1, binding = 2) uniform sampler2D g_DepthBuffer;
 
-layout(set = SET_PUSH, binding = 4, rgba16f) writeonly uniform image2D g_UprezzedCloudScatteringLUT;
+layout(set = 1, binding = 3, rgba16f) writeonly uniform image2D g_OutUprezzedCloudScatteringLUT;
 
 layout(push_constant) uniform Push 
 {
@@ -71,7 +71,7 @@ vec4 VarianceColorClampAABB(vec4 historyColor, sampler2D cloudLUT, vec2 uv, vec2
 layout (local_size_x = 8, local_size_y = 8) in;
 void main()
 {
-    ivec2 imgSize   = imageSize(g_UprezzedCloudScatteringLUT);
+    ivec2 imgSize   = imageSize(g_OutUprezzedCloudScatteringLUT);
     ivec2 pixCoords = ivec2(gl_GlobalInvocationID.xy);
     if (any(greaterThanEqual(pixCoords, imgSize)))
         return;
@@ -95,9 +95,10 @@ void main()
 
         vec4 historyColor = texture(g_PrevUprezzedCloudScatteringLUT, prevUV);
              //historyColor = VarianceColorClampAABB(historyColor, g_CloudScatteringLUT, uv, g_Push.invLowResTexSize);
-
+        if (any(isnan(historyColor)))
+            historyColor = vec4(0.0, 0.0, 0.0, 1.0);
         newColor = mix(historyColor, currentColor, g_Push.blendFactor);
     }
     
-    imageStore(g_UprezzedCloudScatteringLUT, pixCoords, newColor);
+    imageStore(g_OutUprezzedCloudScatteringLUT, pixCoords, newColor);
 }

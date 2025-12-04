@@ -8,6 +8,7 @@ class DescriptorPool;
 class Dx12Buffer;
 class Dx12ConstantBuffer;
 class Dx12Texture;
+class Dx12RootSignature;
 
 class Dx12ResourceManager : public render::ResourceManager
 {
@@ -35,9 +36,13 @@ public:
     virtual Arc< render::Texture > GetFlatWhiteTexture3D() override;
     virtual Arc< render::Texture > GetFlatBlackTexture3D() override;
 
+    Arc< Dx12RootSignature > GetGlobalRootSignature() const;
+    Arc< DescriptorPool > GetGlobalDescriptorHeap() const;
+
+
 private:
-    Arc< Dx12Texture > CreateFlat2DTexture(const std::string& name, u32 color);
-    Arc< Dx12Texture > CreateFlat3DTexture(const std::string& name, u32 color);
+    Arc< Dx12Texture > CreateFlat2DTexture(const char* name, u32 color);
+    Arc< Dx12Texture > CreateFlat3DTexture(const char* name, u32 color);
 
     Arc< Dx12Texture > LoadTextureArray(const fs::path& dirpath, bool bGenerateMips);
 
@@ -46,9 +51,12 @@ private:
 
     Arc< Dx12Buffer > m_pStagingBuffer;
 
-    Box< DescriptorPool > m_pViewDescriptorPool;
+    
     Box< DescriptorPool > m_pRtvDescriptorPool;
     Box< DescriptorPool > m_pDsvDescriptorPool;
+    Arc< DescriptorPool > m_pGlobalDescriptorHeap;
+
+    Arc< Dx12RootSignature > m_pGlobalRootSignature;
 };
 
 }

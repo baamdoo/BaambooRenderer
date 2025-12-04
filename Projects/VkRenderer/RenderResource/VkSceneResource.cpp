@@ -15,17 +15,26 @@ namespace vk
 
 enum
 {
-	eStaticSetBindingIndex_CombinedImage2D = 0,
-	eStaticSetBindingIndex_Vertex          = 1,
-	eStaticSetBindingIndex_IndirectDraw    = 2,
-	eStaticSetBindingIndex_Transform       = 3,
+	eCommonSetBindingIndex_Camera  = 0,
 
-	eStaticSetBindingIndex_Material = 4,
-	eStaticSetBindingIndex_Lighting = 5,
+	eCommonSetBindingIndex_Vertex          = 1,
+	eCommonSetBindingIndex_IndirectDraw    = 2,
+	eCommonSetBindingIndex_Transform       = 3,
+
+	eCommonSetBindingIndex_Material      = 4,
+	eCommonSetBindingIndex_SceneTextures = 100,
+
+	eCommonSetBindingIndex_Light = 5,
+
+	eCommonSetBindingIndex_Environment = 6,
+
+	//eCommonSetBindingIndex_Meshlet         = 6,
+	//eCommonSetBindingIndex_MeshletVertex   = 7,
+	//eCommonSetBindingIndex_MeshletTriangle = 8,
 };
 
 static VulkanComputePipeline* s_CombineTexturesPipeline = nullptr;
-Arc< VulkanTexture > CombineTextures(VkRenderDevice& rd, const std::string& name, Arc< VulkanTexture > pTextureR, Arc< VulkanTexture > pTextureG, Arc< VulkanTexture > pTextureB, Arc< VulkanSampler > pSampler)
+Arc< VulkanTexture > CombineTextures(VkRenderDevice& rd, const char* name, Arc< VulkanTexture > pTextureR, Arc< VulkanTexture > pTextureG, Arc< VulkanTexture > pTextureB, Arc< VulkanSampler > pSampler)
 {
 	using namespace render;
 
@@ -48,28 +57,28 @@ Arc< VulkanTexture > CombineTextures(VkRenderDevice& rd, const std::string& name
 		pContext->SetRenderPipeline(s_CombineTexturesPipeline);
 
 		VkImageSubresourceRange subresourceRange = {};
-		subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		subresourceRange.aspectMask   = VK_IMAGE_ASPECT_COLOR_BIT;
 		subresourceRange.baseMipLevel = 0;
-		subresourceRange.levelCount = pCombinedTexture->Desc().mipLevels;
-		subresourceRange.layerCount = pCombinedTexture->Desc().arrayLayers;
+		subresourceRange.levelCount   = pCombinedTexture->Desc().mipLevels;
+		subresourceRange.layerCount   = pCombinedTexture->Desc().arrayLayers;
 		pContext->TransitionImageLayout(pTextureR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange);
 		pContext->TransitionImageLayout(pTextureG, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange);
 		pContext->TransitionImageLayout(pTextureB, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange);
 		pContext->TransitionImageLayout(pCombinedTexture, VK_IMAGE_LAYOUT_GENERAL, subresourceRange);
 		pContext->PushDescriptor(
-			0, 
+			1, 0, 
 			{ pSampler->vkSampler(), pTextureR->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
 			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 		pContext->PushDescriptor(
-			1,
+			1, 1,
 			{ pSampler->vkSampler(), pTextureG->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
 			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 		pContext->PushDescriptor(
-			2,
+			1, 2,
 			{ pSampler->vkSampler(), pTextureB->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
 			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 		pContext->PushDescriptor(
-			3,
+			1, 3,
 			{ pSampler->vkSampler(), pCombinedTexture->vkView(), VK_IMAGE_LAYOUT_GENERAL },
 			VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 
@@ -90,41 +99,59 @@ VkSceneResource::VkSceneResource(VkRenderDevice& rd)
 	// **
 	// scene buffers
 	// **
-	m_pVertexAllocator       = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(Vertex) * _MB(8));
-	m_pIndexAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(Index) * 3 * _MB(8), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-	m_pIndirectDrawAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(IndirectDrawData) * _KB(8), VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
-	m_pTransformAllocator    = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(TransformData) * _KB(8));
-	m_pMaterialAllocator     = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(MaterialData) * _KB(8));
+	m_pCameraBuffer           = VulkanUniformBuffer::Create(m_RenderDevice, "CameraBuffer", sizeof(CameraData), VK_BUFFER_USAGE_2_TRANSFER_DST_BIT);
+	m_pSceneEnvironmentBuffer = VulkanUniformBuffer::Create(m_RenderDevice, "CameraBuffer", sizeof(SceneEnvironmentData), VK_BUFFER_USAGE_2_TRANSFER_DST_BIT);
+
+	m_pVertexAllocator       = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(Vertex) * _MB(8LL));
+	m_pIndexAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(Index) * 3 * _MB(8LL), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+	m_pIndirectDrawAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(IndirectDrawData) * _KB(8LL), VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
+	m_pTransformAllocator    = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(TransformData) * _KB(8LL));
+	m_pMaterialAllocator     = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(MaterialData) * _KB(8LL));
 	m_pLightAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(LightData));
+
+	m_pMeshletAllocator      = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(Meshlet) * _MB(128LL));
 
 	// **
 	// scene descriptor pool
 	// **
-	std::vector< VkDescriptorPoolSize > poolSizes =
-	{
-		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 8 },
-		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_BINDLESS_DESCRIPTOR_RESOURCE_COUNT },
-	};
-	m_pDescriptorPool = new DescriptorPool(m_RenderDevice, std::move(poolSizes), 1, VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
-
 	std::vector< VkDescriptorSetLayoutBinding > bindings =
 	{
-		{ eStaticSetBindingIndex_CombinedImage2D, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_BINDLESS_DESCRIPTOR_RESOURCE_COUNT, VK_SHADER_STAGE_FRAGMENT_BIT },
-		{ eStaticSetBindingIndex_Vertex, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT },
-		{ eStaticSetBindingIndex_IndirectDraw, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT },
-		{ eStaticSetBindingIndex_Transform, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT },
-		{ eStaticSetBindingIndex_Material, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT },
-		{ eStaticSetBindingIndex_Lighting, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT },
+		{ 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_ALL, VK_NULL_HANDLE },
+		{ 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, VK_NULL_HANDLE },
+		{ 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, VK_NULL_HANDLE },
+		{ 3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT, VK_NULL_HANDLE },
+		{ 4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, VK_NULL_HANDLE },
+		{ 5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, VK_NULL_HANDLE },
+		{ 6, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, VK_NULL_HANDLE },
+		{ 100, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_BINDLESS_DESCRIPTOR_RESOURCE_COUNT, VK_SHADER_STAGE_FRAGMENT_BIT, VK_NULL_HANDLE },
 	};
+
+	std::unordered_map< VkDescriptorType, VkDescriptorPoolSize > poolSizeMap;
+	for (const auto& binding : bindings)
+	{
+		auto& poolSize = poolSizeMap[binding.descriptorType];
+		poolSize.type             = binding.descriptorType;
+		poolSize.descriptorCount += binding.descriptorCount;
+	}
+
+	std::vector< VkDescriptorPoolSize > poolSizes;
+	std::transform(
+		std::move_iterator(poolSizeMap.begin()),
+		std::move_iterator(poolSizeMap.end()),
+		std::back_inserter(poolSizes),
+		[](std::pair< VkDescriptorType, VkDescriptorPoolSize >&& entry) { return std::move(entry.second); });
+	m_pDescriptorPool = new DescriptorPool(m_RenderDevice, std::move(poolSizes), 1, VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
 
 	std::vector < VkDescriptorBindingFlags > flags =
 	{
-		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT_EXT,
-		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT_EXT,
-		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT_EXT,
-		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT_EXT,
-		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT_EXT,
-		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT_EXT,
+		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT,
+		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT,
+		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT,
+		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT,
+		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT,
+		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT,
+		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT,
+		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT,
 	};
 
 	VkDescriptorSetLayoutBindingFlagsCreateInfoEXT bindingFlagsInfo = {};
@@ -142,6 +169,18 @@ VkSceneResource::VkSceneResource(VkRenderDevice& rd)
 
 
 	// **
+	// Global pipeline layout
+	// **
+	VkPipelineLayoutCreateInfo globalPipelineLayoutInfo = {};
+	globalPipelineLayoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	globalPipelineLayoutInfo.setLayoutCount         = 1;
+	globalPipelineLayoutInfo.pSetLayouts            = &m_vkSetLayout;
+	globalPipelineLayoutInfo.pushConstantRangeCount = 0;
+	globalPipelineLayoutInfo.pPushConstantRanges    = nullptr;
+	vkCreatePipelineLayout(m_RenderDevice.vkDevice(), &globalPipelineLayoutInfo, nullptr, &m_vkGlobalPipelineLayout);
+
+
+	// **
 	// default sampler for scene textures
 	// **
 	m_pDefaultSampler = VulkanSampler::Create(m_RenderDevice, "DefaultSampler", {});
@@ -151,6 +190,7 @@ VkSceneResource::~VkSceneResource()
 {
 	imageInfos.clear();
 
+	vkDestroyPipelineLayout(m_RenderDevice.vkDevice(), m_vkGlobalPipelineLayout, nullptr);
 	vkDestroyDescriptorSetLayout(m_RenderDevice.vkDevice(), m_vkSetLayout, nullptr);
 	RELEASE(m_pDescriptorPool);
 
@@ -159,7 +199,7 @@ VkSceneResource::~VkSceneResource()
 
 void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 {
-	auto& rm = m_RenderDevice.GetResourceManager();
+	auto& rm = static_cast<VkResourceManager&>(m_RenderDevice.GetResourceManager());
 
 	ResetFrameBuffers();
 
@@ -172,7 +212,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 		transform.mViewToWorld  = glm::inverse(transformView.mWorld);
 		transforms.push_back(transform);
 	}
-	UpdateFrameBuffer(transforms.data(), (u32)transforms.size(), sizeof(TransformData), *m_pTransformAllocator);
+	UpdateFrameBuffer(transforms.data(), (u32)transforms.size(), sizeof(TransformData), *m_pTransformAllocator, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT);
 
 	imageInfos.clear();
 	imageInfos.push_back({ m_pDefaultSampler->vkSampler(), StaticCast<VulkanTexture>(rm.GetFlatWhiteTexture())->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
@@ -290,7 +330,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 
 		materials.push_back(material);
 	}
-	UpdateFrameBuffer(materials.data(), (u32)materials.size(), sizeof(MaterialData), *m_pMaterialAllocator);
+	UpdateFrameBuffer(materials.data(), (u32)materials.size(), sizeof(MaterialData), *m_pMaterialAllocator, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
 
 	std::vector< IndirectDrawData > indirects;
 	for (auto& [id, data] : sceneView.draws)
@@ -307,7 +347,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 			indirect.indexCount    = index.count;
 			indirect.instanceCount = 1;
 			indirect.firstIndex    = index.offset;
-			indirect.vertexOffset  = vertex.offset;
+			indirect.vertexOffset  = static_cast<i32>(vertex.offset);
 			indirect.firstInstance = 0;
 
 			indirect.materialIndex = INVALID_INDEX;
@@ -321,42 +361,94 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 			indirect.transformID    = data.transform;
 			indirect.transformCount = (u32)transforms.size();
 
+			indirect.sphereBounds = sceneView.transforms[indirect.transformID].mWorld * float4(meshView.sphere.Center(), meshView.sphere.Radius());
+
 			indirects.push_back(indirect);
 		}
 	}
-	UpdateFrameBuffer(indirects.data(), (u32)indirects.size(), sizeof(IndirectDrawData), *m_pIndirectDrawAllocator);
+	UpdateFrameBuffer(indirects.data(), (u32)indirects.size(), sizeof(IndirectDrawData), *m_pIndirectDrawAllocator, VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT);
 	
-	UpdateFrameBuffer(&sceneView.light, 1, sizeof(LightData), *m_pLightAllocator);
+	UpdateFrameBuffer(&sceneView.light, 1, sizeof(LightData), *m_pLightAllocator, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 
-	auto& descriptorSet = m_pDescriptorPool->AllocateSet(m_vkSetLayout);
-	descriptorSet.StageDescriptors(imageInfos, eStaticSetBindingIndex_CombinedImage2D, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-	descriptorSet.StageDescriptor(m_pVertexAllocator->GetDescriptorInfo(), eStaticSetBindingIndex_Vertex, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-	descriptorSet.StageDescriptor(m_pIndirectDrawAllocator->GetDescriptorInfo(), eStaticSetBindingIndex_IndirectDraw, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-	descriptorSet.StageDescriptor(m_pTransformAllocator->GetDescriptorInfo(), eStaticSetBindingIndex_Transform, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-	descriptorSet.StageDescriptor(m_pMaterialAllocator->GetDescriptorInfo(), eStaticSetBindingIndex_Material, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-	descriptorSet.StageDescriptor(m_pLightAllocator->GetDescriptorInfo(), eStaticSetBindingIndex_Lighting, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+	auto ApplyJittering = [viewport = sceneView.viewport](const mat4& m_, float2 jitter)
+		{
+			mat4 m = m_;
+			m[2][0] += (jitter.x * 2.0f - 1.0f) / viewport.x;
+			m[2][1] += (jitter.y * 2.0f - 1.0f) / viewport.y;
+
+			return m;
+		};
+
+	CameraData camera = {};
+	camera.mView = sceneView.camera.mView;
+	camera.mProj = ApplyRhiNDC((sceneView.postProcess.effectBits & (1 << ePostProcess::AntiAliasing) ?
+		ApplyJittering(sceneView.camera.mProj, baamboo::math::GetHaltonSequence((u32)sceneView.frame)) : sceneView.camera.mProj), eRendererAPI::Vulkan);
+	camera.mViewProj               = camera.mProj * camera.mView;
+	camera.mViewProjInv            = glm::inverse(camera.mViewProj);
+	camera.mViewProjUnjittered     = ApplyRhiNDC(sceneView.camera.mProj, eRendererAPI::Vulkan) * camera.mView;
+	camera.mViewProjUnjitteredPrev =
+		m_CameraCache.mViewProjUnjittered == glm::identity< mat4 >() ? camera.mViewProjUnjittered : m_CameraCache.mViewProjUnjittered;
+	camera.position = sceneView.camera.pos;
+	camera.zNear    = sceneView.camera.zNear;
+	camera.zFar     = sceneView.camera.zFar;
+	m_CameraCache = std::move(camera);
+
+	rm.UploadData(m_pCameraBuffer, &m_CameraCache, m_pCameraBuffer->SizeInBytes(), VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, 0);
+
+	SceneEnvironmentData sceneEnvironmentData = 
+	{
+		.atmosphere = sceneView.atmosphere.data,
+		.cloud      = sceneView.cloud.data
+	};
+	rm.UploadData(m_pSceneEnvironmentBuffer, &sceneEnvironmentData, m_pSceneEnvironmentBuffer->SizeInBytes(), VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, 0);
+
+	u32 variableDescCounts[] = { static_cast<u32>(imageInfos.size()) };
+	auto& descriptorSet = m_pDescriptorPool->AllocateSet(m_vkSetLayout, variableDescCounts);
+	descriptorSet.StageDescriptor({ m_pCameraBuffer->vkBuffer(), 0, m_pCameraBuffer->SizeInBytes() }, eCommonSetBindingIndex_Camera, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+	descriptorSet.StageDescriptor({ m_pSceneEnvironmentBuffer->vkBuffer(), 0, m_pSceneEnvironmentBuffer->SizeInBytes() }, eCommonSetBindingIndex_Environment, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+
+	descriptorSet.StageDescriptors(imageInfos, eCommonSetBindingIndex_SceneTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+	descriptorSet.StageDescriptor(m_pVertexAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Vertex, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+	descriptorSet.StageDescriptor(m_pIndirectDrawAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_IndirectDraw, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+	descriptorSet.StageDescriptor(m_pTransformAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Transform, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+	descriptorSet.StageDescriptor(m_pMaterialAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Material, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+	descriptorSet.StageDescriptor(m_pLightAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Light, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 }
 
 void VkSceneResource::BindSceneResources(render::CommandContext& context)
 {
-	VkCommandContext& rhicontext = static_cast<VkCommandContext&>(context);
-
+	VkCommandContext& rhiContext = static_cast<VkCommandContext&>(context);
+	
 	auto vkDescriptorSet = m_pDescriptorPool->AllocateSet(m_vkSetLayout).vkDescriptorSet();
-	if (rhicontext.IsGraphicsContext())
+	if (rhiContext.IsGraphicsContext())
 	{
 		vkCmdBindDescriptorSets(
-			rhicontext.vkCommandBuffer(),
+			rhiContext.vkCommandBuffer(),
 			VK_PIPELINE_BIND_POINT_GRAPHICS,
-			rhicontext.vkGraphicsPipelineLayout(),
-			eDescriptorSet_Static, 1, &vkDescriptorSet, 0, nullptr);
+			rhiContext.vkGraphicsPipelineLayout(),
+			0, 1, &vkDescriptorSet, 0, nullptr);
+	}
+	else if (rhiContext.IsComputeContext())
+	{
+		vkCmdBindDescriptorSets(
+			rhiContext.vkCommandBuffer(),
+			VK_PIPELINE_BIND_POINT_COMPUTE,
+			rhiContext.vkComputePipelineLayout(),
+			0, 1, &vkDescriptorSet, 0, nullptr);
 	}
 	else
 	{
 		vkCmdBindDescriptorSets(
-			rhicontext.vkCommandBuffer(),
+			rhiContext.vkCommandBuffer(),
+			VK_PIPELINE_BIND_POINT_GRAPHICS,
+			m_vkGlobalPipelineLayout,
+			0, 1, &vkDescriptorSet, 0, nullptr);
+
+		vkCmdBindDescriptorSets(
+			rhiContext.vkCommandBuffer(),
 			VK_PIPELINE_BIND_POINT_COMPUTE,
-			rhicontext.vkComputePipelineLayout(),
-			eDescriptorSet_Static, 1, &vkDescriptorSet, 0, nullptr);
+			m_vkGlobalPipelineLayout,
+			0, 1, &vkDescriptorSet, 0, nullptr);
 	}
 }
 
@@ -444,7 +536,7 @@ void VkSceneResource::ResetFrameBuffers()
 	m_pLightAllocator->Reset();
 }
 
-void VkSceneResource::UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator& targetBuffer)
+void VkSceneResource::UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator& targetBuffer, VkPipelineStageFlags2 dstStageMask)
 {
 	if (count == 0 || elementSizeInBytes == 0)
 		return;
@@ -454,7 +546,7 @@ void VkSceneResource::UpdateFrameBuffer(const void* pData, u32 count, u64 elemen
 	u64 sizeInBytes = count * elementSizeInBytes;
 
 	auto allocation = targetBuffer.Allocate(count, elementSizeInBytes);
-	rm.UploadData(allocation.vkBuffer, pData, sizeInBytes, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT, allocation.offset);
+	rm.UploadData(allocation.vkBuffer, pData, sizeInBytes, dstStageMask, allocation.offset);
 }
 
 VkDescriptorSet VkSceneResource::GetSceneDescriptorSet() const

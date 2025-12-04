@@ -3,6 +3,7 @@
 #include "VkCommandContext.h"
 #include "RenderResource/VkBuffer.h"
 #include "RenderResource/VkSceneResource.h"
+#include "RenderDevice/VkDescriptorPool.h"
 #include "Utils/Math.hpp"
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -126,7 +127,7 @@ Arc< render::Texture > VkResourceManager::LoadTexture(const std::string& filepat
 		};
 		VK_CHECK(vkCreateImageView(m_RenderDevice.vkDevice(), &viewCreateInfo, nullptr, &vkImageView));
 
-		auto pTex = VulkanTexture::CreateEmpty(m_RenderDevice, path.filename().string());
+		auto pTex = VulkanTexture::CreateEmpty(m_RenderDevice, path.filename().string().c_str());
 		pTex->SetResource(vkImage, vkImageView, createInfo, vmaAllocation, vmaAllocationInfo, VK_IMAGE_ASPECT_COLOR_BIT);
 
 		// **
@@ -159,7 +160,7 @@ Arc< render::Texture > VkResourceManager::LoadTexture(const std::string& filepat
 			return nullptr;
 		}
 
-		auto pTex = VulkanTexture::Create(m_RenderDevice, path.filename().string(),
+		auto pTex = VulkanTexture::Create(m_RenderDevice, path.filename().string().c_str(),
 			{
 				.resolution    = { width, height, 1 },
 				.format        = eFormat::RGBA8_UNORM,
@@ -290,7 +291,7 @@ Arc< render::Texture > VkResourceManager::LoadTextureArray(const fs::path& dirpa
 		++i;
 	}
 
-	auto pTextureArray = VulkanTexture::Create(m_RenderDevice, dirpath.filename().string() + "_Array",
+	auto pTextureArray = VulkanTexture::Create(m_RenderDevice, std::string(dirpath.filename().string() + "_Array").c_str(),
 		{
 			.imageType   = eImageType::Texture2D,
 			.resolution  = { static_cast<u32>(baseWidth), static_cast<u32>(baseHeight), 1 },
@@ -375,7 +376,7 @@ void VkResourceManager::UploadData(Arc< VulkanTexture > pTexture, const void* pD
 	m_RenderDevice.ExecuteCommand(pContext);
 }
 
-Arc< render::Texture > VkResourceManager::CreateFlat2DTexture(const std::string& name, u32 color)
+Arc< render::Texture > VkResourceManager::CreateFlat2DTexture(const char* name, u32 color)
 {
 	auto flatTexture =
 		VulkanTexture::Create(
@@ -404,7 +405,7 @@ Arc< render::Texture > VkResourceManager::CreateFlat2DTexture(const std::string&
 	return flatTexture;
 }
 
-Arc< render::Texture > VkResourceManager::CreateFlat3DTexture(const std::string& name, u32 color)
+Arc< render::Texture > VkResourceManager::CreateFlat3DTexture(const char* name, u32 color)
 {
 	auto flatTexture =
 		VulkanTexture::Create(
@@ -443,5 +444,6 @@ Arc< render::Texture > VkResourceManager::CreateFlatBlackTexture()
 {
 	return CreateFlat2DTexture("DefaultTexture::Black", 0xFF000000u);
 }
+
 
 } // namespace vk

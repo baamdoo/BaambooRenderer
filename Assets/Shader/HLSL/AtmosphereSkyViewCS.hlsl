@@ -1,13 +1,6 @@
 ﻿#define _CAMERA
-#include "Common.hlsli"
-#define _ATMOSPHERE
+#define _SCENEENVIRONMENT
 #include "AtmosphereCommon.hlsli"
-
-Texture2D< float3 >   g_TransmittanceLUT   : register(t0);
-Texture2D< float3 >   g_MultiScatteringLUT : register(t1);
-RWTexture2D< float3 > g_SkyViewLUT         : register(u0);
-
-SamplerState g_LinearClampSampler : register(SAMPLER_INDEX_LINEAR_CLAMP);
 
 struct PushConstants
 {
@@ -16,9 +9,14 @@ struct PushConstants
 };
 ConstantBuffer< PushConstants > g_Push : register(b0, ROOT_CONSTANT_SPACE);
 
-float3 GetSkyViewRayDirectionFromUV(float2 uv, float viewHeight)
+ConstantBuffer< DescriptorHeapIndex > g_TransmittanceLUT   : register(b1, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_MultiScatteringLUT : register(b2, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_OutSkyViewLUT      : register(b3, ROOT_CONSTANT_SPACE);
+
+
+float3 GetSkyViewRayDirectionFromUV(float2 uv, float viewHeight, float planetRadiusKm)
 {
-	float Vhorizon           = sqrt(viewHeight * viewHeight - g_Atmosphere.planetRadius_km * g_Atmosphere.planetRadius_km);
+	float Vhorizon           = sqrt(viewHeight * viewHeight - planetRadiusKm * planetRadiusKm);
 	float cosBeta            = Vhorizon / viewHeight;				
 	float beta               = acosFast4(cosBeta);
 	float zenithHorizonAngle = PI - beta;
@@ -57,7 +55,12 @@ float3 GetSkyViewRayDirectionFromUV(float2 uv, float viewHeight)
 
 float4 RayMarchScattering(float3 rayOrigin, float3 rayDir, float maxDistance)
 {
-    float2 atmosphereIntersection = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, g_Atmosphere.atmosphereRadius_km);
+    AtmosphereData Atmosphere = GetAtmosphereData();
+
+    Texture2D< float3 > TransmittanceLUT   = GetResource(g_TransmittanceLUT.index);
+    Texture2D< float3 > MultiScatteringLUT = GetResource(g_MultiScatteringLUT.index);
+
+    float2 atmosphereIntersection = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, Atmosphere.atmosphereRadiusKm);
     if (atmosphereIntersection.y < 0.0)
         return 0.0;
     
@@ -67,16 +70,18 @@ float4 RayMarchScattering(float3 rayOrigin, float3 rayDir, float maxDistance)
         return 0.0;
 
     // light illuminance
-    float3 lightColor = float3(g_Atmosphere.light.colorR, g_Atmosphere.light.colorG, g_Atmosphere.light.colorB);
-    if (g_Atmosphere.light.temperature_K > 0.0)
-        lightColor *= ColorTemperatureToRGB(g_Atmosphere.light.temperature_K);
+    float3 lightColor = float3(Atmosphere.light.colorR, Atmosphere.light.colorG, Atmosphere.light.colorB);
+    if (Atmosphere.light.temperature_K > 0.0)
+        lightColor *= ColorTemperatureToRGB(Atmosphere.light.temperature_K);
 
-    float3 E = g_Atmosphere.light.illuminance_lux * lightColor;
+    float3 E = Atmosphere.light.illuminance_lux * lightColor;
 
     // phase functions
-    float cosTheta      = dot(rayDir, float3(-g_Atmosphere.light.dirX, -g_Atmosphere.light.dirY, -g_Atmosphere.light.dirZ));
+    float3 sunDirection = float3(-Atmosphere.light.dirX, -Atmosphere.light.dirY, -Atmosphere.light.dirZ);
+
+    float cosTheta      = dot(rayDir, sunDirection);
     float phaseRayleigh = RayleighPhase(cosTheta);
-    float phaseMie      = MiePhase(cosTheta, g_Atmosphere.miePhaseG);
+    float phaseMie      = MiePhase(cosTheta, Atmosphere.miePhaseG);
 
     // variable sampling count according to rayLength
     float numSteps = float(g_Push.maxRaySteps);// lerp(float(g_Push.minRaySteps), float(g_Push.maxRaySteps), clamp(rayLength / 150.0, 0.0, 1.0));
@@ -91,24 +96,24 @@ float4 RayMarchScattering(float3 rayOrigin, float3 rayDir, float maxDistance)
         
         // skip if below ground
         float viewHeight = length(pos);
-        if (viewHeight < g_Atmosphere.planetRadius_km) 
+        if (viewHeight < Atmosphere.planetRadiusKm)
             break;
 
         // skip if above atmosphere
-        if (viewHeight > g_Atmosphere.atmosphereRadius_km)
+        if (viewHeight > Atmosphere.atmosphereRadiusKm)
             continue;
 
-        float sampleAltitude = viewHeight - g_Atmosphere.planetRadius_km;
+        float sampleAltitude = viewHeight - Atmosphere.planetRadiusKm;
         
         // extinction(out-scattering) at sample point
-        float rayleighDensity = GetDensityAtHeight(sampleAltitude, g_Atmosphere.rayleighDensityH_km);
-        float mieDensity      = GetDensityAtHeight(sampleAltitude, g_Atmosphere.mieDensityH_km);
-        float ozoneDensity    = GetDensityOzoneAtHeight(sampleAltitude);
+        float rayleighDensity = GetDensityAtHeight(sampleAltitude, Atmosphere.rayleighDensityKm);
+        float mieDensity      = GetDensityAtHeight(sampleAltitude, Atmosphere.mieDensityKm);
+        float ozoneDensity    = GetDensityOzoneAtHeight(sampleAltitude, Atmosphere.ozoneCenterKm, Atmosphere.ozoneWidthKm);
 
-        float3 rayleighScattering = g_Atmosphere.rayleighScattering * rayleighDensity;
-        float  mieScattering      = g_Atmosphere.mieScattering * mieDensity;
-        float  mieAbsorption      = g_Atmosphere.mieAbsorption * mieDensity;
-        float3 ozoneAbsorption    = g_Atmosphere.ozoneAbsorption * ozoneDensity;
+        float3 rayleighScattering = Atmosphere.rayleighScattering * rayleighDensity;
+        float  mieScattering      = Atmosphere.mieScattering * mieDensity;
+        float  mieAbsorption      = Atmosphere.mieAbsorption * mieDensity;
+        float3 ozoneAbsorption    = Atmosphere.ozoneAbsorption * ozoneDensity;
         
         float3 scattering        = rayleighScattering + mieScattering;
         float3 extinction        = rayleighScattering + (mieScattering + mieAbsorption) + ozoneAbsorption;
@@ -117,17 +122,17 @@ float4 RayMarchScattering(float3 rayOrigin, float3 rayDir, float maxDistance)
         
         // transmittance from sample point to sun
         float  sampleHeight       = viewHeight;
-        float  sampleTheta        = dot(normalize(pos), float3(-g_Atmosphere.light.dirX, -g_Atmosphere.light.dirY, -g_Atmosphere.light.dirZ));
-        float3 transmittanceToSun = SampleTransmittanceLUT(g_TransmittanceLUT, g_LinearClampSampler, sampleHeight, sampleTheta, g_Atmosphere.planetRadius_km, g_Atmosphere.atmosphereRadius_km);
+        float  sampleTheta        = dot(normalize(pos), sunDirection);
+        float3 transmittanceToSun = SampleTransmittanceLUT(TransmittanceLUT, g_LinearClampSampler, sampleHeight, sampleTheta, Atmosphere.planetRadiusKm, Atmosphere.atmosphereRadiusKm);
 
         // multi-scattering
         float2 msUV = clamp(
-                        vec2(sampleTheta * 0.5 + 0.5, inverseLerp(sampleHeight, g_Atmosphere.planetRadius_km, g_Atmosphere.atmosphereRadius_km)),
+                        float2(sampleTheta * 0.5 + 0.5, inverseLerp(sampleHeight, Atmosphere.planetRadiusKm, Atmosphere.atmosphereRadiusKm)),
                     0.0, 1.0);
-        float3 multiScattering = g_MultiScatteringLUT.SampleLevel(g_LinearClampSampler, msUV, 0).rgb;
+        float3 multiScattering = MultiScatteringLUT.SampleLevel(g_LinearClampSampler, msUV, 0).rgb;
         
         // planet shadow
-        float2  planetIntersection = RaySphereIntersection(pos, float3(-g_Atmosphere.light.dirX, -g_Atmosphere.light.dirY, -g_Atmosphere.light.dirZ), PLANET_CENTER, g_Atmosphere.planetRadius_km);
+        float2  planetIntersection = RaySphereIntersection(pos, sunDirection, PLANET_CENTER, Atmosphere.planetRadiusKm);
         float planetShadow       = planetIntersection.x < 0.0 ? 1.0 : 0.0;
 
         {
@@ -138,7 +143,7 @@ float4 RayMarchScattering(float3 rayOrigin, float3 rayDir, float maxDistance)
 
             // Analytical integration as proposed in slide 28 of http://www.frostbite.com/2015/08/physically-based-unified-volumetric-rendering-in-frostbite/
             float3 S    = (planetShadow * transmittanceToSun * phasedScattering + multiScattering * scattering) * E;
-            float3 Sint = (S - S * stepTransmittance) / extinction;
+            float3 Sint = (S - S * stepTransmittance) / max(extinction, 1e-8);
             L          += throughput * Sint;
         }
         throughput *= stepTransmittance;
@@ -151,30 +156,34 @@ float4 RayMarchScattering(float3 rayOrigin, float3 rayDir, float maxDistance)
 [numthreads(8, 8, 1)]
 void main(uint2 tID : SV_DispatchThreadID)
 {
+    RWTexture2D< float3 > OutSkyViewLUT = GetResource(g_OutSkyViewLUT.index);
+
     uint2 texSize;
-    g_SkyViewLUT.GetDimensions(texSize.x, texSize.y);
+    OutSkyViewLUT.GetDimensions(texSize.x, texSize.y);
     if (tID.x >= texSize.x || tID.y >= texSize.y)
         return;
 
     float2 uv = float2(tID.xy + 0.5) / float2(texSize);
-    
+
+    AtmosphereData Atmosphere = GetAtmosphereData();
+
     float3 cameraPos =
         float3(g_Camera.posWORLD.x, max(g_Camera.posWORLD.y, MIN_VIEW_HEIGHT_ABOVE_GROUND), g_Camera.posWORLD.z);
     float3 cameraPosAbovePlanet =
-        cameraPos * DISTANCE_SCALE + float3(0.0, g_Atmosphere.planetRadius_km, 0.0);
+        cameraPos * DISTANCE_SCALE + float3(0.0, Atmosphere.planetRadiusKm, 0.0);
 
     float  viewHeightWORLD = length(cameraPosAbovePlanet);
-    float3 posWORLD        = vec3(0.0, viewHeightWORLD, 0.0);
+    float3 posWORLD        = float3(0.0, viewHeightWORLD, 0.0);
 
-    float3 rayDir    = GetSkyViewRayDirectionFromUV(GetStretchedTextureUV(uv, vec2(texSize)), viewHeightWORLD);
+    float3 rayDir    = GetSkyViewRayDirectionFromUV(GetStretchedTextureUV(uv, float2(texSize)), viewHeightWORLD, Atmosphere.planetRadiusKm);
     float3 rayOrigin = posWORLD;
     
-    float2 groundIntersection = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, g_Atmosphere.planetRadius_km);
+    float2 groundIntersection = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, Atmosphere.planetRadiusKm);
 
     float maxDistance = RAY_MARCHING_MAX_DISTANCE;
     if (groundIntersection.x > 0.0)
         maxDistance = groundIntersection.x;
 
     float4 inscattered = RayMarchScattering(rayOrigin, rayDir, maxDistance);
-    g_SkyViewLUT[tID.xy] = inscattered.rgb;
+    OutSkyViewLUT[tID.xy] = inscattered.rgb;
 }

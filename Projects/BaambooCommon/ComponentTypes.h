@@ -26,3 +26,8 @@ enum class eToneMappingOp
 	ACES,
 	Uncharted2,
 };
+
+enum eDebugDraw
+{
+	BoundingLine = 0,
+};

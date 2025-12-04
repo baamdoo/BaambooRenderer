@@ -1,8 +1,7 @@
 #ifndef _COMMON_HEADER
 #define _COMMON_HEADER
 
-#define SET_STATIC 0
-#define SET_PUSH   1
+#define DESCRIPTORSET_COMMON 0
 
 #define INVALID_INDEX 0xffffffff
 
@@ -13,19 +12,6 @@
 #define EPSILON          (0.00001)
 #define MAX_VIEWDISTANCE (1e2) //km
 
-
-//-------------------------------------------------------------------------
-// Primitives
-//-------------------------------------------------------------------------
-#ifdef _HLSL
-using vec2 = float2;
-using vec3 = float3;
-using vec4 = float4;
-using mat2 = float2x2;
-using mat3 = float3x3;
-using mat4 = float4x4;
-#elif defined(_GLSL)
-#endif
 
 //-------------------------------------------------------------------------
 // Vertex
@@ -88,10 +74,7 @@ struct DrawData
 	uint transformID;
 	uint transformCount;
 
-	uint boneTransformID;
-	uint bSkinning;
-	
-	float padding0, padding1;
+	vec4 sphereBounds;
 };
 #endif
 

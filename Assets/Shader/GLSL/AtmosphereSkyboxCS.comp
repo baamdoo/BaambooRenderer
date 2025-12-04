@@ -3,18 +3,12 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 
 #define _CAMERA
-#include "Common.hg"
+#define _SCENEENVIRONMENT
 #include "AtmosphereCommon.hg"
 
-layout(set = SET_PUSH, binding = 1) uniform sampler2D g_SkyViewLUT;
+layout(set = 1, binding = 1) uniform sampler2D g_SkyViewLUT;
 
-layout(set = SET_PUSH, binding = 2) writeonly uniform image2DArray g_SkyboxLUT;
-
-layout(push_constant) uniform PushConstants
-{
-    vec3  lightDir;
-    float planetRadius_km;
-} g_Push;
+layout(set = 1, binding = 2) writeonly uniform image2DArray g_OutSkyboxLUT;
 
 
 vec3 GetRayDirectionFromCubemapCoord(uvec3 tID, uint width, uint height)
@@ -36,11 +30,11 @@ vec3 GetRayDirectionFromCubemapCoord(uvec3 tID, uint width, uint height)
     return normalize(rayDir);
 }
 
-vec2 GetUvFromSkyViewRayDirection(float longitude, float latitude, float viewHeight, bool bIntersectGround)
+vec2 GetUvFromSkyViewRayDirection(float longitude, float latitude, float viewHeight, float planetRadiusKm, bool bIntersectGround)
 {
     vec2 uv;
 
-	float Vhorizon           = sqrt(viewHeight * viewHeight - g_Push.planetRadius_km * g_Push.planetRadius_km);
+	float Vhorizon           = sqrt(viewHeight * viewHeight - planetRadiusKm * planetRadiusKm);
 	float cosBeta            = Vhorizon / viewHeight;				
 	float beta               = acosFast4(cosBeta);
 	float zenithHorizonAngle = PI - beta;
@@ -68,9 +62,8 @@ vec2 GetUvFromSkyViewRayDirection(float longitude, float latitude, float viewHei
     return uv;
 }
 
-vec3 GetSunLuminance(vec3 rayDir, bool bIntersectGround)
+vec3 GetSunLuminance(vec3 rayDir, vec3 L, bool bIntersectGround)
 {
-    vec3 L = vec3(-g_Push.lightDir);
     if (dot(rayDir, L) > cos(0.5 * 0.505 * PI / 180.0))
 	{
         if (!bIntersectGround)
@@ -86,7 +79,7 @@ vec3 GetSunLuminance(vec3 rayDir, bool bIntersectGround)
 layout (local_size_x = 8, local_size_y = 8, local_size_z = 6) in;
 void main()
 {
-    ivec3 imgSize   = imageSize(g_SkyboxLUT);
+    ivec3 imgSize   = imageSize(g_OutSkyboxLUT);
     ivec3 pixCoords = ivec3(gl_GlobalInvocationID);
     if (any(greaterThanEqual(pixCoords.xy, imgSize.xy)))
         return;
@@ -94,10 +87,12 @@ void main()
    // sky view
    vec2 texSize = vec2(textureSize(g_SkyViewLUT, 0));
 
+   AtmosphereData Atmosphere = GetAtmosphereData();
+
    vec3 cameraPos =
        vec3(g_Camera.posWORLD.x, max(g_Camera.posWORLD.y, MIN_VIEW_HEIGHT_ABOVE_GROUND), g_Camera.posWORLD.z);
    vec3 cameraPosAbovePlanet =
-       cameraPos * DISTANCE_SCALE + vec3(0.0, g_Push.planetRadius_km, 0.0);
+       cameraPos * DISTANCE_SCALE + vec3(0.0, Atmosphere.planetRadiusKm, 0.0);
    float viewHeight = length(cameraPosAbovePlanet);
 
    vec3 rayDir    = GetRayDirectionFromCubemapCoord(pixCoords, imgSize.x, imgSize.y);
@@ -107,14 +102,16 @@ void main()
    float cosLatitude = dot(rayDir, upVec);
    float longitude   = atan2Fast(rayDir.z, rayDir.x);
 
-   vec2 groundIntersection = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, g_Push.planetRadius_km);
+   vec2 groundIntersection = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, Atmosphere.planetRadiusKm);
    bool bIntersectGround   = groundIntersection.x > 0.0;
 
-   vec2 skyUV = GetUvFromSkyViewRayDirection(longitude, acosFast4(cosLatitude), viewHeight, bIntersectGround);
+   vec3 sunDirection = vec3(-Atmosphere.light.dirX, -Atmosphere.light.dirY, -Atmosphere.light.dirZ);
+
+   vec2 skyUV = GetUvFromSkyViewRayDirection(longitude, acosFast4(cosLatitude), viewHeight, Atmosphere.planetRadiusKm, bIntersectGround);
         skyUV = GetUnstretchedTextureUV(skyUV, texSize);
 
    vec4 skyColor = texture(g_SkyViewLUT, skyUV);
-   vec3 color    = skyColor.rgb + GetSunLuminance(rayDir, bIntersectGround) * skyColor.a;
+   vec3 color    = skyColor.rgb + GetSunLuminance(rayDir, sunDirection, bIntersectGround) * skyColor.a;
 
-   imageStore(g_SkyboxLUT, pixCoords, vec4(color, 1.0));
+   imageStore(g_OutSkyboxLUT, pixCoords, vec4(color, 1.0));
 }

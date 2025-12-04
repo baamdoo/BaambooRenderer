@@ -2,76 +2,43 @@
 #define _GLSL_CLOUD_COMMON_HEADER
 
 #extension GL_GOOGLE_include_directive : require
-#include "../Common.bsh"
+#include "DescriptorCommon.hg"
 #include "HelperFunctions.hg"
 
-#ifdef _CLOUD
-layout(set = SET_PUSH, binding = 2) uniform CloudData
-{
-    float topLayer_km;
-    float bottomLayer_km;
-    vec2  padding0;
-
-    vec3  extinctionStrength;
-    float extinctionScale;
-    
-    float msContribution;
-    float msOcclusion;
-    float msEccentricity;
-    float groundContributionStrength;
-
-    float coverage;
-    float cloudType;
-    float baseNoiseScale;
-    float baseIntensity;
-
-    float erosionNoiseScale;
-    float erosionIntensity;
-    float erosionPower;
-    float wispiness;
-    float billowiness;
-    float precipitation;
-    float erosionHeightGradientMultiplier;
-    float erosionHeightGradientPower;
-
-    vec3  windDirection;
-    float windSpeed_mps;
-} g_Cloud;
-
-layout(set = SET_PUSH, binding = 3) uniform sampler3D g_CloudBaseNoise;
-layout(set = SET_PUSH, binding = 4) uniform sampler3D g_CloudErosionNoise;
-layout(set = SET_PUSH, binding = 5) uniform sampler2D g_TopGradientLUT;
-layout(set = SET_PUSH, binding = 6) uniform sampler2D g_BottomGradientLUT;
+layout(set = 1, binding = 0) uniform sampler3D g_CloudBaseNoise;
+layout(set = 1, binding = 1) uniform sampler3D g_CloudErosionNoise;
+layout(set = 1, binding = 2) uniform sampler2D g_TopGradientLUT;
+layout(set = 1, binding = 3) uniform sampler2D g_BottomGradientLUT;
 
 ////////////////////////////////////////////////////////////////////////
 // Shaping //
 // Reference: https://advances.realtimerendering.com/s2022/index.html#Nubis
-float GetCloudBaseShape(vec3 pos, float hNorm)
+float GetCloudBaseShape(vec3 pos, float hNorm, inout CloudData Cloud)
 {
-    vec3 baseUVW   = pos * g_Cloud.baseNoiseScale;
+    vec3 baseUVW   = pos * Cloud.baseNoiseScale;
     vec4 baseNoise = texture(g_CloudBaseNoise, baseUVW);
     
     float billowy   = dot(baseNoise.gba, vec3(0.625, 0.125, 0.25));
     float baseCloud = billowy - (1.0 - baseNoise.r);
 
-    return baseCloud * g_Cloud.baseIntensity;
+    return baseCloud * Cloud.baseIntensity;
 }
 
-float GetErosion(vec3 pos)
+float GetErosion(vec3 pos, inout CloudData Cloud)
 {
     // TODO. Dissipation using CurlNoise
-    vec3 erosionUVW   = pos * g_Cloud.erosionNoiseScale;
+    vec3 erosionUVW   = pos * Cloud.erosionNoiseScale;
     vec4 erosionNoise = texture(g_CloudErosionNoise, erosionUVW);
 
-    float wispy   = mix(erosionNoise.r, erosionNoise.g, g_Cloud.wispiness);
-    float billowy = mix(erosionNoise.b, erosionNoise.a, g_Cloud.billowiness);
-    float erosion = mix(wispy, billowy, g_Cloud.precipitation);
-          erosion = pow(erosion, 1.0 - g_Cloud.erosionPower);
+    float wispy   = mix(erosionNoise.r, erosionNoise.g, Cloud.wispiness);
+    float billowy = mix(erosionNoise.b, erosionNoise.a, Cloud.billowiness);
+    float erosion = mix(wispy, billowy, Cloud.precipitation);
+          erosion = pow(erosion, 1.0 - Cloud.erosionPower);
 
-    return erosion * g_Cloud.erosionIntensity;
+    return erosion * Cloud.erosionIntensity;
 }
 
-float SampleCloudDensity(vec3 pos, float hNorm, vec3 offset)
+float SampleCloudDensity(vec3 pos, float hNorm, vec3 offset, inout CloudData Cloud)
 {
     if (hNorm < 0.0)
     {
@@ -80,10 +47,10 @@ float SampleCloudDensity(vec3 pos, float hNorm, vec3 offset)
 
     pos -= offset;
 
-    vec2  topGradientUV = vec2(g_Cloud.cloudType, 1.0 - hNorm);
+    vec2  topGradientUV = vec2(Cloud.cloudType, 1.0 - hNorm);
     float topGradient   = texture(g_TopGradientLUT, topGradientUV).r;
 
-    vec2  bottomGradientUV = vec2(g_Cloud.cloudType, 1.0 - hNorm);
+    vec2  bottomGradientUV = vec2(Cloud.cloudType, 1.0 - hNorm);
     float bottomGradient   = texture(g_BottomGradientLUT, topGradientUV).r;
 
     float heightFactor = (hNorm * (1.0 - hNorm));
@@ -92,24 +59,22 @@ float SampleCloudDensity(vec3 pos, float hNorm, vec3 offset)
           densityGradient *= heightFactor;
 
     // Make the middle part is most affected
-    float heightGradient  = (1.0 - 1.7 * heightFactor) * (1.0 - g_Cloud.coverage);
+    float heightGradient  = (1.0 - 1.7 * heightFactor) * (1.0 - Cloud.coverage);
 
-    float b = GetCloudBaseShape(pos, hNorm);
+    float b = GetCloudBaseShape(pos, hNorm, Cloud);
           b = saturate(b - heightGradient);
-          b *= densityGradient * g_Cloud.baseIntensity;
+          b *= densityGradient * Cloud.baseIntensity;
 
     if (b > 0.0)
     {
-        float erosionHeightGradient = pow(saturate(hNorm * g_Cloud.erosionHeightGradientMultiplier), g_Cloud.erosionHeightGradientPower);
+        float erosionHeightGradient = pow(saturate(hNorm * Cloud.erosionHeightGradientMultiplier), Cloud.erosionHeightGradientPower);
 
-        float e = GetErosion(pos) * erosionHeightGradient;
+        float e = GetErosion(pos, Cloud) * erosionHeightGradient;
 
         b -= e;
     }
 
     return saturate(b);
 }
-
-#endif // _CLOUD
 
 #endif // _GLSL_CLOUD_COMMON_HEADER

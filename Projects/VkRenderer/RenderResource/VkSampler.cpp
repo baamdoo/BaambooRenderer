@@ -77,12 +77,12 @@ VkBorderColor ConvertToVkSamplerBorderColor(eBorderColor color)
 }
 
 
-Arc< VulkanSampler > VulkanSampler::Create(VkRenderDevice& rd, const std::string& name, CreationInfo&& info)
+Arc< VulkanSampler > VulkanSampler::Create(VkRenderDevice& rd, const char* name, CreationInfo&& info)
 {
 	return MakeArc< VulkanSampler >(rd, name, std::move(info));
 }
 
-Arc< VulkanSampler > VulkanSampler::CreateLinearRepeat(VkRenderDevice& rd, const std::string& name) {
+Arc< VulkanSampler > VulkanSampler::CreateLinearRepeat(VkRenderDevice& rd, const char* name) {
     return Create(rd, name,
         {
             .filter      = eFilterMode::Linear,
@@ -90,7 +90,7 @@ Arc< VulkanSampler > VulkanSampler::CreateLinearRepeat(VkRenderDevice& rd, const
         });
 }
 
-Arc< VulkanSampler > VulkanSampler::CreateLinearClamp(VkRenderDevice& rd, const std::string& name)
+Arc< VulkanSampler > VulkanSampler::CreateLinearClamp(VkRenderDevice& rd, const char* name)
 {
     return Create(rd, name,
         {
@@ -99,7 +99,7 @@ Arc< VulkanSampler > VulkanSampler::CreateLinearClamp(VkRenderDevice& rd, const 
         });
 }
 
-Arc< VulkanSampler > VulkanSampler::CreatePointRepeat(VkRenderDevice& rd, const std::string& name)
+Arc< VulkanSampler > VulkanSampler::CreatePointRepeat(VkRenderDevice& rd, const char* name)
 {
     return Create(rd, name,
         {
@@ -109,7 +109,7 @@ Arc< VulkanSampler > VulkanSampler::CreatePointRepeat(VkRenderDevice& rd, const 
         });
 }
 
-Arc< VulkanSampler > VulkanSampler::CreatePointClamp(VkRenderDevice& rd, const std::string& name)
+Arc< VulkanSampler > VulkanSampler::CreatePointClamp(VkRenderDevice& rd, const char* name)
 {
     return Create(rd, name,
         {
@@ -119,7 +119,7 @@ Arc< VulkanSampler > VulkanSampler::CreatePointClamp(VkRenderDevice& rd, const s
         });
 }
 
-Arc< VulkanSampler > VulkanSampler::CreateLinearClampCmp(VkRenderDevice& rd, const std::string& name)
+Arc< VulkanSampler > VulkanSampler::CreateLinearClampCmp(VkRenderDevice& rd, const char* name)
 {
     return Create(rd, name,
         {
@@ -131,7 +131,7 @@ Arc< VulkanSampler > VulkanSampler::CreateLinearClampCmp(VkRenderDevice& rd, con
         });
 }
 
-VulkanSampler::VulkanSampler(VkRenderDevice& rd, const std::string& name, CreationInfo&& info)
+VulkanSampler::VulkanSampler(VkRenderDevice& rd, const char* name, CreationInfo&& info)
     : render::Sampler(name, std::move(info))
     , VulkanResource(rd, name)
 {

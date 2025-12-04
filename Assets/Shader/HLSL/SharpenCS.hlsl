@@ -1,34 +1,36 @@
 #include "Common.hlsli"
 
-Texture2D g_AntiAliasedTexture : register(t0);
-
-RWTexture2D< float4 > g_OutputImage : register(u0);
-
-SamplerState g_LinearClampSampler : register(SAMPLER_INDEX_LINEAR_CLAMP);
-
 cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
     float sharpness;
 };
 
+ConstantBuffer< DescriptorHeapIndex > g_AntiAliasedTexture : register(b1, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_OutputImage        : register(b2, ROOT_CONSTANT_SPACE);
+
+
 [numthreads(16, 16, 1)]
 void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 {
+    RWTexture2D< float4 > OutputImage = GetResource(g_OutputImage.index);
+
     int2 pixelCoord  = int2(dispatchThreadID.xy);
     uint2 imageSize;
-    g_OutputImage.GetDimensions(imageSize.x, imageSize.y);
+    OutputImage.GetDimensions(imageSize.x, imageSize.y);
     if (any(pixelCoord >= imageSize))
         return;
 
     float2 texelSize = 1.0 / float2(imageSize);
     float2 uv        = (float2(pixelCoord) + 0.5) * texelSize;
 
+    Texture2D< float4 > AntiAliasedTexture = GetResource(g_AntiAliasedTexture.index);
+
     // sample center and neighbors
-    float3 center = g_AntiAliasedTexture.SampleLevel(g_LinearClampSampler, uv, 0).rgb;
-    float3 top    = g_AntiAliasedTexture.SampleLevel(g_LinearClampSampler, uv + float2(0.0, -texelSize.y), 0).rgb;
-    float3 bottom = g_AntiAliasedTexture.SampleLevel(g_LinearClampSampler, uv + float2(0.0, texelSize.y), 0).rgb;
-    float3 left   = g_AntiAliasedTexture.SampleLevel(g_LinearClampSampler, uv + float2(-texelSize.x, 0.0), 0).rgb;
-    float3 right  = g_AntiAliasedTexture.SampleLevel(g_LinearClampSampler, uv + float2(texelSize.x, 0.0), 0).rgb;
+    float3 center = AntiAliasedTexture.SampleLevel(g_LinearClampSampler, uv, 0).rgb;
+    float3 top    = AntiAliasedTexture.SampleLevel(g_LinearClampSampler, uv + float2(0.0, -texelSize.y), 0).rgb;
+    float3 bottom = AntiAliasedTexture.SampleLevel(g_LinearClampSampler, uv + float2(0.0, texelSize.y), 0).rgb;
+    float3 left   = AntiAliasedTexture.SampleLevel(g_LinearClampSampler, uv + float2(-texelSize.x, 0.0), 0).rgb;
+    float3 right  = AntiAliasedTexture.SampleLevel(g_LinearClampSampler, uv + float2(texelSize.x, 0.0), 0).rgb;
 
     // compute sharpening
     float3 sharpened = center + sharpness * (4.0 * center - top - bottom - left - right);
@@ -36,5 +38,5 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     float3 maxColor  = max(max(max(max(center, top), bottom), left), right);
     sharpened        = clamp(sharpened, minColor, maxColor);
 
-    g_OutputImage[pixelCoord] = float4(sharpened, 1.0);
+    OutputImage[pixelCoord] = float4(sharpened, 1.0);
 }

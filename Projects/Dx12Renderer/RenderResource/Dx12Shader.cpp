@@ -28,20 +28,17 @@ static std::string GenerateResourceKey(const D3D12_SHADER_INPUT_BIND_DESC& bindD
 }
 
 
-Arc< Dx12Shader > Dx12Shader::Create(Dx12RenderDevice& rd, const std::string& name, CreationInfo&& info)
+Arc< Dx12Shader > Dx12Shader::Create(Dx12RenderDevice& rd, const char* name, CreationInfo&& info)
 {
     return MakeArc< Dx12Shader >(rd, name, std::move(info));
 }
 
-Dx12Shader::Dx12Shader(Dx12RenderDevice& rd, const std::string& name, CreationInfo&& info)
+Dx12Shader::Dx12Shader(Dx12RenderDevice& rd, const char* name, CreationInfo&& info)
 	: render::Shader(name, std::move(info))
     , Dx12Resource(rd, name, eResourceType::Shader)
 {
-    if (name != "Dummy")
-    {
-        LoadBinary(DX12_SHADER_PATH(m_CreationInfo.filename));
-        Reflect();
-    }
+    LoadBinary(DX12_SHADER_PATH(m_CreationInfo.filename));
+    Reflect();
 
     ms_RefCount++;
 }
@@ -108,24 +105,24 @@ void Dx12Shader::Reflect()
     {
         ID3D12ShaderReflectionConstantBuffer* pCBuffer = m_d3d12ShaderReflection->GetConstantBufferByIndex(i);
         
-        D3D12_SHADER_BUFFER_DESC bufferDesc;
-        pCBuffer->GetDesc(&bufferDesc);
-        if (bufferDesc.Type != D3D_CT_CBUFFER)
+        D3D12_SHADER_BUFFER_DESC cbDesc;
+        pCBuffer->GetDesc(&cbDesc);
+        if (cbDesc.Type != D3D_CT_CBUFFER)
             continue;
 
         // exclude system buffers (ex. $Globals)
-        if (bufferDesc.Name && bufferDesc.Name[0] != '$')
+        if (cbDesc.Name && cbDesc.Name[0] != '$')
         {
             D3D12_SHADER_INPUT_BIND_DESC bindDesc;
             for (UINT j = 0; j < shaderDesc.BoundResources; ++j)
             {
                 m_d3d12ShaderReflection->GetResourceBindingDesc(j, &bindDesc);
-                if (bindDesc.Type == D3D_SIT_CBUFFER && strcmp(bindDesc.Name, bufferDesc.Name) == 0)
+                if (bindDesc.Type == D3D_SIT_CBUFFER && strcmp(bindDesc.Name, cbDesc.Name) == 0)
                 {
                     DescriptorInfo& info = m_Reflection.descriptors[bindDesc.Space].emplace_back();
                     info.name           = bindDesc.Name;
                     info.baseRegister   = bindDesc.BindPoint;
-                    info.numDescriptors = bindDesc.Space == ROOT_CONSTANT_SPACE ? bufferDesc.Size / 4 : bindDesc.BindCount;
+                    info.numDescriptors = bindDesc.Space == ROOT_CONSTANT_SPACE ? cbDesc.Size / 4 : bindDesc.BindCount;
                     info.inputType      = bindDesc.Type;
                     info.rangeType      = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
                     break;

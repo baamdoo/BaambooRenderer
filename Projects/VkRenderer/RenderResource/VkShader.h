@@ -21,9 +21,9 @@ public:
 		std::unordered_map< u32, std::vector< DescriptorInfo > > descriptors;
 	};
 
-	static Arc< VulkanShader > Create(VkRenderDevice& rd, const std::string& name, CreationInfo&& info);
+	static Arc< VulkanShader > Create(VkRenderDevice& rd, const char* name, CreationInfo&& info);
 
-	VulkanShader(VkRenderDevice& rd, const std::string& name, CreationInfo&& info);
+	VulkanShader(VkRenderDevice& rd, const char* name, CreationInfo&& info);
 	virtual ~VulkanShader();
 
 	[[nodiscard]]

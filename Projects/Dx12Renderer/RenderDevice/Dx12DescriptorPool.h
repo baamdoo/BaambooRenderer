@@ -4,7 +4,7 @@
 namespace dx12
 {
 
-class DescriptorPool
+class DescriptorPool : public ArcBase
 {
 public:
 	DescriptorPool(Dx12RenderDevice& rd, D3D12_DESCRIPTOR_HEAP_TYPE type, D3D12_DESCRIPTOR_HEAP_FLAGS flags, u32 maxDescriptorCount);
@@ -30,7 +30,7 @@ private:
     D3D12_GPU_DESCRIPTOR_HANDLE m_BaseGPUHandle;
 
     // < offset, numDescriptor >
-    std::vector< std::pair< u32, u32 > > m_AvailableDescriptors;
+    std::vector< std::pair< i32, u32 > > m_AvailableDescriptors;
 
     std::mutex m_Mutex;
 };

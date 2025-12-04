@@ -92,9 +92,6 @@ void GBufferNode::Apply(render::CommandContext& context, const SceneRenderView& 
 	{
 		context.SetRenderPipeline(m_pGBufferPSO.get());
 
-		context.SetGraphicsDynamicUniformBuffer("g_Camera", g_FrameData.camera);
-
-		rm.GetSceneResource().BindSceneResources(context);
 		context.DrawScene(rm.GetSceneResource());
 	}
 	context.EndRenderPass();

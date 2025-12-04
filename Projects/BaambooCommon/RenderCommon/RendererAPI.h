@@ -13,11 +13,17 @@ namespace baamboo
 
 enum class eRendererAPI
 {
-	D3D11,
-	D3D12,
-	Vulkan,
-	OpenGL,
-	Metal,
+	D3D11  = 0,
+	D3D12  = 1,
+	Vulkan = 2,
+	OpenGL = 3,
+	Metal  = 4,
+};
+static mat4 ApplyRhiNDC(const mat4& mProj_, eRendererAPI api)
+{
+	mat4 mProj = mProj_;
+	mProj[1][1] *= api == eRendererAPI::Vulkan ? -1.0f : 1.0f;
+	return mProj;
 };
 
 enum

@@ -7,7 +7,7 @@ template< typename TResource >
 class VulkanResource
 {
 public:
-	VulkanResource(VkRenderDevice& rd, const std::string& name)
+	VulkanResource(VkRenderDevice& rd, const char* name)
 		: m_RenderDevice(rd), m_Name(name) {}
 	virtual ~VulkanResource() = default;
 

@@ -72,9 +72,9 @@ class Dx12Resource
 public:
 	friend class Dx12ResourceManager;
 
-	Dx12Resource(Dx12RenderDevice& rd, const std::string& name);
-	Dx12Resource(Dx12RenderDevice& rd, const std::string& name, eResourceType type);
-	Dx12Resource(Dx12RenderDevice& rd, const std::string& name, Dx12ResourceCreationInfo&& info, eResourceType type);
+	Dx12Resource(Dx12RenderDevice& rd, const char* name);
+	Dx12Resource(Dx12RenderDevice& rd, const char* name, eResourceType type);
+	Dx12Resource(Dx12RenderDevice& rd, const char* name, Dx12ResourceCreationInfo&& info, eResourceType type);
 	virtual ~Dx12Resource();
 
 	[[nodiscard]]

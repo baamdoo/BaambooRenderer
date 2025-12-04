@@ -1,0 +1,90 @@
+#version 460
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_GOOGLE_include_directive : require
+
+#define _CAMERA
+#define _SCENEENVIRONMENT
+#include "AtmosphereCommon.hg"
+
+layout(set = 1, binding = 0) uniform sampler2D g_TransmittanceLUT;
+
+layout(set = 1, binding = 1, rgba16f) uniform writeonly image3D g_OutVolumetricFogLUT;
+
+
+vec4 ComputeLocalVolumetricProperties(vec3 pos) 
+{
+    AtmosphereData Atmosphere = GetAtmosphereData();
+
+    float sampleHeight = length(pos);
+    if (sampleHeight < Atmosphere.planetRadiusKm || 
+        sampleHeight > Atmosphere.atmosphereRadiusKm)
+    {
+        return vec4(0.0);
+    }
+    float sampleAltitude = sampleHeight - Atmosphere.planetRadiusKm;
+
+    vec3 lightColor = vec3(Atmosphere.light.colorR, Atmosphere.light.colorG, Atmosphere.light.colorB);
+    if (Atmosphere.light.temperature_K > 0.0)
+        lightColor *= ColorTemperatureToRGB(Atmosphere.light.temperature_K);
+    vec3 E = Atmosphere.light.illuminance_lux * lightColor;
+
+    vec3 lightDir = vec3(-Atmosphere.light.dirX, -Atmosphere.light.dirY, -Atmosphere.light.dirZ);
+
+    float cosTheta      = dot(normalize(pos), lightDir);
+    float phaseRayleigh = RayleighPhase(cosTheta);
+    float phaseMie      = MiePhase(cosTheta, Atmosphere.miePhaseG);
+
+    float rayleighDensity = GetDensityAtHeight(sampleAltitude, Atmosphere.rayleighDensityKm);
+    float mieDensity      = GetDensityAtHeight(sampleAltitude, Atmosphere.mieDensityKm);
+    float ozoneDensity    = GetDensityOzoneAtHeight(sampleAltitude, Atmosphere.ozoneCenterKm, Atmosphere.ozoneWidthKm);
+
+    vec3  rayleighScattering = Atmosphere.rayleighScattering * rayleighDensity;
+    float mieScattering      = Atmosphere.mieScattering * mieDensity;
+    float mieAbsorption      = Atmosphere.mieAbsorption * mieDensity;
+    vec3  ozoneAbsorption    = Atmosphere.ozoneAbsorption * ozoneDensity;
+
+    vec3 scattering       = rayleighScattering + vec3(mieScattering);
+    vec3 extinction       = rayleighScattering + vec3(mieScattering + mieAbsorption) + ozoneAbsorption;
+    vec3 phasedScattering = phaseRayleigh * rayleighScattering + phaseMie * mieScattering;
+
+    vec3 transmittanceToSun = SampleTransmittanceLUT(g_TransmittanceLUT, sampleHeight, cosTheta, Atmosphere.planetRadiusKm, Atmosphere.atmosphereRadiusKm);
+
+    vec2  planetIntersection = RaySphereIntersection(pos, lightDir, PLANET_CENTER, Atmosphere.planetRadiusKm);
+    float planetShadow       = planetIntersection.x < 0.0 ? 1.0 : 0.0;
+
+    vec3 S = (planetShadow * transmittanceToSun * phasedScattering) * E;
+
+    return vec4(S, dot(extinction, vec3(1.0 / 3.0)));
+}
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+void main() 
+{
+    ivec3 imgSize   = imageSize(g_OutVolumetricFogLUT);
+    ivec3 pixCoords = ivec3(gl_GlobalInvocationID.xyz);
+    if (any(greaterThanEqual(pixCoords, imgSize)))
+        return;
+
+    vec3  uvw       = (vec3(pixCoords) + 0.5) / vec3(imgSize);
+    
+    AtmosphereData Atmosphere = GetAtmosphereData();
+
+    vec3 cameraPos =
+        vec3(g_Camera.posWORLD.x, max(g_Camera.posWORLD.y, MIN_VIEW_HEIGHT_ABOVE_GROUND), g_Camera.posWORLD.z);
+    vec3 cameraPosAbovePlanet =
+        cameraPos * DISTANCE_SCALE + vec3(0.0, Atmosphere.planetRadiusKm, 0.0);
+
+    float slice = uvw.z;
+    slice *= slice;
+    slice *= float(imgSize.z);
+
+    float maxDistance = AP_KM_PER_SLICE * slice;
+    
+    vec3  rayDir      = normalize(ReconstructWorldPos(uvw.xy, 0.0, g_Camera.mViewProjInv)); // 0.0 = far plane
+    vec3  rayOrigin   = cameraPosAbovePlanet;
+    vec3  posInFroxel = cameraPosAbovePlanet + rayDir * maxDistance;
+    
+    vec4 fog = ComputeLocalVolumetricProperties(posInFroxel);
+    
+    imageStore(g_OutVolumetricFogLUT, pixCoords, fog);
+}

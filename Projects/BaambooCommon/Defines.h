@@ -4,7 +4,7 @@
 #define NOMINMAX
 #define NOGDI
 
-#ifdef BB_COMMON_DLL // BaambooCommon 프로젝트를 빌드할 때 정의할 매크로
+#ifdef BB_COMMON_DLL
     #define BAAMBOO_API __declspec(dllexport)
     #define DLLEXPORT_TEMPLATE
 #else

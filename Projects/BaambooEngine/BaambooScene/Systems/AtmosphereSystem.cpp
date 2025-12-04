@@ -13,20 +13,20 @@ void AtmosphereSystem::OnComponentConstructed(entt::registry& registry, entt::en
 {
 	auto& atmosphere = registry.get< AtmosphereComponent >(entity);
 
-	atmosphere.planetRadius_km     = 6360.0f;
-	atmosphere.atmosphereRadius_km = 6460.0f;
+	atmosphere.planetRadiusKm     = 6360.0f;
+	atmosphere.atmosphereRadiusKm = 6460.0f;
 
 	atmosphere.rayleighScattering  = { 5.802e-3f, 13.558e-3f, 33.1e-3f };
-	atmosphere.rayleighDensityH_km = 8.0f;
+	atmosphere.rayleighDensityKm = 8.0f;
 
 	atmosphere.mieScattering  = 3.996e-3f;
 	atmosphere.mieAbsorption  = 4.4e-3f;
-	atmosphere.mieDensityH_km = 1.2f;
+	atmosphere.mieDensityKm = 1.2f;
 	atmosphere.miePhaseG      = 0.80f;
 
 	atmosphere.ozoneAbsorption = { 0.650e-3f, 1.881e-3f, 0.085e-3f };
-	atmosphere.ozoneCenter_km  = 25.0f;
-	atmosphere.ozoneWidth_km   = 30.0f;
+	atmosphere.ozoneCenterKm  = 25.0f;
+	atmosphere.ozoneWidthKm   = 30.0f;
 
 	atmosphere.raymarchResolution = eRaymarchResolution::Middle;
 

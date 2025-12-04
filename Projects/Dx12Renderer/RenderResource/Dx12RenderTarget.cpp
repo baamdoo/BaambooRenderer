@@ -6,7 +6,7 @@
 namespace dx12
 {
 
-Dx12RenderTarget::Dx12RenderTarget(const std::string& name)
+Dx12RenderTarget::Dx12RenderTarget(const char* name)
 	: render::RenderTarget(name)
 {
 }
@@ -21,7 +21,7 @@ void Dx12RenderTarget::ClearTexture(Dx12CommandContext& context, render::eAttach
     {
         if (m_pAttachments[i] && (attachmentPoint == eAttachmentPoint::All || eAttachmentPoint(i) == attachmentPoint))
         {
-            context.ClearTexture(StaticCast<Dx12Texture>(m_pAttachments[i]));
+            context.ClearRenderTarget(StaticCast<Dx12Texture>(m_pAttachments[i]));
         }
     }
 
@@ -33,7 +33,7 @@ void Dx12RenderTarget::ClearTexture(Dx12CommandContext& context, render::eAttach
 
             const D3D12_CLEAR_FLAGS flags = (desc.Format == DXGI_FORMAT_D32_FLOAT || desc.Format == DXGI_FORMAT_D16_UNORM) ? 
                 D3D12_CLEAR_FLAG_DEPTH : D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL;
-            context.ClearDepthStencilTexture(pDepthTex, flags);
+            context.ClearDepthStencil(pDepthTex, flags);
         }
     }
 }

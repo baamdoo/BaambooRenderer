@@ -2,6 +2,7 @@
 #include "Dx12ResourceManager.h"
 #include "Dx12DescriptorPool.h"
 #include "Dx12CommandContext.h"
+#include "Dx12RootSignature.h"
 #include "RenderResource/Dx12Buffer.h"
 #include "RenderResource/Dx12Texture.h"
 #include "RenderResource/Dx12SceneResource.h"
@@ -14,12 +15,45 @@ namespace dx12
 Dx12ResourceManager::Dx12ResourceManager(Dx12RenderDevice& rd)
     : m_RenderDevice(rd)
 {
-    m_pViewDescriptorPool =
-        MakeBox< DescriptorPool >(m_RenderDevice, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, MAX_NUM_DESCRIPTOR_PER_POOL[D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV]);
     m_pRtvDescriptorPool =
         MakeBox< DescriptorPool >(m_RenderDevice, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, MAX_NUM_DESCRIPTOR_PER_POOL[D3D12_DESCRIPTOR_HEAP_TYPE_RTV]);
     m_pDsvDescriptorPool =
         MakeBox< DescriptorPool >(m_RenderDevice, D3D12_DESCRIPTOR_HEAP_TYPE_DSV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, MAX_NUM_DESCRIPTOR_PER_POOL[D3D12_DESCRIPTOR_HEAP_TYPE_DSV]);
+
+    m_pGlobalDescriptorHeap
+        = MakeArc< DescriptorPool >(m_RenderDevice, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, MAX_GLOBAL_DESCRIPTORS);
+
+    m_pGlobalRootSignature = MakeArc< Dx12RootSignature >(m_RenderDevice, "GlobalRootSignature", D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT | D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED);
+
+    // Local Root Constant:   space100, b0
+    m_pGlobalRootSignature->AddConstants(0, MAX_LOCAL_ROOTCONSTANTS - 1);
+    // DescriptorHeapIndices: space100, b1 ~ b16
+    for (u32 i = 1; i < MAX_DESCRIPTORHEAPINDICES + 1; ++i)
+    {
+        m_pGlobalRootSignature->AddConstants(i, 1);
+    }
+    // Global CBVs
+    m_pGlobalRootSignature->AddCBV(0, GLOBAL_DESCRIPTOR_SPACE);          // g_Camera
+    m_pGlobalRootSignature->AddConstants(1, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Transforms
+    m_pGlobalRootSignature->AddConstants(2, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Materials
+    m_pGlobalRootSignature->AddCBV(3, GLOBAL_DESCRIPTOR_SPACE);          // g_Lights
+    m_pGlobalRootSignature->AddCBV(4, GLOBAL_DESCRIPTOR_SPACE);          // g_SceneEnvironment
+    // Local CBVs
+    for (u32 i = 0; i < MAX_CBVS - 4; ++i)
+    {
+        m_pGlobalRootSignature->AddCBV(i, 1);
+    }
+
+    // Samplers
+    m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(eSamplerIndex::PointWrap));
+    m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(eSamplerIndex::PointClamp));
+    m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(eSamplerIndex::LinearWrap));
+    m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(eSamplerIndex::LinearClamp));
+    m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(eSamplerIndex::TrilinearWrap));
+    m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(eSamplerIndex::AnisotropicWrap));
+    m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(eSamplerIndex::ShadowCmpLessEqual));
+
+    m_pGlobalRootSignature->Build();
 }
 
 Dx12ResourceManager::~Dx12ResourceManager()
@@ -41,7 +75,7 @@ Arc< render::Texture > Dx12ResourceManager::LoadTexture(const std::string& filep
     std::unique_ptr< u8[] > rawData;
     ID3D12Resource* d3d12TexResource = nullptr;
 
-    auto pTex = Dx12Texture::CreateEmpty(m_RenderDevice, path.string());
+    auto pTex = Dx12Texture::CreateEmpty(m_RenderDevice, path.string().c_str());
     if (extension == ".dds")
     {
         std::vector< D3D12_SUBRESOURCE_DATA > subresourceDatas;
@@ -228,11 +262,10 @@ Arc< Dx12Texture > Dx12ResourceManager::LoadTextureArray(const fs::path& dirpath
         }
     }
 
-    auto pTex = Dx12Texture::CreateEmpty(m_RenderDevice, dirpath.string());
+    auto pTex = Dx12Texture::CreateEmpty(m_RenderDevice, dirpath.string().c_str());
     pTex->SetD3D12Resource(d3d12TexArrayResource);
 
-    UINT totalSubresources = (UINT)subresourceData.size();
-    m_RenderDevice.UpdateSubresources(pTex.get(), 0, totalSubresources, subresourceData.data());
+    m_RenderDevice.UpdateSubresources(pTex.get(), 0, (UINT)subresourceData.size(), subresourceData.data());
 
     return pTex;
 }
@@ -283,7 +316,7 @@ DescriptorAllocation Dx12ResourceManager::AllocateDescriptors(D3D12_DESCRIPTOR_H
     switch (type)
     {
     case D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV:
-        return m_pViewDescriptorPool->Allocate(numDescriptors);
+        return m_pGlobalDescriptorHeap->Allocate(numDescriptors);
     case D3D12_DESCRIPTOR_HEAP_TYPE_RTV:
         return m_pRtvDescriptorPool->Allocate(numDescriptors);
     case D3D12_DESCRIPTOR_HEAP_TYPE_DSV:
@@ -352,7 +385,17 @@ Arc< render::Texture > Dx12ResourceManager::GetFlatBlackTexture3D()
     return m_pBlackTexture3D;
 }
 
-Arc< Dx12Texture > Dx12ResourceManager::CreateFlat2DTexture(const std::string& name, u32 color)
+Arc< Dx12RootSignature > Dx12ResourceManager::GetGlobalRootSignature() const
+{
+    return m_pGlobalRootSignature;
+}
+
+Arc< DescriptorPool > Dx12ResourceManager::GetGlobalDescriptorHeap() const
+{
+    return m_pGlobalDescriptorHeap;
+}
+
+Arc< Dx12Texture > Dx12ResourceManager::CreateFlat2DTexture(const char* name, u32 color)
 {
     using namespace render;
 
@@ -378,7 +421,7 @@ Arc< Dx12Texture > Dx12ResourceManager::CreateFlat2DTexture(const std::string& n
 	return pFlatTexture;
 }
 
-Arc< Dx12Texture > Dx12ResourceManager::CreateFlat3DTexture(const std::string& name, u32 color)
+Arc< Dx12Texture > Dx12ResourceManager::CreateFlat3DTexture(const char* name, u32 color)
 {
     using namespace render;
 

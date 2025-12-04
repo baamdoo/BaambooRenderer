@@ -1,26 +1,18 @@
 #define _CAMERA
-#include "Common.hlsli"
-#define _ATMOSPHERE
+#define _SCENEENVIRONMENT
 #include "AtmosphereCommon.hlsli"
-#define _CLOUD
 #include "CloudCommon.hlsli"
 
-Texture2D< float >  g_DepthBuffer          : register(t4);
-Texture2D< float3 > g_TransmittanceLUT     : register(t5);
-Texture3D< float4 > g_AerialPerspectiveLUT : register(t6);
-Texture1D< float3 > g_AtmosphereAmbientLUT : register(t7);
-Texture2D< float3 > g_CloudShadowMap       : register(t8);
-Texture2DArray< float2 > g_BlueNoiseArray  : register(t9);
-
-SamplerState g_PointWrapSampler : register(SAMPLER_INDEX_POINT_WRAP);
-
-RWTexture2D< float4 > g_CloudScatteringLUT : register(u0);
+struct CloudShadowData
+{
+    float4x4 mSunView;
+    float4x4 mSunViewProj;
+    float4x4 mSunViewProjInv;
+};
+ConstantBuffer< CloudShadowData > g_CloudShadow : register(b0, space1);
 
 cbuffer PushConstant : register(b0, ROOT_CONSTANT_SPACE)
 {
-    float4x4 g_mSunView;
-    float4x4 g_mSunViewProj;
-
     uint  g_NumCloudRaymarchSteps;
     uint  g_NumLightRaymarchSteps;
     float g_FrontDepthBias;
@@ -29,8 +21,17 @@ cbuffer PushConstant : register(b0, ROOT_CONSTANT_SPACE)
     uint64_t g_Frame;
 };
 
+ConstantBuffer< DescriptorHeapIndex > g_DepthBuffer           : register(b5, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_TransmittanceLUT      : register(b6, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_AerialPerspectiveLUT  : register(b7, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_AtmosphereAmbientLUT  : register(b8, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_CloudShadowMap        : register(b9, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_BlueNoiseArray        : register(b10, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_OutCloudScatteringLUT : register(b11, ROOT_CONSTANT_SPACE);
+
 static const int MS_OCTAVES = 2;
 static const int SCATTERING_OCTAVES = 1 + MS_OCTAVES;
+
 
 ////////////////////////////////////////////////////////////////////////////
 // Phase //
@@ -148,6 +149,8 @@ float3 SampleBSM(Texture2D< float3 > ShadowMap, SamplerState Sampler, float2 sha
 
 ParticipatingMediaTransmittanceContext VolumetricShadow(float3 rayOrigin, float msExtinctionStrength)
 {
+    Texture2D< float3 > CloudShadowMap = GetResource(g_CloudShadowMap.index);
+
     ParticipatingMediaTransmittanceContext PMTC;
 
     int ms = 0;
@@ -158,12 +161,16 @@ ParticipatingMediaTransmittanceContext VolumetricShadow(float3 rayOrigin, float 
         opticalDepth[ms] = 0.0;
     }
 
-    float4 sunPosVIEW = mul(g_mSunView, float4(rayOrigin, 1.0));
-    float4 sunPosCLIP = mul(g_mSunViewProj, float4(rayOrigin, 1.0));
+    float4 sunPosVIEW = mul(g_CloudShadow.mSunView, float4(rayOrigin, 1.0));
+    float4 sunPosCLIP = mul(g_CloudShadow.mSunViewProj, float4(rayOrigin, 1.0));
     float3 sunPosNDC  = sunPosCLIP.xyz / sunPosCLIP.w;
 
-    float2 shadowUV = float2(sunPosNDC.x * 0.5 + 0.5, sunPosNDC.y * -0.5 + 0.5);
-    opticalDepth[0] = SampleBSM(g_CloudShadowMap, g_PointWrapSampler, shadowUV, sunPosVIEW.z);
+    float2 shadowUV = sunPosNDC.xy * 0.5 + 0.5;
+    opticalDepth[0] = SampleBSM(CloudShadowMap, g_PointWrapSampler, shadowUV, sunPosVIEW.z);
+
+    float2 edgeDist  = min(shadowUV.xy, 1.0 - shadowUV.xy);
+    float  fadeAlpha = smoothstep(0.0, 0.1, min(edgeDist.x, edgeDist.y));
+    opticalDepth[0]  = lerp(1.0, opticalDepth[0], fadeAlpha);
 
     float MsExtinctionStrength = msExtinctionStrength;
     for (ms = 1; ms < SCATTERING_OCTAVES; ++ms)
@@ -184,6 +191,9 @@ ParticipatingMediaTransmittanceContext VolumetricShadow(float3 rayOrigin, float 
 
 ParticipatingMediaTransmittanceContext RaymarchLight(float3 rayOrigin, float3 rayDirection, float VoL, float msExtinctionStrength, float jitter)
 {
+    CloudData      Cloud      = GetCloudData();
+    AtmosphereData Atmosphere = GetAtmosphereData();
+
     ParticipatingMediaTransmittanceContext PMTC;
 
     int ms = 0;
@@ -196,7 +206,7 @@ ParticipatingMediaTransmittanceContext RaymarchLight(float3 rayOrigin, float3 ra
         opticalDepth[ms] = 0.0;
     }
 
-    float rTopLayer = g_Atmosphere.planetRadius_km + g_Cloud.topLayer_km;
+    float rTopLayer = Atmosphere.planetRadiusKm + Cloud.topLayerKm;
     float2 topIntersection =
         RaySphereIntersection(rayOrigin, rayDirection, PLANET_CENTER, rTopLayer);
 
@@ -205,7 +215,7 @@ ParticipatingMediaTransmittanceContext RaymarchLight(float3 rayOrigin, float3 ra
         return PMTC;
     }
 
-    float3 ExtinctionStrength = g_Cloud.extinctionStrength * g_Cloud.extinctionScale;
+    float3 ExtinctionStrength = Cloud.extinctionStrength * Cloud.extinctionScale;
 
     float shadowMarchLength  = topIntersection.y;
     float invShadowStepCount = 1.0 / (float)g_NumLightRaymarchSteps;
@@ -220,8 +230,8 @@ ParticipatingMediaTransmittanceContext RaymarchLight(float3 rayOrigin, float3 ra
 
         float3 spos = rayOrigin + tShadow * rayDirection;
 
-        float saltitude = length(spos) - g_Atmosphere.planetRadius_km;
-        float shNorm    = inverseLerp(saltitude, g_Cloud.bottomLayer_km, g_Cloud.topLayer_km);
+        float saltitude = length(spos) - Atmosphere.planetRadiusKm;
+        float shNorm    = inverseLerp(saltitude, Cloud.bottomLayerKm, Cloud.topLayerKm);
         if (shNorm > 1.0)
         {
             break;
@@ -229,9 +239,9 @@ ParticipatingMediaTransmittanceContext RaymarchLight(float3 rayOrigin, float3 ra
 
         float stepLength = shadowMarchLength * tDelta;
 
-        float3 offset = g_Cloud.windDirection * g_TimeSec * g_Cloud.windSpeed_mps * 0.001;
+        float3 offset = Cloud.windDirection * g_TimeSec * Cloud.windSpeedMps * 0.001;
 
-        stepDensity[0]  = SampleCloudDensity(spos, shNorm, offset);
+        stepDensity[0]  = SampleCloudDensity(spos, shNorm, offset, Cloud);
         opticalDepth[0] += stepDensity[0] * stepLength * ExtinctionStrength * 1000.0;
 
         float MsExtinctionStrength = msExtinctionStrength;
@@ -264,13 +274,19 @@ struct CloudResult
 
 CloudResult RaymarchCloud(float3 rayOrigin, float3 rayDirection, float maxDistance, float2 jitter)
 {
+    CloudData      Cloud      = GetCloudData();
+    AtmosphereData Atmosphere = GetAtmosphereData();
+
+    Texture2D< float3 > TransmittanceLUT     = GetResource(g_TransmittanceLUT.index);
+    Texture2D< float3 > AtmosphereAmbientLUT = GetResource(g_AtmosphereAmbientLUT.index);
+
     CloudResult result;
     result.L          = float3(0.0, 0.0, 0.0);
     result.throughput = float3(1.0, 1.0, 1.0);
     result.apDistance = 0.0;
 
-    float rBottomLayer = g_Atmosphere.planetRadius_km + g_Cloud.bottomLayer_km;
-    float rTopLayer    = g_Atmosphere.planetRadius_km + g_Cloud.topLayer_km;
+    float rBottomLayer = Atmosphere.planetRadiusKm + Cloud.bottomLayerKm;
+    float rTopLayer    = Atmosphere.planetRadiusKm + Cloud.topLayerKm;
 
     float2 bottomIntersection =
         RaySphereIntersection(rayOrigin, rayDirection, PLANET_CENTER, rBottomLayer);
@@ -280,6 +296,7 @@ CloudResult RaymarchCloud(float3 rayOrigin, float3 rayDirection, float maxDistan
     float rayStart = bottomIntersection.y > 0.0 ? bottomIntersection.y : 0.0;
     float rayEnd   = topIntersection.y;
 
+    bool bAboveCloudLayer = false;
     if (length(rayOrigin) < rBottomLayer)
     {
         // camera in-below cloud bottom layer
@@ -290,13 +307,15 @@ CloudResult RaymarchCloud(float3 rayOrigin, float3 rayDirection, float maxDistan
     {
         // camera in-between cloud layers
         rayStart = 0.0;
-        rayEnd   = bottomIntersection.x > 0.0 ? min(bottomIntersection.x, maxDistance) : topIntersection.y;
+        rayEnd   = bottomIntersection.x > 0.0 ? min(bottomIntersection.x, maxDistance) : min(topIntersection.y, maxDistance);
     }
     else if (topIntersection.x > 0.0)
     {
         // camera in-above cloud top layer
         rayStart = topIntersection.x;
         rayEnd   = min(bottomIntersection.x, maxDistance);
+
+        bAboveCloudLayer = true;
     }
     else
     {
@@ -308,12 +327,12 @@ CloudResult RaymarchCloud(float3 rayOrigin, float3 rayDirection, float maxDistan
     if (rayLength <= 0.0)
         return result;
 
-    float3 sunDirection = normalize(float3(-g_Atmosphere.light.dirX, -g_Atmosphere.light.dirY, -g_Atmosphere.light.dirZ));
-    float3 lightColor   = float3(g_Atmosphere.light.colorR, g_Atmosphere.light.colorG, g_Atmosphere.light.colorB);
-    if (g_Atmosphere.light.temperature_K > 0.0)
-        lightColor *= ColorTemperatureToRGB(g_Atmosphere.light.temperature_K);
+    float3 sunDirection = normalize(float3(-Atmosphere.light.dirX, -Atmosphere.light.dirY, -Atmosphere.light.dirZ));
+    float3 lightColor   = float3(Atmosphere.light.colorR, Atmosphere.light.colorG, Atmosphere.light.colorB);
+    if (Atmosphere.light.temperature_K > 0.0)
+        lightColor *= ColorTemperatureToRGB(Atmosphere.light.temperature_K);
 
-    float3 E = g_Atmosphere.light.illuminance_lux * lightColor;
+    float3 E = Atmosphere.light.illuminance_lux * lightColor;
 
     float VoL = dot(rayDirection, sunDirection);
 
@@ -324,11 +343,11 @@ CloudResult RaymarchCloud(float3 rayOrigin, float3 rayDirection, float maxDistan
 
     float phase = max(baseScatter, silverScatter);
 
-    ParticipatingMediaPhaseContext PMPC = SetupParticipatingMediaPhaseContext(phase, g_Cloud.msEccentricity);
+    ParticipatingMediaPhaseContext PMPC = SetupParticipatingMediaPhaseContext(phase, Cloud.msEccentricity);
     // ---------------------- //
 
     // --- Sampling setup --- //
-    float3 ExtinctionFactor = g_Cloud.extinctionStrength * g_Cloud.extinctionScale;
+    float3 ExtinctionFactor = Cloud.extinctionStrength * Cloud.extinctionScale;
 
     float stepSize = rayLength / (float)g_NumCloudRaymarchSteps;
     float tSample  = rayStart + stepSize * jitter.r;
@@ -341,19 +360,19 @@ CloudResult RaymarchCloud(float3 rayOrigin, float3 rayDirection, float maxDistan
     float3 throughput = float3(1.0, 1.0, 1.0);
     for (int i = 0; i < (float)g_NumCloudRaymarchSteps; ++i)
     {
-        float3 samplePos = rayOrigin + tSample * rayDirection;
+        float3 samplePos    = rayOrigin + tSample * rayDirection;
+        float  sampleTheta  = dot(normalize(samplePos), sunDirection);
+        float  sampleHeight = length(samplePos);
 
-        float sampleTheta              = dot(normalize(samplePos), sunDirection);
-        float sampleHeight             = length(samplePos);
-        float3 atmosphereTransmittance = SampleTransmittanceLUT(g_TransmittanceLUT, g_LinearClampSampler, sampleHeight, sampleTheta, g_Atmosphere.planetRadius_km, g_Atmosphere.atmosphereRadius_km);
+        float altitude = sampleHeight - Atmosphere.planetRadiusKm;
+        float hNorm    = inverseLerp(altitude, Cloud.bottomLayerKm, Cloud.topLayerKm);
 
-        float altitude = sampleHeight - g_Atmosphere.planetRadius_km;
-        float hNorm    = inverseLerp(altitude, g_Cloud.bottomLayer_km, g_Cloud.topLayer_km);
-
-        float3 offset     = g_Cloud.windDirection * g_TimeSec * g_Cloud.windSpeed_mps * 0.001;
-        float stepDensity = SampleCloudDensity(samplePos, hNorm, offset);
+        float3 offset     = Cloud.windDirection * g_TimeSec * Cloud.windSpeedMps * 0.001;
+        float stepDensity = SampleCloudDensity(samplePos, hNorm, offset, Cloud);
         if (stepDensity > 0.0f)
         {
+            float3 atmosphereTransmittance = SampleTransmittanceLUT(TransmittanceLUT, g_LinearClampSampler, sampleHeight, sampleTheta, Atmosphere.planetRadiusKm, Atmosphere.atmosphereRadiusKm);
+
             // --- Prepare AerialPerspective --- //
             float apWeight = min(throughput.r, min(throughput.g, throughput.b));
             apDistanceAcc += tSample * apWeight;
@@ -368,21 +387,26 @@ CloudResult RaymarchCloud(float3 rayOrigin, float3 rayDirection, float maxDistan
             float3 opticalDepth      = max(stepExtinction, 1e-8) * stepSize * 1000.0;
             float3 stepTransmittance = exp(-opticalDepth);
 
-            float msScatteringStrength = g_Cloud.msContribution;
-            float msExtinctionStrength = g_Cloud.msOcclusion;
+            float msScatteringStrength = Cloud.msContribution;
+            float msExtinctionStrength = Cloud.msOcclusion;
 
             ParticipatingMediaExtinctionContext    PMEC = SetupParticipatingMediaExtinctionContext(albedo, stepExtinction, msScatteringStrength, msExtinctionStrength);
-            ParticipatingMediaTransmittanceContext PMTC = RaymarchLight(samplePos, sunDirection, VoL, msExtinctionStrength, jitter.g);
 
-            float3 ambientLit = g_AtmosphereAmbientLUT.Sample(g_LinearClampSampler, hNorm).rgb;
+            ParticipatingMediaTransmittanceContext PMTC;
+            if (bAboveCloudLayer)
+                PMTC = RaymarchLight(samplePos, sunDirection, VoL, msExtinctionStrength, jitter.g);
+            else
+                PMTC = VolumetricShadow(samplePos, msExtinctionStrength);
+
+            float3 ambientLit = AtmosphereAmbientLUT.Sample(g_LinearClampSampler, hNorm).rgb;
             // --- Ground Contribution --- //
-            if (g_Cloud.groundContributionStrength > 0.0)
+            if (Cloud.groundContributionStrength > 0.0)
             {
                 float3 Nground = normalize(samplePos - PLANET_CENTER);
                 float3 Dground = -Nground;
 
-                const float groundRayLength = altitude;
-                const float groundStepCount = 5.0;
+                const float groundRayLength    = altitude;
+                const float groundStepCount    = 5.0;
                 const float invGroundStepCount = 1.0 / groundStepCount;
 
                 float tPrev = 0.0;
@@ -395,10 +419,10 @@ CloudResult RaymarchCloud(float3 rayOrigin, float3 rayDirection, float maxDistan
                     float tSampleGround    = groundRayLength * (tCurr - 0.5 * tDelta);
                     float3 samplePosGround = samplePos + Dground * tSampleGround;
 
-                    float altitudeGround = length(samplePosGround) - g_Atmosphere.planetRadius_km;
-                    float hNormGround    = inverseLerp(altitudeGround, g_Cloud.bottomLayer_km, g_Cloud.topLayer_km);
+                    float altitudeGround = length(samplePosGround) - Atmosphere.planetRadiusKm;
+                    float hNormGround    = inverseLerp(altitudeGround, Cloud.bottomLayerKm, Cloud.topLayerKm);
 
-                    float densityGround = SampleCloudDensity(samplePosGround, hNormGround, offset);
+                    float densityGround = SampleCloudDensity(samplePosGround, hNormGround, offset, Cloud);
 
                     if (densityGround > 0.0)
                     {
@@ -409,12 +433,12 @@ CloudResult RaymarchCloud(float3 rayOrigin, float3 rayDirection, float maxDistan
                     tPrev = tCurr;
                 }
 
-                float3 GoL = saturate(dot(sunDirection, Nground)) * (g_Atmosphere.groundAlbedo.rgb / PI);
+                float3 GoL = saturate(dot(sunDirection, Nground)) * (Atmosphere.groundAlbedo.rgb / PI);
                 float3 groundToCloudTransfer = (2.0f * PI) * IsotropicPhase() * GoL;
 
                 float3 L0ground = E * atmosphereTransmittance * groundToCloudTransfer;
 
-                ambientLit += L0ground * exp(-ODground) * g_Cloud.groundContributionStrength;
+                ambientLit += L0ground * exp(-ODground) * Cloud.groundContributionStrength;
             }
             // -------------------------- //
 
@@ -454,38 +478,55 @@ CloudResult RaymarchCloud(float3 rayOrigin, float3 rayDirection, float maxDistan
 [numthreads(8, 8, 1)]
 void main(uint3 tID : SV_DispatchThreadID)
 {
+    RWTexture2D< float4 > OutCloudScatteringLUT = GetResource(g_OutCloudScatteringLUT.index);
+
     uint2 imgSize;
     uint2 pixCoords = tID.xy;
-    g_CloudScatteringLUT.GetDimensions(imgSize.x, imgSize.y);
+    OutCloudScatteringLUT.GetDimensions(imgSize.x, imgSize.y);
     if (tID.x >= imgSize.x || tID.y >= imgSize.y)
         return;
 
-    float2 uv    = float2(tID.xy + 0.5) / float2(imgSize);
-    float  depth = g_DepthBuffer.Sample(g_PointClampSampler, uv).r;
+    float2 uv       = float2(tID.xy + 0.5) / float2(imgSize);
+
+    CloudData      Cloud      = GetCloudData();
+    AtmosphereData Atmosphere = GetAtmosphereData();
+
+    Texture2D< float >       DepthBuffer          = GetResource(g_DepthBuffer.index);
+    Texture2DArray< float2 > BlueNoiseArray       = GetResource(g_BlueNoiseArray.index);
+    Texture3D< float4 >      AerialPerspectiveLUT = GetResource(g_AerialPerspectiveLUT.index);
+
+    float depth = DepthBuffer.Sample(g_PointClampSampler, uv).r;
 
     float3 cameraPos =
         float3(g_Camera.posWORLD.x, max(g_Camera.posWORLD.y, MIN_VIEW_HEIGHT_ABOVE_GROUND), g_Camera.posWORLD.z);
     float3 cameraPosAbovePlanet =
-        cameraPos * DISTANCE_SCALE + float3(0.0, g_Atmosphere.planetRadius_km, 0.0);
+        cameraPos * DISTANCE_SCALE + float3(0.0, Atmosphere.planetRadiusKm, 0.0);
 
     float3 posWORLD     = ReconstructWorldPos(uv, depth, g_Camera.mViewProjInv);
     float3 rayDirection = normalize(posWORLD);
     float3 rayOrigin    = cameraPosAbovePlanet;
 
-    float2 groundIntersection = RaySphereIntersection(rayOrigin, rayDirection, PLANET_CENTER, g_Atmosphere.planetRadius_km);
+    float2 groundIntersection = RaySphereIntersection(rayOrigin, rayDirection, PLANET_CENTER, Atmosphere.planetRadiusKm);
     float maxDistance         = groundIntersection.x > 0.0 ? groundIntersection.x : groundIntersection.y > 0.0 ? groundIntersection.y : RAY_MARCHING_MAX_DISTANCE;
           maxDistance         = min(maxDistance, depth == 0.0 ? RAY_MARCHING_MAX_DISTANCE : length(posWORLD) * DISTANCE_SCALE);
+
+    float rayAltitude = inverseLerp(rayOrigin.y - Atmosphere.planetRadiusKm, Cloud.bottomLayerKm, Cloud.topLayerKm);
+    if (rayAltitude > 1.0)
+    {
+        // More cloud sight range as higher view
+        maxDistance = lerp(maxDistance, 1e5, rayAltitude * 0.1);
+    }
 
     float2 jitter;
     {
         uint3 noiseSize;
-        g_BlueNoiseArray.GetDimensions(noiseSize.x, noiseSize.y, noiseSize.z);
+        BlueNoiseArray.GetDimensions(noiseSize.x, noiseSize.y, noiseSize.z);
 
         int2 offset     = int2(float2(0.754877669, 0.569840296) * (float)g_Frame * float2(imgSize));
         int2 noiseIdx   = (pixCoords.xy + offset) % noiseSize.xy;
         int  noiseSlice = (int)g_Frame % noiseSize.z;
 
-        jitter = g_BlueNoiseArray.Load(int4(noiseIdx, noiseSlice, 0));
+        jitter = BlueNoiseArray.Load(int4(noiseIdx, noiseSlice, 0));
     }
 
     CloudResult cloud = RaymarchCloud(rayOrigin, rayDirection, maxDistance, jitter);
@@ -498,13 +539,13 @@ void main(uint3 tID : SV_DispatchThreadID)
             float viewDistanceKm = cloud.apDistance;
 
             uint3 apSize;
-            g_AerialPerspectiveLUT.GetDimensions(apSize.x, apSize.y, apSize.z);
+            AerialPerspectiveLUT.GetDimensions(apSize.x, apSize.y, apSize.z);
 
             float slice = viewDistanceKm * (1.0 / AP_KM_PER_SLICE);
             float w     = sqrt(slice / (float)apSize.z);
                   slice = w * apSize.z;
 
-            float4 ap = g_AerialPerspectiveLUT.Sample(g_LinearClampSampler, float3(uv, w));
+            float4 ap = AerialPerspectiveLUT.Sample(g_LinearClampSampler, float3(uv, w));
 
             // prevents an abrupt appearance of fog on objects close to the camera
             float weight = 1.0;
@@ -520,5 +561,5 @@ void main(uint3 tID : SV_DispatchThreadID)
         }
     }
 
-    g_CloudScatteringLUT[pixCoords] = float4(L, A);
+    OutCloudScatteringLUT[pixCoords] = float4(L, A);
 }

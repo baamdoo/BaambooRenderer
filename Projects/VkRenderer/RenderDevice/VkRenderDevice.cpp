@@ -33,6 +33,7 @@ VkRenderDevice::VkRenderDevice()
 	DeviceBuilder deviceBuilder;
 	m_vkDevice = deviceBuilder.AddDeviceExtension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME)
 		                      .AddDeviceExtension(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME)
+		                      .AddDeviceExtension(VK_EXT_MESH_SHADER_EXTENSION_NAME)
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_IndirectRendering)
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_DescriptorIndexing)
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_DynamicIndexing)
@@ -42,9 +43,11 @@ VkRenderDevice::VkRenderDevice()
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_SamplerAnistropy)
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_IndexTypeUint8)
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_Sync2)
+		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_MeshShader)
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_SwapChainMaintenance).Build(m_vkInstance);
 	m_vkPhysicalDevice         = deviceBuilder.physicalDevice;
 	m_PhysicalDeviceProperties = deviceBuilder.physicalDeviceProperties;
+	m_PhysicalDeviceMaintenance3Properties = deviceBuilder.physicalDeviceMaintenance3Properties;
 
 	m_pGraphicsQueue = new CommandQueue(*this, deviceBuilder.queueFamilyIndices.graphicsQueueIndex, eCommandType::Graphics);
 	m_pComputeQueue  = new CommandQueue(*this, deviceBuilder.queueFamilyIndices.computeQueueIndex, eCommandType::Compute);
@@ -116,47 +119,47 @@ void VkRenderDevice::Flush()
 	m_pTransferQueue->Flush();
 }
 
-Arc< render::Buffer > VkRenderDevice::CreateBuffer(const std::string& name, render::Buffer::CreationInfo&& desc)
+Arc< render::Buffer > VkRenderDevice::CreateBuffer(const char* name, render::Buffer::CreationInfo&& desc)
 {
 	return VulkanBuffer::Create(*this, name, std::move(desc));
 }
 
-Arc<render::Buffer> VkRenderDevice::CreateEmptyBuffer(const std::string& name)
+Arc<render::Buffer> VkRenderDevice::CreateEmptyBuffer(const char* name)
 {
 	return VulkanBuffer::CreateEmpty(*this, name);
 }
 
-Arc< render::Texture > VkRenderDevice::CreateTexture(const std::string& name, render::Texture::CreationInfo&& desc)
+Arc< render::Texture > VkRenderDevice::CreateTexture(const char* name, render::Texture::CreationInfo&& desc)
 {
 	return VulkanTexture::Create(*this, name, std::move(desc));
 }
 
-Arc< render::Texture > VkRenderDevice::CreateEmptyTexture(const std::string& name)
+Arc< render::Texture > VkRenderDevice::CreateEmptyTexture(const char* name)
 {
 	return VulkanTexture::CreateEmpty(*this, name);
 }
 
-Arc< render::RenderTarget > VkRenderDevice::CreateEmptyRenderTarget(const std::string& name)
+Arc< render::RenderTarget > VkRenderDevice::CreateEmptyRenderTarget(const char* name)
 {
 	return MakeArc< VulkanRenderTarget >(*this, name);
 }
 
-Arc< render::Sampler > VkRenderDevice::CreateSampler(const std::string& name, render::Sampler::CreationInfo&& info)
+Arc< render::Sampler > VkRenderDevice::CreateSampler(const char* name, render::Sampler::CreationInfo&& info)
 {
 	return VulkanSampler::Create(*this, name, std::move(info));
 }
 
-Arc< render::Shader > VkRenderDevice::CreateShader(const std::string& name, render::Shader::CreationInfo&& info)
+Arc< render::Shader > VkRenderDevice::CreateShader(const char* name, render::Shader::CreationInfo&& info)
 {
 	return VulkanShader::Create(*this, name, std::move(info));
 }
 
-Box< render::ComputePipeline > VkRenderDevice::CreateComputePipeline(const std::string& name)
+Box< render::ComputePipeline > VkRenderDevice::CreateComputePipeline(const char* name)
 {
 	return MakeBox< VulkanComputePipeline >(*this, name);
 }
 
-Box< render::GraphicsPipeline > VkRenderDevice::CreateGraphicsPipeline(const std::string& name)
+Box< render::GraphicsPipeline > VkRenderDevice::CreateGraphicsPipeline(const char* name)
 {
 	return MakeBox< VulkanGraphicsPipeline >(*this, name);
 }

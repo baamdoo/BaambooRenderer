@@ -1,7 +1,8 @@
-﻿#define _ATMOSPHERE
+﻿#define _SCENEENVIRONMENT
 #include "AtmosphereCommon.hlsli"
 
-RWTexture2D< float3 > g_TransmittanceLUT : register(u0);
+ConstantBuffer< DescriptorHeapIndex > g_OutTransmittanceLUT : register(b1, ROOT_CONSTANT_SPACE);
+
 
 void GenerateTransmittanceCoordsFromUV(float2 uv, float bottomRadius, float topRadius, out float cosZenithAngle, out float viewHeight)
 {
@@ -21,6 +22,8 @@ void GenerateTransmittanceCoordsFromUV(float2 uv, float bottomRadius, float topR
 
 float3 ComputeExtinction(float3 rayOrigin, float3 rayDir, float rayLength, int numSamples)
 {
+    AtmosphereData Atmosphere = GetAtmosphereData();
+
     float stepSize = rayLength / float(numSamples);
     float3 extinction = float3(0.0, 0.0, 0.0);
 
@@ -29,16 +32,16 @@ float3 ComputeExtinction(float3 rayOrigin, float3 rayDir, float rayLength, int n
         float t = (float(i) + 0.5) * stepSize;
         float3 pos = rayOrigin + t * rayDir;
 
-        float altitude = GetAltitude(pos);
+        float altitude = GetAltitude(pos, Atmosphere.planetRadiusKm);
 
-        float rayleighDensity = GetDensityAtHeight(altitude, g_Atmosphere.rayleighDensityH_km);
-        extinction += g_Atmosphere.rayleighScattering * rayleighDensity * stepSize;
+        float rayleighDensity = GetDensityAtHeight(altitude, Atmosphere.rayleighDensityKm);
+        extinction += Atmosphere.rayleighScattering * rayleighDensity * stepSize;
 
-        float mieDensity = GetDensityAtHeight(altitude, g_Atmosphere.mieDensityH_km);
-        extinction += (g_Atmosphere.mieScattering + g_Atmosphere.mieAbsorption) * mieDensity * stepSize;
+        float mieDensity = GetDensityAtHeight(altitude, Atmosphere.mieDensityKm);
+        extinction += (Atmosphere.mieScattering + Atmosphere.mieAbsorption) * mieDensity * stepSize;
 
-        float ozoneDensity = GetDensityOzoneAtHeight(altitude);
-        extinction += g_Atmosphere.ozoneAbsorption * ozoneDensity * stepSize;
+        float ozoneDensity = GetDensityOzoneAtHeight(altitude, Atmosphere.ozoneCenterKm, Atmosphere.ozoneWidthKm);
+        extinction += Atmosphere.ozoneAbsorption * ozoneDensity * stepSize;
     }
 
     return extinction;
@@ -47,23 +50,27 @@ float3 ComputeExtinction(float3 rayOrigin, float3 rayDir, float rayLength, int n
 [numthreads(8, 8, 1)]
 void main(uint2 tID : SV_DispatchThreadID)
 {
+    RWTexture2D< float3 > OutTransmittanceLUT = GetResource(g_OutTransmittanceLUT.index);
+
     uint2 texSize;
-    g_TransmittanceLUT.GetDimensions(texSize.x, texSize.y);
+    OutTransmittanceLUT.GetDimensions(texSize.x, texSize.y);
     if (tID.x >= texSize.x || tID.y >= texSize.y)
         return;
 
     float2 uv = float2(tID.xy + 0.5) / float2(texSize);
 
+    AtmosphereData Atmosphere = GetAtmosphereData();
+
     float cosZenithAngle, viewHeight;
     GenerateTransmittanceCoordsFromUV(
-        uv, g_Atmosphere.planetRadius_km, g_Atmosphere.atmosphereRadius_km, cosZenithAngle, viewHeight
+        uv, Atmosphere.planetRadiusKm, Atmosphere.atmosphereRadiusKm, cosZenithAngle, viewHeight
     );
     
     float3 rayOrigin = float3(0.0, viewHeight, 0.0);
     float3 rayDir    = float3(safeSqrt(1.0 - cosZenithAngle * cosZenithAngle), cosZenithAngle, 0.0);
     
-    float2 groundIntersection     = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, g_Atmosphere.planetRadius_km);
-    float2 atmosphereIntersection = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, g_Atmosphere.atmosphereRadius_km);
+    float2 groundIntersection     = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, Atmosphere.planetRadiusKm);
+    float2 atmosphereIntersection = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, Atmosphere.atmosphereRadiusKm);
     
     float rayLength;
     if (groundIntersection.x > 0.0) 
@@ -78,7 +85,7 @@ void main(uint2 tID : SV_DispatchThreadID)
     
     if (rayLength <= 0.0) 
     {
-        g_TransmittanceLUT[tID.xy] = float3(0.0, 0.0, 0.0);
+        OutTransmittanceLUT[tID.xy] = float3(0.0, 0.0, 0.0);
         return;
     }
     
@@ -86,5 +93,5 @@ void main(uint2 tID : SV_DispatchThreadID)
     float3 extinction    = ComputeExtinction(rayOrigin, rayDir, rayLength, numSamples);
     float3 transmittance = exp(-extinction); // (2) T(xa,xb) = exp(−Integral(xa~xb, σ(x)dx))
     
-    g_TransmittanceLUT[tID.xy] = transmittance;
+    OutTransmittanceLUT[tID.xy] = transmittance;
 }

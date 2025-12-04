@@ -31,7 +31,7 @@ DescriptorPool::~DescriptorPool()
 	vkDestroyDescriptorPool(m_RenderDevice.vkDevice(), m_vkDescriptorPool, nullptr);
 }
 
-DescriptorSet& DescriptorPool::AllocateSet(VkDescriptorSetLayout vkSetLayout)
+DescriptorSet& DescriptorPool::AllocateSet(VkDescriptorSetLayout vkSetLayout, u32* variableCounts)
 {
 	assert(vkSetLayout);
 
@@ -44,7 +44,7 @@ DescriptorSet& DescriptorPool::AllocateSet(VkDescriptorSetLayout vkSetLayout)
 	auto pDescriptorSet = new DescriptorSet(m_RenderDevice);
 	m_DescriptorSetCache.emplace(vkSetLayout, pDescriptorSet);
 	
-	return pDescriptorSet->Allocate(vkSetLayout, m_vkDescriptorPool);
+	return pDescriptorSet->Allocate(vkSetLayout, m_vkDescriptorPool, variableCounts);
 }
 
 void DescriptorPool::Reset()

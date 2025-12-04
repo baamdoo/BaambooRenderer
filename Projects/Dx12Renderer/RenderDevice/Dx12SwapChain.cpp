@@ -113,7 +113,7 @@ void Dx12SwapChain::CreateSwapChainResources()
 		ID3D12Resource* d3d12Resource = nullptr;
 		m_dxgiSwapChain->GetBuffer(i, IID_PPV_ARGS(&d3d12Resource));
 
-		auto pTex = MakeArc< Dx12Texture >(m_RenderDevice, "SwapChain::RTV_" + std::to_string(i));
+		auto pTex = MakeArc< Dx12Texture >(m_RenderDevice, std::string("SwapChain::RTV_" + std::to_string(i)).c_str());
 		pTex->SetD3D12Resource(d3d12Resource);
 
 		m_pBackImages[i] = pTex;

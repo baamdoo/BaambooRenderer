@@ -181,7 +181,7 @@ void StaticBufferAllocator::Reset()
 
 void StaticBufferAllocator::Resize(size_t sizeInBytes)
 {
-	auto pNewBuffer = Dx12StructuredBuffer::Create(m_RenderDevice, m_Name, sizeInBytes, render::eBufferUsage_TransferSource | render::eBufferUsage_TransferDest);
+	auto pNewBuffer = Dx12StructuredBuffer::Create(m_RenderDevice, m_Name.c_str(), sizeInBytes, render::eBufferUsage_TransferSource | render::eBufferUsage_TransferDest);
 
 	if (m_OffsetInBytes > 0 && m_pBuffer)
 	{

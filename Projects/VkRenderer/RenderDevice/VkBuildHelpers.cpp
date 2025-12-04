@@ -28,7 +28,10 @@ InstanceBuilder::InstanceBuilder()
 	// **
 	// Set default values
 	// **
-	m_ValidationLayers = { "VK_LAYER_KHRONOS_validation" };
+	m_ValidationLayers = 
+	{
+		"VK_LAYER_KHRONOS_validation",
+	};
 	m_ExtensionLayers = 
 	{
 		VK_KHR_SURFACE_EXTENSION_NAME,
@@ -251,7 +254,7 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 
 	queueInfos.push_back(transferQueueInfo);
 
-
+	
 	// **
 	// Core features
 	// **
@@ -268,6 +271,7 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 			physicalDevice12Features.descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE;
 			physicalDevice12Features.descriptorBindingSampledImageUpdateAfterBind  = VK_TRUE;
 			physicalDevice12Features.descriptorBindingPartiallyBound               = VK_TRUE;
+			physicalDevice12Features.descriptorBindingVariableDescriptorCount      = VK_TRUE;
 		}
 
 		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_DescriptorIndexing))
@@ -353,6 +357,19 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 				featureChain.bind(swapChainMaintenance1Features);
 		}
 
+		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_MeshShader))
+		{
+			VkPhysicalDeviceFeatures2 features2 = {};
+			features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+
+			VkPhysicalDeviceMeshShaderFeaturesNV meshShaderFeatures = {};
+			meshShaderFeatures.sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_NV;
+			meshShaderFeatures.taskShader = true;
+			meshShaderFeatures.meshShader = true;
+
+			featureChain.bind(meshShaderFeatures);
+		}
+
 		// More extension features ...
 	}
 
@@ -382,18 +399,26 @@ VkResult DeviceBuilder::queryPhysicalDevice(VkInstance instance)
 	VK_CHECK(vkEnumeratePhysicalDevices(instance, &gpuCount, gpuCandidates.data()));
 
 	const bool bAdditionalShader = m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_AdditionalShader);
-	const bool bMultiViewport = m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_MultiViewport);
-	const bool bDynamicIndexing = m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_DynamicIndexing);
+	const bool bMultiViewport    = m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_MultiViewport);
+	const bool bDynamicIndexing  = m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_DynamicIndexing);
 
 	for (const auto& gpu : gpuCandidates)
 	{
-		VkPhysicalDeviceProperties gpuProperties;
-		vkGetPhysicalDeviceProperties(gpu, &gpuProperties);
+		VkPhysicalDeviceMaintenance3Properties gpuProperties3 = {};
+		gpuProperties3.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES;
+
+		VkPhysicalDeviceProperties2 gpuProperties2 =
+		{
+			.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+			.pNext = &gpuProperties3,
+		};
+		vkGetPhysicalDeviceProperties2(gpu, &gpuProperties2);
+		
 
 		VkPhysicalDeviceFeatures gpuFeatures;
 		vkGetPhysicalDeviceFeatures(gpu, &gpuFeatures);
 
-		if (gpuProperties.apiVersion < m_PhysicalRequirements.apiVersion)
+		if (gpuProperties2.properties.apiVersion < m_PhysicalRequirements.apiVersion)
 			continue;
 
 		if (bAdditionalShader && !(gpuFeatures.geometryShader || gpuFeatures.tessellationShader))
@@ -408,10 +433,11 @@ VkResult DeviceBuilder::queryPhysicalDevice(VkInstance instance)
 			gpuFeatures.shaderStorageImageArrayDynamicIndexing))
 			continue;
 
-		if (gpuProperties.deviceType == m_PhysicalRequirements.deviceType) 
+		if (gpuProperties2.properties.deviceType == m_PhysicalRequirements.deviceType)
 		{
 			physicalDevice = gpu;
-			physicalDeviceProperties = gpuProperties;
+			physicalDeviceProperties = gpuProperties2.properties;
+			physicalDeviceMaintenance3Properties = gpuProperties3;
 
 			return VK_SUCCESS;
 		}

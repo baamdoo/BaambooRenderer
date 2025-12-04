@@ -31,3 +31,6 @@
 [submodule "Projects/ThirdParties/gli"]
 	path = Projects/ThirdParties/gli
 	url = https://github.com/g-truc/gli.git
+[submodule "Projects/ThirdParties/meshoptimizer"]
+	path = Projects/ThirdParties/meshoptimizer
+	url = https://github.com/zeux/meshoptimizer.git

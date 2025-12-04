@@ -126,7 +126,7 @@ VkBlendFactor ConvertToVkBlendFactor(render::eBlendFactor factor)
 //-------------------------------------------------------------------------
 // Graphics Pipeline
 //-------------------------------------------------------------------------
-VulkanGraphicsPipeline::VulkanGraphicsPipeline(VkRenderDevice& rd, const std::string& name)
+VulkanGraphicsPipeline::VulkanGraphicsPipeline(VkRenderDevice& rd, const char* name)
 	: render::GraphicsPipeline(name)
 	, m_RenderDevice(rd)
 {
@@ -376,36 +376,27 @@ void VulkanGraphicsPipeline::Build()
 		m_vkSetLayouts.resize(maxSet + 1);
 		for (const auto& [set, binding] : descriptorSetLayoutBindingMap)
 		{
-			if (set == eDescriptorSet_Static)
-			{
-				m_vkSetLayouts[eDescriptorSet_Static] = rhiSceneResource.GetSceneDescriptorSetLayout();
-				continue;
-			}
-
 			std::vector< VkDescriptorSetLayoutBinding > bindings;
 			for (auto& [_, info] : descriptorSetLayoutBindingMap[set])
 			{
-				assert((info.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER && set == eDescriptorSet_Push)
-					&& "All uniform-buffers should be placed in push descriptor set!");
 				bindings.push_back(info);
 			}
 
 			/** Descriptor set layout **/
 			VkDescriptorSetLayoutCreateInfo layoutInfo = {};
-			layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+			layoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 			layoutInfo.bindingCount = static_cast<u32>(bindings.size());
-			layoutInfo.pBindings = bindings.data();
-			if (set == eDescriptorSet_Push)
+			layoutInfo.pBindings    = bindings.data();
+			if (set != COMMON_DESCRIPTORSET_INDEX)
 			{
-				layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
+				layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT;
 			}
-			VK_CHECK(vkCreateDescriptorSetLayout(m_RenderDevice.vkDevice(), &layoutInfo, nullptr, &m_vkSetLayouts[set]));
-
-			if (set > eDescriptorSet_Push)
+			else
 			{
 				auto& descriptorSet = m_RenderDevice.AllocateDescriptorSet(m_vkSetLayouts[set]);
 				m_DescriptorTable.emplace(set, descriptorSet);
 			}
+			VK_CHECK(vkCreateDescriptorSetLayout(m_RenderDevice.vkDevice(), &layoutInfo, nullptr, &m_vkSetLayouts[set]));
 		}
 
 		for (auto& vkSetLayout : m_vkSetLayouts)
@@ -621,36 +612,25 @@ void VulkanGraphicsPipeline::Build()
 		m_vkSetLayouts.resize(maxSet + 1);
 		for (const auto& [set, binding] : descriptorSetLayoutBindingMap)
 		{
-			if (set == eDescriptorSet_Static)
+			if (set == COMMON_DESCRIPTORSET_INDEX)
 			{
-				m_vkSetLayouts[eDescriptorSet_Static] = rhiSceneResource.GetSceneDescriptorSetLayout();
+				m_vkSetLayouts[set] = rhiSceneResource.GetSceneDescriptorSetLayout();
 				continue;
 			}
 
 			std::vector< VkDescriptorSetLayoutBinding > bindings;
 			for (auto& [_, info] : descriptorSetLayoutBindingMap[set])
 			{
-				assert((info.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER && set == eDescriptorSet_Push)
-					&& "All uniform-buffers should be placed in push descriptor set!");
 				bindings.push_back(info);
 			}
 
 			/** Descriptor set layout **/
 			VkDescriptorSetLayoutCreateInfo layoutInfo = {};
 			layoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+			layoutInfo.flags        = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT;
 			layoutInfo.bindingCount = static_cast<u32>(bindings.size());
 			layoutInfo.pBindings    = bindings.data();
-			if (set == eDescriptorSet_Push)
-			{
-				layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-			}
 			VK_CHECK(vkCreateDescriptorSetLayout(m_RenderDevice.vkDevice(), &layoutInfo, nullptr, &m_vkSetLayouts[set]));
-
-			if (set > eDescriptorSet_Push)
-			{
-				auto& descriptorSet = m_RenderDevice.AllocateDescriptorSet(m_vkSetLayouts[set]);
-				m_DescriptorTable.emplace(set, descriptorSet);
-			}
 		}
 
 		for (auto& vkSetLayout : m_vkSetLayouts)
@@ -823,7 +803,7 @@ void VulkanGraphicsPipeline::Build()
 //-------------------------------------------------------------------------
 // Compute Pipeline
 //-------------------------------------------------------------------------
-VulkanComputePipeline::VulkanComputePipeline(VkRenderDevice& rd, const std::string& name)
+VulkanComputePipeline::VulkanComputePipeline(VkRenderDevice& rd, const char* name)
 	: render::ComputePipeline(name)
 	, m_RenderDevice(rd)
 {
@@ -864,7 +844,7 @@ void VulkanComputePipeline::Build()
 		{
 			VkDescriptorSetLayoutBinding layoutBinding = {};
 			layoutBinding.binding         = info.binding;
-			layoutBinding.descriptorCount = 1;
+			layoutBinding.descriptorCount = info.arraySize;
 			layoutBinding.descriptorType  = info.descriptorType;
 			layoutBinding.stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
 			descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
@@ -877,38 +857,28 @@ void VulkanComputePipeline::Build()
 
 	m_vkSetLayouts.clear();
 	m_vkSetLayouts.resize(maxSet + 1);
+
+	m_vkSetLayouts[COMMON_DESCRIPTORSET_INDEX] = rhiSceneResource.GetSceneDescriptorSetLayout();
 	for (const auto& [set, binding] : descriptorSetLayoutBindingMap)
 	{
-		if (set == eDescriptorSet_Static)
+		if (set == COMMON_DESCRIPTORSET_INDEX)
 		{
-			m_vkSetLayouts[eDescriptorSet_Static] = rhiSceneResource.GetSceneDescriptorSetLayout();
 			continue;
 		}
 
 		std::vector< VkDescriptorSetLayoutBinding > bindings;
 		for (auto& [_, info] : descriptorSetLayoutBindingMap[set])
 		{
-			assert((info.descriptorType != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || set == eDescriptorSet_Push)
-				&& "All uniform-buffers should be placed in push descriptor set!");
 			bindings.push_back(info);
 		}
 
 		/** Descriptor set layout **/
 		VkDescriptorSetLayoutCreateInfo layoutInfo = {};
 		layoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		layoutInfo.flags        = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT;
 		layoutInfo.bindingCount = static_cast<u32>(bindings.size());
 		layoutInfo.pBindings    = bindings.data();
-		if (set == eDescriptorSet_Push)
-		{
-			layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
-		}
 		VK_CHECK(vkCreateDescriptorSetLayout(m_RenderDevice.vkDevice(), &layoutInfo, nullptr, &m_vkSetLayouts[set]));
-
-		if (set > eDescriptorSet_Push)
-		{
-			auto& descriptorSet = m_RenderDevice.AllocateDescriptorSet(m_vkSetLayouts[set]);
-			m_DescriptorTable.emplace(set, descriptorSet);
-		}
 	}
 
 	for (auto& vkSetLayout : m_vkSetLayouts)

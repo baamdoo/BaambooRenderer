@@ -16,7 +16,7 @@ public:
 	~DescriptorPool();
 
 	[[nodiscard]]
-	DescriptorSet& AllocateSet(VkDescriptorSetLayout vkSetLayout);
+	DescriptorSet& AllocateSet(VkDescriptorSetLayout vkSetLayout, u32* variableCounts = nullptr);
 	void Reset();
 
 	[[nodiscard]]

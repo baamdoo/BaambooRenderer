@@ -2,13 +2,13 @@
 #extension GL_GOOGLE_include_directive : require
 #extension GL_ARB_gpu_shader_int64 : enable
 
+#define _SCENEENVIRONMENT
 #include "AtmosphereCommon.hg"
-#define _CLOUD
 #include "CloudCommon.hg"
 
-layout(set = SET_PUSH, binding = 7, r11f_g11f_b10f) writeonly uniform image2D g_CloudShadowMap; // R: FrontDepth, G: MeanExtinction, B: MaxOpticalDepth
+layout(set = 1, binding = 7, r11f_g11f_b10f) writeonly uniform image2D g_OutCloudShadowMap; // R: FrontDepth, G: MeanExtinction, B: MaxOpticalDepth
 
-layout(set = SET_PUSH, binding = 8) uniform CloudShadowUBO
+layout(set = 1, binding = 8) uniform CloudShadowUBO
 {
     mat4 mSunView;
     mat4 mSunViewProj;
@@ -17,8 +17,7 @@ layout(set = SET_PUSH, binding = 8) uniform CloudShadowUBO
 
 layout(push_constant) uniform Push
 {
-    uint  numLightRaymarchSteps;
-    float planetRadiusKm;
+    uint numLightRaymarchSteps;
 
     float    timeSec;
     uint64_t frame;
@@ -28,6 +27,9 @@ layout(push_constant) uniform Push
 // Reference: https://blog.selfshadow.com/publications/s2020-shading-course/hillaire/s2020_pbs_hillaire_slides.pdf
 vec3 RaymarchBSM(vec3 rayOrigin, vec3 rayDirection)
 {
+    CloudData      Cloud      = GetCloudData();
+    AtmosphereData Atmosphere = GetAtmosphereData();
+
     float frontDepth      = 1e30;
     float extinctionSum   = 0.0;
     float extinctionCount = 0.0;
@@ -35,7 +37,7 @@ vec3 RaymarchBSM(vec3 rayOrigin, vec3 rayDirection)
 
     bool bFirstHit = false;
 
-    float rBottomLayer      = g_Push.planetRadiusKm + g_Cloud.bottomLayer_km;
+    float rBottomLayer      = Atmosphere.planetRadiusKm + Cloud.bottomLayerKm;
     vec2 bottomIntersection = 
         RaySphereIntersection(rayOrigin, rayDirection, PLANET_CENTER, rBottomLayer);
     if (all(lessThan(bottomIntersection, vec2(0.0, 0.0))))
@@ -44,11 +46,10 @@ vec3 RaymarchBSM(vec3 rayOrigin, vec3 rayDirection)
     }
     float rayLength = bottomIntersection.x > 0.0 ? bottomIntersection.x : bottomIntersection.y;
 
+    float ExtinctionStrength = (Cloud.extinctionStrength.r + Cloud.extinctionStrength.g + Cloud.extinctionStrength.b) / 3.0;
+          ExtinctionStrength *= Cloud.extinctionScale;
 
-    float ExtinctionStrength = (g_Cloud.extinctionStrength.r + g_Cloud.extinctionStrength.g + g_Cloud.extinctionStrength.b) / 3.0;
-          ExtinctionStrength *= g_Cloud.extinctionScale;
-
-    vec3  offset = g_Cloud.windDirection * g_Push.timeSec * g_Cloud.windSpeed_mps * 0.001;
+    vec3  offset = Cloud.windDirection * g_Push.timeSec * Cloud.windSpeedMps * 0.001;
 
     float numSteps = float(g_Push.numLightRaymarchSteps);
     float stepSize = rayLength / numSteps;
@@ -58,14 +59,14 @@ vec3 RaymarchBSM(vec3 rayOrigin, vec3 rayDirection)
         float st   = i * stepSize;
         vec3  spos = rayOrigin + st * rayDirection;
 
-        float saltitude = length(spos) - g_Push.planetRadiusKm;
-        float shNorm    = inverseLerp(saltitude, g_Cloud.bottomLayer_km, g_Cloud.topLayer_km);
+        float saltitude = length(spos) - Atmosphere.planetRadiusKm;
+        float shNorm    = inverseLerp(saltitude, Cloud.bottomLayerKm, Cloud.topLayerKm);
         if (shNorm > 1.0 || shNorm < 0.0)
         {
             continue;
         }
 
-        float stepDensity = SampleCloudDensity(spos, shNorm, offset);
+        float stepDensity = SampleCloudDensity(spos, shNorm, offset, Cloud);
         if (stepDensity > 0.0)
         {
             if (!bFirstHit)
@@ -93,17 +94,17 @@ vec3 RaymarchBSM(vec3 rayOrigin, vec3 rayDirection)
 layout (local_size_x = 8, local_size_y = 8) in;
 void main()
 {
-    ivec2 imgSize   = imageSize(g_CloudShadowMap);
+    ivec2 imgSize   = imageSize(g_OutCloudShadowMap);
     ivec2 pixCoords = ivec2(gl_GlobalInvocationID.xy);
     if (any(greaterThanEqual(pixCoords, imgSize)))
         return;
 
     vec2 uv         = (vec2(pixCoords) + 0.5) / vec2(imgSize);
     
-    vec4 posNearCLIP  = vec4(uv.x * 2.0f - 1.0f, 1.0f - uv.y * 2.0f, 1.0f, 1.0f); // Reverse-Z
+    vec4 posNearCLIP  = vec4(uv.xy * 2.0f - 1.0f, 1.0f, 1.0f); // Reverse-Z
     vec4 posNearWORLD = g_CloudShadow.mSunViewProjInv * posNearCLIP;
     
-    vec4 posFarCLIP  = vec4(uv.x * 2.0f - 1.0f, 1.0f - uv.y * 2.0f, 0.0f, 1.0f); // Reverse-Z
+    vec4 posFarCLIP  = vec4(uv.xy * 2.0f - 1.0f, 0.0f, 1.0f); // Reverse-Z
     vec4 posFarWORLD = g_CloudShadow.mSunViewProjInv * posFarCLIP;
 
     vec3 rayOrigin    = posNearWORLD.xyz / posNearWORLD.w;
@@ -112,5 +113,5 @@ void main()
 
     vec3 BSM = RaymarchBSM(rayOrigin, rayDirection);
 
-    imageStore(g_CloudShadowMap, pixCoords, vec4(BSM, 1.0));
+    imageStore(g_OutCloudShadowMap, pixCoords, vec4(BSM, 1.0));
 }

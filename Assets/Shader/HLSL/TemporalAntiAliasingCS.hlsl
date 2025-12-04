@@ -1,41 +1,45 @@
 #include "Common.hlsli"
 #include "HelperFunctions.hlsli"
 
-Texture2D g_SceneTexture    : register(t0);
-Texture2D g_VelocityTexture : register(t1);
-Texture2D g_HistoryTexture  : register(t2);
-
-RWTexture2D< float4 > g_OutputImage : register(u0);
-
-SamplerState g_LinearClampSampler : register(SAMPLER_INDEX_LINEAR_CLAMP);
-
 cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
     float blendFactor;
     uint  bFirstFrame;
 };
 
+ConstantBuffer< DescriptorHeapIndex > g_SceneTexture    : register(b1, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_VelocityTexture : register(b2, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_HistoryTexture  : register(b3, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_OutputImage     : register(b4, ROOT_CONSTANT_SPACE);
+
+
 [numthreads(16, 16, 1)]
 void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 {
+    RWTexture2D< float4 > OutputImage = GetResource(g_OutputImage.index);
+
     int2  pixelCoord = int2(dispatchThreadID.xy);
     uint2 texSize;
-    g_OutputImage.GetDimensions(texSize.x, texSize.y);
+    OutputImage.GetDimensions(texSize.x, texSize.y);
 
     if (any(pixelCoord >= texSize))
         return;
 
     float2 uv        = (float2(pixelCoord) + 0.5) / float2(texSize);
 
-    float2 velocity      = g_VelocityTexture.SampleLevel(g_LinearClampSampler, uv, 0).xy;
+    Texture2D< float4 > SceneTexture    = GetResource(g_SceneTexture.index);
+    Texture2D< float4 > VelocityTexture = GetResource(g_VelocityTexture.index);
+    Texture2D< float4 > HistoryTexture  = GetResource(g_HistoryTexture.index);
+
+    float2 velocity      = VelocityTexture.SampleLevel(g_LinearClampSampler, uv, 0).xy;
     float2 historyUV     = uv - velocity;
     bool   bValidHistory = all(historyUV >= float2(0.0, 0.0)) && all(historyUV <= float2(1.0, 1.0));
 
-    float3 currentColor = g_SceneTexture.SampleLevel(g_LinearClampSampler, uv, 0).rgb;
+    float3 currentColor = SceneTexture.SampleLevel(g_LinearClampSampler, uv, 0).rgb;
     float3 historyColor = float3(0.0, 0.0, 0.0);
     if (bValidHistory && bFirstFrame == 0)
     {
-        historyColor = TextureCatmullRom(g_HistoryTexture, g_LinearClampSampler, historyUV, texSize).rgb;
+        historyColor = TextureCatmullRom(HistoryTexture, g_LinearClampSampler, historyUV, texSize).rgb;
     }
     else
     {
@@ -56,7 +60,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
         for (float y = -1.0; y <= 1.0; y += 1.0)
         {
             float2 sampleUV      = uv + float2(x, y) / texSize;
-            float3 neighborColor = g_SceneTexture.SampleLevel(g_LinearClampSampler, sampleUV, 0).rgb;
+            float3 neighborColor = SceneTexture.SampleLevel(g_LinearClampSampler, sampleUV, 0).rgb;
             float3 neighborYCoCg = RGB2YCoCg(neighborColor);
 
             m1 += neighborYCoCg;
@@ -84,5 +88,5 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 
     float3 finalColor = lerp(clampedHistory, currentColor, blendAlpha);
 
-    g_OutputImage[pixelCoord] = float4(finalColor, 1.0);
+    OutputImage[pixelCoord] = float4(finalColor, 1.0);
 }

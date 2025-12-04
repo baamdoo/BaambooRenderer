@@ -1,28 +1,31 @@
 #include "Common.hlsli"
 
-Texture2D< float4 > g_TextureR : register(t0);
-Texture2D< float4 > g_TextureG : register(t1);
-Texture2D< float4 > g_TextureB : register(t2);
-
-RWTexture2D< float4 > g_CombinedTexture : register(u0);
-
-SamplerState g_LinearClampSampler : register(SAMPLER_INDEX_LINEAR_CLAMP);
+ConstantBuffer< DescriptorHeapIndex > g_TextureR           : register(b1, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_TextureG           : register(b2, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_TextureB           : register(b3, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_OutCombinedTexture : register(b4, ROOT_CONSTANT_SPACE);
 
 [numthreads(16, 16, 1)]
 void main(uint3 tID : SV_DispatchThreadID)
 {
+    RWTexture2D< float4 > OutCombinedTexture = GetResource(g_OutCombinedTexture.index);
+
     // Get texture dimensions
     uint width, height;
-    g_CombinedTexture.GetDimensions(width, height);
+    OutCombinedTexture.GetDimensions(width, height);
 
     // Calculate UV coordinates
     float2 texCoords = float2(tID.xy) / float2(width, height);
 
+    Texture2D< float4 > TextureR = GetResource(g_TextureR.index);
+    Texture2D< float4 > TextureG = GetResource(g_TextureG.index);
+    Texture2D< float4 > TextureB = GetResource(g_TextureB.index);
+
     // Sample channels
-    float R = g_TextureR.SampleLevel(g_LinearClampSampler, texCoords, 0).r;
-    float G = g_TextureG.SampleLevel(g_LinearClampSampler, texCoords, 0).g;
-    float B = g_TextureB.SampleLevel(g_LinearClampSampler, texCoords, 0).b;
+    float R = TextureR.SampleLevel(g_LinearClampSampler, texCoords, 0).r;
+    float G = TextureG.SampleLevel(g_LinearClampSampler, texCoords, 0).g;
+    float B = TextureB.SampleLevel(g_LinearClampSampler, texCoords, 0).b;
 
     // Combine and write output
-    g_CombinedTexture[tID.xy] = float4(R, G, B, 1.0);
+    OutCombinedTexture[tID.xy] = float4(R, G, B, 1.0);
 }

@@ -5,7 +5,8 @@
 #include "Dx12BufferAllocator.h"
 #include "Dx12RootSignature.h"
 #include "Dx12RenderPipeline.h"
-#include "Dx12DescriptorHeap.h"
+#include "Dx12DescriptorPool.h"
+#include "Dx12ResourceManager.h"
 #include "RenderResource/Dx12Buffer.h"
 #include "RenderResource/Dx12Texture.h"
 #include "RenderResource/Dx12RenderTarget.h"
@@ -38,8 +39,10 @@ public:
 
 	void SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY primitiveTopology);
 
-	void ClearTexture(const Arc< Dx12Texture >& pTexture);
-	void ClearDepthStencilTexture(const Arc< Dx12Texture >& pTexture, D3D12_CLEAR_FLAGS clearFlags);
+	void ClearTexture(const Arc< Dx12Texture >& pTexture, D3D12_RESOURCE_STATES stateAfter);
+	void ClearRenderTarget(const Arc< Dx12Texture >& pTexture);
+	void ClearDepthStencil(const Arc< Dx12Texture >& pTexture, D3D12_CLEAR_FLAGS clearFlags);
+	void ClearUnorderedAccess(const Arc< Dx12Texture >& pTexture);
 
 	void SetViewport(const D3D12_VIEWPORT& viewport);
 	void SetViewports(const std::vector< D3D12_VIEWPORT >& viewports);
@@ -50,17 +53,14 @@ public:
 	void SetRenderPipeline(Dx12GraphicsPipeline* pGraphicsPipelineState);
 	void SetRenderPipeline(Dx12ComputePipeline* pComputePipelineState);
 
-	void SetGraphicsRootSignature(Arc< Dx12RootSignature > pRootSignature);
-	void SetComputeRootSignature(Arc< Dx12RootSignature > pRootSignature);
-
 	void SetDescriptorHeaps(const std::vector< ID3D12DescriptorHeap* >& d3d12DescriptorHeaps);
 
 	void SetRenderTarget(u32 numRenderTargets, D3D12_CPU_DESCRIPTOR_HANDLE rtv, D3D12_CPU_DESCRIPTOR_HANDLE dsv = D3D12_CPU_DESCRIPTOR_HANDLE());
 	void BeginRenderPass(Arc< Dx12RenderTarget > pRenderTarget);
 
-	void SetGraphicsRootConstant(u32 srcValue, u32 dstOffset = 0);
+	void SetGraphicsRootConstant(u32 rootIdx, u32 srcValue, u32 dstOffset = 0);
 	void SetGraphicsRootConstants(u32 srcSizeInBytes, const void* pSrcData, u32 dstOffsetInBytes = 0);
-	void SetComputeRootConstant(u32 srcValue, u32 dstOffset = 0);
+	void SetComputeRootConstant(u32 rootIdx, u32 srcValue, u32 dstOffset = 0);
 	void SetComputeRootConstants(u32 srcSizeInBytes, const void* pSrcData, u32 dstOffsetInBytes = 0);
 
 	void SetGraphicsDynamicConstantBuffer(const std::string& name, size_t sizeInBytes, const void* pData);
@@ -91,17 +91,9 @@ public:
 		Arc< Dx12Texture > pTexture,
 		D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-	void StageDescriptor(
-		const std::string& name,
-		D3D12_CPU_DESCRIPTOR_HANDLE srcHandle,
-		D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	void StageDescriptor(const std::string& name, u32 heapIdx, D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	void StageDescriptors(
-		std::vector< std::pair< std::string, D3D12_CPU_DESCRIPTOR_HANDLE > >&& srcHandles,
-		D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	void StageDescriptors(
-		u32 rootIndex,
-		u32 offset,
-		std::vector< D3D12_CPU_DESCRIPTOR_HANDLE >&& srcHandles,
+		std::vector< std::pair< std::string, u32 > >&& srcHandles,
 		D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
 	void Draw(u32 vertexCount, u32 instanceCount = 1, u32 startVertex = 0, u32 startInstance = 0);
@@ -144,8 +136,8 @@ private:
 
 	D3D_PRIMITIVE_TOPOLOGY m_PrimitiveTopology = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
 
-	Dx12DescriptorHeap*   m_pDescriptorHeaps[NUM_RESOURCE_DESCRIPTOR_TYPE]               = {};
-	ID3D12DescriptorHeap* m_CurrentDescriptorHeaps[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES] = {};
+	//Dx12DescriptorHeap*   m_pDescriptorHeaps[NUM_RESOURCE_DESCRIPTOR_TYPE]               = {};
+	//ID3D12DescriptorHeap* m_CurrentDescriptorHeaps[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES] = {};
 
 	u32                    m_NumBarriersToFlush = 0;
 	D3D12_RESOURCE_BARRIER m_ResourceBarriers[MAX_NUM_PENDING_BARRIERS] = {};
@@ -162,20 +154,10 @@ Dx12CommandContext::Impl::Impl(Dx12RenderDevice& rd, D3D12_COMMAND_LIST_TYPE typ
 		0, m_Type, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&m_d3d12CommandList2)));
 
 	m_pDynamicBufferAllocator = new DynamicBufferAllocator(m_RenderDevice);
-	
-	for (u32 i = 0; i < NUM_RESOURCE_DESCRIPTOR_TYPE; ++i)
-	{
-		m_pDescriptorHeaps[i] = 
-			new Dx12DescriptorHeap(m_RenderDevice, (D3D12_DESCRIPTOR_HEAP_TYPE)i, MAX_NUM_DESCRIPTOR_PER_POOL[i]);
-	}
 }
 
 Dx12CommandContext::Impl::~Impl()
 {
-	for (u32 i = 0; i < NUM_RESOURCE_DESCRIPTOR_TYPE; ++i)
-	{
-		RELEASE(m_pDescriptorHeaps[i]);
-	}
 	RELEASE(m_pDynamicBufferAllocator);
 
 	COM_RELEASE(m_d3d12CommandList2);
@@ -195,12 +177,12 @@ void Dx12CommandContext::Impl::Open()
 	if (m_Type != D3D12_COMMAND_LIST_TYPE_COPY)
 	{
 		m_pDynamicBufferAllocator->Reset();
-		for (u32 i = 0; i < NUM_RESOURCE_DESCRIPTOR_TYPE; ++i)
-		{
-			m_pDescriptorHeaps[i]->Reset();
-		}
 
 		BindDescriptorHeaps();
+
+		auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
+		m_d3d12CommandList2->SetComputeRootSignature(rm.GetGlobalRootSignature()->GetD3D12RootSignature());
+		m_d3d12CommandList2->SetGraphicsRootSignature(rm.GetGlobalRootSignature()->GetD3D12RootSignature());
 	}
 }
 
@@ -309,10 +291,41 @@ void Dx12CommandContext::Impl::SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY primi
 	}
 }
 
-void Dx12CommandContext::Impl::ClearTexture(const Arc< Dx12Texture >& pTexture)
+void Dx12CommandContext::Impl::ClearTexture(const Arc< Dx12Texture >& pTexture, D3D12_RESOURCE_STATES stateAfter)
+{
+	if (stateAfter == D3D12_RESOURCE_STATE_RENDER_TARGET)
+	{
+		if (pTexture->GetRenderTargetView().ptr == 0)
+		{
+			__debugbreak();
+		}
+
+		ClearRenderTarget(pTexture);
+	}
+	else if (stateAfter == D3D12_RESOURCE_STATE_DEPTH_WRITE)
+	{
+		if (pTexture->GetRenderTargetView().ptr == 0)
+		{
+			__debugbreak();
+		}
+
+		ClearDepthStencil(pTexture, D3D12_CLEAR_FLAG_DEPTH);
+	}
+	else if (stateAfter == D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
+	{
+		if (pTexture->GetUnorderedAccessView(0).ptr == 0)
+		{
+			__debugbreak();
+		}
+
+		ClearUnorderedAccess(pTexture);
+	}
+}
+
+void Dx12CommandContext::Impl::ClearRenderTarget(const Arc< Dx12Texture >& pTexture)
 {
 	assert(pTexture);
-	float clearColor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+	float clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 	if (auto pClearValue = pTexture->GetClearValue())
 	{
 		memcpy(clearColor, pClearValue->Color, sizeof(clearColor));
@@ -322,7 +335,7 @@ void Dx12CommandContext::Impl::ClearTexture(const Arc< Dx12Texture >& pTexture)
 	m_d3d12CommandList2->ClearRenderTargetView(pTexture->GetRenderTargetView(), clearColor, 0, nullptr);
 }
 
-void Dx12CommandContext::Impl::ClearDepthStencilTexture(const Arc< Dx12Texture >& pTexture, D3D12_CLEAR_FLAGS clearFlags)
+void Dx12CommandContext::Impl::ClearDepthStencil(const Arc< Dx12Texture >& pTexture, D3D12_CLEAR_FLAGS clearFlags)
 {
 	assert(pTexture);
 	float clearDepth   = 1.0f;
@@ -335,6 +348,23 @@ void Dx12CommandContext::Impl::ClearDepthStencilTexture(const Arc< Dx12Texture >
 
 	TransitionBarrier(pTexture.get(), D3D12_RESOURCE_STATE_DEPTH_WRITE);
 	m_d3d12CommandList2->ClearDepthStencilView(pTexture->GetDepthStencilView(), clearFlags, clearDepth, clearStencil, 0, nullptr);
+}
+
+void Dx12CommandContext::Impl::ClearUnorderedAccess(const Arc< Dx12Texture >& pTexture)
+{
+	assert(pTexture);
+	float clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	if (auto pClearValue = pTexture->GetClearValue())
+	{
+		memcpy(clearColor, pClearValue->Color, sizeof(clearColor));
+	}
+
+	D3D12_RECT rect = {};
+	rect.left = 0; rect.bottom = 0;
+	rect.right = static_cast<LONG>(pTexture->GetWidth()); rect.top = static_cast<LONG>(pTexture->GetHeight());
+
+	TransitionBarrier(pTexture.get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+	m_d3d12CommandList2->ClearUnorderedAccessViewFloat(pTexture->GetUnorderedAccessGpuAddress(0), pTexture->GetUnorderedAccessView(0), pTexture->GetD3D12Resource(), clearColor, 1, &rect);
 }
 
 void Dx12CommandContext::Impl::SetViewport(const D3D12_VIEWPORT& viewport)
@@ -365,7 +395,14 @@ void Dx12CommandContext::Impl::SetRenderPipeline(Dx12GraphicsPipeline* pGraphics
 	if (m_pGraphicsPipeline != pGraphicsPipeline)
 	{
 		m_pGraphicsPipeline = pGraphicsPipeline;
-		SetGraphicsRootSignature(m_pGraphicsPipeline->GetRootSignature());
+
+		const auto& pRootSignature = m_pGraphicsPipeline->GetRootSignature();
+		if (m_pRootSignature != pRootSignature)
+		{
+			m_pRootSignature = pRootSignature;
+
+			m_d3d12CommandList2->SetGraphicsRootSignature(m_pRootSignature->GetD3D12RootSignature());
+		}
 
 		m_d3d12CommandList2->SetPipelineState(m_pGraphicsPipeline->GetD3D12PipelineState());
 	}
@@ -377,45 +414,16 @@ void Dx12CommandContext::Impl::SetRenderPipeline(Dx12ComputePipeline* pComputePi
 	if (m_pComputePipeline != pComputePipeline)
 	{
 		m_pComputePipeline = pComputePipeline;
-		SetComputeRootSignature(m_pComputePipeline->GetRootSignature());
+
+		const auto& pRootSignature = m_pComputePipeline->GetRootSignature();
+		if (m_pRootSignature != pRootSignature)
+		{
+			m_pRootSignature = pRootSignature;
+
+			m_d3d12CommandList2->SetComputeRootSignature(m_pRootSignature->GetD3D12RootSignature());
+		}
 
 		m_d3d12CommandList2->SetPipelineState(m_pComputePipeline->GetD3D12PipelineState());
-	}
-}
-
-void Dx12CommandContext::Impl::SetGraphicsRootSignature(Arc< Dx12RootSignature > pRootSignature)
-{
-	assert(pRootSignature);
-
-	if (m_pRootSignature != pRootSignature)
-	{
-		m_pRootSignature = pRootSignature;
-
-		auto d3d12RootSignature = m_pRootSignature->GetD3D12RootSignature();
-		for (u32 i = 0; i < NUM_RESOURCE_DESCRIPTOR_TYPE; ++i)
-		{
-			m_pDescriptorHeaps[i]->ParseRootSignature(m_pRootSignature);
-		}
-
-		m_d3d12CommandList2->SetGraphicsRootSignature(d3d12RootSignature);
-	}
-}
-
-void Dx12CommandContext::Impl::SetComputeRootSignature(Arc< Dx12RootSignature > pRootSignature)
-{
-	assert(pRootSignature);
-
-	if (m_pRootSignature != pRootSignature)
-	{
-		m_pRootSignature = pRootSignature;
-
-		auto d3d12RootSignature = m_pRootSignature->GetD3D12RootSignature();
-		for (u32 i = 0; i < NUM_RESOURCE_DESCRIPTOR_TYPE; ++i)
-		{
-			m_pDescriptorHeaps[i]->ParseRootSignature(m_pRootSignature);
-		}
-
-		m_d3d12CommandList2->SetComputeRootSignature(d3d12RootSignature);
 	}
 }
 
@@ -473,66 +481,58 @@ void Dx12CommandContext::Impl::BeginRenderPass(Arc< Dx12RenderTarget > pRenderTa
 	);
 }
 
-void Dx12CommandContext::Impl::SetGraphicsRootConstant(u32 srcValue, u32 dstOffset)
+void Dx12CommandContext::Impl::SetGraphicsRootConstant(u32 rootIdx, u32 srcValue, u32 dstOffset)
 {
-	assert(IsGraphicsContext());
-	
-	auto rootIndex = m_pGraphicsPipeline->GetConstantRootIndex();
-	m_d3d12CommandList2->SetGraphicsRoot32BitConstant(rootIndex, srcValue, dstOffset);
+	m_d3d12CommandList2->SetGraphicsRoot32BitConstant(rootIdx, srcValue, dstOffset);
 }
 
 void Dx12CommandContext::Impl::SetGraphicsRootConstants(u32 srcSizeInBytes, const void* pSrcData, u32 dstOffsetInBytes)
 {
-	assert(IsGraphicsContext());
 	u32 size      = srcSizeInBytes / 4;
 	u32 dstOffset = dstOffsetInBytes / 4;
 
-	auto rootIndex = m_pGraphicsPipeline->GetConstantRootIndex();
-	m_d3d12CommandList2->SetGraphicsRoot32BitConstants(rootIndex, size, pSrcData, dstOffset);
+	m_d3d12CommandList2->SetGraphicsRoot32BitConstants(0, size, pSrcData, dstOffset);
 }
 
-void Dx12CommandContext::Impl::SetComputeRootConstant(u32 srcValue, u32 dstOffset)
+void Dx12CommandContext::Impl::SetComputeRootConstant(u32 rootIdx, u32 srcValue, u32 dstOffset)
 {
-	assert(IsComputeContext());
-
-	auto rootIndex = m_pComputePipeline->GetConstantRootIndex();
-	m_d3d12CommandList2->SetComputeRoot32BitConstant(rootIndex, srcValue, dstOffset);
+	m_d3d12CommandList2->SetComputeRoot32BitConstant(rootIdx, srcValue, dstOffset);
 }
 
 void Dx12CommandContext::Impl::SetComputeRootConstants(u32 srcSizeInBytes, const void* pSrcData, u32 dstOffsetInBytes)
 {
-	assert(IsComputeContext());
 	u32 size      = srcSizeInBytes / 4;
 	u32 dstOffset = dstOffsetInBytes / 4;
 
-	auto rootIndex = m_pComputePipeline->GetConstantRootIndex();
-	m_d3d12CommandList2->SetComputeRoot32BitConstants(rootIndex, size, pSrcData, dstOffset);
+	m_d3d12CommandList2->SetComputeRoot32BitConstants(0, size, pSrcData, dstOffset);
 }
 
 void Dx12CommandContext::Impl::SetGraphicsDynamicConstantBuffer(const std::string& name, size_t sizeInBytes, const void* pData)
 {
-	assert(IsGraphicsContext());
-
 	auto allocation = m_pDynamicBufferAllocator->Allocate(sizeInBytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
 	memcpy(allocation.CPUHandle, pData, sizeInBytes);
 
 	auto [_, rootIndex] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
 	if (rootIndex == INVALID_INDEX)
+	{
+		__debugbreak();
 		return;
+	}
 
 	m_d3d12CommandList2->SetGraphicsRootConstantBufferView(rootIndex, allocation.GPUHandle);
 }
 
 void Dx12CommandContext::Impl::SetComputeDynamicConstantBuffer(const std::string& name, size_t sizeInBytes, const void* pData)
 {
-	assert(IsComputeContext());
-
 	auto allocation = m_pDynamicBufferAllocator->Allocate(sizeInBytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
 	memcpy(allocation.CPUHandle, pData, sizeInBytes);
 
 	auto [_, rootIndex] = m_pComputePipeline->GetResourceBindingIndex(name);
 	if (rootIndex == INVALID_INDEX)
+	{
+		__debugbreak();
 		return;
+	}
 
 	m_d3d12CommandList2->SetComputeRootConstantBufferView(rootIndex, allocation.GPUHandle);
 }
@@ -543,51 +543,58 @@ void Dx12CommandContext::Impl::SetGraphicsConstantBufferView(const std::string& 
 
 	auto [_, rootIndex] = m_pComputePipeline->GetResourceBindingIndex(name);
 	if (rootIndex == INVALID_INDEX)
+	{
+		__debugbreak();
 		return;
+	}
 
 	m_d3d12CommandList2->SetGraphicsRootConstantBufferView(rootIndex, gpuHandle);
 }
 
 void Dx12CommandContext::Impl::SetGraphicsShaderResourceView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle)
 {
-	assert(IsGraphicsContext());
-
 	auto [_, rootIndex] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
 	if (rootIndex == INVALID_INDEX)
+	{
+		__debugbreak();
 		return;
+	}
 
 	m_d3d12CommandList2->SetGraphicsRootShaderResourceView(rootIndex, gpuHandle);
 }
 
 void Dx12CommandContext::Impl::SetComputeConstantBufferView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle)
 {
-	assert(IsComputeContext());
-
 	auto [_, rootIndex] = m_pComputePipeline->GetResourceBindingIndex(name);
 	if (rootIndex == INVALID_INDEX)
+	{
+		__debugbreak();
 		return;
+	}
 
 	m_d3d12CommandList2->SetComputeRootConstantBufferView(rootIndex, gpuHandle);
 }
 
 void Dx12CommandContext::Impl::SetComputeShaderResourceView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle)
 {
-	assert(IsComputeContext());
-
 	auto [_, rootIndex] = m_pComputePipeline->GetResourceBindingIndex(name);
 	if (rootIndex == INVALID_INDEX)
+	{
+		__debugbreak();
 		return;
+	}
 
 	m_d3d12CommandList2->SetComputeRootShaderResourceView(rootIndex, gpuHandle);
 }
 
 void Dx12CommandContext::Impl::SetComputeUnorderedAccessView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle)
 {
-	assert(IsComputeContext());
-
 	auto [_, rootIndex] = m_pComputePipeline->GetResourceBindingIndex(name);
 	if (rootIndex == INVALID_INDEX)
+	{
+		__debugbreak();
 		return;
+	}
 
 	m_d3d12CommandList2->SetComputeRootUnorderedAccessView(rootIndex, gpuHandle);
 }
@@ -597,7 +604,7 @@ void Dx12CommandContext::Impl::StageDescriptor(
 	Arc< Dx12StructuredBuffer > pBuffer, 
 	D3D12_DESCRIPTOR_HEAP_TYPE heapType)
 {
-	StageDescriptor(name, pBuffer->GetShaderResourceView(), heapType);
+	StageDescriptor(name, pBuffer->GetShaderResourceHandle(), heapType);
 }
 
 void Dx12CommandContext::Impl::StageDescriptor(
@@ -610,44 +617,42 @@ void Dx12CommandContext::Impl::StageDescriptor(
 
 	if (bIsUAV)
 	{
-		StageDescriptor(name, pTexture->GetUnorderedAccessView(0), heapType);
+		StageDescriptor(name, pTexture->GetUnorderedAccessHandle(), heapType);
 	}
 	else
 	{
-		StageDescriptor(name, pTexture->GetShaderResourceView(), heapType);
+		StageDescriptor(name, pTexture->GetShaderResourceHandle(), heapType);
 	}
 }
 
-void Dx12CommandContext::Impl::StageDescriptor(
-	const std::string& name,
-	D3D12_CPU_DESCRIPTOR_HANDLE srcHandle, 
-	D3D12_DESCRIPTOR_HEAP_TYPE heapType)
+void Dx12CommandContext::Impl::StageDescriptor(const std::string& name, u32 heapIdx, D3D12_DESCRIPTOR_HEAP_TYPE heapType)
 {
 	if (IsGraphicsContext())
 	{
 		auto [offset, rootIndex] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
 		if (rootIndex == INVALID_INDEX)
+		{
+			__debugbreak();
 			return;
+		}
 
-		m_pDescriptorHeaps[heapType]->StageDescriptor(rootIndex, 1, offset, srcHandle);
+		SetGraphicsRootConstant(rootIndex, heapIdx);
 	}
 	else if (IsComputeContext())
 	{
 		auto [offset, rootIndex] = m_pComputePipeline->GetResourceBindingIndex(name);
 		if (rootIndex == INVALID_INDEX)
+		{
+			__debugbreak();
 			return;
+		}
 
-		m_pDescriptorHeaps[heapType]->StageDescriptor(rootIndex, 1, offset, srcHandle);
-	}
-	else
-	{
-		__debugbreak();
-		assert(false && "No pipeline is set!");
+		SetComputeRootConstant(rootIndex, heapIdx);
 	}
 }
 
 void Dx12CommandContext::Impl::StageDescriptors(
-	std::vector< std::pair< std::string, D3D12_CPU_DESCRIPTOR_HANDLE > >&& srcHandles,
+	std::vector< std::pair< std::string, u32 > >&& srcHandles,
 	D3D12_DESCRIPTOR_HEAP_TYPE heapType)
 {
 	for (const auto& [name, srcHandle] : srcHandles)
@@ -656,19 +661,9 @@ void Dx12CommandContext::Impl::StageDescriptors(
 	}
 }
 
-void Dx12CommandContext::Impl::StageDescriptors(u32 rootIndex, u32 offset, std::vector< D3D12_CPU_DESCRIPTOR_HANDLE >&& srcHandles, D3D12_DESCRIPTOR_HEAP_TYPE heapType)
-{
-	m_pDescriptorHeaps[heapType]->StageDescriptors(rootIndex, offset, std::move(srcHandles));
-}
-
 void Dx12CommandContext::Impl::Draw(u32 vertexCount, u32 instanceCount, u32 startVertex, u32 startInstance)
 {
 	FlushResourceBarriers();
-
-	for (u32 i = 0; i < NUM_RESOURCE_DESCRIPTOR_TYPE; ++i)
-	{
-		m_pDescriptorHeaps[i]->CommitDescriptorsForDraw(m_d3d12CommandList2);
-	}
 
 	m_d3d12CommandList2->DrawInstanced(vertexCount, instanceCount, startVertex, startInstance);
 }
@@ -676,11 +671,6 @@ void Dx12CommandContext::Impl::Draw(u32 vertexCount, u32 instanceCount, u32 star
 void Dx12CommandContext::Impl::DrawIndexed(u32 indexCount, u32 instanceCount, u32 startIndex, u32 baseVertex, u32 startInstance)
 {
 	FlushResourceBarriers();
-
-	for (u32 i = 0; i < NUM_RESOURCE_DESCRIPTOR_TYPE; ++i)
-	{
-		m_pDescriptorHeaps[i]->CommitDescriptorsForDraw(m_d3d12CommandList2);
-	}
 
 	m_d3d12CommandList2->DrawIndexedInstanced(indexCount, instanceCount, startIndex, baseVertex, startInstance);
 }
@@ -691,10 +681,6 @@ void Dx12CommandContext::Impl::DrawScene(const Dx12SceneResource& sceneResource)
 	TransitionBarrier(pIDB.get(), D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
 
 	FlushResourceBarriers();
-	for (u32 i = 0; i < NUM_RESOURCE_DESCRIPTOR_TYPE; ++i)
-	{
-		m_pDescriptorHeaps[i]->CommitDescriptorsForDraw(m_d3d12CommandList2);
-	}
 
 	m_d3d12CommandList2->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	m_d3d12CommandList2->ExecuteIndirect(
@@ -710,11 +696,6 @@ void Dx12CommandContext::Impl::DrawScene(const Dx12SceneResource& sceneResource)
 void Dx12CommandContext::Impl::Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ)
 {
 	FlushResourceBarriers();
-
-	for (int i = 0; i < NUM_RESOURCE_DESCRIPTOR_TYPE; ++i)
-	{
-		m_pDescriptorHeaps[i]->CommitDescriptorsForDispatch(m_d3d12CommandList2);
-	}
 
 	m_d3d12CommandList2->Dispatch(numGroupsX, numGroupsY, numGroupsZ);
 }
@@ -740,18 +721,11 @@ void Dx12CommandContext::Impl::FlushResourceBarriers()
 
 void Dx12CommandContext::Impl::BindDescriptorHeaps()
 {
-	u32 numDescriptorHeaps = 0;
-	ID3D12DescriptorHeap* descriptorHeaps[NUM_RESOURCE_DESCRIPTOR_TYPE] = {};
-	for (u32 i = 0; i < NUM_RESOURCE_DESCRIPTOR_TYPE; ++i)
-	{
-		ID3D12DescriptorHeap* descriptorHeap = m_pDescriptorHeaps[i]->GetD3D12DescriptorHeap();
-		if (descriptorHeap)
-		{
-			descriptorHeaps[numDescriptorHeaps++] = descriptorHeap;
-		}
-	}
+	auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
+	ID3D12DescriptorHeap* descriptorHeap = rm.GetGlobalDescriptorHeap()->GetD3D12DescriptorHeap();
+	ID3D12DescriptorHeap* descriptorHeaps[NUM_RESOURCE_DESCRIPTOR_TYPE] = { descriptorHeap, nullptr };
 
-	m_d3d12CommandList2->SetDescriptorHeaps(numDescriptorHeaps, descriptorHeaps);
+	m_d3d12CommandList2->SetDescriptorHeaps(1, descriptorHeaps);
 }
 
 
@@ -773,14 +747,19 @@ void Dx12CommandContext::Close()
 	m_Impl->Close();
 }
 
-void Dx12CommandContext::ClearTexture(const Arc< Dx12Texture >& pTexture)
+void Dx12CommandContext::ClearTexture(Arc< render::Texture > pTexture, render::eTextureLayout newLayout)
 {
-	m_Impl->ClearTexture(pTexture);
+	m_Impl->ClearTexture(StaticCast<Dx12Texture>(pTexture), DX12_RESOURCE_STATE(newLayout, render::Compute));
 }
 
-void Dx12CommandContext::ClearDepthStencilTexture(const Arc< Dx12Texture >& pTexture, D3D12_CLEAR_FLAGS clearFlags)
+void Dx12CommandContext::ClearRenderTarget(const Arc< Dx12Texture >& pTexture)
 {
-	m_Impl->ClearDepthStencilTexture(pTexture, clearFlags);
+	m_Impl->ClearRenderTarget(pTexture);
+}
+
+void Dx12CommandContext::ClearDepthStencil(const Arc< Dx12Texture >& pTexture, D3D12_CLEAR_FLAGS clearFlags)
+{
+	m_Impl->ClearDepthStencil(pTexture, clearFlags);
 }
 
 void Dx12CommandContext::CopyBuffer(ID3D12Resource* d3d12DstBuffer, ID3D12Resource* d3d12SrcBuffer, SIZE_T sizeInBytes, SIZE_T dstOffsetInBytes)
@@ -957,17 +936,12 @@ void Dx12CommandContext::StageDescriptor(const std::string& name, Arc< render::T
 	m_Impl->StageDescriptor(name, rhiTexture);
 }
 
-void Dx12CommandContext::StageDescriptors(std::vector< std::pair< std::string, D3D12_CPU_DESCRIPTOR_HANDLE > >&& srcHandles, D3D12_DESCRIPTOR_HEAP_TYPE heapType)
+void Dx12CommandContext::StageDescriptors(std::vector< std::pair< std::string, u32 > >&& srcHandles, D3D12_DESCRIPTOR_HEAP_TYPE heapType)
 {
 	m_Impl->StageDescriptors(std::move(srcHandles), heapType);
 }
 
-void Dx12CommandContext::StageDescriptors(u32 rootIndex, u32 offset, std::vector< D3D12_CPU_DESCRIPTOR_HANDLE >&& srcHandles, D3D12_DESCRIPTOR_HEAP_TYPE heapType)
-{
-	m_Impl->StageDescriptors(rootIndex, offset, std::move(srcHandles), heapType);
-}
-
-void Dx12CommandContext::SetDescriptorHeaps(const std::vector<ID3D12DescriptorHeap*>& d3d12DescriptorHeaps)
+void Dx12CommandContext::SetDescriptorHeaps(const std::vector< ID3D12DescriptorHeap* >& d3d12DescriptorHeaps)
 {
 	m_Impl->SetDescriptorHeaps(d3d12DescriptorHeaps);
 }

@@ -2,7 +2,7 @@
 #define _HLSL_ATMOSPHERE_COMMON_HEADER
 
 #define _HLSL
-#include "../Common.bsh"
+#include "Common.hlsli"
 #include "HelperFunctions.hlsli"
 
 static const float  DISTANCE_SCALE               = 0.001;         // m-km
@@ -11,33 +11,10 @@ static const float  AP_KM_PER_SLICE              = 4.0;           // km
 static const float  MIN_VIEW_HEIGHT_ABOVE_GROUND = 0.0005 * (1.0 / DISTANCE_SCALE); // km
 static const float  RAY_MARCHING_MAX_DISTANCE    = 1e2;
 
-#ifdef _ATMOSPHERE
-struct AtmosphereData
-{
-    DirectionalLight light;
-
-    float  planetRadius_km;
-    float  atmosphereRadius_km;
-    float2 padding0;
-
-    float3 rayleighScattering;
-    float  rayleighDensityH_km;
-    
-    float mieScattering;
-    float mieAbsorption;
-    float mieDensityH_km;
-    float miePhaseG;
-    
-    float3 ozoneAbsorption;
-    float  ozoneCenter_km;
-    float3 groundAlbedo;
-    float  ozoneWidth_km;
-}; ConstantBuffer< AtmosphereData > g_Atmosphere : register(b1);
-
 // Reference: https://github.com/sebh/UnrealEngineSkyAtmosphere
-float GetAltitude(float3 position) 
+float GetAltitude(float3 position, float planetRadiusKm) 
 {
-    return length(position) - g_Atmosphere.planetRadius_km;
+    return length(position) - planetRadiusKm;
 }
 
 float IsotropicPhase()
@@ -64,13 +41,13 @@ float GetDensityAtHeight(float altitude, float H)
     return exp(-altitude / H);
 }
 
-float GetDensityOzoneAtHeight(float altitude) 
+float GetDensityOzoneAtHeight(float altitude, float ozoneCenterKm, float ozoneWidthKm) 
 {
-    float relativeAlt = abs(altitude - g_Atmosphere.ozoneCenter_km) / (g_Atmosphere.ozoneWidth_km * 0.5);
+    float relativeAlt = abs(altitude - ozoneCenterKm) / (ozoneWidthKm * 0.5);
     return max(0.0, 1.0 - relativeAlt);
 }
 
-float3 SampleTransmittanceLUT(Texture2D< float3 > transmittanceLUT, SamplerState sampler, float height, float cosTheta, float bottomRadius, float topRadius) 
+float3 SampleTransmittanceLUT(Texture2D< float3 > TransmittanceLUT, SamplerState Sampler, float height, float cosTheta, float bottomRadius, float topRadius) 
 {
     float H            = safeSqrt(topRadius * topRadius - bottomRadius * bottomRadius);
     float rho          = safeSqrt(height * height - bottomRadius * bottomRadius);
@@ -83,8 +60,7 @@ float3 SampleTransmittanceLUT(Texture2D< float3 > transmittanceLUT, SamplerState
     float u = inverseLerp(d, d_min, d_max);
     float v = rho / H;
     
-    return transmittanceLUT.SampleLevel(sampler, float2(u, v), 0).rgb;
+    return TransmittanceLUT.SampleLevel(Sampler, float2(u, v), 0).rgb;
 }
-#endif // _ATMOSPHERE
 
 #endif // _HLSL_ATMOSPHERE_COMMON_HEADER

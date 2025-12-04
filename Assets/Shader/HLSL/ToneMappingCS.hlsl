@@ -1,17 +1,15 @@
 #include "Common.hlsli"
 
-Texture2D g_SceneTexture : register(t0);
-
-RWTexture2D< float4 > g_OutputImage : register(u0);
-
-SamplerState g_LinearClampSampler : register(SAMPLER_INDEX_LINEAR_CLAMP);
-
 cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
     uint  g_TonemapOperator; // 0: Reinhard, 1: ACES, 2: Uncharted2
     float g_EV100;
     float g_Gamma;
 };
+
+ConstantBuffer< DescriptorHeapIndex > g_SceneTexture : register(b1, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_OutputImage  : register(b2, ROOT_CONSTANT_SPACE);
+
 
 float3 ACESFilm(float3 x)
 {
@@ -37,15 +35,18 @@ float3 Uncharted2Tonemap(float3 x)
 [numthreads(16, 16, 1)]
 void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 {
+    RWTexture2D< float4 > OutputImage  = GetResource(g_OutputImage.index);
+    Texture2D< float4 >   SceneTexture = GetResource(g_SceneTexture.index);
+
     int2 pixelCoord = int2(dispatchThreadID.xy);
     uint2 imageSize;
-    g_OutputImage.GetDimensions(imageSize.x, imageSize.y);
+    OutputImage.GetDimensions(imageSize.x, imageSize.y);
 
     if (any(pixelCoord >= imageSize))
         return;
 
     float2 uv       = (float2(pixelCoord) + 0.5) / float2(imageSize);
-    float3 hdrColor = g_SceneTexture.SampleLevel(g_LinearClampSampler, uv, 0).rgb;
+    float3 hdrColor = SceneTexture.SampleLevel(g_LinearClampSampler, uv, 0).rgb;
 
     // exposure correction
     float ev100    = g_EV100;
@@ -80,5 +81,5 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 
     float3 gammaCorrected = pow(toneMapped, float3(1.0 / g_Gamma, 1.0 / g_Gamma, 1.0 / g_Gamma));
 
-    g_OutputImage[pixelCoord] = float4(gammaCorrected, 1.0);
+    OutputImage[pixelCoord] = float4(gammaCorrected, 1.0);
 }

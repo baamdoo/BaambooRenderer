@@ -21,7 +21,7 @@ static PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR;
 class VkCommandContext::Impl
 {
 public:
-	Impl(VkRenderDevice& rd, VkCommandPool vkCommandPool, eCommandType type, VkCommandBufferLevel vkLevel = VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+	Impl(VkRenderDevice& rd, VkCommandContext& context, VkCommandPool vkCommandPool, eCommandType type, VkCommandBufferLevel vkLevel = VK_COMMAND_BUFFER_LEVEL_PRIMARY);
 	virtual ~Impl();
 
 	void Open(VkCommandBufferUsageFlags flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
@@ -75,7 +75,7 @@ public:
 	void SetGraphicsDynamicUniformBuffer(const std::string& name, u32 sizeInBytes, const void* pData);
 
 	void SetPushConstants(u32 sizeInBytes, const void* pData, VkShaderStageFlags stages, u32 offsetInBytes = 0);
-	void SetDynamicUniformBuffer(u32 binding, VkDeviceSize sizeInBytes, const void* pData);
+	void SetDynamicUniformBuffer(u32 set, u32 binding, VkDeviceSize sizeInBytes, const void* pData);
 	
 	void SetComputeShaderResource(const std::string& name, Arc< VulkanTexture > pTexture, Arc< VulkanSampler > samplerInCharge);
 	void SetGraphicsShaderResource(const std::string& name, Arc< VulkanTexture > pTexture, Arc< VulkanSampler > samplerInCharge);
@@ -85,8 +85,8 @@ public:
 	void StageDescriptor(const std::string& name, Arc< VulkanTexture > pTexture, Arc< VulkanSampler > pSamplerInCharge, u32 offset = 0);
 	void StageDescriptor(const std::string& name, Arc< VulkanBuffer > pBuffer, u32 offset = 0);
 
-	void PushDescriptor(u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType);
-	void PushDescriptor(u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType);
+	void PushDescriptor(u32 set, u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType);
+	void PushDescriptor(u32 set, u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType);
 
 	void SetRenderPipeline(VulkanGraphicsPipeline* pRenderPipeline);
 	void SetRenderPipeline(VulkanComputePipeline* pRenderPipeline);
@@ -133,6 +133,8 @@ private:
 	void AddBarrier(const VkImageMemoryBarrier2& barrier, bool bFlushImmediate);
 	void FlushBarriers();
 
+	void BindShaderResources(VkPipelineBindPoint bindPoint, VkPipelineLayout vkPipelineLayout);
+
 	template< typename T >
 	constexpr T RoundUpAndDivide(T Value, size_t Alignment)
 	{
@@ -143,6 +145,8 @@ private:
 	friend class CommandQueue;
 	VkRenderDevice& m_RenderDevice;
 	eCommandType    m_CommandType;
+
+	VkCommandContext& m_CommandContext;
 
 	VkCommandBuffer      m_vkCommandBuffer = VK_NULL_HANDLE;
 	VkCommandPool        m_vkBelongedPool = VK_NULL_HANDLE;
@@ -164,7 +168,7 @@ private:
 		DescriptorInfo   descriptor;
 		VkDescriptorType descriptorType;
 	};
-	std::vector< AllocationInfo > m_PushAllocations;
+	std::unordered_map< u32, std::vector< AllocationInfo > > m_PushAllocations;
 
 	u32                    m_NumBufferBarriersToFlush = 0;
 	VkBufferMemoryBarrier2 m_BufferBarriers[MAX_NUM_PENDING_BARRIERS] = {};
@@ -176,9 +180,10 @@ private:
 	bool m_bTransient = false;
 };
 
-VkCommandContext::Impl::Impl(VkRenderDevice& rd, VkCommandPool vkCommandPool, eCommandType type, VkCommandBufferLevel level)
+VkCommandContext::Impl::Impl(VkRenderDevice& rd, VkCommandContext& context, VkCommandPool vkCommandPool, eCommandType type, VkCommandBufferLevel level)
 	: m_RenderDevice(rd)
 	, m_CommandType(type)
+	, m_CommandContext(context)
 	, m_vkBelongedPool(vkCommandPool)
 	, m_Level(level)
 {
@@ -602,17 +607,17 @@ void VkCommandContext::Impl::ClearTexture(
 void VkCommandContext::Impl::SetComputeDynamicUniformBuffer(const std::string& name, u32 sizeInBytes, const void* pData)
 {
 	assert(IsComputeContext());
-	auto [_, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
+	auto [set, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
 
-	SetDynamicUniformBuffer(binding, sizeInBytes, pData);
+	SetDynamicUniformBuffer(set, binding, sizeInBytes, pData);
 }
 
 void VkCommandContext::Impl::SetGraphicsDynamicUniformBuffer(const std::string& name, u32 sizeInBytes, const void* pData)
 {
 	assert(IsGraphicsContext());
-	auto [_, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
+	auto [set, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
 
-	SetDynamicUniformBuffer(binding, sizeInBytes, pData);
+	SetDynamicUniformBuffer(set, binding, sizeInBytes, pData);
 }
 
 void VkCommandContext::Impl::SetPushConstants(u32 sizeInBytes, const void* pData, VkShaderStageFlags stages, u32 offsetInBytes)
@@ -621,7 +626,7 @@ void VkCommandContext::Impl::SetPushConstants(u32 sizeInBytes, const void* pData
 	vkCmdPushConstants(m_vkCommandBuffer, m_pGraphicsPipeline ? m_pGraphicsPipeline->vkPipelineLayout() : m_pComputePipeline->vkPipelineLayout(), stages, offsetInBytes, sizeInBytes, pData);
 }
 
-void VkCommandContext::Impl::SetDynamicUniformBuffer(u32 binding, VkDeviceSize sizeInBytes, const void* pData)
+void VkCommandContext::Impl::SetDynamicUniformBuffer(u32 set, u32 binding, VkDeviceSize sizeInBytes, const void* pData)
 {
 	auto allocation = m_pUniformBufferPool->Allocate(sizeInBytes);
 	memcpy(allocation.cpuHandle, pData, sizeInBytes);
@@ -631,28 +636,20 @@ void VkCommandContext::Impl::SetDynamicUniformBuffer(u32 binding, VkDeviceSize s
 	bufferInfo.offset = allocation.offset;
 	bufferInfo.range  = allocation.size;
 
-	VkWriteDescriptorSet write = {};
-	write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write.dstSet          = VK_NULL_HANDLE;
-	write.dstBinding      = binding;
-	write.dstArrayElement = 0;
-	write.descriptorCount = 1;
-	write.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	write.pBufferInfo     = &bufferInfo;
-
-	m_PushAllocations.push_back({ binding, bufferInfo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER });
+	m_PushAllocations[set].push_back({ binding, bufferInfo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER });
 }
 
 void VkCommandContext::Impl::SetComputeShaderResource(const std::string& name, Arc< VulkanTexture > pTexture, Arc< VulkanSampler > pSamplerInCharge)
 {
 	assert(IsComputeContext());
-	auto [_, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
+	auto [set, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
 
 	auto layout = pTexture->GetState().GetSubresourceState().layout;
 
 	VkDescriptorType descType =
 		layout == VK_IMAGE_LAYOUT_GENERAL ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	PushDescriptor(
+		set,
 		binding,
 		{
 			.sampler     = pSamplerInCharge ? pSamplerInCharge->vkSampler() : VK_NULL_HANDLE,
@@ -664,13 +661,14 @@ void VkCommandContext::Impl::SetComputeShaderResource(const std::string& name, A
 void VkCommandContext::Impl::SetGraphicsShaderResource(const std::string& name, Arc< VulkanTexture > pTexture, Arc< VulkanSampler > pSamplerInCharge)
 {
 	assert(IsGraphicsContext());
-	auto [_, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
+	auto [set, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
 
 	auto layout = pTexture->GetState().GetSubresourceState().layout;
 
 	VkDescriptorType descType =
 		layout == VK_IMAGE_LAYOUT_GENERAL ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	PushDescriptor(
+		set,
 		binding,
 		{
 			.sampler     = pSamplerInCharge ? pSamplerInCharge->vkSampler() : VK_NULL_HANDLE,
@@ -682,9 +680,10 @@ void VkCommandContext::Impl::SetGraphicsShaderResource(const std::string& name, 
 void VkCommandContext::Impl::SetComputeShaderResource(const std::string& name, Arc< VulkanBuffer > pBuffer)
 {
 	assert(IsComputeContext());
-	auto [_, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
+	auto [set, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
 
 	PushDescriptor(
+		set,
 		binding,
 		{
 			.buffer = pBuffer->vkBuffer(),
@@ -696,9 +695,10 @@ void VkCommandContext::Impl::SetComputeShaderResource(const std::string& name, A
 void VkCommandContext::Impl::SetGraphicsShaderResource(const std::string& name, Arc< VulkanBuffer > pBuffer)
 {
 	assert(IsGraphicsContext());
-	auto [_, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
+	auto [set, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
 
 	PushDescriptor(
+		set,
 		binding,
 		{
 			.buffer = pBuffer->vkBuffer(),
@@ -713,8 +713,8 @@ void VkCommandContext::Impl::StageDescriptor(const std::string& name, Arc< Vulka
 
 	if (IsGraphicsContext())
 	{
-		auto [_, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
-		if (_ == INVALID_INDEX || binding == INVALID_INDEX)
+		auto [set, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
+		if (set == INVALID_INDEX || binding == INVALID_INDEX)
 		{
 			__debugbreak();
 		}
@@ -724,6 +724,7 @@ void VkCommandContext::Impl::StageDescriptor(const std::string& name, Arc< Vulka
 		VkDescriptorType descType =
 			layout == VK_IMAGE_LAYOUT_GENERAL ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		PushDescriptor(
+			set,
 			binding,
 			{
 				.sampler     = pSamplerInCharge ? pSamplerInCharge->vkSampler() : VK_NULL_HANDLE,
@@ -733,8 +734,8 @@ void VkCommandContext::Impl::StageDescriptor(const std::string& name, Arc< Vulka
 	}
 	else if (IsComputeContext())
 	{
-		auto [_, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
-		if (_ == INVALID_INDEX || binding == INVALID_INDEX)
+		auto [set, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
+		if (set == INVALID_INDEX || binding == INVALID_INDEX)
 		{
 			__debugbreak();
 		}
@@ -744,6 +745,7 @@ void VkCommandContext::Impl::StageDescriptor(const std::string& name, Arc< Vulka
 		VkDescriptorType descType =
 			layout == VK_IMAGE_LAYOUT_GENERAL ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		PushDescriptor(
+			set,
 			binding,
 			{
 				.sampler     = pSamplerInCharge ? pSamplerInCharge->vkSampler() : VK_NULL_HANDLE,
@@ -762,9 +764,10 @@ void VkCommandContext::Impl::StageDescriptor(const std::string& name, Arc< Vulka
 {
 	if (IsGraphicsContext())
 	{
-		auto [_, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
+		auto [set, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
 
 		PushDescriptor(
+			set,
 			binding,
 			{
 				.buffer = pBuffer->vkBuffer(),
@@ -774,9 +777,10 @@ void VkCommandContext::Impl::StageDescriptor(const std::string& name, Arc< Vulka
 	}
 	else if (IsComputeContext())
 	{
-		auto [_, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
+		auto [set, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
 
 		PushDescriptor(
+			set,
 			binding,
 			{
 				.buffer = pBuffer->vkBuffer(),
@@ -790,32 +794,14 @@ void VkCommandContext::Impl::StageDescriptor(const std::string& name, Arc< Vulka
 	}
 }
 
-void VkCommandContext::Impl::PushDescriptor(u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType)
+void VkCommandContext::Impl::PushDescriptor(u32 set, u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType)
 {
-	VkWriteDescriptorSet write = {};
-	write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write.dstSet          = VK_NULL_HANDLE;
-	write.dstBinding      = binding;
-	write.dstArrayElement = 0;
-	write.descriptorCount = 1;
-	write.descriptorType  = descriptorType;
-	write.pImageInfo      = &imageInfo;
-
-	m_PushAllocations.push_back({ binding, imageInfo, descriptorType });
+	m_PushAllocations[set].push_back({ binding, imageInfo, descriptorType });
 }
 
-void VkCommandContext::Impl::PushDescriptor(u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType)
+void VkCommandContext::Impl::PushDescriptor(u32 set, u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType)
 {
-	VkWriteDescriptorSet write = {};
-	write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write.dstSet          = VK_NULL_HANDLE;
-	write.dstBinding      = binding;
-	write.dstArrayElement = 0;
-	write.descriptorCount = 1;
-	write.descriptorType  = descriptorType;
-	write.pBufferInfo     = &bufferInfo;
-
-	m_PushAllocations.push_back({ binding, bufferInfo, descriptorType });
+	m_PushAllocations[set].push_back({ binding, bufferInfo, descriptorType });
 }
 
 void VkCommandContext::Impl::SetRenderPipeline(VulkanGraphicsPipeline* pRenderPipeline)
@@ -872,29 +858,7 @@ void VkCommandContext::Impl::EndRendering()
 void VkCommandContext::Impl::Draw(u32 vertexCount, u32 instanceCount, u32 firstVertex, u32 firstInstance)
 {
 	FlushBarriers();
-
-	std::vector< VkWriteDescriptorSet > writes;
-	for (const auto& allocation : m_PushAllocations)
-	{
-		VkWriteDescriptorSet write = {};
-		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		write.dstSet = VK_NULL_HANDLE;
-		write.dstBinding = allocation.binding;
-		write.dstArrayElement = 0;
-		write.descriptorCount = 1;
-		write.descriptorType = allocation.descriptorType;
-		if (allocation.descriptor.bImage)
-			write.pImageInfo = &allocation.descriptor.imageInfo;
-		else
-			write.pBufferInfo = &allocation.descriptor.bufferInfo;
-		writes.push_back(write);
-	}
-
-	vkCmdPushDescriptorSetKHR(
-		m_vkCommandBuffer,
-		VK_PIPELINE_BIND_POINT_GRAPHICS,
-		m_pGraphicsPipeline->vkPipelineLayout(),
-		eDescriptorSet_Push, static_cast<u32>(writes.size()), writes.data());
+	BindShaderResources(VK_PIPELINE_BIND_POINT_GRAPHICS, m_pGraphicsPipeline->vkPipelineLayout());
 
 	vkCmdDraw(m_vkCommandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
 }
@@ -902,29 +866,7 @@ void VkCommandContext::Impl::Draw(u32 vertexCount, u32 instanceCount, u32 firstV
 void VkCommandContext::Impl::DrawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex, i32 vertexOffset, u32 firstInstance)
 {
 	FlushBarriers();
-
-	std::vector< VkWriteDescriptorSet > writes;
-	for (const auto& allocation : m_PushAllocations)
-	{
-		VkWriteDescriptorSet write = {};
-		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		write.dstSet = VK_NULL_HANDLE;
-		write.dstBinding = allocation.binding;
-		write.dstArrayElement = 0;
-		write.descriptorCount = 1;
-		write.descriptorType = allocation.descriptorType;
-		if (allocation.descriptor.bImage)
-			write.pImageInfo = &allocation.descriptor.imageInfo;
-		else
-			write.pBufferInfo = &allocation.descriptor.bufferInfo;
-		writes.push_back(write);
-	}
-
-	vkCmdPushDescriptorSetKHR(
-		m_vkCommandBuffer,
-		VK_PIPELINE_BIND_POINT_GRAPHICS,
-		m_pGraphicsPipeline->vkPipelineLayout(),
-		eDescriptorSet_Push, static_cast<u32>(writes.size()), writes.data());
+	BindShaderResources(VK_PIPELINE_BIND_POINT_GRAPHICS, m_pGraphicsPipeline->vkPipelineLayout());
 
 	vkCmdDrawIndexed(m_vkCommandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
@@ -932,61 +874,26 @@ void VkCommandContext::Impl::DrawIndexed(u32 indexCount, u32 instanceCount, u32 
 void VkCommandContext::Impl::DrawScene(const VkSceneResource& sceneResource)
 {
 	FlushBarriers();
+	BindShaderResources(VK_PIPELINE_BIND_POINT_GRAPHICS, m_pGraphicsPipeline->vkPipelineLayout());
 
-	std::vector< VkWriteDescriptorSet > writes;
-	for (const auto& allocation : m_PushAllocations)
+	if (m_pGraphicsPipeline->IsMeshPipeline())
 	{
-		VkWriteDescriptorSet write = {};
-		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		write.dstSet = VK_NULL_HANDLE;
-		write.dstBinding = allocation.binding;
-		write.dstArrayElement = 0;
-		write.descriptorCount = 1;
-		write.descriptorType = allocation.descriptorType;
-		if (allocation.descriptor.bImage)
-			write.pImageInfo = &allocation.descriptor.imageInfo;
-		else
-			write.pBufferInfo = &allocation.descriptor.bufferInfo;
-		writes.push_back(write);
+		// TODO
+		/*const auto& indirectInfo = sceneResource.GetIndirectBufferInfo();
+		vkCmdDrawMeshTasksIndirectCountNV(m_vkCommandBuffer, indirectInfo.buffer, indirectInfo.offset, )*/
 	}
-
-	vkCmdPushDescriptorSetKHR(
-		m_vkCommandBuffer,
-		VK_PIPELINE_BIND_POINT_GRAPHICS,
-		m_pGraphicsPipeline->vkPipelineLayout(),
-		eDescriptorSet_Push, static_cast<u32>(writes.size()), writes.data());
-
-	const auto& indirectInfo = sceneResource.GetIndirectBufferInfo();
-	vkCmdBindIndexBuffer(m_vkCommandBuffer, sceneResource.GetIndexBufferInfo().buffer, 0, VK_INDEX_TYPE_UINT32);
-	vkCmdDrawIndexedIndirect(m_vkCommandBuffer, indirectInfo.buffer, indirectInfo.offset, u32(indirectInfo.range / sizeof(IndirectDrawData)), sizeof(IndirectDrawData));
+	else
+	{
+		const auto& indirectInfo = sceneResource.GetIndirectBufferInfo();
+		vkCmdBindIndexBuffer(m_vkCommandBuffer, sceneResource.GetIndexBufferInfo().buffer, 0, VK_INDEX_TYPE_UINT32);
+		vkCmdDrawIndexedIndirect(m_vkCommandBuffer, indirectInfo.buffer, indirectInfo.offset, u32(indirectInfo.range / sizeof(IndirectDrawData)), sizeof(IndirectDrawData));
+	}
 }
 
 void VkCommandContext::Impl::Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ)
 {
 	FlushBarriers();
-
-	std::vector< VkWriteDescriptorSet > writes;
-	for (const auto& allocation : m_PushAllocations)
-	{
-		VkWriteDescriptorSet write = {};
-		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		write.dstSet = VK_NULL_HANDLE;
-		write.dstBinding = allocation.binding;
-		write.dstArrayElement = 0;
-		write.descriptorCount = 1;
-		write.descriptorType = allocation.descriptorType;
-		if (allocation.descriptor.bImage)
-			write.pImageInfo = &allocation.descriptor.imageInfo;
-		else
-			write.pBufferInfo = &allocation.descriptor.bufferInfo;
-		writes.push_back(write);
-	}
-
-	vkCmdPushDescriptorSetKHR(
-		m_vkCommandBuffer,
-		VK_PIPELINE_BIND_POINT_COMPUTE,
-		m_pComputePipeline->vkPipelineLayout(),
-		eDescriptorSet_Push, static_cast<u32>(writes.size()), writes.data());
+	BindShaderResources(VK_PIPELINE_BIND_POINT_COMPUTE, m_pComputePipeline->vkPipelineLayout());
 
 	vkCmdDispatch(m_vkCommandBuffer, numGroupsX, numGroupsY, numGroupsZ);
 }
@@ -1036,12 +943,47 @@ void VkCommandContext::Impl::FlushBarriers()
 	}
 }
 
+void VkCommandContext::Impl::BindShaderResources(VkPipelineBindPoint bindPoint, VkPipelineLayout vkPipelineLayout)
+{
+	if (m_bTransient == false)
+	{
+		auto& rm = m_RenderDevice.GetResourceManager();
+		rm.GetSceneResource().BindSceneResources(m_CommandContext);
+	}
+
+	for (const auto& [set, allocations] : m_PushAllocations)
+	{
+		std::vector< VkWriteDescriptorSet > writes; writes.reserve(allocations.size());
+		for (const auto& allocation : allocations)
+		{
+			VkWriteDescriptorSet write = {};
+			write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			write.dstSet          = VK_NULL_HANDLE;
+			write.dstBinding      = allocation.binding;
+			write.dstArrayElement = 0;
+			write.descriptorCount = 1;
+			write.descriptorType  = allocation.descriptorType;
+			if (allocation.descriptor.bImage)
+				write.pImageInfo  = &allocation.descriptor.imageInfo;
+			else
+				write.pBufferInfo = &allocation.descriptor.bufferInfo;
+			writes.push_back(write);
+		}
+
+		vkCmdPushDescriptorSetKHR(
+			m_vkCommandBuffer,
+			bindPoint,
+			vkPipelineLayout,
+			set, static_cast<u32>(writes.size()), writes.data());
+	}
+}
+
 
 //-------------------------------------------------------------------------
 // Command Context
 //-------------------------------------------------------------------------
 VkCommandContext::VkCommandContext(VkRenderDevice& rd, VkCommandPool vkCommandPool, eCommandType type, VkCommandBufferLevel level)
-	: m_Impl(MakeBox< Impl >(rd, vkCommandPool, type, level)) {}
+	: m_Impl(MakeBox< Impl >(rd, *this, vkCommandPool, type, level)) {}
 
 void VkCommandContext::Open(VkCommandBufferUsageFlags flags)
 {
@@ -1146,6 +1088,11 @@ void VkCommandContext::TransitionImageLayout(
 	m_Impl->TransitionImageLayout(texture, newLayout, subresourceRange, bFlushImmediate, bFlatten);
 }
 
+void VkCommandContext::ClearTexture(Arc< render::Texture > pTexture, render::eTextureLayout newLayout)
+{
+	ClearTexture(StaticCast<VulkanTexture>(pTexture), VK_LAYOUT(newLayout));
+}
+
 void VkCommandContext::ClearTexture(
 	Arc< VulkanTexture > texture,
 	VkImageLayout newLayout,
@@ -1222,14 +1169,14 @@ void VkCommandContext::StageDescriptor(const std::string& name, Arc< render::Tex
 	m_Impl->StageDescriptor(name, rhiTexture, StaticCast<VulkanSampler>(samplerInCharge), offset);
 }
 
-void VkCommandContext::PushDescriptor(u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType)
+void VkCommandContext::PushDescriptor(u32 set, u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType)
 {
-	m_Impl->PushDescriptor(binding, imageInfo, descriptorType);
+	m_Impl->PushDescriptor(set, binding, imageInfo, descriptorType);
 }
 
-void VkCommandContext::PushDescriptor(u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType)
+void VkCommandContext::PushDescriptor(u32 set, u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType)
 {
-	m_Impl->PushDescriptor(binding, bufferInfo, descriptorType);
+	m_Impl->PushDescriptor(set, binding, bufferInfo, descriptorType);
 }
 
 void VkCommandContext::SetRenderPipeline(render::GraphicsPipeline* pRenderPipeline)

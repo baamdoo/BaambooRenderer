@@ -54,7 +54,7 @@ struct DescriptorInfo
 class VulkanGraphicsPipeline : public render::GraphicsPipeline
 {
 public:
-	VulkanGraphicsPipeline(VkRenderDevice& rd, const std::string& name);
+	VulkanGraphicsPipeline(VkRenderDevice& rd, const char* name);
 	~VulkanGraphicsPipeline();
 
 	render::GraphicsPipeline& SetVertexInputs(std::vector< VkVertexInputBindingDescription >&& streams, std::vector< VkVertexInputAttributeDescription >&& attributes);
@@ -88,8 +88,6 @@ private:
 	VkPipelineLayout                     m_vkPipelineLayout = VK_NULL_HANDLE;
 	std::vector< VkDescriptorSetLayout > m_vkSetLayouts;
 
-	bool m_bMeshShader = false;
-
 	struct PipelineDesc
 	{
 		VkRenderPass renderPass = VK_NULL_HANDLE;
@@ -115,7 +113,7 @@ private:
 class VulkanComputePipeline : public render::ComputePipeline
 {
 public:
-	VulkanComputePipeline(VkRenderDevice& rd, const std::string& name);
+	VulkanComputePipeline(VkRenderDevice& rd, const char* name);
 	~VulkanComputePipeline();
 
 	virtual void Build() override;

@@ -26,7 +26,7 @@ public:
     DescriptorHandle StageDescriptor(const VkDescriptorBufferInfo& bufferInfo, u32 binding, VkDescriptorType descriptorType);
     DescriptorHandle StageDescriptors(const std::vector< VkDescriptorBufferInfo >& bufferInfos, u32 binding, VkDescriptorType descriptorType);
 
-    DescriptorSet& Allocate(VkDescriptorSetLayout vkSetLayout, VkDescriptorPool vkPool);
+    DescriptorSet& Allocate(VkDescriptorSetLayout vkSetLayout, VkDescriptorPool vkPool, u32* variableCounts = nullptr);
     void Reset();
 
     [[nodiscard]]

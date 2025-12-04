@@ -1,15 +1,15 @@
 #version 460
 #extension GL_GOOGLE_include_directive : require
 
-#include "Noise.hg"
+#include "NoiseCommon.hg"
 #include "HelperFunctions.hg"
 
-layout(set = SET_PUSH, binding = 0, rgba8) writeonly uniform image2D g_WeatherMap;
+layout(set = 1, binding = 0, rgba8) writeonly uniform image2D g_OutWeatherMap;
 
 layout (local_size_x = 8, local_size_y = 8) in;
 void main()
 {
-    ivec2 imgSize   = imageSize(g_WeatherMap);
+    ivec2 imgSize   = imageSize(g_OutWeatherMap);
     ivec2 pixCoords = ivec2(gl_GlobalInvocationID.xyz);
     if (any(greaterThanEqual(pixCoords, imgSize)))
         return;
@@ -27,5 +27,5 @@ void main()
 
     vec4 weather = vec4(perlin, saturate(coverage), saturate(cloudType), 1.0);
 
-    imageStore(g_WeatherMap, pixCoords, weather);
+    imageStore(g_OutWeatherMap, pixCoords, weather);
 }

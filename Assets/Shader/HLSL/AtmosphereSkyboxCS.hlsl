@@ -1,19 +1,9 @@
 #define _CAMERA
-#include "Common.hlsli"
+#define _SCENEENVIRONMENT
 #include "AtmosphereCommon.hlsli"
 
-Texture2D< float4 > g_SkyViewLUT : register(t0);
-
-SamplerState g_LinearClampSampler : register(SAMPLER_INDEX_LINEAR_CLAMP);
-
-RWTexture2DArray< float3 > g_SkyboxLUT : register(u0);
-
-struct PushConstants
-{
-    float3 lightDir;
-    float  planetRadius_km;
-};
-ConstantBuffer< PushConstants > g_Push : register(b0, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_SkyViewLUT   : register(b1, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_OutSkyboxLUT : register(b2, ROOT_CONSTANT_SPACE);
 
 
 float3 GetRayDirectionFromCubemapCoord(uint3 tID, uint width, uint height)
@@ -35,11 +25,11 @@ float3 GetRayDirectionFromCubemapCoord(uint3 tID, uint width, uint height)
     return normalize(rayDir);
 }
 
-float2 GetUvFromSkyViewRayDirection(float longitude, float latitude, float viewHeight, bool bIntersectGround)
+float2 GetUvFromSkyViewRayDirection(float longitude, float latitude, float viewHeight, float planetRadiusKm, bool bIntersectGround)
 {
     float2 uv;
 
-    float Vhorizon = sqrt(viewHeight * viewHeight - g_Push.planetRadius_km * g_Push.planetRadius_km);
+    float Vhorizon = sqrt(viewHeight * viewHeight - planetRadiusKm * planetRadiusKm);
     float cosBeta = Vhorizon / viewHeight;
     float beta = acosFast4(cosBeta);
     float zenithHorizonAngle = PI - beta;
@@ -67,9 +57,8 @@ float2 GetUvFromSkyViewRayDirection(float longitude, float latitude, float viewH
     return uv;
 }
 
-float3 GetSunLuminance(float3 rayDir, bool bIntersectGround)
+float3 GetSunLuminance(float3 rayDir, float3 L, bool bIntersectGround)
 {
-    float3 L = float3(-g_Push.lightDir);
     if (dot(rayDir, L) > cos(0.5 * 0.505 * PI / 180.0))
     {
         if (!bIntersectGround)
@@ -85,19 +74,24 @@ float3 GetSunLuminance(float3 rayDir, bool bIntersectGround)
 [numthreads(8, 8, 6)]
 void main(uint3 tID : SV_DispatchThreadID)
 {
+    Texture2D< float4 >        SkyViewLUT   = GetResource(g_SkyViewLUT.index);
+    RWTexture2DArray< float3 > OutSkyboxLUT = GetResource(g_OutSkyboxLUT.index);
+
     uint width, height, numFaces;
-    g_SkyboxLUT.GetDimensions(width, height, numFaces);
+    OutSkyboxLUT.GetDimensions(width, height, numFaces);
     if (tID.x >= width || tID.y >= height)
         return;
 
     // sky view
     float2 texSize;
-    g_SkyViewLUT.GetDimensions(texSize.x, texSize.y);
+    SkyViewLUT.GetDimensions(texSize.x, texSize.y);
+
+    AtmosphereData Atmosphere = GetAtmosphereData();
 
     float3 cameraPos =
         float3(g_Camera.posWORLD.x, max(g_Camera.posWORLD.y, MIN_VIEW_HEIGHT_ABOVE_GROUND), g_Camera.posWORLD.z);
     float3 cameraPosAbovePlanet =
-        cameraPos * DISTANCE_SCALE + float3(0.0, g_Push.planetRadius_km, 0.0);
+        cameraPos * DISTANCE_SCALE + float3(0.0, Atmosphere.planetRadiusKm, 0.0);
     float viewHeight = length(cameraPosAbovePlanet);
 
     float3 rayDir    = GetRayDirectionFromCubemapCoord(tID, width, height);
@@ -107,13 +101,15 @@ void main(uint3 tID : SV_DispatchThreadID)
     float  cosLatitude = dot(rayDir, upVec);
     float  longitude   = atan2Fast(rayDir.z, rayDir.x);
 
-    float2 groundIntersection = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, g_Push.planetRadius_km);
+    float2 groundIntersection = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, Atmosphere.planetRadiusKm);
     bool   bIntersectGround   = groundIntersection.x > 0.0;
 
-    float2 skyUV = GetUvFromSkyViewRayDirection(longitude, acosFast4(cosLatitude), viewHeight, bIntersectGround);
-           skyUV = GetUnstretchedTextureUV(skyUV, texSize);
-    float4 skyColor = g_SkyViewLUT.SampleLevel(g_LinearClampSampler, skyUV, 0);
-    float3 color    = skyColor.rgb + GetSunLuminance(rayDir, bIntersectGround) * skyColor.a;
+    float3 sunDirection = float3(-Atmosphere.light.dirX, -Atmosphere.light.dirY, -Atmosphere.light.dirZ);
 
-    g_SkyboxLUT[tID] = float4(color, 1.0);
+    float2 skyUV = GetUvFromSkyViewRayDirection(longitude, acosFast4(cosLatitude), viewHeight, Atmosphere.planetRadiusKm, bIntersectGround);
+           skyUV = GetUnstretchedTextureUV(skyUV, texSize);
+    float4 skyColor = SkyViewLUT.SampleLevel(g_LinearClampSampler, skyUV, 0);
+    float3 color    = skyColor.rgb + GetSunLuminance(rayDir, sunDirection, bIntersectGround) * skyColor.a;
+
+    OutSkyboxLUT[tID] = color;
 }

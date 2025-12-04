@@ -26,9 +26,9 @@ public:
 		std::unordered_map< u32, std::vector< DescriptorInfo > > descriptors;
 	};
 
-	static Arc< Dx12Shader > Create(Dx12RenderDevice& rd, const std::string& name, CreationInfo&& info);
+	static Arc< Dx12Shader > Create(Dx12RenderDevice& rd, const char* name, CreationInfo&& info);
 
-	Dx12Shader(Dx12RenderDevice& rd, const std::string& name, CreationInfo&& info);
+	Dx12Shader(Dx12RenderDevice& rd, const char* name, CreationInfo&& info);
 	virtual ~Dx12Shader();
 
 	[[nodiscard]]

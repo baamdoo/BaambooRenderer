@@ -20,8 +20,9 @@ public:
 	void Open();
 	void Close();
 
-	void ClearTexture(const Arc< Dx12Texture >& pTexture);
-	void ClearDepthStencilTexture(const Arc< Dx12Texture >& pTexture, D3D12_CLEAR_FLAGS clearFlags);
+	virtual void ClearTexture(Arc< render::Texture > pTexture, render::eTextureLayout newLayout) override;
+	void ClearRenderTarget(const Arc< Dx12Texture >& pTexture);
+	void ClearDepthStencil(const Arc< Dx12Texture >& pTexture, D3D12_CLEAR_FLAGS clearFlags);
 
 	virtual void TransitionBarrier(Arc< render::Texture > pTexture, render::eTextureLayout newState, u32 subresource = ALL_SUBRESOURCES, bool bFlushImmediate = false) override;
 	void TransitionBarrier(Dx12Resource* pResource, D3D12_RESOURCE_STATES stateAfter, u32 subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, bool bFlushImmediate = true);
@@ -54,12 +55,7 @@ public:
 	virtual void StageDescriptor(const std::string& name, Arc< render::Buffer > pBuffer, u32 offset = 0) override;
 	virtual void StageDescriptor(const std::string& name, Arc< render::Texture > pTexture, Arc< render::Sampler > pSamplerInCharge, u32 offset = 0) override;
 	void StageDescriptors(
-		std::vector< std::pair< std::string, D3D12_CPU_DESCRIPTOR_HANDLE > > && srcHandles,
-		D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	void StageDescriptors(
-		u32 rootIndex,
-		u32 offset,
-		std::vector< D3D12_CPU_DESCRIPTOR_HANDLE >&& srcHandles,
+		std::vector< std::pair< std::string, u32 > > && srcHandles,
 		D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
 	void SetDescriptorHeaps(const std::vector< ID3D12DescriptorHeap* >& d3d12DescriptorHeaps);

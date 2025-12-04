@@ -2,11 +2,12 @@
 #include "Components.h"
 #include "SceneRenderView.h"
 #include "ModelLoader.h"
-#include "RenderCommon/RenderNode.h"
+#include "RenderGraph.h"
 
 namespace baamboo
 {
 
+class RenderGraph;
 class EditorCamera;
 class TransformSystem;
 class StaticMeshSystem;
@@ -19,14 +20,7 @@ class PostProcessSystem;
 
 struct FrameData
 {
-	float time  = 0.0f;
-	u64   frame = 0;
-
 	u64 componentMarker = 0;
-
-	bool bSkyboxMode = false;
-
-	CameraData camera = {};
 
 	// AtmosphereLUTs
 	Weak< render::Texture > pTransmittanceLUT;
@@ -52,6 +46,7 @@ struct FrameData
 
 	// samplers
 	Arc< render::Sampler > pPointClamp;
+	Arc< render::Sampler > pPointWrap;
 	Arc< render::Sampler > pLinearClamp;
 	Arc< render::Sampler > pLinearWrap;
 };
@@ -71,13 +66,14 @@ public:
 	class Entity ImportModel(Entity rootEntity, const fs::path& filepath, MeshDescriptor descriptor);
 
 	void AddRenderNode(Arc< render::RenderNode > pNode);
+	void RemoveRenderNode(const std::string& nodeName);
 
 	void Update(float dt, const EditorCamera& edCamera);
 
 	void OnWindowResized(u32 width, u32 height);
 
 	[[nodiscard]]
-	SceneRenderView RenderView(const EditorCamera& edCamera, bool bDrawUI) const;
+	SceneRenderView RenderView(const EditorCamera& edCamera, float2 viewport, u64 frame, bool bDrawUI) const;
 
 	[[nodiscard]]
 	const std::string& Name() const { return m_Name; }
@@ -91,7 +87,7 @@ public:
 	[[nodiscard]]
 	TransformSystem* GetTransformSystem() const { return m_pTransformSystem; }
 
-	std::vector< Arc< render::RenderNode > >& GetRenderNodes() { return m_RenderNodes; }
+	const std::vector< Arc< render::RenderNode > >& GetRenderNodes() const { return m_RenderGraph.GetRenderNodes(); }
 
 	const MeshData* GetMeshData(u32 meshID) const { auto it = m_MeshData.find(meshID); return (it != m_MeshData.end()) ? &it->second : nullptr;  }
 	const Skeleton* GetSkeleton(u32 skeletonID) const { auto it = m_Skeletons.find(skeletonID); return (it != m_Skeletons.end()) ? &it->second : nullptr; }
@@ -125,7 +121,7 @@ private:
 	CloudSystem*       m_pCloudSystem       = nullptr;
 	PostProcessSystem* m_pPostProcessSystem = nullptr;
 
-	std::vector< Arc< render::RenderNode > > m_RenderNodes;
+	RenderGraph m_RenderGraph;
 
 	// animations
 	std::unordered_map< u32, MeshData >      m_MeshData;

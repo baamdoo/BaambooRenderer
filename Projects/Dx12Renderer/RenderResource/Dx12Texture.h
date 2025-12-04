@@ -7,16 +7,18 @@ namespace dx12
 class Dx12Texture : public render::Texture, public Dx12Resource
 {
 public:
-    static Arc< Dx12Texture > Create(Dx12RenderDevice& rd, const std::string& name, CreationInfo&& info);
-    static Arc< Dx12Texture > CreateEmpty(Dx12RenderDevice& rd, const std::string& name);
+    static Arc< Dx12Texture > Create(Dx12RenderDevice& rd, const char* name, CreationInfo&& info);
+    static Arc< Dx12Texture > CreateEmpty(Dx12RenderDevice& rd, const char* name);
 
-    Dx12Texture(Dx12RenderDevice& rd, const std::string& name);
-    Dx12Texture(Dx12RenderDevice& rd, const std::string& name, CreationInfo&& info);
+    Dx12Texture(Dx12RenderDevice& rd, const char* name);
+    Dx12Texture(Dx12RenderDevice& rd, const char* name, CreationInfo&& info);
     virtual ~Dx12Texture();
 
     virtual void Reset() override;
     virtual void SetD3D12Resource(ID3D12Resource* d3d12Resource, D3D12_RESOURCE_STATES states = D3D12_RESOURCE_STATE_COMMON) override;
     void Resize(u32 width, u32 height, u32 depthOrArraySize = 1);
+
+    void CreateShaderResourceView(const D3D12_SHADER_RESOURCE_VIEW_DESC& desc);
 
     bool IsSRVSupported() const { return IsFormatSupported(D3D12_FORMAT_SUPPORT1_SHADER_SAMPLE); }
     bool IsRTVSupported() const { return IsFormatSupported(D3D12_FORMAT_SUPPORT1_RENDER_TARGET); }
@@ -38,8 +40,9 @@ public:
     D3D12_CPU_DESCRIPTOR_HANDLE GetDepthStencilView() const { return m_DepthStencilView.GetCPUHandle(); }
     D3D12_CPU_DESCRIPTOR_HANDLE GetShaderResourceView() const { return m_ShaderResourceView.GetCPUHandle(); }
     D3D12_CPU_DESCRIPTOR_HANDLE GetUnorderedAccessView(u32 mip) const { return m_UnorderedAccessView.GetCPUHandle(mip); }
-
-    void CreateShaderResourceView(const D3D12_SHADER_RESOURCE_VIEW_DESC& desc);
+    u32 GetShaderResourceHandle(u32 offset = 0) const { return m_ShaderResourceView.Index(offset); }
+    u32 GetUnorderedAccessHandle(u32 offset = 0) const { return m_UnorderedAccessView.Index(offset); }
+    D3D12_GPU_DESCRIPTOR_HANDLE GetUnorderedAccessGpuAddress(u32 mip) const { return m_UnorderedAccessView.GetGPUHandle(mip); }
 
 protected:
     void CreateViews();

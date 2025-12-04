@@ -26,9 +26,11 @@ class CommandContext : public ArcBase
 public:
     virtual ~CommandContext() = default;
 
-    // === Copy ===
+    // === Texture Operations ===
     virtual void CopyBuffer(Arc< Buffer > pDstBuffer, Arc< Buffer > pSrcBuffer, u64 offsetInBytes = 0) = 0;
     virtual void CopyTexture(Arc< Texture > pDstTexture, Arc< Texture > pSrcTexture, u64 offsetInBytes = 0) = 0;
+
+    virtual void ClearTexture(Arc< render::Texture > pTexture, render::eTextureLayout newLayout) = 0;
 
     // === Barriers ===
     virtual void TransitionBarrier(Arc< Texture > texture, eTextureLayout newState, u32 subresource = ALL_SUBRESOURCES, bool flushImmediate = false) = 0;

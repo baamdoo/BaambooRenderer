@@ -6,12 +6,12 @@ layout(set = 1, binding = 0) uniform sampler2D g_TextureR;
 layout(set = 1, binding = 1) uniform sampler2D g_TextureG;
 layout(set = 1, binding = 2) uniform sampler2D g_TextureB;
 
-layout(set = 1, binding = 3, rgba8) writeonly uniform image2D g_CombinedTexture;
+layout(set = 1, binding = 3, rgba8) writeonly uniform image2D g_OutCombinedTexture;
 
 
 void main() 
 {
-    ivec2 imgSize     = imageSize(g_CombinedTexture);
+    ivec2 imgSize     = imageSize(g_OutCombinedTexture);
     ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
     if (any(greaterThanEqual(pixelCoords, imgSize)))
         return;
@@ -24,5 +24,5 @@ void main()
 
     vec4 value = vec4(R, G, B, 1.0);
 
-    imageStore(g_CombinedTexture, ivec2(gl_GlobalInvocationID.xy), value);
+    imageStore(g_OutCombinedTexture, ivec2(gl_GlobalInvocationID.xy), value);
 }

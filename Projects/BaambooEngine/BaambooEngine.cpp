@@ -124,13 +124,10 @@ void Engine::Initialize(eRendererAPI eApi)
 	auto pDevice = m_pRendererBackend->GetDevice();
 	assert(pDevice);
 
-	g_FrameData.frame           = 0;
-	g_FrameData.time            = 0.0f;
 	g_FrameData.componentMarker = 0;
 
-	g_FrameData.camera         = {};
-
 	g_FrameData.pPointClamp  = render::Sampler::CreatePointClamp(*pDevice);
+	g_FrameData.pPointWrap   = render::Sampler::CreatePointRepeat(*pDevice);
 	g_FrameData.pLinearClamp = render::Sampler::CreateLinearClamp(*pDevice);
 	g_FrameData.pLinearWrap  = render::Sampler::CreateLinearRepeat(*pDevice);
 }
@@ -171,7 +168,7 @@ void Engine::Update(float dt)
 		m_bWindowResized = false;
 		m_ResizeWidth    = m_ResizeHeight = -1;
 
-		g_FrameData.frame = 0;
+		m_Frame = 0;
 	}
 
 	GameLoop(dt);
@@ -212,9 +209,9 @@ void Engine::GameLoop(float dt)
 	m_pScene->Update(dt, *m_pCamera);
 
 	if (m_RenderViewQueue.size() >= NUM_TOLERANCE_ASYNC_FRAME_GAME_TO_RENDER)
-		m_RenderViewQueue.replace(m_pScene->RenderView(*m_pCamera, m_bDrawUI));
+		m_RenderViewQueue.replace(m_pScene->RenderView(*m_pCamera, float2(m_pWindow->Width(), m_pWindow->Height()), m_Frame, m_bDrawUI));
 	else
-		m_RenderViewQueue.push(m_pScene->RenderView(*m_pCamera, m_bDrawUI));
+		m_RenderViewQueue.push(m_pScene->RenderView(*m_pCamera, float2(m_pWindow->Width(), m_pWindow->Height()), m_Frame, m_bDrawUI));
 }
 
 void Engine::RenderLoop()
@@ -243,37 +240,10 @@ void Engine::RenderLoop()
 			auto& rm = m_pRendererBackend->GetDevice()->GetResourceManager();
 			rm.GetSceneResource().UpdateSceneResources(renderView);
 
-			auto ApplyRhiNDC = [](const mat4& mProj_, eRendererAPI eAPI)
-				{
-					mat4 mProj   = mProj_;
-					mProj[1][1] *= eAPI == eRendererAPI::Vulkan ? -1.0f : 1.0f;
-					return mProj;
-				};
-			auto ApplyJittering = [viewport = float2(m_pWindow->Width(), m_pWindow->Height())](const mat4& m_, float2 jitter)
-				{
-					mat4 m = m_;
-					m[2][0] += (jitter.x * 2.0f - 1.0f) / viewport.x;
-					m[2][1] += (jitter.y * 2.0f - 1.0f) / viewport.y;
-
-					return m;
-				};
-
 			auto pContext = m_pRendererBackend->BeginFrame();
 			if (pContext)
 			{
-				CameraData camera = {};
-				camera.mView = renderView.camera.mView;
-				camera.mProj = ApplyRhiNDC(renderView.postProcess.effectBits & (1 << ePostProcess::AntiAliasing) ?
-					ApplyJittering(renderView.camera.mProj, baamboo::math::GetHaltonSequence((u32)g_FrameData.frame)) : renderView.camera.mProj, s_RendererAPI);
-				camera.mViewProj               = camera.mProj * camera.mView;
-				camera.mViewProjInv            = glm::inverse(camera.mViewProj);
-				camera.mViewProjUnjittered     = ApplyRhiNDC(renderView.camera.mProj, s_RendererAPI) * camera.mView;
-				camera.mViewProjUnjitteredPrev =
-					g_FrameData.camera.mViewProjUnjittered == glm::identity< mat4 >() ? camera.mViewProjUnjittered : g_FrameData.camera.mViewProjUnjittered;
-				camera.position = renderView.camera.pos;
-				camera.zNear    = renderView.camera.zNear;
-				camera.zFar     = renderView.camera.zFar;
-				g_FrameData.camera = std::move(camera);
+				rm.GetSceneResource().BindSceneResources(*pContext);
 
 				if (renderView.pEntityDirtyMarks)
 				{
@@ -304,7 +274,7 @@ void Engine::RenderLoop()
 				assert(g_FrameData.pColor);
 				m_pRendererBackend->EndFrame(std::move(pContext), g_FrameData.pColor.lock(), m_bDrawUI);
 
-				g_FrameData.frame++;
+				m_Frame++;
 				g_FrameData.componentMarker = 0;
 			}
 		}
@@ -652,10 +622,10 @@ void Engine::DrawUI()
 						// planet
 						if (ImGui::CollapsingHeader("Planet"))
 						{
-							float height = component.atmosphereRadius_km - component.planetRadius_km;
+							float height = component.atmosphereRadiusKm - component.planetRadiusKm;
 							if (ImGui::DragFloat("Atmosphere Height (km)", &height, 1.0f, 1.0f, 200.0f, "%.1f"))
 							{
-								component.atmosphereRadius_km = component.planetRadius_km + height;
+								component.atmosphereRadiusKm = component.planetRadiusKm + height;
 
 								bMark = true;
 							}
@@ -677,7 +647,7 @@ void Engine::DrawUI()
 								ImGui::Text("Rayleigh Scattering Scale : 0.001");
 								ImGui::EndTooltip();
 							}
-							bMark |= ImGui::DragFloat("Rayleigh Density (km)", &component.rayleighDensityH_km, 0.1f, 0.1f, 20.0f, "%.3f");
+							bMark |= ImGui::DragFloat("Rayleigh Density (km)", &component.rayleighDensityKm, 0.1f, 0.1f, 20.0f, "%.3f");
 							if (ImGui::IsItemHovered())
 							{
 								ImGui::BeginTooltip();
@@ -715,7 +685,7 @@ void Engine::DrawUI()
 								ImGui::Text("Mie Absorption Scale : 0.001");
 								ImGui::EndTooltip();
 							}
-							bMark |= ImGui::DragFloat("Mie Density (km)", &component.mieDensityH_km, 0.01f, 0.01f, 10.0f, "%.3f");
+							bMark |= ImGui::DragFloat("Mie Density (km)", &component.mieDensityKm, 0.01f, 0.01f, 10.0f, "%.3f");
 							if (ImGui::IsItemHovered())
 							{
 								ImGui::BeginTooltip();
@@ -741,8 +711,8 @@ void Engine::DrawUI()
 								ImGui::Text("Ozone Absorption Scale : 0.001");
 								ImGui::EndTooltip();
 							}
-							bMark |= ImGui::DragFloat("Ozone Center (km)", &component.ozoneCenter_km, 1.0f, 1.0f, 60.0f, "%.1f");
-							bMark |= ImGui::DragFloat("Ozone Width (km)", &component.ozoneWidth_km, 1.0f, 1.0f, 20.0f, "%.1f");
+							bMark |= ImGui::DragFloat("Ozone Center (km)", &component.ozoneCenterKm, 1.0f, 1.0f, 60.0f, "%.1f");
+							bMark |= ImGui::DragFloat("Ozone Width (km)", &component.ozoneWidthKm, 1.0f, 1.0f, 20.0f, "%.1f");
 
 							if (ImGui::BeginCombo("##Resolution", "Raymarch Resolution"))
 							{
@@ -807,7 +777,7 @@ void Engine::DrawUI()
 
 								bMark = true;
 							}
-							bMark |= ImGui::DragFloat("Wind Speed(m/s)", &component.windSpeed_mps, 0.1f, 0.0f, 1000.0f, "%.1f");
+							bMark |= ImGui::DragFloat("Wind Speed(m/s)", &component.windSpeedMps, 0.1f, 0.0f, 1000.0f, "%.1f");
 						}
 						if (ImGui::CollapsingHeader("Shape"))
 						{
