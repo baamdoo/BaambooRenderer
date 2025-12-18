@@ -5,7 +5,6 @@
 #include "Camera.h"
 #include "Systems/TransformSystem.h"
 #include "Systems/MeshSystem.h"
-#include "Systems/MaterialSystem.h"
 #include "Systems/LightSystem.h"
 #include "Systems/AtmosphereSystem.h"
 #include "Systems/CloudSystem.h"
@@ -27,11 +26,10 @@ Scene::Scene(const std::string& name)
 {
 	m_pTransformSystem   = new TransformSystem(m_Registry);
 	m_pStaticMeshSystem  = new StaticMeshSystem(m_Registry);
-	m_pMaterialSystem    = new MaterialSystem(m_Registry);
-	m_pSkyLightSystem    = new SkyLightSystem(m_Registry);
-	m_pLocalLightSystem  = new LocalLightSystem(m_Registry);
-	m_pAtmosphereSystem  = new AtmosphereSystem(m_Registry);
-	m_pCloudSystem       = new CloudSystem(m_Registry);
+	m_pSkyLightSystem    = new SkyLightSystem(m_Registry, m_pTransformSystem);
+	m_pAtmosphereSystem  = new AtmosphereSystem(m_Registry, m_pSkyLightSystem);
+	m_pCloudSystem       = new CloudSystem(m_Registry, m_pAtmosphereSystem);
+	m_pLocalLightSystem  = new LocalLightSystem(m_Registry, m_pTransformSystem);
 	m_pPostProcessSystem = new PostProcessSystem(m_Registry);
 }
 
@@ -41,11 +39,10 @@ Scene::~Scene()
 		RELEASE(pLoader);
 
 	RELEASE(m_pPostProcessSystem);
+	RELEASE(m_pLocalLightSystem);
 	RELEASE(m_pCloudSystem);
 	RELEASE(m_pAtmosphereSystem);
-	RELEASE(m_pLocalLightSystem);
 	RELEASE(m_pSkyLightSystem);
-	RELEASE(m_pMaterialSystem);
 	RELEASE(m_pStaticMeshSystem);
 	RELEASE(m_pTransformSystem);
 }
@@ -268,49 +265,43 @@ void Scene::Update(f32 dt, const EditorCamera& edCamera)
 
 	s_SceneRunningTime += dt;
 
-	for (auto entity : m_pTransformSystem->Update(edCamera))
+	for (auto entity : m_pTransformSystem->UpdateRenderData(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
 		dirtyMarks |= (1 << eComponentType::CTransform);
 	}
 
-	for (auto entity : m_pStaticMeshSystem->Update(edCamera))
+	for (auto entity : m_pStaticMeshSystem->UpdateRenderData(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
 		dirtyMarks |= (1 << eComponentType::CStaticMesh);
 	}
 
-	for (auto entity : m_pMaterialSystem->Update(edCamera))
-	{
-		u64& dirtyMarks = m_EntityDirtyMasks[entity];
-		dirtyMarks |= (1 << eComponentType::CMaterial);
-	}
-
-	for (auto entity : m_pSkyLightSystem->Update(edCamera))
+	for (auto entity : m_pSkyLightSystem->UpdateRenderData(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
 		dirtyMarks |= (1 << eComponentType::CSkyLight);
 	}
 
-	for (auto entity : m_pLocalLightSystem->Update(edCamera))
-	{
-		u64& dirtyMarks = m_EntityDirtyMasks[entity];
-		dirtyMarks |= (1 << eComponentType::CLight);
-	}
-
-	for (auto entity : m_pAtmosphereSystem->Update(edCamera))
+	for (auto entity : m_pAtmosphereSystem->UpdateRenderData(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
 		dirtyMarks |= (1 << eComponentType::CAtmosphere);
 	}
 
-	for (auto entity : m_pCloudSystem->Update(edCamera))
+	for (auto entity : m_pCloudSystem->UpdateRenderData(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
 		dirtyMarks |= (1 << eComponentType::CCloud);
 	}
 
-	for (auto entity : m_pPostProcessSystem->Update(edCamera))
+	for (auto entity : m_pLocalLightSystem->UpdateRenderData(edCamera))
+	{
+		u64& dirtyMarks = m_EntityDirtyMasks[entity];
+		dirtyMarks |= (1 << eComponentType::CLocalLight);
+	}
+
+	for (auto entity : m_pPostProcessSystem->UpdateRenderData(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
 		dirtyMarks |= (1 << eComponentType::CPostProcess);
@@ -329,7 +320,7 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport,
 	bool bMarkedAny = false;
 	for (const auto& pair : m_EntityDirtyMasks)
 	{
-		bMarkedAny |= pair.second;
+		bMarkedAny |= (pair.second > 0);
 	}
 
 	SceneRenderView view = {};
@@ -350,257 +341,13 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport,
 	view.camera.zFar               = edCamera.zFar;
 	view.camera.maxVisibleDistance = edCamera.maxVisibleDistance;
 
-	m_Registry.view< TransformComponent >().each([this, &view](auto id, auto& transformComponent)
-		{
-			TransformRenderView transformView = {};
-			transformView.id     = entt::to_integral(id);
-			transformView.mWorld = m_pTransformSystem->WorldMatrix(transformComponent.world);
-			view.transforms.push_back(transformView);
-
-			DrawRenderView draw = {};
-			draw.transform = static_cast<u32>(view.transforms.size()) - 1;
-			view.draws.emplace(transformView.id, draw);
-		});
-
-	m_Registry.view< TagComponent, StaticMeshComponent, MaterialComponent >().each([this, &view](auto id, auto& tagComponent, auto& meshComponent, auto& materialComponent)
-		{
-			StaticMeshRenderView meshView = {};
-			meshView.id     = entt::to_integral(id);
-			meshView.tag    = tagComponent.tag;
-			meshView.aabb   = meshComponent.aabb;
-			meshView.sphere = meshComponent.sphere;
-			meshView.vData  = meshComponent.pVertices;
-			meshView.vCount = meshComponent.numVertices;
-			meshView.iData  = meshComponent.pIndices;
-			meshView.iCount = meshComponent.numIndices;
-			view.meshes.push_back(meshView);
-
-			/*if (!view.draws.contains(meshView.id))
-			{
-				view.draws.emplace(meshView.id, DrawRenderView{});
-			}*/
-			assert(view.draws.contains(meshView.id));
-			auto& draw = view.draws.find(meshView.id)->second;
-			draw.mesh  = static_cast<u32>(view.meshes.size()) - 1;
-
-			MaterialRenderView materialView = {};
-			materialView.id = entt::to_integral(id);
-
-			materialView.tint     = materialComponent.tint;
-			materialView.ambient  = materialComponent.ambient;
-
-			materialView.shininess     = materialComponent.shininess;
-			materialView.roughness     = materialComponent.roughness;
-			materialView.metallic      = materialComponent.metallic;
-			materialView.ior           = materialComponent.ior;
-			materialView.emissivePower = materialComponent.emissivePower;
-
-			materialView.albedoTex    = materialComponent.albedoTex;
-			materialView.normalTex    = materialComponent.normalTex;
-			materialView.aoTex        = materialComponent.aoTex;
-			materialView.roughnessTex = materialComponent.roughnessTex;
-			materialView.metallicTex  = materialComponent.metallicTex;
-			materialView.emissionTex  = materialComponent.emissionTex;
-			view.materials.push_back(materialView);
-
-			/*if (!view.draws.contains(materialView.id))
-			{
-				view.draws.emplace(materialView.id, DrawRenderView{});
-			}*/
-			draw.material = static_cast<u32>(view.materials.size()) - 1;
-		});
-
-
-	view.light                  = {};
-	view.light.ambientColor     = float3(0.0f);
-	view.light.ambientIntensity = 0.0f;
-	m_Registry.view< TransformComponent, LightComponent >().each([this, &view](auto id, auto& transformComponent, auto& lightComponent)
-		{
-			mat4   mWorld    = m_pTransformSystem->WorldMatrix(transformComponent.world);
-			float3 position  = float3(mWorld[3]);
-			float3 direction = normalize(float3(mWorld[2]));
-
-			switch (lightComponent.type)
-			{
-			case eLightType::Directional:
-				if (view.light.numDirectionals < MAX_DIRECTIONAL_LIGHT)
-				{
-					auto& dirLight             = view.light.directionals[view.light.numDirectionals++];
-					dirLight.direction         = glm::normalize(-position); // target to origin
-					dirLight.color             = lightComponent.color;
-					dirLight.temperature_K     = lightComponent.temperature_K;
-					dirLight.illuminance_lux   = lightComponent.illuminance_lux;
-					dirLight.angularRadius_rad = lightComponent.angularRadius_rad;
-
-					if (m_Registry.any_of< AtmosphereComponent >(id))
-					{
-						auto& atmosphereComponent  = m_Registry.get< AtmosphereComponent >(id);
-						view.atmosphere.id                       = entt::to_integral(id);
-						view.atmosphere.data.light               = dirLight;
-						view.atmosphere.data.planetRadiusKm     = atmosphereComponent.planetRadiusKm;
-						view.atmosphere.data.atmosphereRadiusKm = atmosphereComponent.atmosphereRadiusKm;
-						view.atmosphere.data.rayleighScattering  = atmosphereComponent.rayleighScattering;
-						view.atmosphere.data.rayleighDensityKm = atmosphereComponent.rayleighDensityKm;
-						view.atmosphere.data.mieScattering       = atmosphereComponent.mieScattering;
-						view.atmosphere.data.mieAbsorption       = atmosphereComponent.mieAbsorption;
-						view.atmosphere.data.mieDensityKm      = atmosphereComponent.mieDensityKm;
-						view.atmosphere.data.miePhaseG           = atmosphereComponent.miePhaseG;
-						view.atmosphere.data.ozoneAbsorption     = atmosphereComponent.ozoneAbsorption;
-						view.atmosphere.data.ozoneCenterKm      = atmosphereComponent.ozoneCenterKm;
-						view.atmosphere.data.ozoneWidthKm       = atmosphereComponent.ozoneWidthKm;
-						// TODO
-						view.atmosphere.data.groundAlbedo        = float3(0.40198f, 0.40198f, 0.40198f);
-
-						switch(atmosphereComponent.raymarchResolution)
-						{
-						case eRaymarchResolution::Low:
-							view.atmosphere.msIsoSampleCount = 2;
-							view.atmosphere.msNumRaySteps    = 10;
-							view.atmosphere.svMinRaySteps    = 4;
-							view.atmosphere.svMaxRaySteps    = 16;
-							break;
-						case eRaymarchResolution::Middle:
-							view.atmosphere.msIsoSampleCount = 64;
-							view.atmosphere.msNumRaySteps    = 20;
-							view.atmosphere.svMinRaySteps    = 4;
-							view.atmosphere.svMaxRaySteps    = 32;
-							break;
-						case eRaymarchResolution::High:
-							view.atmosphere.msIsoSampleCount = 128;
-							view.atmosphere.msNumRaySteps    = 40;
-							view.atmosphere.svMinRaySteps    = 8;
-							view.atmosphere.svMaxRaySteps    = 64;
-							break;
-						}
-					}
-				}
-				break;
-
-			case eLightType::Point:
-				if (view.light.numPoints < MAX_POINT_LIGHT)
-				{
-					PointLight& pointLight      = view.light.points[view.light.numPoints++];
-					pointLight.position         = position;
-					pointLight.color            = lightComponent.color;
-					pointLight.temperature_K    = lightComponent.temperature_K;
-					pointLight.luminousFlux_lm  = lightComponent.luminousFlux_lm;
-					pointLight.radius_m         = lightComponent.radius_m;
-				}
-				break;
-
-			case eLightType::Spot:
-				if (view.light.numSpots < MAX_SPOT_LIGHT)
-				{
-					auto& spotLight              = view.light.spots[view.light.numSpots++];
-					spotLight.position           = position;
-					spotLight.direction          = direction;
-					spotLight.color              = lightComponent.color;
-					spotLight.temperature_K      = lightComponent.temperature_K;
-					spotLight.luminousFlux_lm    = lightComponent.luminousFlux_lm;
-					spotLight.radius_m           = lightComponent.radius_m;
-					spotLight.innerConeAngle_rad = lightComponent.innerConeAngle_rad;
-					spotLight.outerConeAngle_rad = lightComponent.outerConeAngle_rad;
-				}
-				break;
-			}
-		});
-	
-	m_Registry.view< TransformComponent, CloudComponent >().each([this, &view](auto id, auto& transformComponent, auto& cloudComponent)
-		{
-			CloudRenderView cloudView = {};
-			cloudView.data.coverage      = cloudComponent.coverage;
-			cloudView.data.cloudType     = cloudComponent.cloudType;
-			cloudView.data.precipitation = cloudComponent.precipitation;
-
-			cloudView.data.topLayerKm    = cloudComponent.bottomHeight_km + cloudComponent.layerThickness_km;
-			cloudView.data.bottomLayerKm = cloudComponent.bottomHeight_km;
-
-			cloudView.data.extinctionStrength = cloudComponent.extinctionStrength;
-			cloudView.data.extinctionScale    = cloudComponent.extinctionScale;
-
-			cloudView.data.msContribution             = cloudComponent.msContribution;
-			cloudView.data.msOcclusion                = cloudComponent.msOcclusion;
-			cloudView.data.msEccentricity             = cloudComponent.msEccentricity;
-			cloudView.data.groundContributionStrength = cloudComponent.groundContributionStrength;
-
-			cloudView.data.coverage       = cloudComponent.coverage;
-			cloudView.data.cloudType      = cloudComponent.cloudType;
-			cloudView.data.baseNoiseScale = cloudComponent.baseNoiseScale;
-			cloudView.data.baseIntensity  = cloudComponent.baseIntensity;
-
-			cloudView.data.erosionNoiseScale               = cloudComponent.erosionNoiseScale;
-			cloudView.data.erosionIntensity                = cloudComponent.erosionIntensity;
-			cloudView.data.erosionPower                    = cloudComponent.erosionPower;
-			cloudView.data.wispiness                       = cloudComponent.wispySkewness;
-			cloudView.data.billowiness                     = cloudComponent.billowySkewness;
-			cloudView.data.erosionHeightGradientMultiplier = cloudComponent.erosionHeightGradientMultiplier;
-			cloudView.data.erosionHeightGradientPower      = cloudComponent.erosionHeightGradientPower;
-
-			cloudView.data.windDirection = cloudComponent.windDirection;
-			cloudView.data.windSpeedMps = cloudComponent.windSpeedMps;
-
-			cloudView.numCloudRaymarchSteps = cloudComponent.numCloudRaymarchSteps;
-			cloudView.numLightRaymarchSteps = cloudComponent.numLightRaymarchSteps;
-			cloudView.frontDepthBias        = cloudComponent.frontDepthBias;
-			cloudView.temporalBlendAlpha    = cloudComponent.temporalBlendAlpha;
-			cloudView.uprezRatio            = cloudComponent.uprezRatio;
-
-			cloudView.blueNoiseTex = cloudComponent.blueNoiseTex;
-			cloudView.weatherMap   = cloudComponent.weatherMap;
-			cloudView.curlNoiseTex = cloudComponent.curlNoiseTex;
-
-			view.cloud = cloudView;
-		});
-
-	// update cloud shadow
-	float sphereRadius = 100.0f;
-
-	float3 sunDirection = view.atmosphere.data.light.direction;
-	float3 ray          = -sunDirection;
-
-	float3 camPos = edCamera.GetPosition() * 0.001f + float3{ 0.0f, view.atmosphere.data.planetRadiusKm + 0.00005f, 0.0f };
-	float2 t      = math::RaySphereIntersection(camPos, ray, float3(0.0f), view.cloud.data.topLayerKm + view.atmosphere.data.planetRadiusKm);
-
-	float3 sunLookAt   = float3(0.0f, 0.0f, 0.0f);
-	float3 sunPosition = camPos + (t.x > 0.0f ? t.x : t.y) * ray;
-
-	float3 upVec    = float3(0, 1, 0);
-	float3 rightVec = glm::normalize(glm::cross(upVec, sunDirection));
-	if (glm::length(rightVec) < 0.001f)
-		rightVec = glm::normalize(glm::cross(float3(0.0f, 0.0f, 1.0f), sunDirection));
-	upVec = glm::normalize(glm::cross(sunDirection, rightVec));
-
-	auto mSunView = glm::lookAtLH(sunPosition, sunLookAt, upVec);
-
-	// Reverse-Z
-	auto mSunProj = glm::orthoLH_ZO(
-		-sphereRadius, sphereRadius,
-		-sphereRadius, sphereRadius,
-		sphereRadius * 2.0f,
-		0.0f
-	);
-	view.cloud.shadow.mSunView        = mSunView;
-	view.cloud.shadow.mSunViewProj    = mSunProj * mSunView;
-	view.cloud.shadow.mSunViewProjInv = glm::inverse(view.cloud.shadow.mSunViewProj);
-
-	//
-	m_Registry.view< PostProcessComponent >().each([this, &view](auto id, auto& postProcessComponent)
-		{
-			PostProcessRenderView postProcessView = {};
-			postProcessView.id         = entt::to_integral(id);
-			postProcessView.effectBits = postProcessComponent.effectBits;
-
-			postProcessView.aa.type        = postProcessComponent.aa.type;
-			postProcessView.aa.blendFactor = postProcessComponent.aa.blendFactor;
-			postProcessView.aa.sharpness   = postProcessComponent.aa.sharpness;
-
-			postProcessView.tonemap.op    = postProcessComponent.tonemap.op;
-			postProcessView.tonemap.ev100 = postProcessComponent.tonemap.ev100;
-			postProcessView.tonemap.gamma = postProcessComponent.tonemap.gamma;
-
-			view.postProcess = postProcessView;
-		});
-
+	m_pTransformSystem->CollectRenderData(view);
+	m_pStaticMeshSystem->CollectRenderData(view);
+	m_pSkyLightSystem->CollectRenderData(view);
+	m_pLocalLightSystem->CollectRenderData(view);
+	m_pAtmosphereSystem->CollectRenderData(view);
+	m_pCloudSystem->CollectRenderData(view);
+	m_pPostProcessSystem->CollectRenderData(view);
 	return view;
 }
 

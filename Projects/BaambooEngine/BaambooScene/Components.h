@@ -180,20 +180,20 @@ struct LightComponent
 {
 	eLightType type = eLightType::Directional;
 
-	float3 color         = float3(1.0f, 1.0f, 1.0f);
-	float  temperature_K = 0.0f;
+	float3 color        = float3(1.0f, 1.0f, 1.0f);
+	float  temperatureK = 0.0f;
 	union
 	{
-		float illuminance_lux; // directional: lux (lm/m©÷)
-		float luminousFlux_lm; // point/spot: lumens
+		float illuminanceLux; // directional: lux (lm/m©÷)
+		float luminousFluxLm; // point/spot: lumens
 	};
 
-	float radius_m = 0.01f;
-	float angularRadius_rad = 0.00465f;
+	float radiusM          = 0.01f;
+	float angularRadiusRad = 0.00465f;
 
 	// spot light
-	float innerConeAngle_rad = PI_DIV(4.0f);
-	float outerConeAngle_rad = PI_DIV(3.0f);
+	float innerConeAngleRad = PI_DIV(4.0f);
+	float outerConeAngleRad = PI_DIV(3.0f);
 
 	bool bDirtyMark;
 
@@ -201,36 +201,36 @@ struct LightComponent
 	{
 		type = eLightType::Directional;
 
-		temperature_K = 5778.0f;
-		color = float3(1.0f, 1.0f, 1.0f);
+		temperatureK = 5778.0f;
+		color        = float3(1.0f, 1.0f, 1.0f);
 
-		illuminance_lux = 3.0f;
-		angularRadius_rad = 0.00465f;
+		illuminanceLux   = 3.0f;
+		angularRadiusRad = 0.00465f;
 	}
 
 	void SetDefaultPoint()
 	{
 		type = eLightType::Point;
 
-		temperature_K = 4000.0f;
-		color = float3(1.0f, 1.0f, 1.0f);
+		temperatureK = 4000.0f;
+		color        = float3(1.0f, 1.0f, 1.0f);
 
-		luminousFlux_lm = 1000.0f;
-		radius_m = 0.03f;
+		luminousFluxLm = 1000.0f;
+		radiusM        = 0.03f;
 	}
 
 	void SetDefaultSpot()
 	{
 		type = eLightType::Spot;
 
-		temperature_K = 5000.0f;
-		color = float3(1.0f, 1.0f, 1.0f);
+		temperatureK = 5000.0f;
+		color        = float3(1.0f, 1.0f, 1.0f);
 
-		luminousFlux_lm = 100.0f;
-		radius_m = 0.02f;
+		luminousFluxLm = 100.0f;
+		radiusM        = 0.02f;
 
-		innerConeAngle_rad = PI_DIV(4.0f);
-		outerConeAngle_rad = PI_DIV(3.0f);
+		innerConeAngleRad = PI_DIV(4.0f);
+		outerConeAngleRad = PI_DIV(3.0f);
 	}
 };
 

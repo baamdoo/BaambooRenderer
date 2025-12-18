@@ -192,6 +192,7 @@ void Engine::Release()
 	g_FrameData.pLinearWrap.reset();
 	g_FrameData.pLinearClamp.reset();
 	g_FrameData.pPointClamp.reset();
+	g_FrameData.pPointWrap.reset();
 	RELEASE(m_pRendererBackend);
 
 	ImGui::Destroy();
@@ -531,7 +532,7 @@ void Engine::DrawUI()
 
 					bMark |= ImGui::ColorEdit3("Color", &component.color.x);
 
-					bMark |= ImGui::DragFloat("Temperature (K)", &component.temperature_K, 10.0f, 0.0f, 10000.0f);
+					bMark |= ImGui::DragFloat("Temperature (K)", &component.temperatureK, 10.0f, 0.0f, 10000.0f);
 					if (ImGui::IsItemHovered())
 					{
 						ImGui::BeginTooltip();
@@ -544,17 +545,17 @@ void Engine::DrawUI()
 
 					case eLightType::Directional:
 					{
-						bMark |= ImGui::DragFloat("Illuminance (lux)", &component.illuminance_lux, 0.1f, 0.0f, 10.0f, "%.1f");
+						bMark |= ImGui::DragFloat("Illuminance (lux)", &component.illuminanceLux, 0.1f, 0.0f, 10.0f, "%.1f");
 						if (ImGui::IsItemHovered())
 						{
 							ImGui::BeginTooltip();
 							ImGui::EndTooltip();
 						}
 
-						float angularRadius = glm::degrees(component.angularRadius_rad);
+						float angularRadius = glm::degrees(component.angularRadiusRad);
 						if (ImGui::DragFloat("Angular Radius (deg)", &angularRadius, 0.01f, 0.0f, 10.0f, "%.3f"))
 						{
-							component.angularRadius_rad = glm::radians(angularRadius);
+							component.angularRadiusRad = glm::radians(angularRadius);
 
 							bMark = true;
 						}
@@ -562,39 +563,39 @@ void Engine::DrawUI()
 					}
 					case eLightType::Point:
 					{
-						bMark |= ImGui::DragFloat("Power (lm)", &component.luminousFlux_lm, 10.0f, 0.0f, 10000.0f, "%.0f");
+						bMark |= ImGui::DragFloat("Power (lm)", &component.luminousFluxLm, 10.0f, 0.0f, 10000.0f, "%.0f");
 						if (ImGui::IsItemHovered())
 						{
 							ImGui::BeginTooltip();
 							ImGui::EndTooltip();
 						}
-						bMark |= ImGui::DragFloat("Source Radius (m)", &component.radius_m, 0.001f, 0.001f, 1.0f, "%.3f");
+						bMark |= ImGui::DragFloat("Source Radius (m)", &component.radiusM, 0.001f, 0.001f, 1.0f, "%.3f");
 						break;
 					}
 					case eLightType::Spot:
 					{
-						bMark |= ImGui::DragFloat("Power (lumens)", &component.luminousFlux_lm, 10.0f, 0.0f, 10000.0f, "%.0f");
-						bMark |= ImGui::DragFloat("Source Radius (m)", &component.radius_m, 0.001f, 0.001f, 1.0f, "%.3f");
+						bMark |= ImGui::DragFloat("Power (lumens)", &component.luminousFluxLm, 10.0f, 0.0f, 10000.0f, "%.0f");
+						bMark |= ImGui::DragFloat("Source Radius (m)", &component.radiusM, 0.001f, 0.001f, 1.0f, "%.3f");
 
-						float innerAngle = glm::degrees(component.innerConeAngle_rad);
-						float outerAngle = glm::degrees(component.outerConeAngle_rad);
+						float innerAngle = glm::degrees(component.innerConeAngleRad);
+						float outerAngle = glm::degrees(component.outerConeAngleRad);
 
 						if (ImGui::DragFloat("Inner Angle (deg)", &innerAngle, 1.0f, 0.0f, 90.0f, "%.1f"))
 						{
-							component.innerConeAngle_rad = glm::radians(innerAngle);
+							component.innerConeAngleRad = glm::radians(innerAngle);
 
-							if (component.outerConeAngle_rad <= component.innerConeAngle_rad)
-								component.outerConeAngle_rad = component.innerConeAngle_rad + glm::radians(1.0f);
+							if (component.outerConeAngleRad <= component.innerConeAngleRad)
+								component.outerConeAngleRad = component.innerConeAngleRad + glm::radians(1.0f);
 
 							bMark = true;
 						}
 
 						if (ImGui::DragFloat("Outer Angle (deg)", &outerAngle, 1.0f, 0.0f, 90.0f, "%.1f"))
 						{
-							component.outerConeAngle_rad = glm::radians(outerAngle);
+							component.outerConeAngleRad = glm::radians(outerAngle);
 
-							if (component.innerConeAngle_rad >= component.outerConeAngle_rad)
-								component.innerConeAngle_rad = component.outerConeAngle_rad - glm::radians(1.0f);
+							if (component.innerConeAngleRad >= component.outerConeAngleRad)
+								component.innerConeAngleRad = component.outerConeAngleRad - glm::radians(1.0f);
 
 							bMark = true;
 						}

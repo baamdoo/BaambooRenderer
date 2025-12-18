@@ -105,33 +105,33 @@ struct MaterialData
 struct DirectionalLight
 {
 	float dirX, dirY, dirZ;
-	float illuminance_lux; // lm/m^2
+	float illuminanceLux; // lm/m^2
 	float colorR, colorG, colorB;
-	float angularRadius_rad;
-	float temperature_K;
+	float angularRadiusRad;
+	float temperatureK;
 	float padding0, padding1, padding2;
 };
 
 struct PointLight
 {
 	float posX, posY, posZ;
-	float luminousFlux_lm;
+	float luminousFluxLm;
 	float colorR, colorG, colorB;
-	float radius_m;
-	float temperature_K;
+	float radiusM;
+	float temperatureK;
 	float padding0, padding1, padding2;
 };
 
 struct SpotLight
 {
 	float posX, posY, posZ;
-	float luminousFlux_lm;
+	float luminousFluxLm;
 	float dirX, dirY, dirZ;
-	float radius_m;
+	float radiusM;
 	float colorR, colorG, colorB;
-	float innerConeAngle_rad;
-	float outerConeAngle_rad;
-	float temperature_K;
+	float innerConeAngleRad;
+	float outerConeAngleRad;
+	float temperatureK;
 	float padding0, padding1;
 };
 

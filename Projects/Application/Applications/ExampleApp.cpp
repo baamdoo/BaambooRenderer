@@ -306,10 +306,10 @@ void ExampleApp::ConfigureSceneObjects()
 
 		auto& light = sunLight.GetComponent< LightComponent >();
 		light.type = eLightType::Directional;
-		light.temperature_K = 10000.0f;
+		light.temperatureK = 10000.0f;
 		light.color = float3(1.0f, 0.95f, 0.8f);
-		light.illuminance_lux = 6.0f; //120'000.0f;
-		light.angularRadius_rad = 0.00465f;
+		light.illuminanceLux = 6.0f; //120'000.0f;
+		light.angularRadiusRad = 0.00465f;
 
 		auto& transformComponent = sunLight.GetComponent< TransformComponent >();
 		//transformComponent.transform.position = float3(-0.46144, 0.76831, -0.44359);
@@ -334,8 +334,8 @@ void ExampleApp::ConfigureSceneObjects()
 		auto& light            = pointLight.GetComponent< LightComponent >();
 		light.type             = eLightType::Point;
 		light.color            = float3(1.0f, 1.0f, 1.0f);
-		light.temperature_K    = 4000.0f;
-		light.radius_m         = 0.03f;
+		light.temperatureK    = 4000.0f;
+		light.radiusM         = 0.03f;
 		light.luminousPower_lm = 1000.0f;
 
 		auto& transformComponent              = pointLight.GetComponent< TransformComponent >();
@@ -350,10 +350,10 @@ void ExampleApp::ConfigureSceneObjects()
 		//auto& light              = spotLight.GetComponent< LightComponent >();
 		//light.type               = eLightType::Spot;
 		//light.color              = float3(1.0f, 1.0f, 1.0f);
-		//light.temperature_K      = 3200.0f;
-		//light.radius_m           = 0.05f;
+		//light.temperatureK      = 3200.0f;
+		//light.radiusM           = 0.05f;
 		//light.luminousPower_lm   = 25.0f * 10.0f;
-		//light.outerConeAngle_rad = PI_DIV(2.0f);
+		//light.outerConeAngleRad = PI_DIV(2.0f);
 
 		//auto& transform              = spotLight.GetComponent< TransformComponent >();
 		//transform.transform.position = float3(0.0f, 10.0f, 0.0f);

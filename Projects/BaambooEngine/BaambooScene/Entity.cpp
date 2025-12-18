@@ -80,6 +80,33 @@ Entity Entity::Clone()
 				auto& newComponent = cloned.GetComponent< LightComponent >();
 				newComponent = orgComponent;
 			}
+
+			if (original.HasAll< AtmosphereComponent >())
+			{
+				cloned.AttachComponent< AtmosphereComponent >();
+
+				auto& orgComponent = original.GetComponent< AtmosphereComponent >();
+				auto& newComponent = cloned.GetComponent< AtmosphereComponent >();
+				newComponent = orgComponent;
+			}
+
+			if (original.HasAll< CloudComponent >())
+			{
+				cloned.AttachComponent< CloudComponent >();
+
+				auto& orgComponent = original.GetComponent< CloudComponent >();
+				auto& newComponent = cloned.GetComponent< CloudComponent >();
+				newComponent = orgComponent;
+			}
+
+			if (original.HasAll< PostProcessComponent >())
+			{
+				cloned.AttachComponent< PostProcessComponent >();
+
+				auto& orgComponent = original.GetComponent< PostProcessComponent >();
+				auto& newComponent = cloned.GetComponent< PostProcessComponent >();
+				newComponent = orgComponent;
+			}
 		};
 	fpCloneEntity(*this, clonedEntity);
 

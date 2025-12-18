@@ -15,7 +15,9 @@ public:
 	virtual void OnComponentUpdated(entt::registry& registry, entt::entity entity) override;
 	virtual void OnComponentDestroyed(entt::registry& registry, entt::entity entity) override;
 
-	virtual std::vector< u64 > Update(const EditorCamera& edCamera) override;
+	virtual std::vector< u64 > UpdateRenderData(const EditorCamera& edCamera) override;
+	virtual void CollectRenderData(SceneRenderView& outView) const override;
+	virtual void RemoveRenderData(u64 entityId) override;
 
 	void AttachChild(entt::entity parent, entt::entity child);
 	void DetachChild(entt::entity child);
@@ -31,6 +33,8 @@ private:
 private:
 	std::vector< mat4 > m_mWorlds;
 	FreeList<>          m_IndexAllocator;
+
+	std::unordered_map< u64, TransformRenderView > m_RenderData;
 };
 
 } // namespace baamboo

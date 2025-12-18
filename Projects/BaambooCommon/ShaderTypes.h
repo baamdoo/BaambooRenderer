@@ -50,33 +50,33 @@ struct CameraData
 struct DirectionalLight
 {
     float3 direction;
-    float  illuminance_lux;
+    float  illuminanceLux;
     float3 color;
-    float  angularRadius_rad;
-    float  temperature_K;
+    float  angularRadiusRad;
+    float  temperatureK;
     float3 padding;
 };
 
 struct PointLight
 {
     float3 position;
-    float  luminousFlux_lm;
+    float  luminousFluxLm;
     float3 color;
-    float  radius_m;
-    float  temperature_K;
+    float  radiusM;
+    float  temperatureK;
     float3 padding;
 };
 
 struct SpotLight
 {
     float3 position;
-    float  luminousFlux_lm;
+    float  luminousFluxLm;
     float3 direction;
-    float  radius_m;
+    float  radiusM;
     float3 color;
-    float  innerConeAngle_rad; 
-    float  outerConeAngle_rad;
-    float  temperature_K;
+    float  innerConeAngleRad; 
+    float  outerConeAngleRad;
+    float  temperatureK;
     float2 padding;
 };
 

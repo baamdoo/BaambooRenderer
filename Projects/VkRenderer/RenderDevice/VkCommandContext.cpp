@@ -608,8 +608,10 @@ void VkCommandContext::Impl::SetComputeDynamicUniformBuffer(const std::string& n
 {
 	assert(IsComputeContext());
 	auto [set, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
-
-	SetDynamicUniformBuffer(set, binding, sizeInBytes, pData);
+	if (IsValidIndex(set))
+	{
+		SetDynamicUniformBuffer(set, binding, sizeInBytes, pData);
+	}
 }
 
 void VkCommandContext::Impl::SetGraphicsDynamicUniformBuffer(const std::string& name, u32 sizeInBytes, const void* pData)

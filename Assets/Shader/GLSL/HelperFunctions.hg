@@ -121,9 +121,9 @@ const vec3 COLOR_TEMPERATURE_LUT[] =
     vec3(0.726, 0.742, 1.000),  // 10000K
 };
 
-vec3 ColorTemperatureToRGB(float temperature_K)
+vec3 ColorTemperatureToRGB(float temperatureK)
 {
-    float T = clamp(temperature_K, 1000.0, 10000.0);
+    float T = clamp(temperatureK, 1000.0, 10000.0);
 
     float index = (T - 1000.0) / 1000.0;
     return mix(COLOR_TEMPERATURE_LUT[int(index)], 

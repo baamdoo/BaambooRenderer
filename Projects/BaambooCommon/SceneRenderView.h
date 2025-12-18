@@ -12,10 +12,10 @@ enum eComponentType
 	CStaticMesh  = 1,
 	CDynamicMesh = 2,
 	CMaterial    = 3,
-	CLight       = 4,
-	CSkyLight    = 5,
-	CAtmosphere  = 6,
-	CCloud       = 7,
+	CSkyLight    = 4,
+	CAtmosphere  = 5,
+	CCloud       = 6,
+	CLocalLight  = 7,
 	CPostProcess = 8,
 
 	// ...
@@ -102,6 +102,7 @@ struct AtmosphereRenderView
 
 struct CloudRenderView
 {
+	u64             id;
 	CloudData       data;
 	CloudShadowData shadow;
 

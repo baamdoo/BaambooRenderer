@@ -25,10 +25,10 @@ float4 ComputeAerialPerspective(float3 rayOrigin, float3 rayDir, float maxDistan
 
     // light illuminance
     float3 lightColor = float3(Atmosphere.light.colorR, Atmosphere.light.colorG, Atmosphere.light.colorB);
-    if (Atmosphere.light.temperature_K > 0.0)
-        lightColor *= ColorTemperatureToRGB(Atmosphere.light.temperature_K);
+    if (Atmosphere.light.temperatureK > 0.0)
+        lightColor *= ColorTemperatureToRGB(Atmosphere.light.temperatureK);
 
-    float3 E = Atmosphere.light.illuminance_lux * lightColor;
+    float3 E = Atmosphere.light.illuminanceLux * lightColor;
 
     // phase functions
     float3 sunDirection = float3(-Atmosphere.light.dirX, -Atmosphere.light.dirY, -Atmosphere.light.dirZ);

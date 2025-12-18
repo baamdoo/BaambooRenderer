@@ -325,10 +325,10 @@ CloudResult RaymarchCloud(vec3 rayOrigin, vec3 rayDirection, float maxDistance, 
 
     vec3 sunDirection = normalize(vec3(-Atmosphere.light.dirX, -Atmosphere.light.dirY, -Atmosphere.light.dirZ));
     vec3 lightColor   = vec3(Atmosphere.light.colorR, Atmosphere.light.colorG, Atmosphere.light.colorB);
-    if (Atmosphere.light.temperature_K > 0.0)
-        lightColor *= ColorTemperatureToRGB(Atmosphere.light.temperature_K);
+    if (Atmosphere.light.temperatureK > 0.0)
+        lightColor *= ColorTemperatureToRGB(Atmosphere.light.temperatureK);
 
-    vec3 E = Atmosphere.light.illuminance_lux * lightColor;
+    vec3 E = Atmosphere.light.illuminanceLux * lightColor;
 
     float VoL = dot(rayDirection, sunDirection);
 
@@ -460,7 +460,8 @@ CloudResult RaymarchCloud(vec3 rayOrigin, vec3 rayDirection, float maxDistance, 
     result.throughput = throughput;
     if (apScale > 0.0)
     {
-        result.apDistance = apDistanceAcc / apScale;
+        //result.apDistance = apDistanceAcc / apScale;
+        result.apDistance = rayStart;
     }
 
     return result;

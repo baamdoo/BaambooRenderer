@@ -33,10 +33,10 @@ vec3 RaymarchScattering(vec3 rayOrigin, vec3 rayDir, float maxDistance)
 
     // light illuminance
     vec3 lightColor = vec3(Atmosphere.light.colorR, Atmosphere.light.colorG, Atmosphere.light.colorB);
-    if (Atmosphere.light.temperature_K > 0.0)
-        lightColor *= ColorTemperatureToRGB(Atmosphere.light.temperature_K);
+    if (Atmosphere.light.temperatureK > 0.0)
+        lightColor *= ColorTemperatureToRGB(Atmosphere.light.temperatureK);
 
-    vec3 E = Atmosphere.light.illuminance_lux * lightColor;
+    vec3 E = Atmosphere.light.illuminanceLux * lightColor;
 
     // phase functions
     vec3 sunDirection  = vec3(-Atmosphere.light.dirX, -Atmosphere.light.dirY, -Atmosphere.light.dirZ);

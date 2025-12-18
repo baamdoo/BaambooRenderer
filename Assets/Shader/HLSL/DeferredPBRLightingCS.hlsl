@@ -75,14 +75,14 @@ float3 ApplyDirectionalLight(DirectionalLight light, float3 N, float3 V, float3 
     float3 L = normalize(float3(-light.dirX, -light.dirY, -light.dirZ));
 
     float3 lightColor = float3(light.colorR, light.colorG, light.colorB);
-    if (light.temperature_K > 0.0)
-        lightColor *= ColorTemperatureToRGB(light.temperature_K);
+    if (light.temperatureK > 0.0)
+        lightColor *= ColorTemperatureToRGB(light.temperatureK);
 
     float3 kD;
     float3 specular = CalculateBRDF(N, V, L, metallic, roughness, F0, kD);
 
     float  NoL       = max(dot(N, L), 0.0);
-    float3 luminance = lightColor * light.illuminance_lux;
+    float3 luminance = lightColor * light.illuminanceLux;
 
     return (kD * albedo / PI + specular) * luminance * NoL;
 }
@@ -93,20 +93,20 @@ float3 ApplyPointLight(PointLight light, float3 P, float3 N, float3 V, float3 al
     float  distance = length(L);
 
     float3 lightColor = float3(light.colorR, light.colorG, light.colorB);
-    if (light.temperature_K > 0.0)
-        lightColor *= ColorTemperatureToRGB(light.temperature_K);
+    if (light.temperatureK > 0.0)
+        lightColor *= ColorTemperatureToRGB(light.temperatureK);
 
     float3 R            = reflect(-V, N);
     float3 centerToRay  = dot(L, R) * R - L;
-    float3 closestPoint = L + centerToRay * clamp(light.radius_m / length(centerToRay), 0.0, 1.0);
+    float3 closestPoint = L + centerToRay * clamp(light.radiusM / length(centerToRay), 0.0, 1.0);
     L = normalize(closestPoint);
 
     float3 kD;
     float3 specular = CalculateBRDF(N, V, L, metallic, roughness, F0, kD);
 
     float  NdotL             = max(dot(N, L), 0.0);
-    float  luminousIntensity = light.luminousFlux_lm / (light.radius_m * light.radius_m * PI_MUL(4.0));
-    float  attenuation       = CalculateAttenuation(distance, light.radius_m);
+    float  luminousIntensity = light.luminousFluxLm / (light.radiusM * light.radiusM * PI_MUL(4.0));
+    float  attenuation       = CalculateAttenuation(distance, light.radiusM);
     float3 luminance         = lightColor * luminousIntensity * attenuation;
 
     return (kD * albedo / PI + specular) * luminance * NdotL;
@@ -120,24 +120,24 @@ float3 ApplySpotLight(SpotLight light, float3 P, float3 N, float3 V, float3 albe
 
     // cone attenuation
     float cosTheta        = dot(L, normalize(float3(-light.dirX, -light.dirY, -light.dirZ)));
-    float cosThetaInner   = cos(light.innerConeAngle_rad);
-    float cosThetaOuter   = cos(light.outerConeAngle_rad);
+    float cosThetaInner   = cos(light.innerConeAngleRad);
+    float cosThetaOuter   = cos(light.outerConeAngleRad);
     float spotAttenuation = clamp((cosTheta - cosThetaOuter) / (cosThetaInner - cosThetaOuter), 0.0, 1.0);
 
     if (spotAttenuation == 0.0)
         return float3(0.0, 0.0, 0.0);
 
     float3 lightColor = float3(light.colorR, light.colorG, light.colorB);
-    if (light.temperature_K > 0.0)
-        lightColor *= ColorTemperatureToRGB(light.temperature_K);
+    if (light.temperatureK > 0.0)
+        lightColor *= ColorTemperatureToRGB(light.temperatureK);
 
     float3 kD;
     float3 specular = CalculateBRDF(N, V, L, metallic, roughness, F0, kD);
 
     float  NoL               = max(dot(N, L), 0.0);
     float  solidAngle        = PI_MUL(2.0) * (1.0 - cosThetaOuter);
-    float  luminousIntensity = light.luminousFlux_lm / solidAngle;
-    float  attenuation       = CalculateAttenuation(distance, light.radius_m);
+    float  luminousIntensity = light.luminousFluxLm / solidAngle;
+    float  attenuation       = CalculateAttenuation(distance, light.radiusM);
     float3 luminance         = lightColor * luminousIntensity * attenuation * spotAttenuation;
 
     return (kD * albedo / PI + specular) * luminance * NoL;

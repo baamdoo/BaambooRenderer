@@ -24,9 +24,9 @@ vec4 ComputeLocalVolumetricProperties(vec3 pos)
     float sampleAltitude = sampleHeight - Atmosphere.planetRadiusKm;
 
     vec3 lightColor = vec3(Atmosphere.light.colorR, Atmosphere.light.colorG, Atmosphere.light.colorB);
-    if (Atmosphere.light.temperature_K > 0.0)
-        lightColor *= ColorTemperatureToRGB(Atmosphere.light.temperature_K);
-    vec3 E = Atmosphere.light.illuminance_lux * lightColor;
+    if (Atmosphere.light.temperatureK > 0.0)
+        lightColor *= ColorTemperatureToRGB(Atmosphere.light.temperatureK);
+    vec3 E = Atmosphere.light.illuminanceLux * lightColor;
 
     vec3 lightDir = vec3(-Atmosphere.light.dirX, -Atmosphere.light.dirY, -Atmosphere.light.dirZ);
 

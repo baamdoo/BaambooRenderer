@@ -36,30 +36,56 @@ void TransformSystem::OnComponentDestroyed(entt::registry& registry, entt::entit
     m_IndexAllocator.release(transform.world);
 }
 
-std::vector< u64 > TransformSystem::Update(const EditorCamera& edCamera)
+std::vector< u64 > TransformSystem::UpdateRenderData(const EditorCamera& edCamera)
 {
     UNUSED(edCamera);
 
-    // Sort by depth to ensure parents are processed before children
-    m_Registry.sort< TransformComponent >([](const auto& lhs, const auto& rhs)
+    // Sort by depth for parent-first processing
+    m_Registry.sort<TransformComponent>([](const auto& lhs, const auto& rhs) 
         {
-            return lhs.hierarchy.depth < rhs.hierarchy.depth;
+			return lhs.hierarchy.depth < rhs.hierarchy.depth;
         });
 
     std::vector< u64 > markedEntities;
-    m_Registry.view< TransformComponent >().each([&](auto entity, auto& transformComponent)
-        {
-            if (m_DirtyEntities.contains(entity))
-            {
-                transformComponent.transform.Update();
-                UpdateWorldTransform(entity);
+    for (auto entity : m_DirtyEntities)
+    {
+        if (!m_Registry.valid(entity))
+            continue;
 
-                m_DirtyEntities.erase(entity);
-                markedEntities.push_back(entt::to_integral(entity));
-            }
-        });
+        auto& transformComponent = m_Registry.get<TransformComponent>(entity);
+        transformComponent.transform.Update();
+        UpdateWorldTransform(entity);
 
+        u64 id = entt::to_integral(entity);
+        TransformRenderView& view = m_RenderData[id];
+        view.id     = id;
+        view.mWorld = WorldMatrix(transformComponent.world);
+
+        markedEntities.emplace_back(id);
+    }
+
+    ClearDirtyEntities();
     return markedEntities;
+}
+
+void TransformSystem::CollectRenderData(SceneRenderView& outView) const
+{
+    outView.transforms.reserve(m_RenderData.size());
+
+    for (const auto& [id, view] : m_RenderData)
+    {
+        outView.transforms.push_back(view);
+
+        u32 transformIndex = static_cast<u32>(outView.transforms.size()) - 1;
+
+        auto& draw     = outView.draws[id];
+        draw.transform = transformIndex;
+    }
+}
+
+void TransformSystem::RemoveRenderData(u64 entityId)
+{
+    m_RenderData.erase(entityId);
 }
 
 void TransformSystem::MarkDirty(entt::entity entity)
@@ -67,8 +93,7 @@ void TransformSystem::MarkDirty(entt::entity entity)
     Super::MarkDirty(entity);
 
     auto& transform = m_Registry.get< TransformComponent >(entity);
-
-    auto child = transform.hierarchy.firstChild;
+    auto  child     = transform.hierarchy.firstChild;
     while (child != entt::null) 
     {
         MarkDirty(child);
