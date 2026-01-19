@@ -34,6 +34,19 @@ struct SkinnedVertex
     float weight0, weight1, weight2, weight3;
 };
 
+struct Meshlet
+{
+	uint vertexOffset;
+    uint triangleOffset;
+    uint vertexCount;
+    uint triangleCount;
+
+    float centerX, centerY, centerZ;
+    float radius;
+    float coneAxisX, coneAxisY, coneAxisZ;
+    float coneCutoff;
+};
+
 
 //-------------------------------------------------------------------------
 // Transforms

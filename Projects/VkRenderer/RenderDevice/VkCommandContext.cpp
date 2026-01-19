@@ -5,6 +5,7 @@
 #include "VkBufferAllocator.h"
 #include "VkResourceManager.h"
 #include "VkDescriptorSet.h"
+#include "VkTimer.h"
 #include "RenderResource/VkBuffer.h"
 #include "RenderResource/VkTexture.h"
 #include "RenderResource/VkRenderTarget.h"
@@ -14,6 +15,7 @@ namespace vk
 {
 
 static PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR;
+static PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT;
 
 //-------------------------------------------------------------------------
 // Impl
@@ -128,6 +130,8 @@ public:
 	VkPipeline vkGraphicsPipeline() const { return m_pGraphicsPipeline ? m_pGraphicsPipeline->vkPipeline() : nullptr; }
 	VkPipeline vkComputePipeline() const { return m_pComputePipeline ? m_pComputePipeline->vkPipeline() : nullptr; }
 
+	double GetElapsedTime() const;
+
 private:
 	void AddBarrier(const VkBufferMemoryBarrier2& barrier, bool bFlushImmediate);
 	void AddBarrier(const VkImageMemoryBarrier2& barrier, bool bFlushImmediate);
@@ -147,6 +151,8 @@ private:
 	eCommandType    m_CommandType;
 
 	VkCommandContext& m_CommandContext;
+
+	VkTimer m_Timer;
 
 	VkCommandBuffer      m_vkCommandBuffer = VK_NULL_HANDLE;
 	VkCommandPool        m_vkBelongedPool = VK_NULL_HANDLE;
@@ -178,6 +184,8 @@ private:
 	u32 m_CurrentContextIndex = 0;
 
 	bool m_bTransient = false;
+
+	double m_LastFrameElapsedTime = 0.0;
 };
 
 VkCommandContext::Impl::Impl(VkRenderDevice& rd, VkCommandContext& context, VkCommandPool vkCommandPool, eCommandType type, VkCommandBufferLevel level)
@@ -219,10 +227,18 @@ VkCommandContext::Impl::Impl(VkRenderDevice& rd, VkCommandContext& context, VkCo
 	semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 	VK_CHECK(vkCreateSemaphore(m_RenderDevice.vkDevice(), &semaphoreInfo, nullptr, &m_vkRenderCompleteSemaphore));
 	VK_CHECK(vkCreateSemaphore(m_RenderDevice.vkDevice(), &semaphoreInfo, nullptr, &m_vkPresentCompleteSemaphore));
+
+
+	// **
+	// Set Gpu Timer
+	// **
+	m_Timer.Init(m_RenderDevice.vkDevice(), 2);
 }
 
 VkCommandContext::Impl::~Impl()
 {
+	m_Timer.Destroy(m_RenderDevice.vkDevice());
+
 	RELEASE(m_pUniformBufferPool);
 
 	vkDestroySemaphore(m_RenderDevice.vkDevice(), m_vkPresentCompleteSemaphore, nullptr);
@@ -235,6 +251,8 @@ VkCommandContext::Impl::~Impl()
 
 void VkCommandContext::Impl::Open(VkCommandBufferUsageFlags flags)
 {
+	m_LastFrameElapsedTime = m_Timer.GetElapsedTime(m_RenderDevice.vkDevice(), m_RenderDevice.DeviceProps());
+
 	m_CurrentContextIndex = m_RenderDevice.ContextIndex();
 
 	VkFence vkFences[2] = { m_vkRenderCompleteFence, m_vkPresentCompleteFence };
@@ -251,10 +269,14 @@ void VkCommandContext::Impl::Open(VkCommandBufferUsageFlags flags)
 
 	m_pGraphicsPipeline = nullptr;
 	m_pComputePipeline  = nullptr;
+
+	m_Timer.Start(m_vkCommandBuffer);
 }
 
 void VkCommandContext::Impl::Close()
 {
+	m_Timer.End(m_vkCommandBuffer);
+
 	FlushBarriers();
 	VK_CHECK(vkEndCommandBuffer(m_vkCommandBuffer));
 }
@@ -875,14 +897,18 @@ void VkCommandContext::Impl::DrawIndexed(u32 indexCount, u32 instanceCount, u32 
 
 void VkCommandContext::Impl::DrawScene(const VkSceneResource& sceneResource)
 {
+	vkCmdDrawMeshTasksEXT = (PFN_vkCmdDrawMeshTasksEXT)vkGetInstanceProcAddr(m_RenderDevice.vkInstance(), "vkCmdDrawMeshTasksEXT");
+
 	FlushBarriers();
 	BindShaderResources(VK_PIPELINE_BIND_POINT_GRAPHICS, m_pGraphicsPipeline->vkPipelineLayout());
 
 	if (m_pGraphicsPipeline->IsMeshPipeline())
 	{
+		const auto& meshletInfo = sceneResource.GetMeshletBufferInfo();
+		vkCmdDrawMeshTasksEXT(m_vkCommandBuffer, meshletInfo.range / sizeof(Meshlet), 1, 1);
 		// TODO
 		/*const auto& indirectInfo = sceneResource.GetIndirectBufferInfo();
-		vkCmdDrawMeshTasksIndirectCountNV(m_vkCommandBuffer, indirectInfo.buffer, indirectInfo.offset, )*/
+		vkCmdDrawMeshTasksIndirectCountEXT(m_vkCommandBuffer, indirectInfo.buffer, indirectInfo.offset, )*/
 	}
 	else
 	{
@@ -898,6 +924,11 @@ void VkCommandContext::Impl::Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGro
 	BindShaderResources(VK_PIPELINE_BIND_POINT_COMPUTE, m_pComputePipeline->vkPipelineLayout());
 
 	vkCmdDispatch(m_vkCommandBuffer, numGroupsX, numGroupsY, numGroupsZ);
+}
+
+double VkCommandContext::Impl::GetElapsedTime() const
+{
+	return m_LastFrameElapsedTime;
 }
 
 void VkCommandContext::Impl::AddBarrier(const VkBufferMemoryBarrier2& barrier, bool bFlushImmediate)
@@ -1330,6 +1361,11 @@ VkPipeline VkCommandContext::vkGraphicsPipeline() const
 VkPipeline VkCommandContext::vkComputePipeline() const
 {
 	return m_Impl->vkComputePipeline();
+}
+
+double VkCommandContext::GetLastFrameElapsedTime() const
+{
+	return m_Impl->GetElapsedTime();
 }
 
 } // namespace vk

@@ -58,7 +58,7 @@ Arc< Dx12CommandContext > Dx12CommandQueue::Allocate()
 
 Arc< Dx12CommandContext > Dx12CommandQueue::RequestList()
 {
-	return MakeArc< Dx12CommandContext >(m_RenderDevice, m_Type);
+	return MakeArc< Dx12CommandContext >(m_RenderDevice, *this, m_Type);
 }
 
 u64 Dx12CommandQueue::ExecuteCommandList(Arc< Dx12CommandContext > pContext)

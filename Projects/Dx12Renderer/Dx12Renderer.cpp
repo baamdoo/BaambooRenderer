@@ -52,15 +52,15 @@ static std::wstring GetLatestWinPixGpuCapturerPath()
 Renderer::Renderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext)
 {
 	DX_CHECK(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
-	//if (auto pixPath = GetLatestWinPixGpuCapturerPath(); !pixPath.empty())
-	//{
-	//	// Check to see if a copy of WinPixGpuCapturer.dll has already been injected into the application.
-	//	// This may happen if the application is launched through the PIX UI. 
-	//	if (GetModuleHandle(L"WinPixGpuCapturer.dll") == 0)
-	//	{
-	//		LoadLibrary(pixPath.c_str());
-	//	}
-	//}
+	if (auto pixPath = GetLatestWinPixGpuCapturerPath(); !pixPath.empty())
+	{
+		// Check to see if a copy of WinPixGpuCapturer.dll has already been injected into the application.
+		// This may happen if the application is launched through the PIX UI. 
+		if (GetModuleHandle(L"WinPixGpuCapturer.dll") == 0)
+		{
+			LoadLibrary(pixPath.c_str());
+		}
+	}
 	//system("PAUSE");
 
 	m_pRenderDevice = new Dx12RenderDevice(false);

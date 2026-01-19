@@ -102,6 +102,8 @@ public:
         Dispatch(numGroupsX, numGroupsY, numGroupsZ);
     }
 
+    virtual double GetLastFrameElapsedTime() const = 0;
+
 private:
     template< typename T >
     constexpr T RoundUpAndDivide(T Value, size_t Alignment)

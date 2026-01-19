@@ -44,10 +44,13 @@ VkRenderDevice::VkRenderDevice()
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_IndexTypeUint8)
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_Sync2)
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_MeshShader)
+		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_StorageBuffer8BitAccess)
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_SwapChainMaintenance).Build(m_vkInstance);
 	m_vkPhysicalDevice         = deviceBuilder.physicalDevice;
 	m_PhysicalDeviceProperties = deviceBuilder.physicalDeviceProperties;
 	m_PhysicalDeviceMaintenance3Properties = deviceBuilder.physicalDeviceMaintenance3Properties;
+
+	m_Supports.bMeshShader = deviceBuilder.bSupportMeshShader;
 
 	m_pGraphicsQueue = new CommandQueue(*this, deviceBuilder.queueFamilyIndices.graphicsQueueIndex, eCommandType::Graphics);
 	m_pComputeQueue  = new CommandQueue(*this, deviceBuilder.queueFamilyIndices.computeQueueIndex, eCommandType::Compute);

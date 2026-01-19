@@ -4,6 +4,11 @@
 namespace render 
 {
 
+struct DeviceSupports
+{
+    bool bMeshShader;
+};
+
 class RenderDevice
 {
 public:
@@ -39,12 +44,16 @@ public:
     void SetWindowWidth(u32 width) { m_WindowWidth = width; }
     void SetWindowHeight(u32 height) { m_WindowHeight = height; }
 
+    inline const DeviceSupports& GetDeviceSupports() const { return m_Supports; }
+
 protected:
     u32 m_NumContexts  = 0;
     u32 m_ContextIndex = 0;
 
     u32 m_WindowWidth  = 0;
     u32 m_WindowHeight = 0;
+
+    DeviceSupports m_Supports = {};
 };
 
 } // namespace render

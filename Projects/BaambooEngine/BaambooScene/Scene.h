@@ -101,6 +101,8 @@ private:
 	u32 StoreSkeletonData(const Skeleton& skeleton);
 	u32 StoreAnimationClip(const AnimationClip& clip);
 
+	void OnEntityRemoved(Entity entity);
+
 private:
 	friend class Entity;
 	entt::registry m_Registry;

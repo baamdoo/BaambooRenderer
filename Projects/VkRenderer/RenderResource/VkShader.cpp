@@ -94,10 +94,10 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, VulkanShader::Sh
 				return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
 			case spv::ExecutionModelTessellationEvaluation:
 				return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-			case spv::ExecutionModelTaskNV:
-				return VK_SHADER_STAGE_TASK_BIT_NV;
-			case spv::ExecutionModelMeshNV:
-				return VK_SHADER_STAGE_MESH_BIT_NV;
+			case spv::ExecutionModelTaskEXT:
+				return VK_SHADER_STAGE_TASK_BIT_EXT;
+			case spv::ExecutionModelMeshEXT:
+				return VK_SHADER_STAGE_MESH_BIT_EXT;
 			case spv::ExecutionModelGLCompute:
 				return VK_SHADER_STAGE_COMPUTE_BIT;
 			default:

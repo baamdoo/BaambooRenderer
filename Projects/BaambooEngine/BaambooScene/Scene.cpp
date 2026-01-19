@@ -63,6 +63,8 @@ void Scene::RemoveEntity(Entity entity)
 {
 	printf("remove entity_%d\n", entity.id());
 
+	//OnEntityRemoved(entity);
+
 	if (entity.GetComponent< TransformComponent >().hierarchy.parent != entt::null)
 		m_pTransformSystem->DetachChild(entity.ID());
 
@@ -151,7 +153,7 @@ Entity Scene::ImportModel(Entity rootEntity, const fs::path& filepath, MeshDescr
 
 			float3 scale, translation, skew;
 			float4 perspective;
-			quat rotation;
+			quat   rotation;
 			glm::decompose(node->mTransform, scale, rotation, translation, skew, perspective);
 
 			transformComponent.transform.position = translation;
@@ -169,24 +171,36 @@ Entity Scene::ImportModel(Entity rootEntity, const fs::path& filepath, MeshDescr
 				if (meshData.bHasSkinnedData && skeletonID != INVALID_INDEX)
 				{
 					// skinned mesh
-					auto& mesh      = meshEntity.AttachComponent< SkinnedMeshComponent >();
-					mesh.skeletonID = skeletonID;
-					mesh.meshID     = StoreMeshData(meshData);
+					auto& meshComponent = meshEntity.AttachComponent< SkinnedMeshComponent >();
+					meshComponent.skeletonID = skeletonID;
+					meshComponent.meshID     = StoreMeshData(meshData);
 				}
 				else
 				{
 					// static mesh
-					auto& mesh = meshEntity.AttachComponent< StaticMeshComponent >();
-					mesh.path  = filepath.string();
+					auto& meshComponent = meshEntity.AttachComponent< StaticMeshComponent >();
+					meshComponent.path  = filepath.string();
 
-					mesh.aabb   = meshData.aabb;
-					mesh.sphere = BoundingSphere(meshData.aabb);
+					meshComponent.aabb   = meshData.aabb;
+					meshComponent.sphere = BoundingSphere(meshData.aabb);
 
-					mesh.numVertices  = static_cast<u32>(meshData.vertices.size());
-					mesh.numIndices   = static_cast<u32>(meshData.indices.size());
-					mesh.pVertices    = const_cast<Vertex*>(meshData.vertices.data());
-					if (mesh.numIndices > 0)
-						mesh.pIndices = const_cast<Index*>(meshData.indices.data());
+					meshComponent.numVertices = static_cast<u32>(meshData.vertices.size());
+					meshComponent.numIndices  = static_cast<u32>(meshData.indices.size());
+					meshComponent.pVertices   = const_cast<Vertex*>(meshData.vertices.data());
+					if (meshComponent.numIndices > 0)
+						meshComponent.pIndices = const_cast<Index*>(meshData.indices.data());
+
+					meshComponent.numMeshlets = static_cast<u32>(meshData.meshlets.size());
+					if (meshComponent.numMeshlets > 0)
+					{
+						meshComponent.pMeshlets = const_cast<Meshlet*>(meshData.meshlets.data());
+						
+						meshComponent.numMeshletVertices = static_cast<u32>(meshData.meshletVertices.size());
+						meshComponent.pMeshletVertices   = const_cast<u32*>(meshData.meshletVertices.data());
+
+						meshComponent.numMeshletTriangles = static_cast<u32>(meshData.meshletTriangles.size());
+						meshComponent.pMeshletTriangles   = const_cast<u8*>(meshData.meshletTriangles.data());
+					}
 				}
 
 				// Material
@@ -257,6 +271,31 @@ u32 Scene::StoreAnimationClip(const AnimationClip& clip)
 	u32 id = nextClipID++;
 	m_AnimationClips[id] = clip;
 	return id;
+}
+
+void Scene::OnEntityRemoved(Entity entity)
+{
+	Registry().patch< TransformComponent >(entity.ID(), [](auto&) {});
+	if (entity.HasAny< StaticMeshComponent >())
+	{
+		Registry().patch< StaticMeshComponent >(entity.ID(), [](auto&) {});
+	}
+	if (entity.HasAny< MaterialComponent >())
+	{
+		Registry().patch< MaterialComponent >(entity.ID(), [](auto&) {});
+	}
+	if (entity.HasAny< LightComponent >())
+	{
+		Registry().patch< LightComponent >(entity.ID(), [](auto&) {});
+	}
+	if (entity.HasAny< AtmosphereComponent >())
+	{
+		Registry().patch< AtmosphereComponent >(entity.ID(), [](auto&) {});
+	}
+	if (entity.HasAny< CloudComponent >())
+	{
+		Registry().patch< CloudComponent >(entity.ID(), [](auto&) {});
+	}
 }
 
 void Scene::Update(f32 dt, const EditorCamera& edCamera)

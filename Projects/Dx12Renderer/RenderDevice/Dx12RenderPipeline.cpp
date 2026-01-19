@@ -149,7 +149,7 @@ Dx12GraphicsPipeline::Dx12GraphicsPipeline(Dx12RenderDevice& rd, const char* nam
 
     m_PipelineDesc.DepthStencilState               = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
     m_PipelineDesc.DepthStencilState.DepthEnable   = FALSE;
-    m_PipelineDesc.DepthStencilState.DepthFunc     = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+    m_PipelineDesc.DepthStencilState.DepthFunc     = D3D12_COMPARISON_FUNC_GREATER; // Reversed-Z
     m_PipelineDesc.DepthStencilState.StencilEnable = FALSE;
 
     m_PipelineDesc.SampleMask            = UINT_MAX;
@@ -270,36 +270,79 @@ GraphicsPipeline& Dx12GraphicsPipeline::SetAlphaBlending(u32 renderTargetIndex, 
 
 void Dx12GraphicsPipeline::Build()
 {
-    auto d3d12VS = StaticCast<Dx12Shader>(m_pVS);
-    auto d3d12PS = StaticCast<Dx12Shader>(m_pPS);
-    auto d3d12GS = StaticCast<Dx12Shader>(m_pGS);
-    auto d3d12HS = StaticCast<Dx12Shader>(m_pHS);
-    auto d3d12DS = StaticCast<Dx12Shader>(m_pDS);
-    assert(d3d12VS && d3d12PS);
+    if (m_bMeshShader)
+    {
+        auto d3d12MS = StaticCast<Dx12Shader>(m_pMS);
+        auto d3d12AS = StaticCast<Dx12Shader>(m_pTS);
+        auto d3d12PS = StaticCast<Dx12Shader>(m_pPS);
+        assert(d3d12MS && d3d12PS);
 
-    m_PipelineDesc.VS = CD3DX12_SHADER_BYTECODE(d3d12VS->GetShaderBufferPointer(), d3d12VS->GetShaderBufferSize());
-    m_PipelineDesc.PS = CD3DX12_SHADER_BYTECODE(d3d12PS->GetShaderBufferPointer(), d3d12PS->GetShaderBufferSize());
-    m_PipelineDesc.GS = d3d12GS ?
-        CD3DX12_SHADER_BYTECODE(d3d12GS->GetShaderBufferPointer(), d3d12GS->GetShaderBufferSize()) : CD3DX12_SHADER_BYTECODE();
-    m_PipelineDesc.HS = d3d12HS ?
-        CD3DX12_SHADER_BYTECODE(d3d12HS->GetShaderBufferPointer(), d3d12HS->GetShaderBufferSize()) : CD3DX12_SHADER_BYTECODE();
-    m_PipelineDesc.DS = d3d12DS ?
-        CD3DX12_SHADER_BYTECODE(d3d12DS->GetShaderBufferPointer(), d3d12DS->GetShaderBufferSize()) : CD3DX12_SHADER_BYTECODE();
+        MeshPipelineStream Stream;
 
-    SetVertexInputLayout(d3d12VS->GetD3D12ShaderReflection());
+        Stream.MS = CD3DX12_SHADER_BYTECODE(d3d12MS->GetShaderBufferPointer(), d3d12MS->GetShaderBufferSize());
+        Stream.PS = CD3DX12_SHADER_BYTECODE(d3d12PS->GetShaderBufferPointer(), d3d12PS->GetShaderBufferSize());
+        Stream.AS = d3d12AS ?
+            CD3DX12_SHADER_BYTECODE(d3d12AS->GetShaderBufferPointer(), d3d12AS->GetShaderBufferSize()) : CD3DX12_SHADER_BYTECODE();
 
-    // Root Signature
-    ParseRootParameters(d3d12VS->Reflection());
-    ParseRootParameters(d3d12PS->Reflection());
-    if (d3d12GS) ParseRootParameters(d3d12GS->Reflection());
-    if (d3d12HS) ParseRootParameters(d3d12HS->Reflection());
-    if (d3d12DS) ParseRootParameters(d3d12DS->Reflection());
-    m_PipelineDesc.pRootSignature = m_pRootSignature->GetD3D12RootSignature();
+        D3D12_RT_FORMAT_ARRAY rtvFormats = {};
+        rtvFormats.NumRenderTargets = m_PipelineDesc.NumRenderTargets;
+        memcpy(rtvFormats.RTFormats, m_PipelineDesc.RTVFormats, sizeof(DXGI_FORMAT) * 8);
 
-    auto d3d12Device = m_RenderDevice.GetD3D12Device();
-    ThrowIfFailed(
-        d3d12Device->CreateGraphicsPipelineState(&m_PipelineDesc, IID_PPV_ARGS(&m_d3d12PipelineState))
-    );
+        Stream.RTVFormats = rtvFormats;
+        Stream.DSVFormat  = m_PipelineDesc.DSVFormat;
+        Stream.SampleDesc = m_PipelineDesc.SampleDesc;
+
+        Stream.RasterizerState   = CD3DX12_RASTERIZER_DESC(m_PipelineDesc.RasterizerState);
+        Stream.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(m_PipelineDesc.DepthStencilState);
+        Stream.BlendState        = CD3DX12_BLEND_DESC(m_PipelineDesc.BlendState);
+
+        ParseRootParameters(d3d12MS->Reflection());
+        ParseRootParameters(d3d12PS->Reflection());
+        if (d3d12AS) ParseRootParameters(d3d12AS->Reflection());
+        Stream.pRootSignature = m_pRootSignature->GetD3D12RootSignature();
+
+        D3D12_PIPELINE_STATE_STREAM_DESC streamDesc = {};
+        streamDesc.SizeInBytes                   = sizeof(MeshPipelineStream);
+        streamDesc.pPipelineStateSubobjectStream = &Stream;
+
+        auto d3d12Device = m_RenderDevice.GetD3D12Device();
+        ThrowIfFailed(
+            d3d12Device->CreatePipelineState(&streamDesc, IID_PPV_ARGS(&m_d3d12PipelineState))
+        );
+    }
+    else
+    {
+        auto d3d12VS = StaticCast<Dx12Shader>(m_pVS);
+        auto d3d12PS = StaticCast<Dx12Shader>(m_pPS);
+        auto d3d12GS = StaticCast<Dx12Shader>(m_pGS);
+        auto d3d12HS = StaticCast<Dx12Shader>(m_pHS);
+        auto d3d12DS = StaticCast<Dx12Shader>(m_pDS);
+        assert(d3d12VS && d3d12PS);
+
+        m_PipelineDesc.VS = CD3DX12_SHADER_BYTECODE(d3d12VS->GetShaderBufferPointer(), d3d12VS->GetShaderBufferSize());
+        m_PipelineDesc.PS = CD3DX12_SHADER_BYTECODE(d3d12PS->GetShaderBufferPointer(), d3d12PS->GetShaderBufferSize());
+        m_PipelineDesc.GS = d3d12GS ?
+            CD3DX12_SHADER_BYTECODE(d3d12GS->GetShaderBufferPointer(), d3d12GS->GetShaderBufferSize()) : CD3DX12_SHADER_BYTECODE();
+        m_PipelineDesc.HS = d3d12HS ?
+            CD3DX12_SHADER_BYTECODE(d3d12HS->GetShaderBufferPointer(), d3d12HS->GetShaderBufferSize()) : CD3DX12_SHADER_BYTECODE();
+        m_PipelineDesc.DS = d3d12DS ?
+            CD3DX12_SHADER_BYTECODE(d3d12DS->GetShaderBufferPointer(), d3d12DS->GetShaderBufferSize()) : CD3DX12_SHADER_BYTECODE();
+
+        SetVertexInputLayout(d3d12VS->GetD3D12ShaderReflection());
+
+        // Root Signature
+        ParseRootParameters(d3d12VS->Reflection());
+        ParseRootParameters(d3d12PS->Reflection());
+        if (d3d12GS) ParseRootParameters(d3d12GS->Reflection());
+        if (d3d12HS) ParseRootParameters(d3d12HS->Reflection());
+        if (d3d12DS) ParseRootParameters(d3d12DS->Reflection());
+        m_PipelineDesc.pRootSignature = m_pRootSignature->GetD3D12RootSignature();
+
+        auto d3d12Device = m_RenderDevice.GetD3D12Device();
+        ThrowIfFailed(
+            d3d12Device->CreateGraphicsPipelineState(&m_PipelineDesc, IID_PPV_ARGS(&m_d3d12PipelineState))
+        );
+    }
 }
 
 void Dx12GraphicsPipeline::SetVertexInputLayout(ID3D12ShaderReflection* d3d12ShaderReflection)
@@ -339,7 +382,12 @@ void Dx12GraphicsPipeline::ParseRootParameters(const Dx12Shader::ShaderReflectio
             case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
             case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
             {
-                auto rootIndex = m_pRootSignature->GetRootIndex(space, descriptor.baseRegister);
+                D3D12_ROOT_PARAMETER_TYPE type = 
+                    space == ROOT_CONSTANT_SPACE ? D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS : 
+                    descriptor.rangeType == D3D12_DESCRIPTOR_RANGE_TYPE_CBV ? D3D12_ROOT_PARAMETER_TYPE_CBV :
+                    descriptor.rangeType == D3D12_DESCRIPTOR_RANGE_TYPE_UAV ? D3D12_ROOT_PARAMETER_TYPE_UAV : D3D12_ROOT_PARAMETER_TYPE_SRV;
+
+                auto rootIndex = m_pRootSignature->GetRootIndex(type, space, descriptor.baseRegister);
 
                 m_ResourceBindingMap.emplace(descriptor.name, rootIndex);
                 break;
@@ -397,7 +445,12 @@ void Dx12ComputePipeline::ParseRootParameters(const Dx12Shader::ShaderReflection
             case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
             case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
             {
-                auto rootIndex = m_pRootSignature->GetRootIndex(space, descriptor.baseRegister);
+                D3D12_ROOT_PARAMETER_TYPE type =
+                    space == ROOT_CONSTANT_SPACE ? D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS : 
+                    descriptor.rangeType == D3D12_DESCRIPTOR_RANGE_TYPE_CBV ? D3D12_ROOT_PARAMETER_TYPE_CBV :
+                    descriptor.rangeType == D3D12_DESCRIPTOR_RANGE_TYPE_UAV ? D3D12_ROOT_PARAMETER_TYPE_UAV : D3D12_ROOT_PARAMETER_TYPE_SRV;
+
+                auto rootIndex = m_pRootSignature->GetRootIndex(type, space, descriptor.baseRegister);
 
                 m_ResourceBindingMap.emplace(descriptor.name, rootIndex);
                 break;

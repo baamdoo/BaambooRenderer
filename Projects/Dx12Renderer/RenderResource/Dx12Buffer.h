@@ -93,9 +93,9 @@ class Dx12StructuredBuffer : public Dx12Buffer
 {
 using Super = Dx12Buffer;
 public:
-    static Arc< Dx12StructuredBuffer > Create(Dx12RenderDevice& rd, const char* name, u64 sizeInBytes, RenderFlags additionalUsage = 0);
+    static Arc< Dx12StructuredBuffer > Create(Dx12RenderDevice& rd, const char* name, u64 elementSizeInBytes, u64 numElements, RenderFlags additionalUsage = 0);
 
-    Dx12StructuredBuffer(Dx12RenderDevice& rd, const char* name, u64 sizeInBytes, RenderFlags additionalUsage = 0);
+    Dx12StructuredBuffer(Dx12RenderDevice& rd, const char* name, u64 elementSizeInBytes, u64 numElements, RenderFlags additionalUsage = 0);
     virtual ~Dx12StructuredBuffer();
 
     D3D12_CPU_DESCRIPTOR_HANDLE GetShaderResourceView() const { return m_SRVAllocation.GetCPUHandle(); }

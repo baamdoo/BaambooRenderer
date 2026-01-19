@@ -136,16 +136,16 @@ Dx12ConstantBuffer::~Dx12ConstantBuffer()
 //-------------------------------------------------------------------------
 // Structured Buffer
 //-------------------------------------------------------------------------
-Arc< Dx12StructuredBuffer > Dx12StructuredBuffer::Create(Dx12RenderDevice& rd, const char* name, u64 sizeInBytes, RenderFlags additionalUsage)
+Arc< Dx12StructuredBuffer > Dx12StructuredBuffer::Create(Dx12RenderDevice& rd, const char* name, u64 elementSizeInBytes, u64 numElements, RenderFlags additionalUsage)
 {
-	return MakeArc< Dx12StructuredBuffer >(rd, name, sizeInBytes, additionalUsage);
+	return MakeArc< Dx12StructuredBuffer >(rd, name, elementSizeInBytes, numElements, additionalUsage);
 }
 
-Dx12StructuredBuffer::Dx12StructuredBuffer(Dx12RenderDevice& rd, const char* name, u64 sizeInBytes, RenderFlags additionalUsage)
+Dx12StructuredBuffer::Dx12StructuredBuffer(Dx12RenderDevice& rd, const char* name, u64 elementSizeInBytes, u64 numElements, RenderFlags additionalUsage)
 	: Super(rd, name, 
 		{
-			.count              = 1,
-			.elementSizeInBytes = sizeInBytes,
+			.count              = numElements,
+			.elementSizeInBytes = elementSizeInBytes,
 			.bufferUsage        = additionalUsage
 									| render::eBufferUsage_Storage
 									| render::eBufferUsage_ShaderDeviceAddress
@@ -164,7 +164,7 @@ Dx12StructuredBuffer::Dx12StructuredBuffer(Dx12RenderDevice& rd, const char* nam
 		srvDesc.ViewDimension              = D3D12_SRV_DIMENSION_BUFFER;
 		srvDesc.Buffer.FirstElement        = 0;
 		srvDesc.Buffer.NumElements         = m_Count;
-		srvDesc.Buffer.StructureByteStride = static_cast<u32>(m_ElementSize);
+		srvDesc.Buffer.StructureByteStride = static_cast<u32>(elementSizeInBytes);
 		srvDesc.Buffer.Flags               = D3D12_BUFFER_SRV_FLAG_NONE;
 
 		d3d12Device->CreateShaderResourceView(m_d3d12Resource, &srvDesc, m_SRVAllocation.GetCPUHandle());

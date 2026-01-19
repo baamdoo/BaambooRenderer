@@ -34,12 +34,16 @@ Dx12ResourceManager::Dx12ResourceManager(Dx12RenderDevice& rd)
     }
     // Global CBVs
     m_pGlobalRootSignature->AddCBV(0, GLOBAL_DESCRIPTOR_SPACE);          // g_Camera
-    m_pGlobalRootSignature->AddConstants(1, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Transforms
-    m_pGlobalRootSignature->AddConstants(2, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Materials
-    m_pGlobalRootSignature->AddCBV(3, GLOBAL_DESCRIPTOR_SPACE);          // g_Lights
-    m_pGlobalRootSignature->AddCBV(4, GLOBAL_DESCRIPTOR_SPACE);          // g_SceneEnvironment
+    m_pGlobalRootSignature->AddConstants(1, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Vertices
+    m_pGlobalRootSignature->AddConstants(2, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Meshlets
+    m_pGlobalRootSignature->AddConstants(3, GLOBAL_DESCRIPTOR_SPACE, 1); // g_MeshletVertices
+    m_pGlobalRootSignature->AddConstants(4, GLOBAL_DESCRIPTOR_SPACE, 1); // g_MeshletTriangles
+    m_pGlobalRootSignature->AddConstants(5, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Transforms
+    m_pGlobalRootSignature->AddConstants(6, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Materials
+    m_pGlobalRootSignature->AddCBV(7, GLOBAL_DESCRIPTOR_SPACE);          // g_Lights
+    m_pGlobalRootSignature->AddCBV(8, GLOBAL_DESCRIPTOR_SPACE);          // g_SceneEnvironment
     // Local CBVs
-    for (u32 i = 0; i < MAX_CBVS - 4; ++i)
+    for (u32 i = 0; i < MAX_VIEWS - 6; ++i)
     {
         m_pGlobalRootSignature->AddCBV(i, 1);
     }

@@ -53,7 +53,7 @@ using Super = Resource;
 public:
     struct CreationInfo
     {
-        u32  count              = 0;
+        u64  count              = 0;
         u64  elementSizeInBytes = 0;
         bool bMap               = false;
 
@@ -632,6 +632,8 @@ public:
     virtual Arc< Texture > GetFlatWhiteTexture3D() { return m_pWhiteTexture3D; }
     virtual Arc< Texture > GetFlatBlackTexture3D() { return m_pBlackTexture3D; }
 
+    virtual Arc< Texture > GetFlatBlackTextureCube() { return m_pBlackTextureCube; }
+
     /*void SetBuffer(const std::string& name, Weak< Buffer > buffer);
     void SetTexture(const std::string& name, Weak< Texture > texture);
     void SetSampler(const std::string& name, Arc< Sampler > sampler);
@@ -649,6 +651,8 @@ protected:
 
     Arc< Texture > m_pWhiteTexture3D;
     Arc< Texture > m_pBlackTexture3D;
+
+    Arc< Texture > m_pBlackTextureCube;
 
     /*std::unordered_map< std::string, Weak< Buffer > >  m_Buffers;
     std::unordered_map< std::string, Weak< Texture > > m_Textures;

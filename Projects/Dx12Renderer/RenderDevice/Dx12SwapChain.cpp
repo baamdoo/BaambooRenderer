@@ -14,15 +14,15 @@ Dx12SwapChain::Dx12SwapChain(Dx12RenderDevice& rd, baamboo::Window& window)
 	, m_Window(window)
 {
 	auto d3d12CommandQueue = m_RenderDevice.GraphicsQueue().GetD3D12CommandQueue();
-	IDXGIFactory4* dxgiFactory = nullptr;
+	IDXGIFactory7* dxgiFactory7 = nullptr;
 
 	DWORD dwCreateFactoryFlags = 0;
 
 #if defined(_DEBUG)
-	dwCreateFactoryFlags = DXGI_CREATE_FACTORY_DEBUG;
+	//dwCreateFactoryFlags = DXGI_CREATE_FACTORY_DEBUG;
 #endif
 
-	CreateDXGIFactory2(dwCreateFactoryFlags, IID_PPV_ARGS(&dxgiFactory));
+	CreateDXGIFactory2(dwCreateFactoryFlags, IID_PPV_ARGS(&dxgiFactory7));
 
 	// SwapChain
 	{
@@ -46,17 +46,17 @@ Dx12SwapChain::Dx12SwapChain(Dx12RenderDevice& rd, baamboo::Window& window)
 
 		IDXGISwapChain1* pSwapChain1 = nullptr;
 		ThrowIfFailed(
-			dxgiFactory->CreateSwapChainForHwnd(d3d12CommandQueue, m_Window.WinHandle(), &swapChainDesc, &fsSwapChainDesc, nullptr, &pSwapChain1)
+			dxgiFactory7->CreateSwapChainForHwnd(d3d12CommandQueue, m_Window.WinHandle(), &swapChainDesc, &fsSwapChainDesc, nullptr, &pSwapChain1)
 		);
-		pSwapChain1->QueryInterface(IID_PPV_ARGS(&m_dxgiSwapChain));
+		pSwapChain1->QueryInterface(IID_PPV_ARGS(&m_dxgiSwapChain4));
 		pSwapChain1->Release();
 		pSwapChain1 = nullptr;
 
-		m_ImageIndex = m_dxgiSwapChain->GetCurrentBackBufferIndex();
+		m_ImageIndex = m_dxgiSwapChain4->GetCurrentBackBufferIndex();
 
 		CreateSwapChainResources();
 	}
-	COM_RELEASE(dxgiFactory);
+	COM_RELEASE(dxgiFactory7);
 
 	// update values in render-device to easily be referenced by other dx12-components
 	m_RenderDevice.SetWindowWidth(m_Window.Width());
@@ -65,21 +65,21 @@ Dx12SwapChain::Dx12SwapChain(Dx12RenderDevice& rd, baamboo::Window& window)
 
 Dx12SwapChain::~Dx12SwapChain()
 {
-	COM_RELEASE(m_dxgiSwapChain);
+	COM_RELEASE(m_dxgiSwapChain4);
 }
 
 HRESULT Dx12SwapChain::Present()
 {
-	auto hr = m_dxgiSwapChain->Present(m_Window.Desc().bVSync, m_Window.Desc().bVSync ? 0 : DXGI_PRESENT_ALLOW_TEARING);
+	auto hr = m_dxgiSwapChain4->Present(m_Window.Desc().bVSync, m_Window.Desc().bVSync ? 0 : DXGI_PRESENT_ALLOW_TEARING);
 
-	m_ImageIndex = m_dxgiSwapChain->GetCurrentBackBufferIndex();
+	m_ImageIndex = m_dxgiSwapChain4->GetCurrentBackBufferIndex();
 
 	return hr;
 }
 
 void Dx12SwapChain::ResizeViewport(u32 width, u32 height)
 {
-	if (!m_dxgiSwapChain)
+	if (!m_dxgiSwapChain4)
 		return;
 
 	// need to release all references before resize buffers
@@ -90,20 +90,20 @@ void Dx12SwapChain::ResizeViewport(u32 width, u32 height)
 	}
 
 	DXGI_SWAP_CHAIN_DESC1 desc = {};
-	DX_CHECK(m_dxgiSwapChain->GetDesc1(&desc));
-	DX_CHECK(m_dxgiSwapChain->ResizeBuffers(NUM_FRAMES_IN_FLIGHT, width, height, desc.Format, desc.Flags));
+	DX_CHECK(m_dxgiSwapChain4->GetDesc1(&desc));
+	DX_CHECK(m_dxgiSwapChain4->ResizeBuffers(NUM_FRAMES_IN_FLIGHT, width, height, desc.Format, desc.Flags));
 	for (u32 i = 0; i < NUM_FRAMES_IN_FLIGHT; ++i)
 	{
 		auto pTex = m_pBackImages[i];
 		assert(pTex);
 
 		ID3D12Resource* d3d12Resource = nullptr;
-		m_dxgiSwapChain->GetBuffer(i, IID_PPV_ARGS(&d3d12Resource));
+		m_dxgiSwapChain4->GetBuffer(i, IID_PPV_ARGS(&d3d12Resource));
 
 		pTex->SetD3D12Resource(d3d12Resource);
 	}
 
-	m_ImageIndex = m_dxgiSwapChain->GetCurrentBackBufferIndex();
+	m_ImageIndex = m_dxgiSwapChain4->GetCurrentBackBufferIndex();
 }
 
 void Dx12SwapChain::CreateSwapChainResources()
@@ -111,7 +111,7 @@ void Dx12SwapChain::CreateSwapChainResources()
 	for (u32 i = 0; i < NUM_FRAMES_IN_FLIGHT; ++i)
 	{
 		ID3D12Resource* d3d12Resource = nullptr;
-		m_dxgiSwapChain->GetBuffer(i, IID_PPV_ARGS(&d3d12Resource));
+		m_dxgiSwapChain4->GetBuffer(i, IID_PPV_ARGS(&d3d12Resource));
 
 		auto pTex = MakeArc< Dx12Texture >(m_RenderDevice, std::string("SwapChain::RTV_" + std::to_string(i)).c_str());
 		pTex->SetD3D12Resource(d3d12Resource);

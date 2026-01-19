@@ -14,7 +14,7 @@ class Dx12RenderTarget;
 class Dx12CommandContext : public render::CommandContext
 {
 public:
-	Dx12CommandContext(Dx12RenderDevice& rd, D3D12_COMMAND_LIST_TYPE type);
+	Dx12CommandContext(Dx12RenderDevice& rd, const Dx12CommandQueue& cq, D3D12_COMMAND_LIST_TYPE type);
 	virtual ~Dx12CommandContext() = default;
 
 	void Open();
@@ -69,12 +69,14 @@ public:
 	virtual void DrawScene(const render::SceneResource& sceneResource) override;
 	virtual void Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ) override;
 
+	virtual double GetLastFrameElapsedTime() const override;
+
 public:
 	bool IsComputeContext() const;
 	bool IsGraphicsContext() const;
 
 	D3D12_COMMAND_LIST_TYPE GetCommandListType() const;
-	ID3D12GraphicsCommandList2* GetD3D12CommandList() const;
+	ID3D12GraphicsCommandList10* GetD3D12CommandList() const;
 
 private:
 	class Impl;

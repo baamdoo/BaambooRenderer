@@ -39,6 +39,11 @@ void CloudSystem::OnComponentDestroyed(entt::registry& registry, entt::entity en
 
 std::vector< u64 > CloudSystem::UpdateRenderData(const EditorCamera& edCamera)
 {
+	for (auto entity : m_ExpiredEntities)
+	{
+		RemoveRenderData(entt::to_integral(entity));
+	}
+
 	std::vector< u64 > markedEntities;
     if (m_DirtyEntities.empty())
         return markedEntities;

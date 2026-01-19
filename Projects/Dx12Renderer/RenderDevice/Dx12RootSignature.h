@@ -75,7 +75,7 @@ public:
 
 	const std::vector< CD3DX12_ROOT_PARAMETER1 >& GetParameters() const { return m_RootParameters; }
 
-	u32 GetRootIndex(u32 space, u32 reg) const;
+	u32 GetRootIndex(D3D12_ROOT_PARAMETER_TYPE type, u32 space, u32 reg) const;
 
 private:
 	u32 AddParameter(const CD3DX12_ROOT_PARAMETER1& param);
@@ -89,7 +89,19 @@ private:
 	std::vector< CD3DX12_ROOT_PARAMETER1 >	   m_RootParameters;
 	std::vector< CD3DX12_STATIC_SAMPLER_DESC > m_StaticSamplers;
 
-	std::unordered_map< LONG, u32 > m_RootIndexMap;
+	using RootKey = std::pair< D3D12_ROOT_PARAMETER_TYPE, LONG >;
+	struct RootKeyHash
+	{
+		std::size_t operator()(const RootKey& key) const
+		{
+			std::size_t h1 = std::hash<int>{}(static_cast<int>(key.first));
+			std::size_t h2 = std::hash<LONG>{}(key.second);
+
+			return h1 ^ (h2 + 0x9e3779b9 + (h1 << 6) + (h1 >> 2));
+		}
+	};
+
+	std::unordered_map< RootKey, u32, RootKeyHash > m_RootIndexMap;
 
 	// -- To be deprecated -- //
 	std::vector< u32 >             m_DescriptorTableIndices;

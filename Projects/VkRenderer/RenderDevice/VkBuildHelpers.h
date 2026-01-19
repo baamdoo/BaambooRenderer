@@ -98,6 +98,8 @@ enum : u8
 	ePhysicalDeviceFeature_SamplerAnistropy,
 	ePhysicalDeviceFeature_DynamicRendering,
 	ePhysicalDeviceFeature_ShaderInt64,
+	ePhysicalDeviceFeature_StorageBuffer8BitAccess,
+	ePhysicalDeviceFeature_MeshShader,
 
 	// **
 	// 32 ~ 63 : More Extension Features
@@ -106,7 +108,6 @@ enum : u8
 	ePhysicalDeviceFeature_Sync2,
 	ePhysicalDeviceFeature_IndexTypeUint8,
 	ePhysicalDeviceFeature_SwapChainMaintenance,
-	ePhysicalDeviceFeature_MeshShader,
 };
 class DeviceBuilder
 {
@@ -143,6 +144,12 @@ public:
 		u32	computeQueueIndex = UINT_MAX;
 		u32	transferQueueIndex = UINT_MAX;
 	} queueFamilyIndices;
+
+public:
+	//-------------------------------------------------------------------------
+	// Device Capabilities
+	//-------------------------------------------------------------------------
+	bool bSupportMeshShader = false;
 
 private:
 	VkResult queryPhysicalDevice(VkInstance instance);

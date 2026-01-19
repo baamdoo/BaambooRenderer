@@ -31,7 +31,7 @@ private:
 	Dx12RenderDevice& m_RenderDevice;
 	baamboo::Window&  m_Window;
 
-	IDXGISwapChain3* m_dxgiSwapChain = nullptr;
+	IDXGISwapChain4* m_dxgiSwapChain4 = nullptr;
 
 	u32  m_ImageIndex = 0;
 	bool m_vSync = true;

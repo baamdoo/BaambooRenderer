@@ -140,34 +140,35 @@ void DynamicBufferAllocator::Page::Reset()
 //-------------------------------------------------------------------------
 // Static-Buffer Allocator
 //-------------------------------------------------------------------------
-StaticBufferAllocator::StaticBufferAllocator(Dx12RenderDevice& rd, const std::string& name, size_t bufferSize)
+StaticBufferAllocator::StaticBufferAllocator(Dx12RenderDevice& rd, const std::string& name, u64 elementSizeInBytes, u64 numElements)
 	: m_RenderDevice(rd)
 	, m_Name(name)
+	, m_ElementSizeInBytes(elementSizeInBytes)
+	, m_Alignment(D3D11_RAW_UAV_SRV_BYTE_ALIGNMENT)
 {
-	Resize(bufferSize);
+	Resize(elementSizeInBytes, numElements);
 }
 
 StaticBufferAllocator::~StaticBufferAllocator()
 {
 }
 
-StaticBufferAllocator::Allocation StaticBufferAllocator::Allocate(u32 numElements, u64 elementSizeInBytes)
+StaticBufferAllocator::Allocation StaticBufferAllocator::Allocate(u64 numElements, u64 elementSizeInBytes)
 {
-	auto sizeInBytes   = numElements * elementSizeInBytes;
-	size_t alignedSize = baamboo::math::AlignUp(sizeInBytes, m_Alignment);
-
-	m_OffsetInBytes = baamboo::math::AlignUp(m_OffsetInBytes, m_Alignment);
+	auto sizeInBytes = numElements * (elementSizeInBytes == 0 ? m_ElementSizeInBytes : elementSizeInBytes);
+	auto alignedSize = baamboo::math::AlignUp(sizeInBytes, m_Alignment);
+	
 	if (m_OffsetInBytes + alignedSize > m_SizeInBytes)
 	{
 		size_t newSize = (m_OffsetInBytes + alignedSize) * 2;
-		Resize(newSize);
+		Resize(m_ElementSizeInBytes, newSize / m_ElementSizeInBytes);
 	}
 
-	Allocation allocation;
-	allocation.pBuffer     = m_pBuffer;
-	allocation.offset      = (u32)(m_OffsetInBytes / elementSizeInBytes);
-	allocation.sizeInBytes = sizeInBytes;
-	allocation.gpuHandle   = m_BaseGpuHandle + m_OffsetInBytes;
+	Allocation allocation = {};
+	allocation.pBuffer       = m_pBuffer;
+	allocation.sizeInBytes   = alignedSize;
+	allocation.offsetInBytes = m_OffsetInBytes;
+	allocation.gpuHandle     = m_BaseGpuHandle + m_OffsetInBytes;
 
 	m_OffsetInBytes += alignedSize;
 
@@ -179,9 +180,9 @@ void StaticBufferAllocator::Reset()
 	m_OffsetInBytes = 0;
 }
 
-void StaticBufferAllocator::Resize(size_t sizeInBytes)
+void StaticBufferAllocator::Resize(u64 elementSizeInBytes, u64 numElements)
 {
-	auto pNewBuffer = Dx12StructuredBuffer::Create(m_RenderDevice, m_Name.c_str(), sizeInBytes, render::eBufferUsage_TransferSource | render::eBufferUsage_TransferDest);
+	auto pNewBuffer = Dx12StructuredBuffer::Create(m_RenderDevice, m_Name.c_str(), elementSizeInBytes, numElements, render::eBufferUsage_TransferSource | render::eBufferUsage_TransferDest);
 
 	if (m_OffsetInBytes > 0 && m_pBuffer)
 	{
@@ -200,7 +201,7 @@ void StaticBufferAllocator::Resize(size_t sizeInBytes)
 
 	m_pBuffer       = pNewBuffer;
 	m_BaseGpuHandle = m_pBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
-	m_SizeInBytes   = sizeInBytes;
+	m_SizeInBytes   = numElements * elementSizeInBytes;
 }
 
 } // namespace dx12

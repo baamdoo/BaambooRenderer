@@ -24,7 +24,7 @@ private:
 		StaticMeshRenderView mesh;
 		MaterialRenderView   material;
 
-		bool hasMaterial = false;
+		bool bHasMaterial = false;
 	};
 
 	std::unordered_map< u64, MeshRenderDataEntry > m_RenderData;

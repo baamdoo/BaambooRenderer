@@ -74,29 +74,31 @@ private:
 class StaticBufferAllocator
 {
 public:
-    StaticBufferAllocator(Dx12RenderDevice& rd, const std::string& name, size_t bufferSize = _4MB);
+    StaticBufferAllocator(Dx12RenderDevice& rd, const std::string& name, u64 elementSizeInBytes, u64 numElements);
     ~StaticBufferAllocator();
 
     struct Allocation
     {
-        Arc< Dx12StructuredBuffer >   pBuffer;
+        Arc< Dx12StructuredBuffer > pBuffer;
 
-        u64                       offset = 0;
-        u64                       sizeInBytes = 0;
-        D3D12_GPU_VIRTUAL_ADDRESS gpuHandle = 0;
+        u64                       sizeInBytes   = 0;
+        u64                       offsetInBytes = 0;
+        D3D12_GPU_VIRTUAL_ADDRESS gpuHandle     = 0;
     };
 
     [[nodiscard]]
-    Allocation Allocate(u32 numElements, u64 elementSizeInBytes);
+    Allocation Allocate(u64 numElements, u64 elementSizeInBytes = 0);
     void Reset();
 
+    [[nodiscard]]
+    u64 GetElementSize() const { return m_ElementSizeInBytes; }
     [[nodiscard]]
     u64 GetAllocatedSize() const { return m_OffsetInBytes; }
     [[nodiscard]]
     Arc< Dx12StructuredBuffer > GetBuffer() const { return m_pBuffer; }
 
 private:
-    void Resize(size_t sizeInBytes);
+    void Resize(u64 elementSizeInBytes, u64 numElements);
 
 private:
     Dx12RenderDevice& m_RenderDevice;
@@ -105,9 +107,10 @@ private:
     Arc< Dx12StructuredBuffer > m_pBuffer;
     D3D12_GPU_VIRTUAL_ADDRESS   m_BaseGpuHandle;
 
-    u64 m_SizeInBytes   = 0;
-    u64 m_OffsetInBytes = 0;
-    u64 m_Alignment     = 0;
+    u64 m_SizeInBytes        = 0;
+    u64 m_ElementSizeInBytes = 0;
+    u64 m_OffsetInBytes      = 0;
+    u64 m_Alignment          = 0;
 };
 
 }

@@ -34,7 +34,7 @@ public:
     virtual ~VkCommandContext() = default;
 
     void Open(VkCommandBufferUsageFlags flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
-    void Close();
+	void Close();
 
     virtual void CopyBuffer(Arc< render::Buffer > dstBuffer, Arc< render::Buffer > srcBuffer, u64 offsetInBytes = 0) override;
     virtual void CopyTexture(Arc< render::Texture > dstTexture, Arc< render::Texture > srcTexture, u64 offsetInBytes = 0) override;
@@ -143,6 +143,8 @@ public:
 	VkPipelineLayout vkComputePipelineLayout() const;
 	VkPipeline vkGraphicsPipeline() const;
 	VkPipeline vkComputePipeline() const;
+
+	virtual double GetLastFrameElapsedTime() const override;
 
 private:
     class Impl;

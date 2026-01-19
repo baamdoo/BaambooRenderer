@@ -310,6 +310,12 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 			physicalDeviceFeatures.shaderInt64 = VK_TRUE;
 		}
 
+		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_MeshShader))
+		{
+			physicalDevice12Features.storageBuffer8BitAccess = VK_TRUE;
+			physicalDevice13Features.maintenance4            = VK_TRUE;
+		}
+
 		physicalDeviceFeatures2.features = physicalDeviceFeatures;
 
 		featureChain.bind(physicalDeviceFeatures2);
@@ -362,12 +368,23 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 			VkPhysicalDeviceFeatures2 features2 = {};
 			features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 
-			VkPhysicalDeviceMeshShaderFeaturesNV meshShaderFeatures = {};
-			meshShaderFeatures.sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_NV;
-			meshShaderFeatures.taskShader = true;
-			meshShaderFeatures.meshShader = true;
+			VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT };
+			features2.pNext = &meshShaderFeatures;
+			vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
+			if (meshShaderFeatures.taskShader && meshShaderFeatures.meshShader)
+			{
+				meshShaderFeatures.multiviewMeshShader = VK_FALSE; // No use
 
-			featureChain.bind(meshShaderFeatures);
+				bSupportMeshShader = true;
+				featureChain.bind(meshShaderFeatures);
+
+				if (meshShaderFeatures.primitiveFragmentShadingRateMeshShader)
+				{
+					VkPhysicalDeviceFragmentShadingRateFeaturesKHR fragmentShadingRateFeatures = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR };
+					fragmentShadingRateFeatures.primitiveFragmentShadingRate = VK_TRUE;
+					featureChain.bind(fragmentShadingRateFeatures);
+				}
+			}
 		}
 
 		// More extension features ...

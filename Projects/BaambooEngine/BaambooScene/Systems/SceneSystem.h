@@ -33,7 +33,7 @@ public:
     virtual void OnComponentDestroyed(entt::registry& registry, entt::entity entity)
     {
         UNUSED(registry);
-        m_DirtyEntities.erase(entity);
+        m_ExpiredEntities.emplace(entity);
     }
 
     virtual std::vector< u64 > UpdateRenderData(const EditorCamera& edCamera) { UNUSED(edCamera); return {}; }
@@ -73,6 +73,7 @@ protected:
     entt::registry& m_Registry;
 
     std::unordered_set< entt::entity > m_DirtyEntities;
+    std::unordered_set< entt::entity > m_ExpiredEntities;
 
 private:
     template< typename TDependency >

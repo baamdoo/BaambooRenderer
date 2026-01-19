@@ -54,6 +54,13 @@ struct StaticMeshRenderView
 
 	const void* iData;
 	u32         iCount;
+
+	const void* mData;
+	u32         mCount;
+	const void* mvData;
+	u32         mvCount;
+	const void* mtData;
+	u32         mtCount;
 };
 
 struct MaterialRenderView
@@ -98,6 +105,8 @@ struct AtmosphereRenderView
 
 	u32   numFogRaymarchSteps;
 	float volumetricFogDistanceMeter;
+
+	std::string skybox;
 };
 
 struct CloudRenderView

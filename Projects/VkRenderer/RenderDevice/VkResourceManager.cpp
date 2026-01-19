@@ -26,6 +26,8 @@ VkResourceManager::VkResourceManager(VkRenderDevice& rd)
 	m_pWhiteTexture3D = CreateFlat3DTexture("DefaultTexture3D::White", 0xFFFFFFFFu);
 	m_pBlackTexture3D = CreateFlat3DTexture("DefaultTexture3D::Black", 0xFF000000u);
 
+	m_pBlackTextureCube = CreateFlatCubeTexture("DefaultTextureCube::Black", 0xFF000000u);
+
 	m_pSceneResource = new VkSceneResource(m_RenderDevice);
 }
 
@@ -415,6 +417,37 @@ Arc< render::Texture > VkResourceManager::CreateFlat3DTexture(const char* name, 
 				.imageType  = render::eImageType::Texture3D,
 				.resolution = { 1, 1, 1 },
 				.imageUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT
+			});
+
+	u32* pData = (u32*)malloc(4);
+	*pData = color;
+
+	VkBufferImageCopy region = {};
+	region.imageSubresource =
+	{
+		.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+		.mipLevel       = 0,
+		.baseArrayLayer = 0,
+		.layerCount     = 1
+	};
+	region.imageExtent = { 1, 1, 1 };
+	UploadData(flatTexture, pData, sizeof(u32) * 4, region);
+
+	RELEASE(pData);
+	return flatTexture;
+}
+
+Arc< render::Texture > VkResourceManager::CreateFlatCubeTexture(const char* name, u32 color)
+{
+	auto flatTexture =
+		VulkanTexture::Create(
+			m_RenderDevice,
+			name,
+			{
+				.imageType   = render::eImageType::TextureCube,
+				.resolution  = { 1, 1, 1 },
+				.imageUsage  = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+				.arrayLayers = 6,
 			});
 
 	u32* pData = (u32*)malloc(4);

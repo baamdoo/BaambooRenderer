@@ -17,10 +17,10 @@ public:
 
 	CommandSignatureDesc& AddDraw();
 	CommandSignatureDesc& AddDrawIndexed();
-	CommandSignatureDesc& AddDispatch();
 
 	CommandSignatureDesc& AddVertexBufferView(UINT slot);
 	CommandSignatureDesc& AddIndexBufferView();
+	CommandSignatureDesc& AddMeshletBufferView();
 
 	CommandSignatureDesc& AddConstant(UINT rootIndex, UINT dstOffsetIn32BitValues, UINT num32BitValues);
 	CommandSignatureDesc& AddConstantBufferView(UINT rootIndex);

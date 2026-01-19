@@ -1,7 +1,5 @@
 #pragma once
-#include <cstdint>
 #include <codecvt>
-#include <locale>
 #include <comdef.h>
 
 
@@ -34,7 +32,7 @@
 //-------------------------------------------------------------------------
 extern "C" { __declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001; }
 
-extern "C" { __declspec(dllexport) extern const UINT D3D12SDKVersion = 614; }
+extern "C" { __declspec(dllexport) extern const UINT D3D12SDKVersion = D3D12_SDK_VERSION; }
 
 #if defined(_M_ARM64EC)
 extern "C" { __declspec(dllexport) extern const char* D3D12SDKPath = ".\\D3D12\\arm64\\"; }
@@ -117,7 +115,7 @@ constexpr u32 MAX_ROOT_INDEX = D3D12_MAX_ROOT_COST;
 constexpr u32 MAX_ROOTCONSTANTS = 32u;
 constexpr u32 MAX_DESCRIPTORHEAPINDICES = 16u;
 constexpr u32 MAX_LOCAL_ROOTCONSTANTS = MAX_ROOTCONSTANTS - MAX_DESCRIPTORHEAPINDICES;
-constexpr u32 MAX_CBVS = (MAX_ROOT_INDEX - MAX_ROOTCONSTANTS) / 2;
+constexpr u32 MAX_VIEWS = (MAX_ROOT_INDEX - MAX_ROOTCONSTANTS) / 2;
 
 constexpr u32 GLOBAL_DESCRIPTOR_SPACE = 0u;
 
@@ -149,6 +147,18 @@ struct IndirectDrawData
     D3D12_INDEX_BUFFER_VIEW  ibv;
 
     D3D12_DRAW_INDEXED_ARGUMENTS draws;
+};
+
+struct IndirectDispatchMeshData
+{
+	u32 transformID;
+	u32 materialID;
+	u32 vOffset;
+	u32 mOffset;
+	u32 mvOffset;
+	u32 mtOffset;
+
+	D3D12_DISPATCH_MESH_ARGUMENTS dispatch;
 };
 //#pragma pack(pop)
 

@@ -7,10 +7,10 @@ namespace dx12
 D3D12_COMMAND_SIGNATURE_DESC CommandSignatureDesc::Build() noexcept
 {
 	D3D12_COMMAND_SIGNATURE_DESC Desc = {};
-	Desc.ByteStride = m_Stride;
+	Desc.ByteStride       = m_Stride;
 	Desc.NumArgumentDescs = static_cast<UINT>(m_Parameters.size());
-	Desc.pArgumentDescs = m_Parameters.data();
-	Desc.NodeMask = 0;
+	Desc.pArgumentDescs   = m_Parameters.data();
+	Desc.NodeMask         = 0;
 	return Desc;
 }
 
@@ -26,14 +26,6 @@ CommandSignatureDesc& CommandSignatureDesc::AddDrawIndexed()
 {
 	D3D12_INDIRECT_ARGUMENT_DESC& Desc = m_Parameters.emplace_back();
 	Desc.Type = D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED;
-
-	return *this;
-}
-
-CommandSignatureDesc& CommandSignatureDesc::AddDispatch()
-{
-	D3D12_INDIRECT_ARGUMENT_DESC& Desc = m_Parameters.emplace_back();
-	Desc.Type = D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH;
 
 	return *this;
 }
@@ -55,13 +47,21 @@ CommandSignatureDesc& CommandSignatureDesc::AddIndexBufferView()
 	return *this;
 }
 
+CommandSignatureDesc& CommandSignatureDesc::AddMeshletBufferView()
+{
+	D3D12_INDIRECT_ARGUMENT_DESC& desc = m_Parameters.emplace_back();
+	desc.Type = D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH_MESH;
+
+	return *this;
+}
+
 CommandSignatureDesc& CommandSignatureDesc::AddConstant(UINT rootIndex, UINT dstOffsetIn32BitValues, UINT num32BitValues)
 {
 	D3D12_INDIRECT_ARGUMENT_DESC& desc = m_Parameters.emplace_back();
-	desc.Type = D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT;
-	desc.Constant.RootParameterIndex = rootIndex;
+	desc.Type                             = D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT;
+	desc.Constant.RootParameterIndex      = rootIndex;
 	desc.Constant.DestOffsetIn32BitValues = dstOffsetIn32BitValues;
-	desc.Constant.Num32BitValuesToSet = num32BitValues;
+	desc.Constant.Num32BitValuesToSet     = num32BitValues;
 
 	return *this;
 }

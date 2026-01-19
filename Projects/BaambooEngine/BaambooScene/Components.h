@@ -75,6 +75,14 @@ struct StaticMeshComponent
 	u32     numVertices = 0;
 	Index*  pIndices    = nullptr;
 	u32     numIndices  = 0;
+
+	// Meshlets
+	Meshlet* pMeshlets           = nullptr;
+	u32      numMeshlets         = 0;
+	u32*     pMeshletVertices    = nullptr;
+	u32      numMeshletVertices  = 0;
+	u8*      pMeshletTriangles   = nullptr;
+	u32      numMeshletTriangles = 0;
 };
 
 //-------------------------------------------------------------------------
@@ -263,6 +271,8 @@ struct AtmosphereComponent
 	float  ozoneWidthKm   = 30.0f;
 
 	eRaymarchResolution raymarchResolution = eRaymarchResolution::Middle;
+
+	std::string skybox;
 };
 
 //-------------------------------------------------------------------------

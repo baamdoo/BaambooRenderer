@@ -68,8 +68,7 @@ private:
 
 	Timer m_GameTimer   = {};
 	Timer m_RenderTimer = {};
-
-
+	double m_LastFrameGpuTimeElapsed = 0.0;
 	// mutex for sync between writing entity-components data in render-thread and reading(view-each) in game-thread
 	std::mutex m_ImGuiMutex;
 	fs::path   m_CurrentDirectory;

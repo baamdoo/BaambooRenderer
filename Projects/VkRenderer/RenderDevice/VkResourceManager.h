@@ -30,6 +30,7 @@ public:
 private:
     Arc< render::Texture > CreateFlat2DTexture(const char* name, u32 color);
     Arc< render::Texture > CreateFlat3DTexture(const char* name, u32 color);
+    Arc< render::Texture > CreateFlatCubeTexture(const char* name, u32 color);
     Arc< render::Texture > CreateFlatWhiteTexture();
     Arc< render::Texture > CreateFlatBlackTexture();
 

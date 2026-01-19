@@ -35,6 +35,11 @@ std::vector< u64 > StaticMeshSystem::UpdateRenderData(const EditorCamera& edCame
 {
     UNUSED(edCamera);
 
+    for (auto entity : m_ExpiredEntities)
+    {
+        RemoveRenderData(entt::to_integral(entity));
+    }
+
     std::vector< u64 > markedEntities;
     for (auto entity : m_DirtyEntities)
     {
@@ -58,8 +63,15 @@ std::vector< u64 > StaticMeshSystem::UpdateRenderData(const EditorCamera& edCame
         entry.mesh.iData  = meshComponent.pIndices;
         entry.mesh.iCount = meshComponent.numIndices;
 
-        entry.hasMaterial = m_Registry.all_of< MaterialComponent >(entity);
-        if (entry.hasMaterial)
+        entry.mesh.mData   = meshComponent.pMeshlets;
+        entry.mesh.mCount  = meshComponent.numMeshlets;
+        entry.mesh.mvData  = meshComponent.pMeshletVertices;
+        entry.mesh.mvCount = meshComponent.numMeshletVertices;
+        entry.mesh.mtData  = meshComponent.pMeshletTriangles;
+        entry.mesh.mtCount = meshComponent.numMeshletTriangles;
+
+        entry.bHasMaterial = m_Registry.all_of< MaterialComponent >(entity);
+        if (entry.bHasMaterial)
         {
             auto& materialComponent = m_Registry.get< MaterialComponent >(entity);
             entry.material.id            = id;
@@ -98,7 +110,7 @@ void StaticMeshSystem::CollectRenderData(SceneRenderView& outView) const
         auto& draw = outView.draws[u32(id)];
         draw.mesh  = meshIndex;
 
-        if (entry.hasMaterial)
+        if (entry.bHasMaterial)
         {
             outView.materials.push_back(entry.material);
             draw.material = static_cast<u32>(outView.materials.size()) - 1;

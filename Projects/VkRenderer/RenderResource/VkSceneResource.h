@@ -29,7 +29,11 @@ struct VkSceneResource : public render::SceneResource
 
     BufferHandle GetOrUpdateVertex(u64 entity, const std::string& filepath, const void* pData, u32 count);
     BufferHandle GetOrUpdateIndex(u64 entity, const std::string& filepath, const void* pData, u32 count);
+
     BufferHandle GetOrUpdateMeshlets(u64 entity, const std::string& filepath, const void* pData, u32 count);
+    BufferHandle GetOrUpdateMeshletVertices(u64 entity, const std::string& filepath, const void* pData, u32 count);
+    BufferHandle GetOrUpdateMeshletTriangles(u64 entity, const std::string& filepath, const void* pData, u32 count);
+
     Arc< VulkanTexture > GetOrLoadTexture(u64 entity, const std::string& filepath);
     Arc< VulkanTexture > GetTexture(const std::string& filepath);
 
@@ -37,8 +41,13 @@ struct VkSceneResource : public render::SceneResource
     VkDescriptorSet GetSceneDescriptorSet() const;
     [[nodiscard]]
     VkDescriptorSetLayout GetSceneDescriptorSetLayout() const { return m_vkSetLayout; }
+
     [[nodiscard]]
     VkDescriptorBufferInfo GetIndexBufferInfo() const;
+
+    [[nodiscard]]
+    VkDescriptorBufferInfo GetMeshletBufferInfo() const;
+
     [[nodiscard]]
     VkDescriptorBufferInfo GetIndirectBufferInfo() const;
 
@@ -64,13 +73,13 @@ private:
     Box< StaticBufferAllocator > m_pMaterialAllocator;
     Box< StaticBufferAllocator > m_pLightAllocator;
 
-    CameraData                 m_CameraCache = {};
-    Arc< VulkanUniformBuffer > m_pCameraBuffer;
-    Arc< VulkanUniformBuffer > m_pSceneEnvironmentBuffer;
-
     Box< StaticBufferAllocator > m_pMeshletAllocator;
     Box< StaticBufferAllocator > m_pMeshletVertexAllocator;
     Box< StaticBufferAllocator > m_pMeshletTriangleAllocator;
+
+    CameraData                 m_CameraCache = {};
+    Arc< VulkanUniformBuffer > m_pCameraBuffer;
+    Arc< VulkanUniformBuffer > m_pSceneEnvironmentBuffer;
 
     std::unordered_map< std::string, BufferHandle >         m_VertexCache;
     std::unordered_map< std::string, BufferHandle >         m_IndexCache;

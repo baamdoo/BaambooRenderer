@@ -342,9 +342,9 @@ u64 Dx12RootSignature::GetDescriptorTableBitMask(D3D12_DESCRIPTOR_HEAP_TYPE type
 	return mask;
 }
 
-u32 Dx12RootSignature::GetRootIndex(u32 space, u32 reg) const
+u32 Dx12RootSignature::GetRootIndex(D3D12_ROOT_PARAMETER_TYPE type, u32 space, u32 reg) const
 {
-	const auto& it = m_RootIndexMap.find(MAKELONG(space, reg));
+	const auto& it = m_RootIndexMap.find({ type, MAKELONG(space, reg) });
 	if (it == m_RootIndexMap.end())
 	{
 		return INVALID_INDEX;
@@ -378,7 +378,11 @@ u32 Dx12RootSignature::AddParameter(const CD3DX12_ROOT_PARAMETER1& param)
 		space = param.DescriptorTable.pDescriptorRanges[0].RegisterSpace;
 		break;
 	}
-	m_RootIndexMap.emplace(MAKELONG(space, reg), rootIndex);
+	m_RootIndexMap.emplace(
+		std::piecewise_construct,
+		std::forward_as_tuple(param.ParameterType, MAKELONG(space, reg)),
+		std::forward_as_tuple(rootIndex)
+	);
 
 	return rootIndex;
 }

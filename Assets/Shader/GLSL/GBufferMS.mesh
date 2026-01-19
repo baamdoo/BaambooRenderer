@@ -1,0 +1,59 @@
+#version 460
+#extension GL_EXT_mesh_shader : require
+#extension GL_GOOGLE_include_directive: require
+
+#define _CAMERA
+#define _MESH
+#include "DescriptorCommon.hg"
+
+uint hash(uint a)
+{
+   a = (a+0x7ed55d16) + (a<<12);
+   a = (a^0xc761c23c) ^ (a>>19);
+   a = (a+0x165667b1) + (a<<5);
+   a = (a+0xd3a2646c) ^ (a<<9);
+   a = (a+0xfd7046c5) + (a<<3);
+   a = (a^0xb55a4f09) ^ (a>>16);
+   return a;
+}
+
+layout(location = 0) out vec4 outColor[];
+
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+layout(triangles, max_vertices = 64, max_primitives = 126) out;
+void main()
+{
+	uint mi = gl_WorkGroupID.x;
+	uint ti = gl_LocalInvocationID.x;
+
+	Meshlet meshlet = g_MeshletBuffer.meshlets[mi];
+	SetMeshOutputsEXT(meshlet.vertexCount, meshlet.triangleCount);
+
+	uint mhash = hash(mi);
+	vec3 color = vec3(float(mhash & 255), float((mhash >> 8) & 255), float((mhash >> 16) & 255)) / 255.0;
+
+	for (uint i = ti; i < meshlet.vertexCount; i += 32)
+	{
+		uint vi = g_MeshletVertexBuffer.meshletVertices[meshlet.vertexOffset + i];
+	
+		Vertex vertex = g_VertexBuffer.vertices[vi];
+	
+		vec3 position = vec3(vertex.posX, vertex.posY, vertex.posZ);
+		vec3 normal   = vec3(vertex.normalX, vertex.normalY, vertex.normalZ);
+		vec3 tangent  = vec3(vertex.tangentX, vertex.tangentY, vertex.tangentZ);
+	
+		gl_MeshVerticesEXT[i].gl_Position = g_Camera.mViewProj * vec4(position, 1.0);
+		//outColor[i] = vec4(normal * 0.5 + vec3(0.5), 1.0);
+		outColor[i] = vec4(color, 1.0);
+	}
+	
+	uint baseTriOffset = meshlet.triangleOffset; 
+	for (uint i = ti; i < meshlet.triangleCount; i += 32)
+	{
+		uint t0 = uint(g_MeshletTriangleBuffer.meshletTriangles[baseTriOffset + i * 3 + 0]);
+        uint t1 = uint(g_MeshletTriangleBuffer.meshletTriangles[baseTriOffset + i * 3 + 1]);
+        uint t2 = uint(g_MeshletTriangleBuffer.meshletTriangles[baseTriOffset + i * 3 + 2]);
+	
+		gl_PrimitiveTriangleIndicesEXT[i] = uvec3(t0, t1, t2);
+	}
+}

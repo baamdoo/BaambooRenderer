@@ -1,6 +1,7 @@
 #ifndef _GLSL_SCENE_COMMON_HEADER
 #define _GLSL_SCENE_COMMON_HEADER
 #extension GL_GOOGLE_include_directive: require
+#extension GL_EXT_shader_8bit_storage : require
 
 #define _GLSL
 #include "../Common.bsh"
@@ -28,19 +29,34 @@ layout(set = DESCRIPTORSET_COMMON, binding = 1) readonly buffer VertexBuffer
     Vertex vertices[];
 } g_VertexBuffer;
 
-layout(set = DESCRIPTORSET_COMMON, binding = 2) readonly buffer DrawBuffer 
+layout(set = DESCRIPTORSET_COMMON, binding = 2) readonly buffer MeshletBuffer 
+{
+    Meshlet meshlets[];
+} g_MeshletBuffer;
+
+layout(set = DESCRIPTORSET_COMMON, binding = 3) readonly buffer MeshletVertexBuffer 
+{
+    uint meshletVertices[];
+} g_MeshletVertexBuffer;
+
+layout(set = DESCRIPTORSET_COMMON, binding = 4) readonly buffer MeshletTriangleBuffer 
+{
+    uint8_t meshletTriangles[];
+} g_MeshletTriangleBuffer;
+
+layout(set = DESCRIPTORSET_COMMON, binding = 5) readonly buffer DrawBuffer 
 {
     DrawData draws[];
 } g_DrawBuffer;
 
-layout(set = DESCRIPTORSET_COMMON, binding = 3) readonly buffer Transform 
+layout(set = DESCRIPTORSET_COMMON, binding = 6) readonly buffer Transform 
 {
     TransformData transforms[];
 } g_TransformBuffer;
 #endif // _MESH
 
 #ifdef _MATERIAL
-layout(set = DESCRIPTORSET_COMMON, binding = 4) readonly buffer MaterialBuffer 
+layout(set = DESCRIPTORSET_COMMON, binding = 7) readonly buffer MaterialBuffer 
 {
     MaterialData materials[];
 } g_MaterialBuffer;
@@ -105,14 +121,14 @@ struct CloudData
 };
 
 #ifdef _LIGHT
-layout(set = DESCRIPTORSET_COMMON, binding = 5) readonly buffer LightBuffer
+layout(set = DESCRIPTORSET_COMMON, binding = 8) readonly buffer LightBuffer
 {
 	LightingData lightingData;
 } g_LightBuffer;
 #endif // _LIGHT
 
 #ifdef _SCENEENVIRONMENT
-layout(set = DESCRIPTORSET_COMMON, binding = 6) uniform SceneEnvironmentData 
+layout(set = DESCRIPTORSET_COMMON, binding = 9) uniform SceneEnvironmentData 
 {
     AtmosphereData atmosphere;
     CloudData      cloud;

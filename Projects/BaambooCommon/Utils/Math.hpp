@@ -21,6 +21,12 @@ inline u32 CalculateMipCount(u32 width, u32 height, u32 depth)
 	return (u32)std::floor(std::log2(glm::min(glm::min(width, height), depth))) + 1;
 }
 
+template< typename T >
+inline constexpr T RoundUpAndDivide(T Value, size_t Alignment)
+{
+	return (T)((Value + Alignment - 1) / Alignment);
+}
+
 inline float3 SmoothStep(const float3& v1, const float3& v2, float t)
 {
 	t = (t > 1.0f) ? 1.0f : ((t < 0.0f) ? 0.0f : t);

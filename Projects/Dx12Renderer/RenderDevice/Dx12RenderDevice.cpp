@@ -43,6 +43,22 @@ Dx12RenderDevice::Dx12RenderDevice(bool bEnableGBV)
 		}
 		m_HighestRootSignatureVersion = featureData.HighestVersion;
 	}
+	{
+		D3D12_FEATURE_DATA_D3D12_OPTIONS7 options7 = {};
+		if (SUCCEEDED(m_d3d12Device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS7, &options7, sizeof(options7))))
+		{
+			m_Supports.bMeshShader = options7.MeshShaderTier >= D3D12_MESH_SHADER_TIER_1;
+			if (m_Supports.bMeshShader)
+			{
+				printf("D3D12MeshShader supports!\n");
+			}
+			else
+			{
+				printf("D3D12MeshShader doesn't support!\n");
+				__debugbreak();
+			}
+		}
+	}
 }
 
 Dx12RenderDevice::~Dx12RenderDevice()
@@ -254,7 +270,7 @@ void Dx12RenderDevice::CreateDevice(bool bEnableGBV)
 	{
 		d3d12DebugController->EnableDebugLayer();
 	}
-	dwCreateFactoryFlags = DXGI_CREATE_FACTORY_DEBUG;
+	//dwCreateFactoryFlags = DXGI_CREATE_FACTORY_DEBUG;
 	if (bEnableGBV)
 	{
 		ID3D12Debug5* d3d12DebugController5 = nullptr;

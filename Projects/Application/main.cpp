@@ -1,3 +1,4 @@
+#include "Applications/BistroApp.h"
 #include "Applications/ExampleApp.h"
 
 #include <iostream>
@@ -8,8 +9,8 @@ int main()
 	//eRendererAPI rendererAPI = eRendererAPI::D3D12;
 	eRendererAPI rendererAPI = eRendererAPI::Vulkan;
 
-	ExampleApp app = {};
-	//BistroApp app = {};
+	//ExampleApp app = {};
+	BistroApp app = {};
 	try
 	{
 		app.Initialize(rendererAPI);

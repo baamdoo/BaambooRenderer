@@ -94,6 +94,8 @@ enum
 	eContentButton_Metallic,
 	eContentButton_Roughness,
 	eContentButton_Emission,
+
+	eContentButton_Skybox,
 };
 
 constexpr u32 NUM_TOLERANCE_ASYNC_FRAME_GAME_TO_RENDER = 3;
@@ -244,6 +246,7 @@ void Engine::RenderLoop()
 			auto pContext = m_pRendererBackend->BeginFrame();
 			if (pContext)
 			{
+				m_LastFrameGpuTimeElapsed = pContext->GetLastFrameElapsedTime();
 				rm.GetSceneResource().BindSceneResources(*pContext);
 
 				if (renderView.pEntityDirtyMarks)
@@ -273,6 +276,7 @@ void Engine::RenderLoop()
 				}
 
 				assert(g_FrameData.pColor);
+
 				m_pRendererBackend->EndFrame(std::move(pContext), g_FrameData.pColor.lock(), m_bDrawUI);
 
 				m_Frame++;
@@ -298,14 +302,17 @@ void Engine::DrawUI()
 		}
 		ImGui::Text("GameLoop   %.3f ms(frame: %.1f FPS)", gameElapsed_ms, 1000.0f / gameElapsed_ms);
 
-		static double renderElapsed_ms = m_RenderTimer.GetDeltaMilliseconds();
+		static double renderElapsedCpu_ms = m_RenderTimer.GetDeltaMilliseconds();
+		static double renderElapsedGpu_ms = m_LastFrameGpuTimeElapsed * 1e-6;
 		if (m_RenderTimer.GetTotalSeconds() > 1.0f)
 		{
-			renderElapsed_ms = m_RenderTimer.GetDeltaMilliseconds();
+			renderElapsedCpu_ms = m_RenderTimer.GetDeltaMilliseconds();
+			renderElapsedGpu_ms = m_LastFrameGpuTimeElapsed * 1e-6;
 
 			m_RenderTimer.Reset();
 		}
-		ImGui::Text("RenderLoop %.3f ms(frame: %.1f FPS)", renderElapsed_ms, 1000.0f / renderElapsed_ms);
+		ImGui::Text("RenderLoop(CPU) %.3f ms(frame: %.1f FPS)", renderElapsedCpu_ms, 1000.0f / renderElapsedCpu_ms);
+		ImGui::Text("RenderLoop(GPU) %.3f ms(frame: %.1f FPS)", renderElapsedGpu_ms, 1000.0f / renderElapsedGpu_ms);
 	}
 	ImGui::End();
 
@@ -739,6 +746,12 @@ void Engine::DrawUI()
 								ImGui::EndCombo();
 							}
 						}
+
+						if (ImGui::CollapsingHeader("Skybox"))
+						{
+							if (ImGui::Button("SkyboxLUT")) ImGui::ContentBrowserSetup = eContentButton_Skybox;
+							ImGui::SameLine(); ImGui::Text(component.skybox.c_str());
+						}
 					}
 
 					ImGui::Unindent();
@@ -1165,6 +1178,26 @@ void Engine::DrawUI()
 							}
 						}
 						break;
+
+					case eContentButton_Skybox:
+						if (extensionStr == ".png" || extensionStr == ".jpg" || extensionStr == ".dds" || extensionStr == ".hdr" || extensionStr == ".ktx")
+						{
+							if (ImGui::Selectable(filenameStr.c_str()))
+							{
+								auto& component = ImGui::SelectedEntity.GetComponent< AtmosphereComponent >();
+
+								if (component.skybox != path.string())
+								{
+									component.skybox = path.string();
+
+									m_pScene->Registry().patch< AtmosphereComponent >(ImGui::SelectedEntity.ID(), [](auto&) {});
+								}
+
+								ImGui::ContentBrowserSetup = 0;
+							}
+						}
+						break;
+
 					default:
 						break;
 					}

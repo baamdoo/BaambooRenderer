@@ -40,6 +40,11 @@ std::vector< u64 > TransformSystem::UpdateRenderData(const EditorCamera& edCamer
 {
     UNUSED(edCamera);
 
+    for (auto entity : m_ExpiredEntities)
+    {
+        RemoveRenderData(entt::to_integral(entity));
+    }
+
     // Sort by depth for parent-first processing
     m_Registry.sort<TransformComponent>([](const auto& lhs, const auto& rhs) 
         {

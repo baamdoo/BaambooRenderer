@@ -9,6 +9,9 @@
 namespace baamboo
 {
 
+u64 ModelLoader::ms_GlobalMeshletVertexOffset   = 0;
+u64 ModelLoader::ms_GlobalMeshletTriangleOffset = 0;
+
 mat4 ConvertMatrix(const aiMatrix4x4& aiMat)
 {
 	mat4 mResult;
@@ -500,8 +503,11 @@ void ModelLoader::GenerateMeshlets(MeshData& meshData, bool bOptimizeVertexCache
     size_t indexCount  = meshData.indices.size();
 
     if (bOptimizeVertexCache)
-		meshopt_optimizeVertexCache(meshData.indices.data(), meshData.indices.data(), indexCount, vertexCount);
-
+    {
+        meshopt_optimizeVertexCache(meshData.indices.data(), meshData.indices.data(), indexCount, vertexCount);
+        meshopt_optimizeVertexFetch(meshData.vertices.data(), meshData.indices.data(), indexCount, meshData.vertices.data(), vertexCount, sizeof(Vertex));
+    }
+    
     size_t maxMeshlets = meshopt_buildMeshletsBound(meshData.indices.size(), maxVertices, maxTriangles);
     std::vector< meshopt_Meshlet > meshlets(maxMeshlets);
 
@@ -525,7 +531,7 @@ void ModelLoader::GenerateMeshlets(MeshData& meshData, bool bOptimizeVertexCache
     const meshopt_Meshlet& last = meshlets[numMeshlets - 1];
 
     meshData.meshletVertices.resize(last.vertex_offset + last.vertex_count);
-    meshData.meshletVertices.resize(last.triangle_offset + last.triangle_count * 3);
+    meshData.meshletTriangles.resize(last.triangle_offset + last.triangle_count * 3);
 
     meshData.meshlets.reserve(numMeshlets);
     for (size_t i = 0; i < numMeshlets; ++i)
@@ -542,10 +548,10 @@ void ModelLoader::GenerateMeshlets(MeshData& meshData, bool bOptimizeVertexCache
         );
 
         Meshlet newMeshlet = {};
-        newMeshlet.vertexOffset   = m.vertex_offset;
-        newMeshlet.triangleOffset = m.triangle_offset;
         newMeshlet.vertexCount    = m.vertex_count;
+        newMeshlet.vertexOffset   = m.vertex_offset + ms_GlobalMeshletVertexOffset;
         newMeshlet.triangleCount  = m.triangle_count;
+        newMeshlet.triangleOffset = m.triangle_offset + ms_GlobalMeshletTriangleOffset;
 
         newMeshlet.center     = float3(bounds.center[0], bounds.center[1], bounds.center[2]);
         newMeshlet.radius     = bounds.radius;
@@ -554,6 +560,9 @@ void ModelLoader::GenerateMeshlets(MeshData& meshData, bool bOptimizeVertexCache
 
         meshData.meshlets.push_back(newMeshlet);
     }
+
+    //ms_GlobalMeshletVertexOffset   += meshData.meshletVertices.size();
+    //ms_GlobalMeshletTriangleOffset += meshData.meshletTriangles.size();
 }
 
 std::string ModelLoader::GetTextureFilename(aiMaterial* mat, aiTextureType type)

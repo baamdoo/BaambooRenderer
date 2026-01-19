@@ -141,9 +141,11 @@ private:
 	std::vector< MaterialData > m_Materials;
 	AnimationData               m_AnimationData;
 
-	std::unordered_map< std::string, u32 > m_BoneMap;
+	static u64 ms_GlobalMeshletVertexOffset;
+	static u64 ms_GlobalMeshletTriangleOffset;
 
 	u32 m_BoneCount = 0;
+	std::unordered_map< std::string, u32 > m_BoneMap;
 };
 
 } // namespace baamboo

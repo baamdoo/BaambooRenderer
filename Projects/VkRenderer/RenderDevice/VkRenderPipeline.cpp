@@ -298,9 +298,9 @@ void VulkanGraphicsPipeline::Build()
 	if (m_bMeshShader)
 	{
 		auto ms = StaticCast<VulkanShader>(m_pMS);
+		auto ps = StaticCast<VulkanShader>(m_pPS);
 		auto ts = StaticCast<VulkanShader>(m_pTS);
-		assert(ms);
-
+		assert(ms && ps);
 
 		VkPipelineShaderStageCreateInfo msStageCreateInfo = {};
 		msStageCreateInfo.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -308,6 +308,13 @@ void VulkanGraphicsPipeline::Build()
 		msStageCreateInfo.module = ms->vkModule();
 		msStageCreateInfo.pName  = "main";
 		shaderStages.push_back(msStageCreateInfo);
+
+		VkPipelineShaderStageCreateInfo fsStageCreateInfo = {};
+		fsStageCreateInfo.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		fsStageCreateInfo.stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
+		fsStageCreateInfo.module = ps->vkModule();
+		fsStageCreateInfo.pName  = "main";
+		shaderStages.push_back(fsStageCreateInfo);
 
 		if (ts)
 		{
@@ -376,6 +383,12 @@ void VulkanGraphicsPipeline::Build()
 		m_vkSetLayouts.resize(maxSet + 1);
 		for (const auto& [set, binding] : descriptorSetLayoutBindingMap)
 		{
+			if (set == COMMON_DESCRIPTORSET_INDEX)
+			{
+				m_vkSetLayouts[set] = rhiSceneResource.GetSceneDescriptorSetLayout();
+				continue;
+			}
+
 			std::vector< VkDescriptorSetLayoutBinding > bindings;
 			for (auto& [_, info] : descriptorSetLayoutBindingMap[set])
 			{

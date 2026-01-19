@@ -63,6 +63,11 @@ std::vector< u64 > AtmosphereSystem::UpdateRenderData(const EditorCamera& edCame
 {
     UNUSED(edCamera);
 
+    for (auto entity : m_ExpiredEntities)
+    {
+        RemoveRenderData(entt::to_integral(entity));
+    }
+
     std::vector< u64 > markedEntities;
     if (m_DirtyEntities.empty())
         return markedEntities;
@@ -76,7 +81,7 @@ std::vector< u64 > AtmosphereSystem::UpdateRenderData(const EditorCamera& edCame
             const auto& dirLights = m_pSkyLightSystem->GetRenderData();
 
             m_RenderData.id                      = entt::to_integral(entity);
-            m_RenderData.data.light              = dirLights[0];
+            m_RenderData.data.light              = dirLights.empty() ? DirectionalLight() : dirLights[0];
             m_RenderData.data.planetRadiusKm     = component.planetRadiusKm;
             m_RenderData.data.atmosphereRadiusKm = component.atmosphereRadiusKm;
             m_RenderData.data.rayleighScattering = component.rayleighScattering;
@@ -89,7 +94,7 @@ std::vector< u64 > AtmosphereSystem::UpdateRenderData(const EditorCamera& edCame
             m_RenderData.data.ozoneCenterKm      = component.ozoneCenterKm;
             m_RenderData.data.ozoneWidthKm       = component.ozoneWidthKm;
             m_RenderData.data.groundAlbedo       = float3(0.40198f);
-
+            
             switch (component.raymarchResolution)
             {
             case eRaymarchResolution::Low:
@@ -114,6 +119,8 @@ std::vector< u64 > AtmosphereSystem::UpdateRenderData(const EditorCamera& edCame
                 __debugbreak();
                 break;
             }
+
+            m_RenderData.skybox = component.skybox;
 
             m_bHasData = true;
             markedEntities.emplace_back(m_RenderData.id);

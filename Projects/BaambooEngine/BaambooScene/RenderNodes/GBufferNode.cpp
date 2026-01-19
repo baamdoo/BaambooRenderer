@@ -19,7 +19,7 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 			{
 				.resolution = { m_RenderDevice.WindowWidth(), m_RenderDevice.WindowHeight(), 1 },
 				.format     = eFormat::RGBA8_UNORM,
-				.imageUsage = eTextureUsage_ColorAttachment | eTextureUsage_Sample
+				.imageUsage = eTextureUsage_ColorAttachment | eTextureUsage_Sample | eTextureUsage_TransferSource
 			});
 	auto pAttachment1 =
 		Texture::Create(
@@ -65,20 +65,45 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 		            .AttachTexture(eAttachmentPoint::Color3, pAttachment3)
 		            .AttachTexture(eAttachmentPoint::DepthStencil, pAttachmentDepth).Build();
 
-	auto hVS = Shader::Create(m_RenderDevice, "GBufferVS", 
-		{
-			.stage    = eShaderStage::Vertex,
-			.filename = "GBufferVS" 
-		});
-	auto hFS = Shader::Create(m_RenderDevice, "GBufferPS", 
-		{
-			.stage    = eShaderStage::Fragment,
-			.filename = "GBufferPS"
-		});
+	
+
 	m_pGBufferPSO = GraphicsPipeline::Create(m_RenderDevice, "GBufferPSO");
-	m_pGBufferPSO->SetShaders(hVS, hFS)
-		          .SetRenderTarget(m_pRenderTarget)
-		          .SetDepthWriteEnable(true, eCompareOp::Greater).Build();
+	if (!m_RenderDevice.GetDeviceSupports().bMeshShader)
+	{
+		auto pVS = Shader::Create(m_RenderDevice, "GBufferVS",
+			{
+				.stage    = eShaderStage::Vertex,
+				.filename = "GBufferVS"
+			});
+
+		auto pFS = Shader::Create(m_RenderDevice, "GBufferPS",
+			{
+				.stage = eShaderStage::Fragment,
+				.filename = "GBufferPS"
+			});
+
+		m_pGBufferPSO->SetShaders(pVS, pFS)
+			          .SetRenderTarget(m_pRenderTarget)
+			          .SetDepthWriteEnable(true, eCompareOp::Greater).Build();
+	}
+	else
+	{
+		auto pMS = Shader::Create(m_RenderDevice, "GBufferMS",
+			{
+				.stage    = eShaderStage::Mesh,
+				.filename = "GBufferMS"
+			});
+
+		auto pFS = Shader::Create(m_RenderDevice, "GBufferPS",
+			{
+				.stage = eShaderStage::Fragment,
+				.filename = "GBufferTestPS"
+			});
+
+		m_pGBufferPSO->SetMeshShaders(pMS, pFS)
+			          .SetRenderTarget(m_pRenderTarget)
+			          .SetDepthWriteEnable(true, eCompareOp::Greater).Build();
+	}
 }
 
 void GBufferNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)
@@ -98,6 +123,7 @@ void GBufferNode::Apply(render::CommandContext& context, const SceneRenderView& 
 
 	m_pRenderTarget->InvalidateImageLayout();
 
+	g_FrameData.pColor    = m_pRenderTarget->Attachment(eAttachmentPoint::Color0);
 	g_FrameData.pGBuffer0 = m_pRenderTarget->Attachment(eAttachmentPoint::Color0);
 	g_FrameData.pGBuffer1 = m_pRenderTarget->Attachment(eAttachmentPoint::Color1);
 	g_FrameData.pGBuffer2 = m_pRenderTarget->Attachment(eAttachmentPoint::Color2);

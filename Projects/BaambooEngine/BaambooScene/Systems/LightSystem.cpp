@@ -43,6 +43,11 @@ std::vector< u64 > SkyLightSystem::UpdateRenderData(const EditorCamera& edCamera
 {
     UNUSED(edCamera);
 
+    for (auto entity : m_ExpiredEntities)
+    {
+        RemoveRenderData(entt::to_integral(entity));
+    }
+
     std::vector< u64 > markedEntities;
     if (m_DirtyEntities.empty())
         return markedEntities;
