@@ -15,6 +15,7 @@ inline u32 GetFormatElementSizeInBytes(VkFormat format)
 	switch (format)
 	{
 	case VK_FORMAT_R8G8B8A8_UNORM:
+	case VK_FORMAT_B8G8R8A8_UNORM:
 	case VK_FORMAT_R8G8B8A8_SNORM:
 	case VK_FORMAT_R8G8B8A8_SRGB:
 	case VK_FORMAT_B8G8R8A8_SRGB:
@@ -58,7 +59,7 @@ VkImageCreateInfo GetVkImageCreateInfo(const render::Texture::CreationInfo& info
 	desc.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	desc.imageType     = info.imageType == eImageType::TextureCube ? VK_IMAGE_TYPE_2D : static_cast<VkImageType>(info.imageType);
 	desc.format        = VK_FORMAT(info.format);
-	desc.extent        = VkExtent3D(info.resolution.x, info.resolution.y, info.resolution.z);
+	desc.extent        = { info.resolution.x, info.resolution.y, info.resolution.z };
 	desc.mipLevels     = info.bGenerateMips ?
 		baamboo::math::CalculateMipCount(info.resolution.x, info.resolution.y, 1) : 1;
 	desc.arrayLayers   = info.arrayLayers;
@@ -66,7 +67,7 @@ VkImageCreateInfo GetVkImageCreateInfo(const render::Texture::CreationInfo& info
 	desc.tiling        = VK_IMAGE_TILING_OPTIMAL;
 	desc.usage         = VK_IMAGE_USAGE_FLAGS(info.imageUsage);
 	desc.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
-	desc.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	desc.initialLayout = VK_LAYOUT(info.initialLayout);
 
 	return desc;
 }
@@ -149,7 +150,7 @@ VkImageViewCreateInfo VulkanTexture::GetViewDesc(const VkImageCreateInfo& imageI
 			else
 			{
 				imageViewInfo.viewType                    = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
-				imageViewInfo.subresourceRange.layerCount = 1;
+				imageViewInfo.subresourceRange.layerCount = imageInfo.arrayLayers;
 			}
 		}
 		else
@@ -262,6 +263,8 @@ void VulkanTexture::Resize(u32 width, u32 height, u32 depth)
 
 	m_CreationInfo.resolution = { width, height, depth };
 	CreateImageAndView(m_CreationInfo);
+	
+	SetState({ 0, 0, m_Desc.initialLayout });
 }
 
 void VulkanTexture::SetResource(VkImage vkImage, VkImageView vkImageView, VkImageCreateInfo createInfo, VmaAllocation vmaAllocation, VmaAllocationInfo vmaAllocInfo, VkImageAspectFlags aspectMask)

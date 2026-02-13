@@ -122,7 +122,7 @@ void main(uint3 tID : SV_DispatchThreadID)
     float3 cameraPos =
         float3(g_Camera.posWORLD.x, max(g_Camera.posWORLD.y, MIN_VIEW_HEIGHT_ABOVE_GROUND), g_Camera.posWORLD.z);
     float3 cameraPosAbovePlanet =
-        cameraPos * DISTANCE_SCALE + float3(0.0, Atmosphere.planetRadiusKm, 0.0);
+        cameraPos * M_TO_KM + float3(0.0, Atmosphere.planetRadiusKm, 0.0);
 
     float slice = uvw.z;
     slice *= slice;
@@ -133,9 +133,9 @@ void main(uint3 tID : SV_DispatchThreadID)
     float3 rayOrigin   = cameraPosAbovePlanet;
     float3 posInFroxel = cameraPosAbovePlanet + rayDir * maxDistance;
     
-    if (length(posInFroxel) < Atmosphere.planetRadiusKm + EPSILON)
+    if (length(posInFroxel) < Atmosphere.planetRadiusKm + EPSILON_MIN)
     {
-        posInFroxel = normalize(posInFroxel) * (Atmosphere.planetRadiusKm + EPSILON);
+        posInFroxel = normalize(posInFroxel) * (Atmosphere.planetRadiusKm + EPSILON_MIN);
         rayDir      = normalize(posInFroxel - cameraPosAbovePlanet);
         maxDistance = length(posInFroxel - cameraPosAbovePlanet);
     }

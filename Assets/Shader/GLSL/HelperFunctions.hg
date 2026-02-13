@@ -16,6 +16,11 @@ vec3 saturate(vec3 v)
     return clamp(v, 0.0, 1.0);
 }
 
+uint floorLog2(uint value)
+{
+    return value == 0u ? 0u : uint(findMSB(value));
+}
+
 float inverseLerp(float v, float minValue, float maxValue) 
 {
 	return (v - minValue) / (maxValue - minValue);
@@ -83,7 +88,7 @@ vec3 ReconstructWorldPos(vec2 uv, float depth, mat4 mViewProjInv)
     // vec4 posCLIP  = vec4(uv.x * 2.0 - 1.0, uv.y * -2.0 + 1.0, depth, 1.0);
     vec4 posCLIP  = vec4(uv * 2.0 - 1.0, depth, 1.0);
     vec4 posWORLD = mViewProjInv * posCLIP;
-    if (abs(posWORLD.w) < EPSILON)
+    if (abs(posWORLD.w) < EPSILON_MIN)
     {
         return posWORLD.xyz * MAX_VIEWDISTANCE;
     }
@@ -105,6 +110,12 @@ float LinearizeDepth(float depth, float near)
 float ConvertColorToLuminance(vec3 color)
 {
     return dot(color, vec3(0.2126, 0.7152, 0.0722));
+}
+
+vec3 Desaturate(vec3 color, float desaturation)
+{
+    float lum = ConvertColorToLuminance(color);
+    return mix(color, vec3(lum, lum, lum), desaturation);
 }
 
 const vec3 COLOR_TEMPERATURE_LUT[] = 
@@ -156,16 +167,38 @@ vec2 RaySphereIntersection(vec3 rayOrigin, vec3 rayDir, vec3 sphereCenter, float
     float discriminant = b * b - 4.0 * a * c;
     
     if (discriminant < 0.0)
-        return vec2(-1.0, -1.0);
+        return vec2(-FLT_MAX, -FLT_MAX);
     
     float root0 = (-b - sqrt(discriminant)) / (2.0 * a);
     float root1 = (-b + sqrt(discriminant)) / (2.0 * a);
     return vec2(root0, root1);
 }
 
+bool RaySphereIntersection(vec3 rayOrigin, vec3 rayDir, vec3 sphereCenter, float sphereRadius, out vec2 roots) 
+{
+    vec3 centerToOrigin = rayOrigin - sphereCenter;
+
+    float a = dot(rayDir, rayDir);
+    float b = 2.0 * dot(centerToOrigin, rayDir);
+    float c = dot(centerToOrigin, centerToOrigin) - sphereRadius * sphereRadius;
+    float discriminant = b * b - 4.0 * a * c;
+    
+    if (discriminant < 0.0)
+    {
+        roots = vec2(-FLT_MAX, -FLT_MAX);
+        return false;
+    }
+    
+    float root0 = (-b - sqrt(discriminant)) / (2.0 * a);
+    float root1 = (-b + sqrt(discriminant)) / (2.0 * a);
+    roots = vec2(root0, root1);
+
+    return true;
+}
+
 vec3 RayPlaneIntersection(vec3 rayOrigin, vec3 rayDir, vec4 plane) 
 {
-    float t = (plane.a - dot(rayOrigin, plane.xyz)) / max(dot(rayDir, plane.xyz), EPSILON);
+    float t = (plane.a - dot(rayOrigin, plane.xyz)) / max(dot(rayDir, plane.xyz), EPSILON_MIN);
     return rayOrigin + t * rayDir;
 }
 

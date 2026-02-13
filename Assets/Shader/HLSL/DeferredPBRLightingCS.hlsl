@@ -59,7 +59,7 @@ float3 CalculateBRDF(float3 N, float3 V, float3 L, float metallic, float roughne
     kD *= 1.0 - metallic;
 
     float3 numerator   = D * G * F;
-    float  denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + EPSILON;
+    float  denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + EPSILON_MIN;
 
     return numerator / denominator;
 }
@@ -235,7 +235,7 @@ void main(uint3 tID : SV_DispatchThreadID)
             uint3 texSize;
             AerialPerspectiveLUT.GetDimensions(texSize.x, texSize.y, texSize.z);
 
-            float slice = viewDistance * (1.0 / AP_KM_PER_SLICE) * DISTANCE_SCALE;
+            float slice = viewDistance * (1.0 / AP_KM_PER_SLICE) * M_TO_KM;
             float w = sqrt(slice / float(texSize.z));
             slice = w * texSize.z;
 

@@ -99,9 +99,9 @@ vec3 RaymarchScattering(vec3 rayOrigin, vec3 rayDir, float maxDistance)
         
         // Analytical integration
         vec3 S    = (planetShadow * transmittanceToSun * phasedScattering + multiScattering * scattering) * E;
-        vec3 Sint = (S - S * stepTransmittance) / extinction;
-        L        += throughput * Sint;
-        
+        vec3 Sint = (S - S * stepTransmittance) / max(extinction, 1e-8);
+
+        L += throughput * Sint;
         throughput *= stepTransmittance;
     }
     

@@ -5,11 +5,12 @@
 #include "Common.hlsli"
 #include "HelperFunctions.hlsli"
 
-static const float  DISTANCE_SCALE               = 0.001;         // m-km
+static const float  M_TO_KM                      = 0.001;         // m-km
+static const float  KM_TO_M                      = 1000.0;        // km-m
 static const float3 PLANET_CENTER                = 0.0;           // km
 static const float  AP_KM_PER_SLICE              = 4.0;           // km
-static const float  MIN_VIEW_HEIGHT_ABOVE_GROUND = 0.0005 * (1.0 / DISTANCE_SCALE); // km
-static const float  RAY_MARCHING_MAX_DISTANCE    = 1e2;
+static const float  MIN_VIEW_HEIGHT_ABOVE_GROUND = 0.0005 * (1.0 / M_TO_KM); // km
+static const float  RAY_MARCHING_MAX_DISTANCE    = 1e5;
 
 // Reference: https://github.com/sebh/UnrealEngineSkyAtmosphere
 float GetAltitude(float3 position, float planetRadiusKm) 

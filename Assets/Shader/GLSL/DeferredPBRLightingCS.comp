@@ -89,7 +89,7 @@ vec3 CalculateBRDF(vec3 N, vec3 V, vec3 L, float metallic, float roughness, vec3
     kD *= 1.0 - metallic;
     
     vec3  numerator   = D * G * F;
-    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + EPSILON;
+    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + EPSILON_MIN;
 
     return numerator / denominator;
 }
@@ -252,7 +252,7 @@ void main()
             float viewDistance = max(0.0, length(posWORLD));
 
             ivec3 texSize = textureSize(g_AerialPerspectiveLUT, 0);
-            float slice   = viewDistance * (1.0 / AP_KM_PER_SLICE) * DISTANCE_SCALE;
+            float slice   = viewDistance * (1.0 / AP_KM_PER_SLICE) * M_TO_KM;
             float w       = sqrt(slice / float(texSize.z));
                   slice   = w * texSize.z;
 

@@ -4,9 +4,34 @@
 #include "NoiseCommon.hg"
 #include "HelperFunctions.hg"
 
-layout(set = 1, binding = 0, rgba8) writeonly uniform image2D g_OutWeatherMap;
+layout(set = 1, binding = 0, rgba8_snorm) writeonly uniform image2D g_OutWeatherMap;
 
-layout (local_size_x = 8, local_size_y = 8) in;
+layout(push_constant) uniform PushConstants
+{
+    // r-channel
+    float rFrequency;
+    uint  rOctaves;
+    float rPersistence;
+    float rLacunarity;
+
+    // g-channel
+    float gFrequency;
+    uint  gOctaves;
+    float gPersistence;
+    float gLacunarity;
+
+    // b-channel
+    float bFrequency;
+    uint  bOctaves;
+    float bPersistence;
+    float bLacunarity;
+
+    // blend
+    float wPerlin;
+    float wWorley;
+} g_Push;
+
+layout (local_size_x = 16, local_size_y = 16) in;
 void main()
 {
     ivec2 imgSize   = imageSize(g_OutWeatherMap);
@@ -16,16 +41,24 @@ void main()
 
     vec2  uv        = vec2(pixCoords + 0.5) / vec2(imgSize);
 
-    const uint seed = 0x1u;
-    float perlin = perlinFBM(uv, 4.0, 6, 0.5, 2.0, seed);
-          perlin = (perlin + 1.0) * 0.5;
-          perlin = remap(perlin, 0.2, 1.0, 0.0, 1.0);
-    float worley = worleyFBM(uv, 8.0);
+    float perlin1 = perlinFBM(uv, 10.0, 6, 0.5, 2.0, 0x1u) * 0.5 + 0.5;
+    float perlin2 = perlinFBM(uv, 8.0, 8, 0.5, 2.0, 0x2u) * 0.5 + 0.5;
+    float perlin3 = perlinFBM(uv, 4.0, 4, 0.2, 2.0, 0x34141u) * 0.5 + 0.5;
+          //perlin1       = mix(1.0, perlin, 0.5);
+          //perlin1       = abs(perlin * 2.0 - 1.0);
+          
+    float worley0      = worleyFBM(uv, 4.0);
+    float worley1      = worleyFBM(uv, 8.0);
+    float worley2      = worleyFBM(uv, 16.0);
+    float worley3      = worleyFBM(uv, 32.0);
+    float worley4      = worleyFBM(uv, 64.0);
+    float perlinWorley1 = remap(perlin1, 1.0 - worley1, 1.0, 0.0, 1.0);
+    float perlinWorley2 = remap(perlin2, 1.0 - worley2, 1.0, 0.0, 1.0);
+    float perlinWorley3 = perlin1 * worley3;
+    float perlinWorley4 = mix(perlin1, worley3, 0.5);
 
-    float coverage  = remap(perlin, 1.0 - worley, 1.0, 0.0, 1.0);
-    float cloudType = perlinFBM(uv, 16.0, 10, 0.3, 2.0);
+    float worleyFbm = worley2 * 0.625 + worley3 * 0.25 + worley4 * 0.125;
+    vec4 value = vec4(perlinWorley1 * worleyFbm, perlinWorley2, perlin1, perlin3);
 
-    vec4 weather = vec4(perlin, saturate(coverage), saturate(cloudType), 1.0);
-
-    imageStore(g_OutWeatherMap, pixCoords, weather);
+    imageStore(g_OutWeatherMap, pixCoords, value);
 }

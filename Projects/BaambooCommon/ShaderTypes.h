@@ -124,34 +124,42 @@ struct AtmosphereData
 
 struct CloudData
 {
-    float  topLayerKm;
-    float  bottomLayerKm;
-    float2 padding0;
+    float topLayerKm;
+    float bottomLayerKm;
+    float localOvercast;
+    float shadowTracingDistanceKm;
 
-    float3 extinctionStrength;
+    float3 cloudAlbedo;
+    float  groundContributionStrength;
+
+    float cloudsScale;
+    float clumpsVariation;
+    float floorVariationClear;
+    float floorVariationCloudy;
+
+    float3 baseErosionScale;
+    float  baseDensity;
+    float  baseErosionStrength;
+    float  baseErosionPower;
+    float  hfErosionStrength;
+    float  hfErosionDistortion;
+
+    float3 scatteringScale;
     float  extinctionScale;
 
     float msContribution;
     float msOcclusion;
     float msEccentricity;
-    float groundContributionStrength;
+    float silverScatterG;
 
-    float coverage;
-    float cloudType;
-    float baseNoiseScale;
-    float baseIntensity;
-
-    float erosionNoiseScale;
-    float erosionIntensity;
-    float erosionPower;
-    float wispiness;
-    float billowiness;
-    float precipitation;
-    float erosionHeightGradientMultiplier;
-    float erosionHeightGradientPower;
+    float ambientIntensity;
+    float ambientSaturation;
+    float topAmbientScale;
+    float bottomAmbientScale;
 
     float3 windDirection;
     float  windSpeedMps;
+    
 };
 struct SceneEnvironmentData
 {
@@ -162,6 +170,7 @@ struct SceneEnvironmentData
 struct CloudShadowData
 {
     mat4 mSunView;
+    mat4 mSunViewInv;
     mat4 mSunViewProj;
     mat4 mSunViewProjInv;
 };

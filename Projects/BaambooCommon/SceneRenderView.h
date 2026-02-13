@@ -201,6 +201,5 @@ struct SceneRenderView
 	// for sync producer(SceneRenderView)-consumer(Renderer)
 	std::mutex* pSceneMutex;
 
-	u64 componentMarker = 0;
 	std::unordered_map< u64, u64 >* pEntityDirtyMarks;
 };

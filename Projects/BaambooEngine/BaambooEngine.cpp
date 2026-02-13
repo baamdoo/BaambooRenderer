@@ -254,6 +254,7 @@ void Engine::RenderLoop()
 					assert(renderView.pSceneMutex);
 					std::lock_guard< std::mutex > lock(*renderView.pSceneMutex);
 
+					g_FrameData.componentMarker |= (*renderView.pEntityDirtyMarks)[renderView.cloud.id] & (1 << eComponentType::CCloud);
 					g_FrameData.componentMarker |= (*renderView.pEntityDirtyMarks)[renderView.atmosphere.id] & (1 << eComponentType::CAtmosphere);
 					// .. process other markers if needed
 
@@ -772,17 +773,15 @@ void Engine::DrawUI()
 					{
 						auto& component = ImGui::SelectedEntity.GetComponent< CloudComponent >();
 
-						if (ImGui::CollapsingHeader("Global"))
+						if (ImGui::CollapsingHeader("Basic"))
 						{
-							bMark |= ImGui::DragFloat("Cloud Bottom Height (km)", &component.bottomHeight_km, 0.1f, 0.0f, 10.0f, "%.1f");
-							bMark |= ImGui::DragFloat("Cloud Thickness (km)", &component.layerThickness_km, 0.1f, 0.1f, 100.0f, "%.1f");
+							bMark |= ImGui::DragFloat("Cloud Bottom Height (km)", &component.bottomHeightKm, 0.1f, 0.0f, 10.0f, "%.1f");
+							bMark |= ImGui::DragFloat("Cloud Thickness (km)", &component.layerThicknessKm, 0.1f, 0.1f, 20.0f, "%.1f");
+							bMark |= ImGui::DragFloat("Shadow Tracing Distance Multiplier", &component.shadowTracingDistanceMultiplier, 0.01f, 0.1f, 10.0f, "%.2f");
 
-							bMark |= ImGui::DragFloat3("Extinction Strength", glm::value_ptr(component.extinctionStrength), 0.001f, 0.0f, 1.0f, "%.3f");
-							bMark |= ImGui::DragFloat("Extinction Scale", &component.extinctionScale, 0.01f, 1.0f, 20.0f, "%.3f");
+							bMark |= ImGui::ColorEdit3("Cloud Albedo", glm::value_ptr(component.albedo));
+							bMark |= ImGui::DragFloat("Albedo Scale", &component.albedoScale, 0.01f, 0.1f, 3.0f, "%.2f");
 
-							bMark |= ImGui::DragFloat("MultiScattering Contribution", &component.msContribution, 0.001f, 0.0f, 1.0f, "%.3f");
-							bMark |= ImGui::DragFloat("MultiScattering Occlusion", &component.msOcclusion, 0.001f, 0.0f, 1.0f, "%.3f");
-							bMark |= ImGui::DragFloat("MultiScattering Eccentricity", &component.msEccentricity, 0.001f, 0.0f, 1.0f, "%.3f");
 							bMark |= ImGui::DragFloat("Ground Contribution", &component.groundContributionStrength, 0.001f, 0.0f, 1.0f, "%.3f");
 
 							if (ImGui::DragFloat3("Wind Direction", glm::value_ptr(component.windDirection), 0.01f, 0.0f, 1.0f, "%.2f"))
@@ -795,32 +794,49 @@ void Engine::DrawUI()
 						}
 						if (ImGui::CollapsingHeader("Shape"))
 						{
-							bMark |= ImGui::DragFloat("Cloud Coverage", &component.coverage, 0.001f, 0.0f, 1.0f, "%.3f");
-							bMark |= ImGui::DragFloat("Cloud Type", &component.cloudType, 0.01f, 0.0f, 1.0f, "%.2f");
-							bMark |= ImGui::DragFloat("Base Scale", &component.baseNoiseScale, 0.001f, 0.001f, 1.0f, "%.3f");
+							bMark |= ImGui::DragFloat("Cloud Floor Variation(Clear)", &component.floorVariationClear, 0.01f, 0.0f, 10.0f, "%.3f");
+							bMark |= ImGui::DragFloat("Cloud Floor Variation(Cloudy)", &component.floorVariationCloudy, 0.01f, 0.0f, 10.0f, "%.3f");
+
+							bMark |= ImGui::DragFloat("Cloud Scale", &component.cloudsScale, 0.01f, 0.1f, 10.0f, "%.2f");
 							if (ImGui::IsItemHovered())
 							{
 								ImGui::BeginTooltip();
-								ImGui::Text("Range(km) per tile");
+								ImGui::Text("Determines overall amount of clouds");
 								ImGui::EndTooltip();
 							}
-							bMark |= ImGui::DragFloat("Base Intensity", &component.baseIntensity, 0.001f, 0.0f, 10.0f, "%.3f");
-
-							bMark |= ImGui::DragFloat("Erosion Scale", &component.erosionNoiseScale, 0.001f, 0.001f, 1.0f, "%.3f");
+							bMark |= ImGui::DragFloat("Cloud Macro UVScale", &component.cloudsMacroUvScale, 1.0f, 1.0f, 100000.0f, "%.0f");
+							bMark |= ImGui::DragFloat("Cloud Coverage", &component.cloudsCoverage, 0.001f, 0.0f, 5.0f, "%.3f");
+							bMark |= ImGui::DragFloat("Clumps Variation", &component.clumpsVariation, 0.001f, 0.1f, 3.0f, "%.3f");
 							if (ImGui::IsItemHovered())
 							{
 								ImGui::BeginTooltip();
-								ImGui::Text("Range(km) per tile");
+								ImGui::Text("Determines size of clumps");
 								ImGui::EndTooltip();
 							}
-							bMark |= ImGui::DragFloat("Erosion Intensity", &component.erosionIntensity, 0.001f, 0.0f, 10.0f, "%.3f");
 
-							bMark |= ImGui::DragFloat("Erosion Power", &component.erosionPower, 0.001f, 0.0f, 1.0f, "%.3f");
-							bMark |= ImGui::DragFloat("Wispiness", &component.wispySkewness, 0.001f, 0.0f, 1.0f, "%.3f");
-							bMark |= ImGui::DragFloat("Billowiness", &component.billowySkewness, 0.001f, 0.0f, 1.0f, "%.3f");
-							bMark |= ImGui::DragFloat("Cloud Precipitation", &component.precipitation, 0.01f, 0.0f, 1.0f, "%.2f");
-							bMark |= ImGui::DragFloat("Erosion Height Gradient Multiplier", &component.erosionHeightGradientMultiplier, 0.001f, 0.0f, 10.0f, "%.3f");
-							bMark |= ImGui::DragFloat("Erosion Height Gradient Power", &component.erosionHeightGradientPower, 0.001f, 0.0f, 10.0f, "%.3f");
+							bMark |= ImGui::DragFloat("Base Density", &component.baseDensity, 0.001f, 0.0f, 10.0f, "%.3f");
+							bMark |= ImGui::DragFloat("Base Erosion Scale", &component.baseErosionScale, 0.001f, 0.01f, 10.0f, "%.3f");
+							bMark |= ImGui::DragFloat("Base Erosion Power", &component.baseErosionPower, 0.001f, 0.0f, 10.0f, "%.3f");
+							bMark |= ImGui::DragFloat("Base Erosion Strength", &component.baseErosionStrength, 0.01f, 0.0f, 10.0f, "%.2f");
+
+							bMark |= ImGui::DragFloat("High Frequency Erosion Strength", &component.hfErosionStrength, 0.001f, 0.0f, 1.0f, "%.2f");
+							bMark |= ImGui::DragFloat("High Frequency Erosion Distortion", &component.hfErosionDistortion, 0.001f, 0.0f, 5.0f, "%.2f");
+						}
+						if (ImGui::CollapsingHeader("Shade"))
+						{
+							bMark |= ImGui::ColorEdit3("Scattering Scale", glm::value_ptr(component.scatteringScale));
+							bMark |= ImGui::DragFloat("Extinction Scale", &component.extinctionScale, 0.01f, 1.0f, 20.0f, "%.3f");
+
+							bMark |= ImGui::DragFloat("MultiScattering Contribution", &component.msContribution, 0.001f, 0.0f, 1.0f, "%.3f");
+							bMark |= ImGui::DragFloat("MultiScattering Occlusion", &component.msOcclusion, 0.001f, 0.0f, 1.0f, "%.3f");
+							bMark |= ImGui::DragFloat("MultiScattering Eccentricity", &component.msEccentricity, 0.001f, 0.0f, 1.0f, "%.3f");
+
+							bMark |= ImGui::DragFloat("SilverLining Strength", &component.silverScatterG, 0.001f, 0.01f, 0.99f, "%.3f");
+
+							bMark |= ImGui::DragFloat("Ambient Intensity", &component.ambientIntensity, 0.001f, 0.0f, 10.0f, "%.3f");
+							bMark |= ImGui::DragFloat("Ambient Saturation", &component.ambientSaturation, 0.001f, 0.0f, 10.0f, "%.3f");
+							bMark |= ImGui::DragFloat("Top Ambient Scale", &component.topAmbientScale, 0.001f, 0.0f, 10.0f, "%.3f");
+							bMark |= ImGui::DragFloat("Bottom Ambient Scale", &component.bottomAmbientScale, 0.001f, 0.0f, 10.0f, "%.3f");
 						}
 						if (ImGui::CollapsingHeader("Performance"))
 						{
@@ -849,8 +865,8 @@ void Engine::DrawUI()
 								ImGui::EndCombo();
 							}
 
-							bMark |= ImGui::DragInt("Steps of Raymarch to Cloud", &component.numCloudRaymarchSteps, 1, 32, 400);
-							bMark |= ImGui::DragInt("Steps of Raymarch to Light", &component.numLightRaymarchSteps, 1, 6, 400);
+							bMark |= ImGui::DragInt("Steps of Raymarch to Cloud", &component.numCloudRaymarchSteps, 1, 32, 284);
+							bMark |= ImGui::DragInt("Steps of Raymarch to Light", &component.numLightRaymarchSteps, 1, 6, 64);
 							bMark |= ImGui::DragFloat("Front Depth Bias", &component.frontDepthBias, 0.001f, 0.001f, 1.0f, "%.3f");
 							bMark |= ImGui::DragFloat("Blend Alpha for Temporal Accumulation", &component.temporalBlendAlpha, 0.001f, 0.01f, 1.0f, "%.3f");
 						}

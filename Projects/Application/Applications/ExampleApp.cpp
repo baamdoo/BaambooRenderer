@@ -20,7 +20,7 @@ void ExampleApp::Initialize(eRendererAPI api)
 {
 	Super::Initialize(api);
 
-	m_CameraController.SetLookAt(float3(0.0f, 0.0f, 0.0f), float3(0.0f));
+	m_CameraController.SetLookAt(float3(0.0f, 0.0f, 0.0f), float3(0.0f, 0.0f, 1.0f));
 	m_pCamera = new EditorCamera(m_CameraController, m_pWindow->Width(), m_pWindow->Height());
 }
 
@@ -238,7 +238,7 @@ void ExampleApp::DrawUI()
 
 void ExampleApp::ConfigureRenderGraph()
 {
-	//m_pScene->AddRenderNode(MakeArc< CloudShapeNode >(*m_pRendererBackend->GetDevice()));
+	m_pScene->AddRenderNode(MakeArc< CloudShapeNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< AtmosphereNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< GBufferNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< CloudScatteringNode >(*m_pRendererBackend->GetDevice()));
@@ -257,12 +257,12 @@ void ExampleApp::ConfigureSceneObjects()
 		descriptor.rendererAPI = s_RendererAPI;
 		descriptor.bWindingCW  = true;
 
-		auto entity = m_pScene->ImportModel(MODEL_PATH.append("kitten.obj"), descriptor);
+		/*auto entity = m_pScene->ImportModel(MODEL_PATH.append("kitten.obj"), descriptor);
 		entity.AttachComponent< ScriptComponent >();
 
 		auto& entitytc = entity.GetComponent< TransformComponent >();
 		entitytc.transform.position = { 0.0f, 0.0f, 500.0f };
-		entitytc.transform.scale = { 100.0f, 100.0f, 100.0f };
+		entitytc.transform.scale = { 100.0f, 100.0f, 100.0f };*/
 
 
 		/*auto dhEntity = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
@@ -300,30 +300,29 @@ void ExampleApp::ConfigureSceneObjects()
 	}
 
 	{
-		auto sunLight = m_pScene->CreateEntity("Sun Light");
-		sunLight.AttachComponent< LightComponent >();
-		sunLight.AttachComponent< AtmosphereComponent >();
+		auto environment = m_pScene->CreateEntity("Environment");
+		environment.AttachComponent< LightComponent >();
+		environment.AttachComponent< AtmosphereComponent >();
+		environment.AttachComponent< CloudComponent >();
 
-		auto& light = sunLight.GetComponent< LightComponent >();
-		light.type = eLightType::Directional;
-		light.temperatureK = 10000.0f;
-		light.color = float3(1.0f, 0.95f, 0.8f);
-		light.illuminanceLux = 6.0f; //120'000.0f;
+		auto& light = environment.GetComponent< LightComponent >();
+		light.type             = eLightType::Directional;
+		light.temperatureK     = 10000.0f;
+		light.color            = float3(1.0f, 0.95f, 0.8f);
+		light.illuminanceLux   = 5.0f; //120'000.0f;
 		light.angularRadiusRad = 0.00465f;
 
-		auto& transformComponent = sunLight.GetComponent< TransformComponent >();
-		//transformComponent.transform.position = float3(-0.46144, 0.76831, -0.44359);
-		transformComponent.transform.position = float3(0.0f, 1.0f, 0.0f);
+		auto& transformComponent = environment.GetComponent< TransformComponent >();
+		transformComponent.transform.position = float3(-0.22427f, 0.84396f, -0.48726);
+		//transformComponent.transform.position = float3(0.0f, 1.0f, 0.0f);
 
-		auto& atmosphere = sunLight.GetComponent< AtmosphereComponent >();
+		auto& atmosphere = environment.GetComponent< AtmosphereComponent >();
 		atmosphere.atmosphereRadiusKm = 6420.0f;
-	}
-	{
-		auto cloud = m_pScene->CreateEntity("Cloud");
 
-		auto& cloudComponent = cloud.AttachComponent< CloudComponent >();
-		//cloudComponent.blueNoiseTex = TEXTURE_PATH.string() + "BlueNoiseR_64x64.png";
-		cloudComponent.blueNoiseTex = TEXTURE_PATH.string() + "BlueNoise_RG_128x128x64";
+		auto& cloud = environment.GetComponent< CloudComponent >();
+		//cloud.uprezRatio   = eCloudUprezRatio::X4;
+		cloud.blueNoiseTex = TEXTURE_PATH.string() + "BlueNoise_R_128x128x64.png";
+		//cloud.blueNoiseTex = TEXTURE_PATH.string() + "BlueNoise_RG_128x128x64";
 	}
 
 	// Create a point light

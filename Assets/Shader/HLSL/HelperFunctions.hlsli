@@ -4,6 +4,16 @@
 #define _HLSL
 #include "../Common.bsh"
 
+float3 modulo(float3 x, float y)
+{
+    return x - y * floor(x / y);
+}
+
+uint floorLog2(uint value)
+{
+    return value == 0u ? 0u : uint(firstbithigh(value));
+}
+
 float inverseLerp(float v, float minValue, float maxValue) 
 {
 	return (v - minValue) / (maxValue - minValue);
@@ -72,7 +82,7 @@ float3 ReconstructWorldPos(float2 uv, float depth, float4x4 mViewProjInv)
     // float4 posCLIP = float4(uv * 2.0 - 1.0, depth, 1.0);
     // float4 posWORLD = mViewProjInv * posCLIP;
     float4 posWORLD = mul(mViewProjInv, posCLIP);
-    if (abs(posWORLD.w) < EPSILON)
+    if (abs(posWORLD.w) < EPSILON_MIN)
     {
         return posWORLD.xyz * MAX_VIEWDISTANCE;
     }
@@ -94,6 +104,12 @@ float LinearizeDepth(float depth, float near)
 float ConvertColorToLuminance(float3 color)
 {
     return dot(color, float3(0.2126, 0.7152, 0.0722));
+}
+
+float3 Desaturate(float3 color, float desaturation)
+{
+    float lum = ConvertColorToLuminance(color);
+    return lerp(color, float3(lum, lum, lum), desaturation);
 }
 
 static const float3 COLOR_TEMPERATURE_LUT[] = 
@@ -152,9 +168,31 @@ float2 RaySphereIntersection(float3 rayOrigin, float3 rayDir, float3 sphereCente
     return float2(root0, root1);
 }
 
+bool RaySphereIntersection(float3 rayOrigin, float3 rayDir, float3 sphereCenter, float sphereRadius, out float2 roots)
+{
+    float3 centerToOrigin = rayOrigin - sphereCenter;
+
+    float a = dot(rayDir, rayDir);
+    float b = 2.0 * dot(centerToOrigin, rayDir);
+    float c = dot(centerToOrigin, centerToOrigin) - sphereRadius * sphereRadius;
+    float discriminant = b * b - 4.0 * a * c;
+    
+    if (discriminant < 0.0)
+    {
+        roots = float2(-FLT_MAX, -FLT_MAX);
+        return false;
+    }
+    
+    float root0 = (-b - sqrt(discriminant)) / (2.0 * a);
+    float root1 = (-b + sqrt(discriminant)) / (2.0 * a);
+    roots = float2(root0, root1);
+
+    return true;
+}
+
 float3 RayPlaneIntersection(float3 rayOrigin, float3 rayDir, float4 plane)
 {
-    float t = (plane.a - dot(rayOrigin, plane.xyz)) / max(dot(rayDir, plane.xyz), EPSILON);
+    float t = (plane.a - dot(rayOrigin, plane.xyz)) / max(dot(rayDir, plane.xyz), EPSILON_MIN);
     return rayOrigin + t * rayDir;
 }
 

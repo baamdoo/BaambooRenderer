@@ -37,9 +37,9 @@ public:
 	{
 		bool operator==(const State& other) const { return access == other.access && stage == other.stage && layout == other.layout; }
 
-		VkAccessFlags2        access;
-		VkPipelineStageFlags2 stage;
-		VkImageLayout         layout;
+		VkAccessFlags2        access = 0;
+		VkPipelineStageFlags2 stage  = 0;
+		VkImageLayout         layout = VK_IMAGE_LAYOUT_UNDEFINED;
 	};
 	struct ResourceState
 	{

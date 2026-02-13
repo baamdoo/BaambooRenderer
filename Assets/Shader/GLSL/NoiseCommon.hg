@@ -31,17 +31,17 @@ float hash1D(vec3 p)
     return fract((p.x + p.y) * p.z);
 }
 
-vec2 hash2D(vec2 p) 
+vec2 hash2D(uvec2 p) 
 {
-    uvec2 q = uvec2(ivec2(p)) * UI2;
+    uvec2 q = p * UI2;
 	      q = (q.x ^ q.y) * UI2;
 
 	return -1.0 + 2.0 * vec2(q) * UIF;
 }
 
-vec3 hash3D(vec3 p) 
+vec3 hash3D(uvec3 p) 
 {
-    uvec3 q = uvec3(ivec3(p)) * UI3;
+    uvec3 q = p * UI3;
 	      q = (q.x ^ q.y ^ q.z) * UI3;
 
 	return -1.0 + 2.0 * vec3(q) * UIF;
@@ -54,10 +54,10 @@ float perlinNoise2D(vec2 p, float frequency)
     vec2 f = fract(p);
     vec2 u = fade(f);
     
-    float dot00 = dot(hash2D(mod(i + vec2(0.0, 0.0), frequency)), f - vec2(0.0, 0.0));
-    float dot10 = dot(hash2D(mod(i + vec2(1.0, 0.0), frequency)), f - vec2(1.0, 0.0));
-    float dot01 = dot(hash2D(mod(i + vec2(0.0, 1.0), frequency)), f - vec2(0.0, 1.0));
-    float dot11 = dot(hash2D(mod(i + vec2(1.0, 1.0), frequency)), f - vec2(1.0, 1.0));
+    float dot00 = dot(hash2D(uvec2(ivec2(mod(i + vec2(0.0, 0.0), frequency)))), f - vec2(0.0, 0.0));
+    float dot10 = dot(hash2D(uvec2(ivec2(mod(i + vec2(1.0, 0.0), frequency)))), f - vec2(1.0, 0.0));
+    float dot01 = dot(hash2D(uvec2(ivec2(mod(i + vec2(0.0, 1.0), frequency)))), f - vec2(0.0, 1.0));
+    float dot11 = dot(hash2D(uvec2(ivec2(mod(i + vec2(1.0, 1.0), frequency)))), f - vec2(1.0, 1.0));
     
     return mix(mix(dot00, dot10, u.x),
                mix(dot01, dot11, u.x), u.y);
@@ -69,14 +69,14 @@ float perlinNoise3D(vec3 p, float frequency)
     vec3 f = fract(p);
     vec3 u = fade(f);
     
-    float dot000 = dot(hash3D(mod(i + vec3(0,0,0), frequency)), f - vec3(0,0,0));
-    float dot001 = dot(hash3D(mod(i + vec3(0,0,1), frequency)), f - vec3(0,0,1));
-    float dot010 = dot(hash3D(mod(i + vec3(0,1,0), frequency)), f - vec3(0,1,0));
-    float dot100 = dot(hash3D(mod(i + vec3(1,0,0), frequency)), f - vec3(1,0,0));
-    float dot011 = dot(hash3D(mod(i + vec3(0,1,1), frequency)), f - vec3(0,1,1));
-    float dot101 = dot(hash3D(mod(i + vec3(1,0,1), frequency)), f - vec3(1,0,1));
-    float dot110 = dot(hash3D(mod(i + vec3(1,1,0), frequency)), f - vec3(1,1,0));
-    float dot111 = dot(hash3D(mod(i + vec3(1,1,1), frequency)), f - vec3(1,1,1));
+    float dot000 = dot(hash3D(uvec3(ivec3(mod(i + vec3(0,0,0), frequency)))), f - vec3(0,0,0));
+    float dot001 = dot(hash3D(uvec3(ivec3(mod(i + vec3(0,0,1), frequency)))), f - vec3(0,0,1));
+    float dot010 = dot(hash3D(uvec3(ivec3(mod(i + vec3(0,1,0), frequency)))), f - vec3(0,1,0));
+    float dot100 = dot(hash3D(uvec3(ivec3(mod(i + vec3(1,0,0), frequency)))), f - vec3(1,0,0));
+    float dot011 = dot(hash3D(uvec3(ivec3(mod(i + vec3(0,1,1), frequency)))), f - vec3(0,1,1));
+    float dot101 = dot(hash3D(uvec3(ivec3(mod(i + vec3(1,0,1), frequency)))), f - vec3(1,0,1));
+    float dot110 = dot(hash3D(uvec3(ivec3(mod(i + vec3(1,1,0), frequency)))), f - vec3(1,1,0));
+    float dot111 = dot(hash3D(uvec3(ivec3(mod(i + vec3(1,1,1), frequency)))), f - vec3(1,1,1));
     
     // trilinear interpolation of 8 corner contributions
     return mix(mix(mix(dot000, dot100, u.x),
@@ -137,7 +137,7 @@ float worleyNoise2D(vec2 p, float frequency)
         {
             {
                 vec2 neighbor = i + vec2(x, y);
-                vec2 offset   = hash2D(mod(neighbor, vec2(frequency))) * 0.5 + 0.5;
+                vec2 offset   = hash2D(uvec2(ivec2(mod(neighbor, vec2(frequency))))) * 0.5 + 0.5;
 
                 vec2  d    = f - (vec2(x, y) + offset);
                 float dist = dot(d, d);
@@ -162,7 +162,7 @@ float worleyNoise3D(vec3 p, float frequency)
             for (int z = -1; z <= 1; ++z)
             {
                 vec3 neighbor = i + vec3(x, y, z);
-                vec3 offset   = hash3D(mod(neighbor, vec3(frequency))) * 0.5 + 0.5;
+                vec3 offset   = hash3D(uvec3(ivec3(mod(neighbor, vec3(frequency))))) * 0.5 + 0.5;
 
                 vec3  d    = f - (vec3(x, y, z) + offset);
                 float dist = dot(d, d);
@@ -292,7 +292,7 @@ vec2 worleyBidirection(vec3 p, float cellCount)
             for (int z = -1; z <= 1; ++z)
             {
                 vec3 neighbor = i + vec3(x, y, z);
-                vec3 offset = hash3D(mod(neighbor, cellCount));
+                vec3 offset = hash3D(uvec3(ivec3(mod(neighbor, cellCount))));
                 
                 float dist = length(vec3(x, y, z) + offset - f);
                 if (dist < f1) 
@@ -456,35 +456,35 @@ vec3 gradientDirection3D(uint hash)
 }
 ///////////////////////////////////////////////////////
 
-float perlinNoise2D(vec2 p, uint seed) 
+float perlinNoise2D(vec2 p, float frequency, uint seed) 
 {
     vec2 i = floor(p);
     vec2 f = fract(p);
     vec2 u = fade(f);
-    
-    float dot00 = dot(gradientDirection2D(hash2D(uvec2(i) + uvec2(0, 0), seed)), f - vec2(0.0, 0.0));
-    float dot10 = dot(gradientDirection2D(hash2D(uvec2(i) + uvec2(1, 0), seed)), f - vec2(1.0, 0.0));
-    float dot01 = dot(gradientDirection2D(hash2D(uvec2(i) + uvec2(0, 1), seed)), f - vec2(0.0, 1.0));
-    float dot11 = dot(gradientDirection2D(hash2D(uvec2(i) + uvec2(1, 1), seed)), f - vec2(1.0, 1.0));
+
+    float dot00 = dot(gradientDirection2D(hash2D(uvec2(ivec2(mod(i + vec2(0.0, 0.0), frequency))), seed)), f - vec2(0.0, 0.0));
+    float dot10 = dot(gradientDirection2D(hash2D(uvec2(ivec2(mod(i + vec2(1.0, 0.0), frequency))), seed)), f - vec2(1.0, 0.0));
+    float dot01 = dot(gradientDirection2D(hash2D(uvec2(ivec2(mod(i + vec2(0.0, 1.0), frequency))), seed)), f - vec2(0.0, 1.0));
+    float dot11 = dot(gradientDirection2D(hash2D(uvec2(ivec2(mod(i + vec2(1.0, 1.0), frequency))), seed)), f - vec2(1.0, 1.0));
     
     return mix(mix(dot00, dot10, u.x),
                mix(dot01, dot11, u.x), u.y);
 }
 
-float perlinNoise3D(vec3 p, uint seed) 
+float perlinNoise3D(vec3 p, float frequency, uint seed) 
 {
     vec3 i = floor(p);
     vec3 f = fract(p);
     vec3 u = fade(f);
     
-    float dot000 = dot(gradientDirection3D(hash3D(uvec3(i) + uvec3(0, 0, 0), seed)), f - vec3(0,0,0));
-    float dot001 = dot(gradientDirection3D(hash3D(uvec3(i) + uvec3(0, 0, 1), seed)), f - vec3(0,0,1));
-    float dot010 = dot(gradientDirection3D(hash3D(uvec3(i) + uvec3(0, 1, 0), seed)), f - vec3(0,1,0));
-    float dot100 = dot(gradientDirection3D(hash3D(uvec3(i) + uvec3(1, 0, 0), seed)), f - vec3(1,0,0));
-    float dot011 = dot(gradientDirection3D(hash3D(uvec3(i) + uvec3(0, 1, 1), seed)), f - vec3(0,1,1));
-    float dot101 = dot(gradientDirection3D(hash3D(uvec3(i) + uvec3(1, 0, 1), seed)), f - vec3(1,0,1));
-    float dot110 = dot(gradientDirection3D(hash3D(uvec3(i) + uvec3(1, 1, 0), seed)), f - vec3(1,1,0));
-    float dot111 = dot(gradientDirection3D(hash3D(uvec3(i) + uvec3(1, 1, 1), seed)), f - vec3(1,1,1));
+    float dot000 = dot(gradientDirection3D(hash3D(uvec3(ivec3(mod(i + vec3(0, 0, 0), frequency))), seed)), f - vec3(0,0,0));
+    float dot001 = dot(gradientDirection3D(hash3D(uvec3(ivec3(mod(i + vec3(0, 0, 1), frequency))), seed)), f - vec3(0,0,1));
+    float dot010 = dot(gradientDirection3D(hash3D(uvec3(ivec3(mod(i + vec3(0, 1, 0), frequency))), seed)), f - vec3(0,1,0));
+    float dot100 = dot(gradientDirection3D(hash3D(uvec3(ivec3(mod(i + vec3(1, 0, 0), frequency))), seed)), f - vec3(1,0,0));
+    float dot011 = dot(gradientDirection3D(hash3D(uvec3(ivec3(mod(i + vec3(0, 1, 1), frequency))), seed)), f - vec3(0,1,1));
+    float dot101 = dot(gradientDirection3D(hash3D(uvec3(ivec3(mod(i + vec3(1, 0, 1), frequency))), seed)), f - vec3(1,0,1));
+    float dot110 = dot(gradientDirection3D(hash3D(uvec3(ivec3(mod(i + vec3(1, 1, 0), frequency))), seed)), f - vec3(1,1,0));
+    float dot111 = dot(gradientDirection3D(hash3D(uvec3(ivec3(mod(i + vec3(1, 1, 1), frequency))), seed)), f - vec3(1,1,1));
     
     // trilinear interpolation of 8 corner contributions
     return mix(mix(mix(dot000, dot100, u.x),
@@ -495,15 +495,15 @@ float perlinNoise3D(vec3 p, uint seed)
 
 float perlinFBM(vec2 p, float frequency, int octaves, float persistence, float lacunarity, uint seed) 
 {
-    float total         = 0.0;
-    float amplitude     = 1.0;
-    
+    float total     = 0.0;
+    float amplitude = 1.0;
+
     uint curSeed = seed;
     for (int i = 0; i < octaves; i++) 
     {
-        float noise = perlinNoise2D(p * frequency, curSeed);
+        float noise = perlinNoise2D(p * frequency, frequency, curSeed);
 
-        total  += noise * amplitude;
+        total   += noise * amplitude;
         curSeed = hash1D(curSeed, 0x0u); // create a new seed for each octave
 
         amplitude *= persistence;
@@ -515,13 +515,13 @@ float perlinFBM(vec2 p, float frequency, int octaves, float persistence, float l
 
 float perlinFBM(vec3 p, float frequency, uint octaves, float persistence, float lacunarity, uint seed) 
 {
-    float total         = 0.0;
-    float amplitude     = 1.0;
-    
+    float total     = 0.0;
+    float amplitude = 1.0;
+
     uint curSeed = seed;
     for (uint i = 0u; i < octaves; i++) 
     {
-        float noise = perlinNoise3D(p * frequency, curSeed);
+        float noise = perlinNoise3D(p * frequency, frequency, curSeed);
 
         total  += noise * amplitude;
         curSeed = hash1D(curSeed, 0x0u); // create a new seed for each octave
@@ -530,6 +530,87 @@ float perlinFBM(vec3 p, float frequency, uint octaves, float persistence, float 
         frequency *= lacunarity;
     }
     
+    return total;
+}
+///////////////////////////////////////////////////////////////////////
+
+float rbf(float d)
+{
+    if (d >= 1.0) return 0.0;
+    float t = 1.0 - d;
+    return t * t * (3.0 - 2.0 * t);
+}
+
+float hashFloat(uvec3 p, uint seed)
+{
+    return float(hash3D(p, seed)) * UIF;
+}
+
+float alligatorNoise3D(vec3 p, float frequency, uint seed)
+{
+    vec3 ip = floor(p);
+    vec3 fp = fract(p);
+
+    float max1 = 0.0;
+    float max2 = 0.0;
+
+    for (int k = -1; k <= 1; k++)
+    {
+        for (int j = -1; j <= 1; j++)
+        {
+            for (int i = -1; i <= 1; i++)
+            {
+                vec3  g = vec3(float(i), float(j), float(k));
+
+                uvec3 cellID = uvec3(ivec3(mod(ip + g, frequency)));
+
+                vec3 jitter;
+                jitter.x = hashFloat(cellID, seed);
+                jitter.y = hashFloat(cellID, seed + 101u);
+                jitter.z = hashFloat(cellID, seed + 202u);
+
+                vec3 center = g + jitter;
+                
+                float d = length(fp - center);
+                if (d < 1.0)
+                {
+                    float rawIntensity = hashFloat(cellID, seed + 303u);
+                    float cellIntensity = rawIntensity * 0.5 + 0.5;
+                    
+                    float val = cellIntensity * rbf(d);
+
+                    if (val > max1)
+                    {
+                        max2 = max1;
+                        max1 = val;
+                    }
+                    else if (val > max2)
+                    {
+                        max2 = val;
+                    }
+                }
+            }
+        }
+    }
+
+    return max1 - max2;
+}
+
+float alligatorFBM(vec3 p, float frequency, int octaves, float persistence, float lacunarity, uint seed)
+{
+    float total     = 0.0;
+    float amplitude = 1.0;
+    float maxAmp    = 0.0;
+
+    for (int i = 0; i < octaves; i++)
+    {
+        total  += alligatorNoise3D(p * frequency, frequency, seed + uint(i * 50)) * amplitude;
+        maxAmp += amplitude;
+        
+        amplitude *= persistence;
+        frequency *= lacunarity;
+    }
+
     return total;
 }
 

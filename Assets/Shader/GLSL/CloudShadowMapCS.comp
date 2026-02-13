@@ -11,6 +11,7 @@ layout(set = 1, binding = 7, r11f_g11f_b10f) writeonly uniform image2D g_OutClou
 layout(set = 1, binding = 8) uniform CloudShadowUBO
 {
     mat4 mSunView;
+    mat4 mSunViewInv;
     mat4 mSunViewProj;
     mat4 mSunViewProjInv;
 } g_CloudShadow;
@@ -30,6 +31,10 @@ vec3 RaymarchBSM(vec3 rayOrigin, vec3 rayDirection)
     CloudData      Cloud      = GetCloudData();
     AtmosphereData Atmosphere = GetAtmosphereData();
 
+    const float topLayerMeter     = Cloud.topLayerKm * KM_TO_M;
+    const float bottomLayerMeter  = Cloud.bottomLayerKm * KM_TO_M;
+    const float planetRadiusMeter = Atmosphere.planetRadiusKm * KM_TO_M;
+
     float frontDepth      = 1e30;
     float extinctionSum   = 0.0;
     float extinctionCount = 0.0;
@@ -37,48 +42,64 @@ vec3 RaymarchBSM(vec3 rayOrigin, vec3 rayDirection)
 
     bool bFirstHit = false;
 
-    float rBottomLayer      = Atmosphere.planetRadiusKm + Cloud.bottomLayerKm;
-    vec2 bottomIntersection = 
-        RaySphereIntersection(rayOrigin, rayDirection, PLANET_CENTER, rBottomLayer);
-    if (all(lessThan(bottomIntersection, vec2(0.0, 0.0))))
-    {
+    float rtopLayer    = planetRadiusMeter + topLayerMeter;
+    float rBottomLayer = planetRadiusMeter + bottomLayerMeter;
+
+    vec2 topIntersection;
+    vec2 bottomIntersection; 
+    bool bTop    = RaySphereIntersection(rayOrigin, rayDirection, PLANET_CENTER, rtopLayer, topIntersection);
+    bool bBottom = RaySphereIntersection(rayOrigin, rayDirection, PLANET_CENTER, rBottomLayer, bottomIntersection);
+
+    float rayStart = topIntersection.x;
+    float rayEnd   = bottomIntersection.x;
+
+    if (!bTop)
         return vec3(frontDepth, 0.0, 0.0);
+
+    if (!bBottom)
+    {
+        if (topIntersection.y > 0.0)
+            rayEnd = topIntersection.y;
+        else
+            return vec3(frontDepth, 0.0, 0.0);
     }
-    float rayLength = bottomIntersection.x > 0.0 ? bottomIntersection.x : bottomIntersection.y;
 
-    float ExtinctionStrength = (Cloud.extinctionStrength.r + Cloud.extinctionStrength.g + Cloud.extinctionStrength.b) / 3.0;
-          ExtinctionStrength *= Cloud.extinctionScale;
+    if (rayStart > rayEnd)
+        return vec3(frontDepth, 0.0, 0.0);
 
-    vec3  offset = Cloud.windDirection * g_Push.timeSec * Cloud.windSpeedMps * 0.001;
+    float rayLength = rayEnd - rayStart;
+    float numSteps  = float(g_Push.numLightRaymarchSteps);
+    float stepSize  = rayLength / numSteps;
 
-    float numSteps = float(g_Push.numLightRaymarchSteps);
-    float stepSize = rayLength / numSteps;
+    vec3 movement = Cloud.windDirection * g_Push.timeSec * Cloud.windSpeedMps;
 
+    rayOrigin += rayStart * rayDirection;
     for(float i = 0.5; i < numSteps; i += 1.0)
     {
-        float st   = i * stepSize;
+        float st = i * stepSize;
         vec3  spos = rayOrigin + st * rayDirection;
 
-        float saltitude = length(spos) - Atmosphere.planetRadiusKm;
-        float shNorm    = inverseLerp(saltitude, Cloud.bottomLayerKm, Cloud.topLayerKm);
+        float saltitude = length(spos) - planetRadiusMeter;
+        float shNorm    = inverseLerp(saltitude, bottomLayerMeter, topLayerMeter);
         if (shNorm > 1.0 || shNorm < 0.0)
-        {
             continue;
-        }
 
-        float stepDensity = SampleCloudDensity(spos, shNorm, offset, Cloud);
+        vec3 sposInLayer         = vec3(spos.x, spos.y - planetRadiusMeter, spos.z);
+        vec3 conservativeDensity = SampleCloudConservativeDensity(sposInLayer, shNorm, Cloud);
+        if (conservativeDensity.x <= 0.0)
+            continue;
+
+        float stepDensity = SampleCloudExtinction(spos, shNorm, 0.0, conservativeDensity, false, Cloud).extinction;
         if (stepDensity > 0.0)
         {
             if (!bFirstHit)
             {
-                //frontDepth = st;
-                vec4 sposVIEW = g_CloudShadow.mSunView * vec4(spos, 1.0);
-                frontDepth    = sposVIEW.z;
+                frontDepth = length(spos - rayOrigin);
 
                 bFirstHit = true;
             }
 
-            float stepExtinction = stepDensity * ExtinctionStrength * 1000.0;
+            float stepExtinction = stepDensity;
 
             extinctionSum   += stepExtinction;
             extinctionCount += 1.0;

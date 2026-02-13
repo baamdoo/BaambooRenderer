@@ -5,11 +5,12 @@
 #include "DescriptorCommon.hg"
 #include "HelperFunctions.hg"
 
-const float DISTANCE_SCALE               = 0.001;         // m-km
+const float M_TO_KM                      = 1e-3;
+const float KM_TO_M                      = 1e3;
 const vec3  PLANET_CENTER                = vec3(0, 0, 0); // km
 const float AP_KM_PER_SLICE              = 4.0;           // km
-const float MIN_VIEW_HEIGHT_ABOVE_GROUND = 0.0005 * (1.0 / DISTANCE_SCALE); // km
-const float RAY_MARCHING_MAX_DISTANCE    = 1e2;
+const float MIN_VIEW_HEIGHT_ABOVE_GROUND = 0.0005 * (1.0 / M_TO_KM); // km
+const float RAY_MARCHING_MAX_DISTANCE    = 1e5;
 
 // Reference: https://github.com/sebh/UnrealEngineSkyAtmosphere
 float GetAltitude(vec3 position, float planetRadiusKm) 

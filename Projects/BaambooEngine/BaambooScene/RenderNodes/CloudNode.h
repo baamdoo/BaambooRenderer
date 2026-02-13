@@ -20,14 +20,12 @@ public:
 	virtual void Apply(render::CommandContext& context, const SceneRenderView& renderView) override;
 
 private:
+	Arc< render::Texture > m_pCloudWeatherMap;
+	Arc< render::Texture > m_pCloudProfileLUT;
 	Arc< render::Texture > m_pBaseNoiseTexture;
-	Arc< render::Texture > m_pErosionNoiseTexture;
-	Arc< render::Texture > m_pDensityTopGradientTexture;
-	Arc< render::Texture > m_pDensityBottomGradientTexture;
 
-	Box< render::ComputePipeline > m_pCloudShapeBasePSO;
-	Box< render::ComputePipeline > m_pCloudShapeDetailPSO;
 	Box< render::ComputePipeline > m_pWeatherMapPSO;
+	Box< render::ComputePipeline > m_pCloudShapeBasePSO;
 };
 
 
@@ -46,9 +44,7 @@ public:
 
 private:
 	Arc< render::Texture > m_pBaseNoiseTexture;
-	Arc< render::Texture > m_pErosionNoiseTexture;
-	Arc< render::Texture > m_pDensityTopGradientTexture;
-	Arc< render::Texture > m_pDensityBottomGradientTexture;
+	Arc< render::Texture > m_pCloudProfileLUT;
 
 	Arc< render::Texture > m_pCloudShadowMap;
 	Arc< render::Texture > m_pCloudScatteringLUT;

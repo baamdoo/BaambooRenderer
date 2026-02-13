@@ -16,7 +16,7 @@ layout(push_constant) uniform PushConstants
     uint numRaySteps;
 } g_Push;
 
-vec3 ComputeMultiScattering(float viewHeight, float cosZenithAngle) 
+vec3 ComputeMultiScattering(float viewHeight, float cosZenithAngle)
 {
     AtmosphereData Atmosphere = GetAtmosphereData();
 

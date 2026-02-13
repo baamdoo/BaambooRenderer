@@ -27,57 +27,77 @@ float3 RaymarchBSM(float3 rayOrigin, float3 rayDirection)
     CloudData      Cloud      = GetCloudData();
     AtmosphereData Atmosphere = GetAtmosphereData();
 
-    float frontDepth = 1e30;
-    float extinctionSum = 0.0;
+    const float topLayerMeter     = Cloud.topLayerKm * KM_TO_M;
+    const float bottomLayerMeter  = Cloud.bottomLayerKm * KM_TO_M;
+    const float planetRadiusMeter = Atmosphere.planetRadiusKm * KM_TO_M;
+
+    float frontDepth      = 1e30;
+    float extinctionSum   = 0.0;
     float extinctionCount = 0.0;
     float maxOpticalDepth = 0.0;
 
     bool bFirstHit = false;
 
-    float rBottomLayer = Atmosphere.planetRadiusKm + Cloud.bottomLayerKm;
+    float rtopLayer    = planetRadiusMeter + topLayerMeter;
+    float rBottomLayer = planetRadiusMeter + bottomLayerMeter;
 
-    float2 bottomIntersection = RaySphereIntersection(rayOrigin, rayDirection, PLANET_CENTER, rBottomLayer);
-    if (all(bottomIntersection < 0.0))
-    {
+    float2 topIntersection;
+    float2 bottomIntersection;
+    bool bTop    = RaySphereIntersection(rayOrigin, rayDirection, PLANET_CENTER, rtopLayer, topIntersection);
+    bool bBottom = RaySphereIntersection(rayOrigin, rayDirection, PLANET_CENTER, rBottomLayer, bottomIntersection);
+
+    float rayStart = topIntersection.x;
+    float rayEnd   = bottomIntersection.x;
+
+    if (!bTop)
         return float3(frontDepth, 0.0, 0.0);
+
+    if (!bBottom)
+    {
+        if (topIntersection.y > 0.0)
+            rayEnd = topIntersection.y;
+        else
+            return float3(frontDepth, 0.0, 0.0);
     }
-    float rayLength = bottomIntersection.x > 0.0 ? bottomIntersection.x : bottomIntersection.y;
 
-    float ExtinctionStrength = (Cloud.extinctionStrength.r + Cloud.extinctionStrength.g + Cloud.extinctionStrength.b) / 3.0;
-    ExtinctionStrength *= Cloud.extinctionScale;
+    if (rayStart > rayEnd)
+        return float3(frontDepth, 0.0, 0.0);
 
-    float3 offset = Cloud.windDirection * g_TimeSec * Cloud.windSpeedMps * 0.001;
+    float rayLength = rayEnd - rayStart;
+    float numSteps  = float(g_NumLightRaymarchSteps);
+    float stepSize  = rayLength / numSteps;
 
-    float numSteps = (float)g_NumLightRaymarchSteps;
-    float stepSize = rayLength / numSteps;
+    float3 movement = Cloud.windDirection * g_TimeSec * Cloud.windSpeedMps * 0.001;
 
+    rayOrigin += rayStart * rayDirection;
     for (float i = 0.5; i < numSteps; i += 1.0)
     {
-        float st = i * stepSize;
+        float  st   = i * stepSize;
         float3 spos = rayOrigin + st * rayDirection;
 
-        float saltitude = length(spos) - Atmosphere.planetRadiusKm;
-
-        float shNorm = inverseLerp(saltitude, Cloud.bottomLayerKm, Cloud.topLayerKm);
+        float saltitude = length(spos) - planetRadiusMeter;
+        float shNorm    = inverseLerp(saltitude, bottomLayerMeter, topLayerMeter);
         if (shNorm > 1.0 || shNorm < 0.0)
-        {
             continue;
-        }
 
-        float stepDensity = SampleCloudDensity(spos, shNorm, offset, Cloud);
+        float3 sposInLayer         = float3(spos.x, spos.y - planetRadiusMeter, spos.z);
+        float3 conservativeDensity = SampleCloudConservativeDensity(sposInLayer, shNorm, Cloud);
+        if (conservativeDensity.x <= 0.0)
+            continue;
+
+        float stepDensity = SampleCloudExtinction(spos, shNorm, 0.0, conservativeDensity, false, Cloud).extinction;
         if (stepDensity > 0.0)
         {
             if (!bFirstHit)
             {
-                float4 sposVIEW = mul(g_CloudShadow.mSunView, float4(spos, 1.0));
-                frontDepth = sposVIEW.z;
+                frontDepth = length(spos - rayOrigin);
 
                 bFirstHit = true;
             }
 
-            float stepExtinction = stepDensity * ExtinctionStrength * 1000.0;
+            float stepExtinction = stepDensity;
 
-            extinctionSum   += stepExtinction;
+            extinctionSum += stepExtinction;
             extinctionCount += 1.0;
 
             maxOpticalDepth += stepExtinction * stepSize;
@@ -102,18 +122,15 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 
     float2 uv = (float2(pixCoords) + 0.5) / float2(imgSize);
 
-    // Reverse-Z
-    float4 posNearCLIP  = float4(uv * 2.0f - 1.0f, 1.0f, 1.0f);
+    float4 posNearCLIP  = float4(uv * 2.0f - 1.0f, 1.0f, 1.0f); // Reverse-Z
     float4 posNearWORLD = mul(g_CloudShadow.mSunViewProjInv, posNearCLIP);
 
-    float4 posFarCLIP  = float4(uv * 2.0f - 1.0f, 0.0f, 1.0f);
+    float4 posFarCLIP  = float4(uv * 2.0f - 1.0f, 0.0f, 1.0f); // Reverse-Z
     float4 posFarWORLD = mul(g_CloudShadow.mSunViewProjInv, posFarCLIP);
 
     float3 rayOrigin    = posNearWORLD.xyz / posNearWORLD.w;
     float3 rayTarget    = posFarWORLD.xyz / posFarWORLD.w;
     float3 rayDirection = normalize(rayTarget - rayOrigin);
 
-    float3 BSM = RaymarchBSM(rayOrigin, rayDirection);
-
-    OutCloudShadowMap[pixCoords] = BSM;
+    OutCloudShadowMap[pixCoords] = RaymarchBSM(rayOrigin, rayDirection);
 }

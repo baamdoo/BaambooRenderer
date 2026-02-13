@@ -258,21 +258,28 @@ struct AtmosphereComponent
 	float planetRadiusKm     = 6360.0f;
 	float atmosphereRadiusKm = 6460.0f;
 
-	float3 rayleighScattering  = { 5.802e-3f, 13.558e-3f, 33.1e-3f };
-	float  rayleighDensityKm = 8.0f;
+	float3 rayleighScattering = { 5.802e-3f, 13.558e-3f, 33.1e-3f };
+	float  rayleighDensityKm  = 8.0f;
 
-	float mieScattering  = 3.996e-3f;
-	float mieAbsorption  = 4.4e-3f;
-	float mieDensityKm = 1.2f;
-	float miePhaseG      = 0.80f;
+	float mieScattering = 3.996e-3f;
+	float mieAbsorption = 4.4e-3f;
+	float mieDensityKm  = 1.2f;
+	float miePhaseG     = 0.80f;
 
 	float3 ozoneAbsorption = { 0.650e-3f, 1.881e-3f, 0.085e-3f };
-	float  ozoneCenterKm  = 25.0f;
-	float  ozoneWidthKm   = 30.0f;
+	float  ozoneCenterKm   = 25.0f;
+	float  ozoneWidthKm    = 30.0f;
 
 	eRaymarchResolution raymarchResolution = eRaymarchResolution::Middle;
 
 	std::string skybox;
+
+	static AtmosphereComponent DayPreset()
+	{
+		AtmosphereComponent preset{};
+
+		return preset;
+	}
 };
 
 //-------------------------------------------------------------------------
@@ -280,31 +287,48 @@ struct AtmosphereComponent
 //-------------------------------------------------------------------------
 struct CloudComponent
 {
-	float bottomHeight_km   = 2.0f;
-	float layerThickness_km = 8.0f;
+	float bottomHeightKm   = 0.6f;
+	float layerThicknessKm = 0.7f;
 
-	// Light
-	float3 extinctionStrength = float3(0.82f, 0.86f, 1.0f);
-	float  extinctionScale    = 4.0f;
+	float shadowTracingDistanceMultiplier = 0.5f;
 
-	float msContribution             = 0.8f;
-	float msOcclusion                = 0.6f;
-	float msEccentricity             = 0.2f;
+	float3 albedo      = float3(1.0f);
+	float  albedoScale = 0.3f;
+
 	float groundContributionStrength = 0.3f;
 
-	float cloudType      = 0.68f;
-	float coverage       = 0.975f;
-	float baseNoiseScale = 0.021f;
-	float baseIntensity  = 1.0f;
+	// shape
+	float floorVariationClear  = 0.1f;
+	float floorVariationCloudy = 0.8f;
 
-	float erosionNoiseScale               = 0.220f;
-	float erosionIntensity                = 0.15f;
-	float erosionPower                    = 0.3f;
-	float wispySkewness                   = 0.85f;
-	float billowySkewness                 = 0.85f;
-	float precipitation                   = 0.1f;
-	float erosionHeightGradientMultiplier = 1.45f;
-	float erosionHeightGradientPower      = 3.0f;
+	float cloudsScale        = 1.0f;
+	float cloudsMacroUvScale = 12000.0f;
+	float cloudsCoverage     = 1.28f;
+	float clumpsVariation    = 0.23f;
+
+	float baseDensity         = 1.5f;
+	float baseErosionScale    = 0.5f;
+	float baseErosionPower    = 3.0f;
+	float baseErosionStrength = 1.2f;
+
+	float hfErosionStrength   = 0.9f;
+	float hfErosionDistortion = 1.0f;
+
+	// shade-direct
+	float3 scatteringScale = float3(2.695f, 2.963334f, 3.5f);
+	float  extinctionScale = 10.0f;
+
+	float msContribution             = 0.85f;
+	float msOcclusion                = 0.5f;
+	float msEccentricity             = 0.4f;
+
+	float silverScatterG = 0.99f;
+
+	// shade-ambient
+	float ambientIntensity   = 1.0f;
+	float ambientSaturation  = 0.45f;
+	float topAmbientScale    = 1.0f;
+	float bottomAmbientScale = 0.85f;
 
 	// Animation
 	float3 windDirection = float3(1.0f, 0.0f, 0.0f);
@@ -313,11 +337,10 @@ struct CloudComponent
 	// Others
 	eCloudUprezRatio uprezRatio = eCloudUprezRatio::X2;
 
-	i32 numCloudRaymarchSteps = 64;
-	i32 numLightRaymarchSteps = 64;
+	i32 numCloudRaymarchSteps = 128;
+	i32 numLightRaymarchSteps = 16;
 	float frontDepthBias      = 0.05f;
-	float temporalBlendAlpha  = 0.05f;
-
+	float temporalBlendAlpha  = 0.1f;
 
 	std::string blueNoiseTex;
 	std::string weatherMap;

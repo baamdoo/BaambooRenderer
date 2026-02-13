@@ -10,6 +10,28 @@ namespace math
 //-------------------------------------------------------------------------
 // Helper Function
 //-------------------------------------------------------------------------
+inline float InverseLerp(float v, float minValue, float maxValue)
+{
+	return (v - minValue) / (maxValue - minValue);
+}
+
+inline float RemapClamped(float v, float inMin, float inMax, float outMin, float outMax)
+{
+	float t = InverseLerp(v, inMin, inMax);
+	return glm::mix(outMin, outMax, glm::clamp(t, 0.0f, 1.0f));
+}
+
+inline float Luminance(float3 color)
+{
+	return color.r * 0.3f + color.g * 0.59f + color.b * 0.11f;
+}
+
+inline float4 Desaturate(float4 color, float desaturation)
+{
+	float lum = Luminance(float3(color));
+	return glm::mix(color, float4(lum, lum, lum, 0), desaturation);
+}
+
 template< typename T >
 inline T AlignUp(T size, T alignment)
 {

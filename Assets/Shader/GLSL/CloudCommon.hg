@@ -5,76 +5,135 @@
 #include "DescriptorCommon.hg"
 #include "HelperFunctions.hg"
 
-layout(set = 1, binding = 0) uniform sampler3D g_CloudBaseNoise;
-layout(set = 1, binding = 1) uniform sampler3D g_CloudErosionNoise;
-layout(set = 1, binding = 2) uniform sampler2D g_TopGradientLUT;
-layout(set = 1, binding = 3) uniform sampler2D g_BottomGradientLUT;
+layout(set = 1, binding = 0) uniform sampler2D g_CloudMacroMap;
+layout(set = 1, binding = 1) uniform sampler3D g_CloudBaseNoise;
+layout(set = 1, binding = 2) uniform sampler2D g_CloudProfileLUT;
 
 ////////////////////////////////////////////////////////////////////////
 // Shaping //
-// Reference: https://advances.realtimerendering.com/s2022/index.html#Nubis
-float GetCloudBaseShape(vec3 pos, float hNorm, inout CloudData Cloud)
+// Reference: https://www.guerrilla-games.com/read/nubis-cubed
+float GetCloudFloorVariationLevel(vec4 cloudMap, float hNorm, float macroDensity, inout CloudData Cloud)
 {
-    vec3 baseUVW   = pos * Cloud.baseNoiseScale;
-    vec4 baseNoise = texture(g_CloudBaseNoise, baseUVW);
+    float cloudsVariation = mix(cloudMap.r, cloudMap.a, 0.6);
+
+    float varAlpha       = saturate(macroDensity - 1.5);
+    float floorVariation = mix(Cloud.floorVariationClear, Cloud.floorVariationCloudy, varAlpha);
+          floorVariation *= -1.0 * pow(cloudMap.r, 2.0);
+
+    return saturate(mix(saturate(hNorm), 1.0, floorVariation));
+}
+
+vec3 SampleCloudConservativeDensity(vec3 pos, float hNorm, inout CloudData Cloud)
+{
+    vec2 cloudUV  = pos.zx / Cloud.cloudsScale;
+    vec4 cloudMap = texture(g_CloudMacroMap, cloudUV);
+
+    //--- Macro Cloud Map ---//
+    vec2 variation = 0.5 - 0.5 * cos(cloudUV * 2.0 * PI);
+
+    float clumpsVariation = variation.x * variation.y * Cloud.clumpsVariation;
+    float macroDensity    = clumpsVariation + Cloud.baseDensity;
+
+    float densityThreshold = pow(1.0 - (macroDensity / 6.5), 3.0) - 0.25;
+
+    //--- Profile ---//
+    float floorVariationLevel = GetCloudFloorVariationLevel(cloudMap, hNorm, macroDensity, Cloud);
+
+    vec2  profileUV = vec2(macroDensity / 3.0, 1.0 - floorVariationLevel);
+    float profileR  = texture(g_CloudProfileLUT, profileUV).r;
+
+    //--- Cloud Shape ---//
+    float cloudShape = saturate(cloudMap.r * cloudMap.g - densityThreshold) / (1.0 - densityThreshold);
+    float dimensionalProfile = saturate(cloudShape - (1.0 - profileR));
+
+    return vec3(dimensionalProfile, floorVariationLevel, macroDensity);
+}
+
+struct CloudDensityResult
+{
+    float uprezzedDensity;
+    float splitAltitude;
+};
+CloudDensityResult VolumetricCloudsExtinction(vec3 pos, float hNorm, float distToCamera, vec3 conservativeDensity, bool bOptimize, inout CloudData Cloud)
+{
+    //--- Profile ---//
+    float floorVariationLevel = conservativeDensity.g;
+    float splitAltitude       = floorVariationLevel;
+
+    float u = conservativeDensity.b / 3.0;
+    float v = 1.0 - floorVariationLevel;
+
+    vec2 profileUV     = vec2(u, v);
+    vec4 profileSample = texture(g_CloudProfileLUT, profileUV);
+
+    float profileTextureG = profileSample.g;
+    float profileTextureB = profileSample.b;
+
+    //--- Base Erosion ---//
+    float macroDensity = conservativeDensity.b;
+
+    vec3 cloudUVW     = pos / Cloud.baseErosionScale;
+    vec4 lowFreqNoise = texture(g_CloudBaseNoise, cloudUVW);
+
+    float erosionFactor     = max(profileTextureB, 0.3) * Cloud.baseErosionStrength;
+    float wispy   = mix(lowFreqNoise.r, lowFreqNoise.g, conservativeDensity.r);
+    float billowy = mix(lowFreqNoise.b, lowFreqNoise.a, pow(conservativeDensity.r, 0.25));
+
+    float noiseBlendAlpha = pow(conservativeDensity.r, 0.25);
+    float lowFreqErosion  = erosionFactor * pow(mix(wispy, billowy, noiseBlendAlpha), Cloud.baseErosionPower);
+
+    float cloudDensity = saturate(remap(conservativeDensity.r, lowFreqErosion, 1.0, 0.0, 1.0));
+    if (bOptimize)
+    {
+        CloudDensityResult result;
+        result.uprezzedDensity = cloudDensity;
+        result.splitAltitude   = splitAltitude;
+
+        return result;
+    }
+
+    //--- High Erosion ---//
+    // float distRatio  = (Cloud.hfOctaveZeroDistance * 0.6) / max(distToCamera, 0.001);
+    // float lodFromFov = distRatio / max(Cloud.cameraFOV, 0.001);
+
+    float heightDensityMod = pow(profileTextureG, 3.0) * Cloud.extinctionScale;
+
+    float highFreqNoise  = saturate(
+        mix(1.0 - pow(abs(abs(lowFreqNoise.g * 2.0 - 1.0) * 2.0 - 1.0), 4.0 * Cloud.hfErosionDistortion), 
+            pow(abs(abs(lowFreqNoise.b * 2.0 - 1.0) * 2.0 - 1.0), 2.0 * Cloud.hfErosionDistortion), noiseBlendAlpha));
+    float noiseComposite = mix(highFreqNoise, lowFreqErosion, Cloud.hfErosionStrength);
+
+    float uprezzedDensity = saturate(safeRemap(conservativeDensity.r, noiseComposite, 1.0, 0.0, 1.0)) * heightDensityMod;
+    //uprezzedDensity = pow(uprezzedDensity, mix(0.3, 0.6, max(EPSILON_MIN, heightDensityMod)));
+    //uprezzedDensity *= lowFreqNoise.b;
     
-    float billowy   = dot(baseNoise.gba, vec3(0.625, 0.125, 0.25));
-    float baseCloud = billowy - (1.0 - baseNoise.r);
+    CloudDensityResult result;
+    result.uprezzedDensity = max(uprezzedDensity, 0.0);
+    result.splitAltitude   = splitAltitude;
 
-    return baseCloud * Cloud.baseIntensity;
+    return result;
 }
 
-float GetErosion(vec3 pos, inout CloudData Cloud)
+struct CloudExtinctionResult
 {
-    // TODO. Dissipation using CurlNoise
-    vec3 erosionUVW   = pos * Cloud.erosionNoiseScale;
-    vec4 erosionNoise = texture(g_CloudErosionNoise, erosionUVW);
-
-    float wispy   = mix(erosionNoise.r, erosionNoise.g, Cloud.wispiness);
-    float billowy = mix(erosionNoise.b, erosionNoise.a, Cloud.billowiness);
-    float erosion = mix(wispy, billowy, Cloud.precipitation);
-          erosion = pow(erosion, 1.0 - Cloud.erosionPower);
-
-    return erosion * Cloud.erosionIntensity;
-}
-
-float SampleCloudDensity(vec3 pos, float hNorm, vec3 offset, inout CloudData Cloud)
+    float extinction;
+    float emissiveLerpAlpha;
+};
+CloudExtinctionResult SampleCloudExtinction(vec3 pos, float hNorm, float distToCamera, vec3 conservativeDensity, bool bOptimize, inout CloudData Cloud)
 {
-    if (hNorm < 0.0)
-    {
-        return 0.0;
-    }
+    CloudDensityResult density = VolumetricCloudsExtinction(pos, hNorm, distToCamera, conservativeDensity, bOptimize, Cloud);
 
-    pos -= offset;
+    //float fadeAlpha = (distToCamera - Cloud.closeFadeOffset) / Cloud.closeFadeDistance;
+    //      fadeAlpha = saturate(fadeAlpha);
 
-    vec2  topGradientUV = vec2(Cloud.cloudType, 1.0 - hNorm);
-    float topGradient   = texture(g_TopGradientLUT, topGradientUV).r;
+    float invAltitude       = 1.0 - density.splitAltitude;
+    float emissiveLerpAlpha = pow(invAltitude, 0.03);
 
-    vec2  bottomGradientUV = vec2(Cloud.cloudType, 1.0 - hNorm);
-    float bottomGradient   = texture(g_BottomGradientLUT, topGradientUV).r;
+    CloudExtinctionResult result;
+    result.extinction        = density.uprezzedDensity;
+    result.emissiveLerpAlpha = emissiveLerpAlpha;
 
-    float heightFactor = (hNorm * (1.0 - hNorm));
-
-    float densityGradient = topGradient * bottomGradient;
-          densityGradient *= heightFactor;
-
-    // Make the middle part is most affected
-    float heightGradient  = (1.0 - 1.7 * heightFactor) * (1.0 - Cloud.coverage);
-
-    float b = GetCloudBaseShape(pos, hNorm, Cloud);
-          b = saturate(b - heightGradient);
-          b *= densityGradient * Cloud.baseIntensity;
-
-    if (b > 0.0)
-    {
-        float erosionHeightGradient = pow(saturate(hNorm * Cloud.erosionHeightGradientMultiplier), Cloud.erosionHeightGradientPower);
-
-        float e = GetErosion(pos, Cloud) * erosionHeightGradient;
-
-        b -= e;
-    }
-
-    return saturate(b);
+    return result;
 }
 
 #endif // _GLSL_CLOUD_COMMON_HEADER

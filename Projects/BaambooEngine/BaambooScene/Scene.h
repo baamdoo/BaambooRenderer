@@ -33,6 +33,9 @@ struct FrameData
 	Weak< render::Texture > pVolumetricFogLUT;
 
 	// CloudLUTs
+	Weak< render::Texture > pCloudWeatherMap;
+	Weak< render::Texture > pCloudProfileLUT;
+	Weak< render::Texture > pCloudBaseNoiseLUT;
 	Weak< render::Texture > pCloudShadowMap;
 	Weak< render::Texture > pCloudScatteringLUT;
 

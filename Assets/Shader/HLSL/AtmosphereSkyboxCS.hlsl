@@ -91,7 +91,7 @@ void main(uint3 tID : SV_DispatchThreadID)
     float3 cameraPos =
         float3(g_Camera.posWORLD.x, max(g_Camera.posWORLD.y, MIN_VIEW_HEIGHT_ABOVE_GROUND), g_Camera.posWORLD.z);
     float3 cameraPosAbovePlanet =
-        cameraPos * DISTANCE_SCALE + float3(0.0, Atmosphere.planetRadiusKm, 0.0);
+        cameraPos * M_TO_KM + float3(0.0, Atmosphere.planetRadiusKm, 0.0);
     float viewHeight = length(cameraPosAbovePlanet);
 
     float3 rayDir    = GetRayDirectionFromCubemapCoord(tID, width, height);
