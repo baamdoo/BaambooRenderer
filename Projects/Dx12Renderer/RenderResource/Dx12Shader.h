@@ -3,6 +3,7 @@
 
 struct IDxcUtils;
 struct IDxcCompiler3;
+struct ID3D12LibraryReflection;
 
 namespace dx12
 {
@@ -37,16 +38,18 @@ public:
 	inline SIZE_T GetShaderBufferSize() const { assert(m_d3dShaderBlob); return m_d3dShaderBlob->GetBufferSize(); }
 
 	inline ID3D12ShaderReflection* GetD3D12ShaderReflection() const { return m_d3d12ShaderReflection; }
+	inline ID3D12LibraryReflection* GetD3D12LibraryReflection() const { return m_d3d12LibraryReflection; }
 	inline const ShaderReflection& Reflection() const { return m_Reflection; }
+	inline bool IsLibrary() const { return m_d3d12LibraryReflection != nullptr; }
 
 protected:
 	void LoadBinary(std::string_view filepath);
 	void Reflect();
 
 private:
-	ID3DBlob*               m_d3dShaderBlob         = nullptr;
-	ID3D12ShaderReflection* m_d3d12ShaderReflection = nullptr;
-
+	ID3DBlob*                m_d3dShaderBlob          = nullptr;
+	ID3D12ShaderReflection*  m_d3d12ShaderReflection  = nullptr;
+	ID3D12LibraryReflection* m_d3d12LibraryReflection = nullptr;
 	ShaderReflection m_Reflection;
 
 	static IDxcUtils* ms_dxcUtils;

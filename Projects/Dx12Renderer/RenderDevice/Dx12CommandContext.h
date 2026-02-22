@@ -25,8 +25,9 @@ public:
 	void ClearDepthStencil(const Arc< Dx12Texture >& pTexture, D3D12_CLEAR_FLAGS clearFlags);
 
 	virtual void TransitionBarrier(Arc< render::Texture > pTexture, render::eTextureLayout newState, u32 subresource = ALL_SUBRESOURCES, bool bFlushImmediate = false) override;
+	virtual void UAVBarrier(Arc< render::Buffer > pBuffer, bool bFlushImmediate) override;
+
 	void TransitionBarrier(Dx12Resource* pResource, D3D12_RESOURCE_STATES stateAfter, u32 subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, bool bFlushImmediate = true);
-	void UAVBarrier(Dx12Resource* pResource, bool bFlushImmediate = false);
 	void AliasingBarrier(Dx12Resource* pResourceBefore, Dx12Resource* pResourceAfter, bool bFlushImmediate = false);
 
 	void CopyBuffer(ID3D12Resource* d3d12DstBuffer, ID3D12Resource* d3d12SrcBuffer, SIZE_T sizeInBytes, SIZE_T dstOffsetInBytes);
@@ -34,8 +35,12 @@ public:
 	virtual void CopyTexture(Arc< render::Texture > pDstTexture, Arc< render::Texture > pSrcTexture, u64 offsetInBytes = 0) override;
 	void ResolveSubresource(Dx12Resource* pDstResource, Dx12Resource* pSrcResource, u32 dstSubresource = 0, u32 srcSubresource = 0);
 
+	virtual void BuildBLAS(render::BottomLevelAccelerationStructure& blas) override;
+	virtual void BuildTLAS(render::TopLevelAccelerationStructure& tlas) override;
+
 	virtual void SetRenderPipeline(render::ComputePipeline* pRenderPipeline) override;
 	virtual void SetRenderPipeline(render::GraphicsPipeline* pRenderPipeline) override;
+	virtual void SetRenderPipeline(render::RaytracingPipeline* pRenderPipeline) override;
 
 	virtual void SetComputeConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) override;
 	virtual void SetGraphicsConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) override;
@@ -47,10 +52,13 @@ public:
 	virtual void SetGraphicsShaderResource(const std::string& name, Arc< render::Texture > pTexture, Arc< render::Sampler > pSamplerInCharge) override;
 	virtual void SetComputeShaderResource(const std::string& name, Arc< render::Buffer > pBuffer) override;
 	virtual void SetGraphicsShaderResource(const std::string& name, Arc< render::Buffer > pBuffer) override;
+
 	void SetComputeConstantBufferView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS srv);
 	void SetGraphicsConstantBufferView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS srv);
 	void SetComputeShaderResourceView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS srv);
 	void SetGraphicsShaderResourceView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS srv);
+
+	virtual void SetAccelerationStructure(const std::string& name, render::TopLevelAccelerationStructure& tlas) override;
 
 	virtual void StageDescriptor(const std::string& name, Arc< render::Buffer > pBuffer, u32 offset = 0) override;
 	virtual void StageDescriptor(const std::string& name, Arc< render::Texture > pTexture, Arc< render::Sampler > pSamplerInCharge, u32 offset = 0) override;
@@ -68,12 +76,14 @@ public:
 	virtual void DrawIndexed(u32 indexCount, u32 instanceCount = 1, u32 firstIndex = 0, i32 vertexOffset = 0, u32 firstInstance = 0) override;
 	virtual void DrawScene(const render::SceneResource& sceneResource) override;
 	virtual void Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ) override;
+	virtual void DispatchRays(render::ShaderBindingTable& sbt, u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ = 1) override;
 
 	virtual double GetLastFrameElapsedTime() const override;
 
 public:
 	bool IsComputeContext() const;
 	bool IsGraphicsContext() const;
+	bool IsRaytracingContext() const;
 
 	D3D12_COMMAND_LIST_TYPE GetCommandListType() const;
 	ID3D12GraphicsCommandList10* GetD3D12CommandList() const;

@@ -155,7 +155,7 @@ bool BistroApp::LoadScene()
 	ConfigureRenderGraph();
 	ConfigureSceneObjects();
 
-	return true;
+	return m_pScene != nullptr;
 }
 
 void BistroApp::DrawUI()

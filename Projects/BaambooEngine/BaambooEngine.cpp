@@ -212,9 +212,9 @@ void Engine::GameLoop(float dt)
 	m_pScene->Update(dt, *m_pCamera);
 
 	if (m_RenderViewQueue.size() >= NUM_TOLERANCE_ASYNC_FRAME_GAME_TO_RENDER)
-		m_RenderViewQueue.replace(m_pScene->RenderView(*m_pCamera, float2(m_pWindow->Width(), m_pWindow->Height()), m_Frame, m_bDrawUI));
+		m_RenderViewQueue.replace(m_pScene->RenderView(*m_pCamera, float2(m_pWindow->Width(), m_pWindow->Height()), m_Frame, m_bDrawUI, m_bRaytracer));
 	else
-		m_RenderViewQueue.push(m_pScene->RenderView(*m_pCamera, float2(m_pWindow->Width(), m_pWindow->Height()), m_Frame, m_bDrawUI));
+		m_RenderViewQueue.push(m_pScene->RenderView(*m_pCamera, float2(m_pWindow->Width(), m_pWindow->Height()), m_Frame, m_bDrawUI, m_bRaytracer));
 }
 
 void Engine::RenderLoop()

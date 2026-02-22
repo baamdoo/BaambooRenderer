@@ -39,7 +39,8 @@ private:
 
     D3D12_CPU_DESCRIPTOR_HANDLE m_CPUHandle = {};
     D3D12_GPU_DESCRIPTOR_HANDLE m_GPUHandle = {};
-    u32 m_NumDescriptors = 0;
+
+    u32 m_NumDescriptors      = 0;
     u32 m_DescriptorBaseIndex = 0;
 };
 

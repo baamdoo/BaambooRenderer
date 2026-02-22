@@ -34,14 +34,20 @@ public:
 
     // === Barriers ===
     virtual void TransitionBarrier(Arc< Texture > texture, eTextureLayout newState, u32 subresource = ALL_SUBRESOURCES, bool flushImmediate = false) = 0;
+    virtual void UAVBarrier(Arc< Buffer > pBuffer, bool bFlushImmediate) = 0;
 
     // === Render Target ===
     virtual void BeginRenderPass(Arc< RenderTarget > renderTarget) = 0;
     virtual void EndRenderPass() = 0;
 
+    // === Acceleration Structure ===
+    virtual void BuildBLAS(BottomLevelAccelerationStructure& blas) = 0;
+    virtual void BuildTLAS(TopLevelAccelerationStructure& tlas) = 0;
+
     // === Resource Binding ===
     virtual void SetRenderPipeline(ComputePipeline* pPipeline) = 0;
     virtual void SetRenderPipeline(GraphicsPipeline* pPipeline) = 0;
+    virtual void SetRenderPipeline(render::RaytracingPipeline* pRenderPipeline) = 0;
 
     virtual void SetComputeConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) = 0;
     virtual void SetGraphicsConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) = 0;
@@ -64,6 +70,8 @@ public:
     virtual void SetComputeShaderResource(const std::string&, Arc< Texture > texture, Arc< Sampler > samplerInCharge = nullptr) = 0;
     virtual void SetGraphicsShaderResource(const std::string&, Arc< Texture > texture, Arc< Sampler > samplerInCharge = nullptr) = 0;
 
+    virtual void SetAccelerationStructure(const std::string& name, TopLevelAccelerationStructure& tlas) = 0;
+
     virtual void StageDescriptor(const std::string&, Arc< Buffer > buffer, u32 offset = 0) = 0;
     virtual void StageDescriptor(const std::string&, Arc< Texture > texture, Arc< Sampler > samplerInCharge = nullptr, u32 offset = 0) = 0;
 
@@ -77,6 +85,7 @@ public:
     // === Compute Commands ===
     virtual void Dispatch(u32 threadGroupCountX, u32 threadGroupCountY, u32 threadGroupCountZ) = 0;
     //virtual void DispatchIndirect(Arc< Buffer > argumentBuffer, u32 argumentBufferOffset = 0) = 0;
+    virtual void DispatchRays(ShaderBindingTable& sbt, u32 width, u32 height, u32 depth = 1) = 0;
 
     template< u32 numThreadsPerGroupX >
     void Dispatch1D(u32 numThreadsX)

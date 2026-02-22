@@ -132,16 +132,29 @@ Dx12ConstantBuffer::~Dx12ConstantBuffer()
 	m_CBVAllocation.Free();
 }
 
+void Dx12ConstantBuffer::Reset()
+{
+	memset(GetSystemMemoryAddress(), 0, SizeInBytes());
+}
+
+void Dx12ConstantBuffer::Upload(const void* pData, u64 sizeInBytes, u64 offsetInBytes)
+{
+	if (pData && sizeInBytes > 0)
+	{
+		memcpy(GetSystemMemoryAddress() + offsetInBytes, pData, sizeInBytes);
+	}
+}
+
 
 //-------------------------------------------------------------------------
 // Structured Buffer
 //-------------------------------------------------------------------------
-Arc< Dx12StructuredBuffer > Dx12StructuredBuffer::Create(Dx12RenderDevice& rd, const char* name, u64 elementSizeInBytes, u64 numElements, RenderFlags additionalUsage)
+Arc< Dx12StructuredBuffer > Dx12StructuredBuffer::Create(Dx12RenderDevice& rd, const char* name, u64 elementSizeInBytes, u32 numElements, RenderFlags additionalUsage)
 {
 	return MakeArc< Dx12StructuredBuffer >(rd, name, elementSizeInBytes, numElements, additionalUsage);
 }
 
-Dx12StructuredBuffer::Dx12StructuredBuffer(Dx12RenderDevice& rd, const char* name, u64 elementSizeInBytes, u64 numElements, RenderFlags additionalUsage)
+Dx12StructuredBuffer::Dx12StructuredBuffer(Dx12RenderDevice& rd, const char* name, u64 elementSizeInBytes, u32 numElements, RenderFlags additionalUsage)
 	: Super(rd, name, 
 		{
 			.count              = numElements,

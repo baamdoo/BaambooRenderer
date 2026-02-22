@@ -45,7 +45,6 @@ PSOutput main(PSInput input)
         Texture2D AlbedoMap = GetResource(material.albedoID);
 
         albedo = AlbedoMap.Sample(g_LinearClampSampler, input.uv).rgb;
-        //albedo = pow(albedo, 2.2);
     }
     albedo *= float3(material.tintR, material.tintG, material.tintB);
 

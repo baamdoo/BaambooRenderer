@@ -46,9 +46,14 @@ public:
 	virtual Arc< render::Sampler > CreateSampler(const char* name, render::Sampler::CreationInfo&& info) override;
 
 	virtual Arc< render::Shader > CreateShader(const char* name, render::Shader::CreationInfo&& info) override;
+	virtual Arc< render::ShaderBindingTable > CreateSBT(const char* name) override;
 
-	virtual Box< render::ComputePipeline > CreateComputePipeline(const char* name) override;
+	virtual Arc< render::BottomLevelAccelerationStructure > CreateBLAS(const char* name) override;
+	virtual Arc< render::TopLevelAccelerationStructure > CreateTLAS(const char* name) override;
+
 	virtual Box< render::GraphicsPipeline > CreateGraphicsPipeline(const char* name) override;
+	virtual Box< render::ComputePipeline > CreateComputePipeline(const char* name) override;
+	virtual Box< render::RaytracingPipeline > CreateRaytracingPipeline(const char* name) override;
 
 	virtual Box< render::SceneResource > CreateSceneResource() override;
 
@@ -96,8 +101,8 @@ private:
 	Dx12CommandQueue* m_pComputeQueue  = nullptr;
 	Dx12CommandQueue* m_pCopyQueue     = nullptr;
 
+	D3D12MA::Allocator*  m_dmaAllocator     = nullptr;
 	Dx12ResourceManager* m_pResourceManager = nullptr;
-	D3D12MA::Allocator*  m_dmaAllocator;
 
 	u32 m_SRVDescriptorSize = 0;
 	u32 m_RTVDescriptorSize = 0;

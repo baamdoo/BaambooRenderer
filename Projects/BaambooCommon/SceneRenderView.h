@@ -182,6 +182,7 @@ struct SceneRenderView
 	float2 viewport;
 
 	bool bDrawUI;
+	bool bRaytracer;
 
 	std::vector< Arc< render::RenderNode > > rg;
 

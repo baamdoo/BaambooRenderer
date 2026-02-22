@@ -2,6 +2,7 @@
 #include "Dx12RenderPipeline.h"
 #include "Dx12RootSignature.h"
 #include "Dx12ResourceManager.h"
+
 #include "RenderResource/Dx12Shader.h"
 #include "RenderResource/Dx12Texture.h"
 #include "RenderResource/Dx12RenderTarget.h"
@@ -108,11 +109,14 @@ D3D12_BLEND ConvertToDx12BlendFactor(render::eBlendFactor factor)
 #pragma endregion
 
 
-DXGI_FORMAT GetDXGIFormat(D3D_REGISTER_COMPONENT_TYPE componentType, BYTE mask) 
+namespace
 {
-    if (componentType == D3D_REGISTER_COMPONENT_FLOAT32) 
+
+DXGI_FORMAT GetDXGIFormat(D3D_REGISTER_COMPONENT_TYPE componentType, BYTE mask)
+{
+    if (componentType == D3D_REGISTER_COMPONENT_FLOAT32)
     {
-        switch (mask) 
+        switch (mask)
         {
         case 0x1: return DXGI_FORMAT_R32_FLOAT;
         case 0x3: return DXGI_FORMAT_R32G32_FLOAT;
@@ -132,6 +136,8 @@ DXGI_FORMAT GetDXGIFormat(D3D_REGISTER_COMPONENT_TYPE componentType, BYTE mask)
     }
 
     return DXGI_FORMAT_UNKNOWN;
+}
+
 }
 
 //-------------------------------------------------------------------------
@@ -451,6 +457,274 @@ void Dx12ComputePipeline::ParseRootParameters(const Dx12Shader::ShaderReflection
                     descriptor.rangeType == D3D12_DESCRIPTOR_RANGE_TYPE_UAV ? D3D12_ROOT_PARAMETER_TYPE_UAV : D3D12_ROOT_PARAMETER_TYPE_SRV;
 
                 auto rootIndex = m_pRootSignature->GetRootIndex(type, space, descriptor.baseRegister);
+
+                m_ResourceBindingMap.emplace(descriptor.name, rootIndex);
+                break;
+            }
+            case D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER:
+                break;
+            }
+        }
+    }
+}
+
+
+//-------------------------------------------------------------------------
+// DXR Pipeline
+//-------------------------------------------------------------------------
+namespace
+{
+    constexpr u64 SBT_TABLE_ALIGNMENT  = D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT;  // 64
+    constexpr u64 SBT_RECORD_ALIGNMENT = D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT; // 32
+}
+
+Dx12RaytracingPipeline::Dx12RaytracingPipeline(Dx12RenderDevice& rd, const char* name)
+    : render::RaytracingPipeline(name)
+    , m_RenderDevice(rd)
+{
+    auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
+    m_pGlobalRootSignature = rm.GetGlobalRootSignature();
+}
+
+Dx12RaytracingPipeline::~Dx12RaytracingPipeline()
+{
+    COM_RELEASE(m_d3d12StateObjectProperties);
+    COM_RELEASE(m_d3d12StateObject);
+}
+
+void Dx12RaytracingPipeline::Build()
+{
+    auto pLib = StaticCast< Dx12Shader >(m_pShaderLibrary);
+    assert(pLib && "Shader library must be set before Build()!");
+    assert(pLib->IsLibrary());
+
+    ParseRootParameters(pLib->Reflection());
+    BuildLocalRootSignature(pLib->Reflection());
+    BuildStateObject();
+}
+
+const void* Dx12RaytracingPipeline::GetShaderIdentifier(const std::string& exportName) const
+{
+    auto wName = ConvertToWString(exportName);
+    return m_d3d12StateObjectProperties->GetShaderIdentifier(wName.c_str());
+}
+
+void Dx12RaytracingPipeline::BuildStateObject()
+{
+    auto d3d12Lib = StaticCast< Dx12Shader >(m_pShaderLibrary);
+    assert(d3d12Lib && "Shader library must be set before Build()!");
+
+    ParseRootParameters(d3d12Lib->Reflection());
+
+    std::wstring wRayGenExport = ConvertToWString(m_RayGenExport);
+
+    std::vector< std::wstring > wMissExports; wMissExports.reserve(m_MissExports.size());
+    for (const auto& name : m_MissExports)
+        wMissExports.push_back(ConvertToWString(name));
+
+    std::vector< std::wstring > wHitGroupExports;     wHitGroupExports.reserve(m_HitGroups.size());
+    std::vector< std::wstring > wClosestHitExports;   wClosestHitExports.reserve(m_HitGroups.size());
+    std::vector< std::wstring > wAnyHitExports;       wAnyHitExports.reserve(m_HitGroups.size());
+    std::vector< std::wstring > wIntersectionExports; wIntersectionExports.reserve(m_HitGroups.size());
+    for (const auto& hg : m_HitGroups)
+    {
+        wHitGroupExports.push_back(ConvertToWString(hg.hitGroupName));
+        wClosestHitExports.push_back(ConvertToWString(hg.closestHitShaderExport));
+        wAnyHitExports.push_back(ConvertToWString(hg.anyHitShaderExport));
+        wIntersectionExports.push_back(ConvertToWString(hg.intersectionShaderExport));
+    }
+
+    CD3DX12_STATE_OBJECT_DESC stateObjectDesc{ D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE };
+    {
+        auto pLib = stateObjectDesc.CreateSubobject< CD3DX12_DXIL_LIBRARY_SUBOBJECT >();
+
+        D3D12_SHADER_BYTECODE libBytecode = {};
+        libBytecode.pShaderBytecode = d3d12Lib->GetShaderBufferPointer();
+        libBytecode.BytecodeLength  = d3d12Lib->GetShaderBufferSize();
+        pLib->SetDXILLibrary(&libBytecode);
+
+        pLib->DefineExport(wRayGenExport.c_str());
+        for (const auto& wMiss : wMissExports)
+            pLib->DefineExport(wMiss.c_str());
+
+        for (size_t i = 0; i < m_HitGroups.size(); ++i)
+        {
+            if (!wClosestHitExports[i].empty())
+                pLib->DefineExport(wClosestHitExports[i].c_str());
+            if (!wAnyHitExports[i].empty())
+                pLib->DefineExport(wAnyHitExports[i].c_str());
+            if (!wIntersectionExports[i].empty())
+                pLib->DefineExport(wIntersectionExports[i].c_str());
+        }
+    }
+    {
+        for (size_t i = 0; i < m_HitGroups.size(); ++i)
+        {
+            auto pHitGroup = stateObjectDesc.CreateSubobject< CD3DX12_HIT_GROUP_SUBOBJECT >();
+            pHitGroup->SetHitGroupExport(wHitGroupExports[i].c_str());
+            pHitGroup->SetHitGroupType(
+                wIntersectionExports[i].empty()
+                ? D3D12_HIT_GROUP_TYPE_TRIANGLES
+                : D3D12_HIT_GROUP_TYPE_PROCEDURAL_PRIMITIVE);
+
+            if (!wClosestHitExports[i].empty())
+                pHitGroup->SetClosestHitShaderImport(wClosestHitExports[i].c_str());
+            if (!wAnyHitExports[i].empty())
+                pHitGroup->SetAnyHitShaderImport(wAnyHitExports[i].c_str());
+            if (!wIntersectionExports[i].empty())
+                pHitGroup->SetIntersectionShaderImport(wIntersectionExports[i].c_str());
+        }
+    }
+    {
+        auto pShaderConfig = stateObjectDesc.CreateSubobject< CD3DX12_RAYTRACING_SHADER_CONFIG_SUBOBJECT >();
+        pShaderConfig->Config(m_MaxPayloadSizeInBytes, m_MaxAttributeSizeInBytes);
+    }
+    {
+        auto pPipelineConfig = stateObjectDesc.CreateSubobject< CD3DX12_RAYTRACING_PIPELINE_CONFIG_SUBOBJECT >();
+        pPipelineConfig->Config(m_MaxRecursionDepth);
+    }
+    {
+        auto pGlobalRS = stateObjectDesc.CreateSubobject< CD3DX12_GLOBAL_ROOT_SIGNATURE_SUBOBJECT >();
+        pGlobalRS->SetRootSignature(m_pGlobalRootSignature->GetD3D12RootSignature());
+    }
+    if (m_pMissLocalRootSignature)
+    {
+        auto pLocalRS = stateObjectDesc.CreateSubobject< CD3DX12_LOCAL_ROOT_SIGNATURE_SUBOBJECT >();
+        pLocalRS->SetRootSignature(m_pMissLocalRootSignature->GetD3D12RootSignature());
+
+        auto* pAssociation = stateObjectDesc.CreateSubobject< CD3DX12_SUBOBJECT_TO_EXPORTS_ASSOCIATION_SUBOBJECT >();
+        pAssociation->SetSubobjectToAssociate(*pLocalRS);
+        for (const auto& wName : wMissExports)
+        {
+            pAssociation->AddExport(wName.c_str());
+        }
+    }
+    if (m_pHitGroupLocalRootSignature)
+    {
+        auto pLocalRS = stateObjectDesc.CreateSubobject< CD3DX12_LOCAL_ROOT_SIGNATURE_SUBOBJECT >();
+        pLocalRS->SetRootSignature(m_pHitGroupLocalRootSignature->GetD3D12RootSignature());
+
+        auto* pAssociation = stateObjectDesc.CreateSubobject< CD3DX12_SUBOBJECT_TO_EXPORTS_ASSOCIATION_SUBOBJECT >();
+        pAssociation->SetSubobjectToAssociate(*pLocalRS);
+        for (const auto& wName : wHitGroupExports)
+        {
+            pAssociation->AddExport(wName.c_str());
+        }
+    }
+
+    auto d3d12Device = m_RenderDevice.GetD3D12Device();
+    ThrowIfFailed(
+        d3d12Device->CreateStateObject(stateObjectDesc, IID_PPV_ARGS(&m_d3d12StateObject))
+    );
+
+    ThrowIfFailed(
+        m_d3d12StateObject->QueryInterface(IID_PPV_ARGS(&m_d3d12StateObjectProperties))
+    );
+}
+
+void Dx12RaytracingPipeline::BuildLocalRootSignature(const Dx12Shader::ShaderReflection& reflection)
+{
+    auto missIT = reflection.descriptors.find(MISS_ARGUMENT_SPACE);
+    if (missIT != reflection.descriptors.end() && !missIT->second.empty())
+    {
+        std::vector< Dx12Shader::DescriptorInfo > localDescriptors = missIT->second;
+        std::sort(localDescriptors.begin(), localDescriptors.end(),
+            [](const Dx12Shader::DescriptorInfo& a, const Dx12Shader::DescriptorInfo& b)
+                {
+                    return a.baseRegister < b.baseRegister;
+                });
+
+        m_pMissLocalRootSignature = MakeArc< Dx12RootSignature >(
+            m_RenderDevice,
+            m_Name + "_MissLocalRS",
+            D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE
+        );
+
+        for (const auto& desc : localDescriptors)
+        {
+            switch (desc.rangeType)
+            {
+            case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
+                m_pMissLocalRootSignature->AddSRV(desc.baseRegister, MISS_ARGUMENT_SPACE);
+                break;
+
+            case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
+                m_pMissLocalRootSignature->AddUAV(desc.baseRegister, MISS_ARGUMENT_SPACE);
+                break;
+
+            case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
+                m_pMissLocalRootSignature->AddConstants(desc.baseRegister, MISS_ARGUMENT_SPACE, desc.numDescriptors);
+                break;
+
+            default:
+                assert(false && "Invalid entry!");
+                break;
+            }
+        }
+
+        m_pMissLocalRootSignature->Build();
+    }
+
+    auto hgIT = reflection.descriptors.find(HITGROUP_ARGUMENT_SPACE);
+    if (hgIT != reflection.descriptors.end() && !hgIT->second.empty())
+    {
+        std::vector< Dx12Shader::DescriptorInfo > localDescriptors = hgIT->second;
+        std::sort(localDescriptors.begin(), localDescriptors.end(),
+            [](const Dx12Shader::DescriptorInfo& a, const Dx12Shader::DescriptorInfo& b)
+            {
+                return a.baseRegister < b.baseRegister;
+            });
+
+        m_pHitGroupLocalRootSignature = MakeArc< Dx12RootSignature >(
+            m_RenderDevice,
+            m_Name + "_HitGroupLocalRS",
+            D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE
+        );
+
+        for (const auto& desc : localDescriptors)
+        {
+            switch (desc.rangeType)
+            {
+            case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
+                m_pHitGroupLocalRootSignature->AddSRV(desc.baseRegister, HITGROUP_ARGUMENT_SPACE);
+                break;
+
+            case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
+                m_pHitGroupLocalRootSignature->AddUAV(desc.baseRegister, HITGROUP_ARGUMENT_SPACE);
+                break;
+
+            case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
+                m_pHitGroupLocalRootSignature->AddConstants(desc.baseRegister, HITGROUP_ARGUMENT_SPACE, desc.numDescriptors);
+                break;
+
+            default:
+                assert(false && "Invalid entry!");
+                break;
+            }
+        }
+
+        m_pHitGroupLocalRootSignature->Build();
+    }
+}
+
+void Dx12RaytracingPipeline::ParseRootParameters(const Dx12Shader::ShaderReflection& reflection)
+{
+    for (const auto& [space, descriptors] : reflection.descriptors)
+    {
+        for (const auto& descriptor : descriptors)
+        {
+            switch (descriptor.rangeType)
+            {
+            case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
+            case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
+            case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
+            {
+                D3D12_ROOT_PARAMETER_TYPE type =
+                    space == ROOT_CONSTANT_SPACE ? D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS :
+                    descriptor.rangeType == D3D12_DESCRIPTOR_RANGE_TYPE_CBV ? D3D12_ROOT_PARAMETER_TYPE_CBV :
+                    descriptor.rangeType == D3D12_DESCRIPTOR_RANGE_TYPE_UAV ? D3D12_ROOT_PARAMETER_TYPE_UAV : D3D12_ROOT_PARAMETER_TYPE_SRV;
+
+                auto rootIndex = m_pGlobalRootSignature->GetRootIndex(type, space, descriptor.baseRegister);
 
                 m_ResourceBindingMap.emplace(descriptor.name, rootIndex);
                 break;

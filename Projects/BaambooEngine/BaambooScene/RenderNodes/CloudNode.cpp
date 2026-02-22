@@ -122,8 +122,6 @@ CloudScatteringNode::CloudScatteringNode(render::RenderDevice& device)
     using namespace render;
     auto& rm = m_RenderDevice.GetResourceManager();
 
-    m_pBaseNoiseTexture = rm.LoadTexture(TEXTURE_PATH.string() + "CloudBaseShape_32.dds", true);
-
     m_pCloudShadowMap =
         Texture::Create(
             m_RenderDevice,

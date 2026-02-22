@@ -6,6 +6,7 @@ namespace render
 
 struct DeviceSupports
 {
+    bool bRayTracing;
     bool bMeshShader;
 };
 
@@ -27,9 +28,14 @@ public:
     virtual Arc< Sampler > CreateSampler(const char* name, Sampler::CreationInfo&& info) = 0;
 
     virtual Arc< Shader > CreateShader(const char* name, Shader::CreationInfo&& info) = 0;
+    virtual Arc< ShaderBindingTable > CreateSBT(const char* name) = 0;
+
+    virtual Arc< BottomLevelAccelerationStructure > CreateBLAS(const char* name) = 0;
+    virtual Arc< TopLevelAccelerationStructure > CreateTLAS(const char* name) = 0;
 
     virtual Box< GraphicsPipeline > CreateGraphicsPipeline(const char* name) = 0;
     virtual Box< ComputePipeline > CreateComputePipeline(const char* name) = 0;
+    virtual Box< RaytracingPipeline > CreateRaytracingPipeline(const char* name) = 0;
 
     virtual Box< render::SceneResource > CreateSceneResource() = 0;
 

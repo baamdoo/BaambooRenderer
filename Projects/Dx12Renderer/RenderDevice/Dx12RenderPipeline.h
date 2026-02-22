@@ -10,7 +10,7 @@ class Shader;
 class RenderTarget;
 
 //-------------------------------------------------------------------------
-// Graphics pipeline
+// Graphics Pipeline
 //-------------------------------------------------------------------------
 class Dx12GraphicsPipeline : public render::GraphicsPipeline
 {
@@ -67,7 +67,7 @@ private:
 
 
 //-------------------------------------------------------------------------
-// Compute pipeline
+// Compute Pipeline
 //-------------------------------------------------------------------------
 class Dx12ComputePipeline : public render::ComputePipeline
 {
@@ -91,5 +91,42 @@ private:
 
 	D3D12_COMPUTE_PIPELINE_STATE_DESC m_PipelineDesc = {};
 };
+
+
+//-------------------------------------------------------------------------
+// DXR Pipeline
+//-------------------------------------------------------------------------
+class Dx12RaytracingPipeline : public render::RaytracingPipeline
+{
+public:
+	Dx12RaytracingPipeline(Dx12RenderDevice& rd, const char* name);
+	~Dx12RaytracingPipeline();
+
+	virtual void Build() override;
+
+	virtual const void* GetShaderIdentifier(const std::string& exportName) const override;
+
+	[[nodiscard]]
+	Arc< Dx12RootSignature > GetGlobalRootSignature() const { return m_pGlobalRootSignature; }
+	[[nodiscard]]
+	ID3D12StateObject* GetD3D12StateObject() const { return m_d3d12StateObject; }
+
+private:
+	void BuildStateObject();
+	void BuildLocalRootSignature(const Dx12Shader::ShaderReflection& reflection);
+	void ParseRootParameters(const Dx12Shader::ShaderReflection& reflection);
+
+private:
+	Dx12RenderDevice& m_RenderDevice;
+
+	Arc< Dx12RootSignature > m_pGlobalRootSignature;
+	Arc< Dx12RootSignature > m_pMissLocalRootSignature;
+	Arc< Dx12RootSignature > m_pHitGroupLocalRootSignature;
+	u32                      m_LocalRootArgumentsSize = 0;
+
+	ID3D12StateObject*           m_d3d12StateObject           = nullptr;
+	ID3D12StateObjectProperties* m_d3d12StateObjectProperties = nullptr;
+};
+
 
 }

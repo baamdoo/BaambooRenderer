@@ -23,29 +23,38 @@ Dx12ResourceManager::Dx12ResourceManager(Dx12RenderDevice& rd)
     m_pGlobalDescriptorHeap
         = MakeArc< DescriptorPool >(m_RenderDevice, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, MAX_GLOBAL_DESCRIPTORS);
 
-    m_pGlobalRootSignature = MakeArc< Dx12RootSignature >(m_RenderDevice, "GlobalRootSignature", D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT | D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED);
+    m_pGlobalRootSignature = 
+        MakeArc< Dx12RootSignature >(
+            m_RenderDevice, 
+            "GlobalRootSignature", 
+            D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT | D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED
+        );
 
-    // Local Root Constant:   space100, b0
+    // Root Constant:   space100, b0
     m_pGlobalRootSignature->AddConstants(0, MAX_LOCAL_ROOTCONSTANTS - 1);
     // DescriptorHeapIndices: space100, b1 ~ b16
     for (u32 i = 1; i < MAX_DESCRIPTORHEAPINDICES + 1; ++i)
     {
         m_pGlobalRootSignature->AddConstants(i, 1);
     }
+
     // Global CBVs
     m_pGlobalRootSignature->AddCBV(0, GLOBAL_DESCRIPTOR_SPACE);          // g_Camera
     m_pGlobalRootSignature->AddConstants(1, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Vertices
-    m_pGlobalRootSignature->AddConstants(2, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Meshlets
-    m_pGlobalRootSignature->AddConstants(3, GLOBAL_DESCRIPTOR_SPACE, 1); // g_MeshletVertices
-    m_pGlobalRootSignature->AddConstants(4, GLOBAL_DESCRIPTOR_SPACE, 1); // g_MeshletTriangles
-    m_pGlobalRootSignature->AddConstants(5, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Transforms
-    m_pGlobalRootSignature->AddConstants(6, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Materials
-    m_pGlobalRootSignature->AddCBV(7, GLOBAL_DESCRIPTOR_SPACE);          // g_Lights
-    m_pGlobalRootSignature->AddCBV(8, GLOBAL_DESCRIPTOR_SPACE);          // g_SceneEnvironment
+    m_pGlobalRootSignature->AddConstants(2, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Indices
+    m_pGlobalRootSignature->AddConstants(3, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Instances
+    m_pGlobalRootSignature->AddConstants(4, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Meshlets
+    m_pGlobalRootSignature->AddConstants(5, GLOBAL_DESCRIPTOR_SPACE, 1); // g_MeshletVertices
+    m_pGlobalRootSignature->AddConstants(6, GLOBAL_DESCRIPTOR_SPACE, 1); // g_MeshletTriangles
+    m_pGlobalRootSignature->AddConstants(7, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Transforms
+    m_pGlobalRootSignature->AddConstants(8, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Materials
+    m_pGlobalRootSignature->AddCBV(9, GLOBAL_DESCRIPTOR_SPACE);          // g_Lights
+    m_pGlobalRootSignature->AddCBV(10, GLOBAL_DESCRIPTOR_SPACE);         // g_SceneEnvironment
     // Local CBVs
-    for (u32 i = 0; i < MAX_VIEWS - 6; ++i)
+    for (u32 i = 0; i < (MAX_VIEWS - 8) / 2; ++i)
     {
         m_pGlobalRootSignature->AddCBV(i, 1);
+        m_pGlobalRootSignature->AddSRV(i, 1);
     }
 
     // Samplers
@@ -410,6 +419,7 @@ Arc< Dx12Texture > Dx12ResourceManager::CreateFlat2DTexture(const char* name, u3
 			{
                 .resolution = { 1, 1, 0 },
                 .format     = eFormat::RGBA8_UNORM,
+                .imageUsage = eTextureUsage_TransferSource
 			});
 
 	u32* pData = (u32*)malloc(4);

@@ -354,7 +354,7 @@ void Scene::OnWindowResized(u32 width, u32 height)
 			node->Resize(width, height);
 }
 
-SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport, u64 frame, bool bDrawUI) const
+SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport, u64 frame, bool bDrawUI, bool bRaytracer) const
 {
 	bool bMarkedAny = false;
 	for (const auto& pair : m_EntityDirtyMasks)
@@ -363,10 +363,11 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport,
 	}
 
 	SceneRenderView view = {};
-	view.time     = s_SceneRunningTime;
-	view.frame    = frame;
-	view.viewport = viewport;
-	view.bDrawUI  = bDrawUI;
+	view.time       = s_SceneRunningTime;
+	view.frame      = frame;
+	view.viewport   = viewport;
+	view.bDrawUI    = bDrawUI;
+	view.bRaytracer = bRaytracer;
 
 	view.rg = m_RenderGraph.GetRenderNodes();
 

@@ -155,7 +155,7 @@ bool ExampleApp::LoadScene()
 	ConfigureRenderGraph();
 	ConfigureSceneObjects();
 
-	return true;
+	return m_pScene != nullptr;
 }
 
 void ExampleApp::DrawUI()

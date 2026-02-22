@@ -110,7 +110,6 @@ constexpr u32 NUM_SAMPLING = 1u;
 constexpr u32 NUM_RESOURCE_DESCRIPTOR_TYPE = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER + 1;
 constexpr u32 MAX_NUM_DESCRIPTOR_PER_POOL[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES] = { 1024, 32, 256, 8 };
 constexpr u32 MAX_GLOBAL_DESCRIPTORS = 8192;
-constexpr u32 ROOT_CONSTANT_SPACE = 100;
 constexpr u32 MAX_ROOT_INDEX = D3D12_MAX_ROOT_COST;
 constexpr u32 MAX_ROOTCONSTANTS = 32u;
 constexpr u32 MAX_DESCRIPTORHEAPINDICES = 16u;
@@ -118,6 +117,9 @@ constexpr u32 MAX_LOCAL_ROOTCONSTANTS = MAX_ROOTCONSTANTS - MAX_DESCRIPTORHEAPIN
 constexpr u32 MAX_VIEWS = (MAX_ROOT_INDEX - MAX_ROOTCONSTANTS) / 2;
 
 constexpr u32 GLOBAL_DESCRIPTOR_SPACE = 0u;
+constexpr u32 ROOT_CONSTANT_SPACE     = 100u;
+constexpr u32 MISS_ARGUMENT_SPACE     = 200u;
+constexpr u32 HITGROUP_ARGUMENT_SPACE = 300u;
 
 enum class eSamplerIndex
 {
@@ -147,6 +149,14 @@ struct IndirectDrawData
     D3D12_INDEX_BUFFER_VIEW  ibv;
 
     D3D12_DRAW_INDEXED_ARGUMENTS draws;
+};
+
+struct InstanceData
+{
+	u32 vOffset;
+	u32 iOffset;
+	u32 materialID;
+	u32 transformID;
 };
 
 struct IndirectDispatchMeshData
@@ -240,7 +250,7 @@ static DXGI_FORMAT ConvertToDx12Format(render::eFormat format)
 }
 
 #define DX12_RESOURCE_STATE(state, stage) ConvertToDx12ResourceState(state, stage)
-static D3D12_RESOURCE_STATES ConvertToDx12ResourceState(render::eTextureLayout layout, render::eShaderStage stage)
+static D3D12_RESOURCE_STATES ConvertToDx12ResourceState(render::eTextureLayout layout, bool bNonPixelShader)
 {
 	using namespace render;
 	switch (layout)
@@ -250,7 +260,7 @@ static D3D12_RESOURCE_STATES ConvertToDx12ResourceState(render::eTextureLayout l
 	case eTextureLayout::ColorAttachment       : return D3D12_RESOURCE_STATE_RENDER_TARGET;
 	case eTextureLayout::DepthStencilAttachment: return D3D12_RESOURCE_STATE_DEPTH_WRITE;
 	case eTextureLayout::DepthStencilReadOnly  : return D3D12_RESOURCE_STATE_DEPTH_READ;
-	case eTextureLayout::ShaderReadOnly        : return stage == eShaderStage::Compute ? D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE : D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+	case eTextureLayout::ShaderReadOnly        : return bNonPixelShader ? D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE : D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 	case eTextureLayout::TransferSource        : return D3D12_RESOURCE_STATE_COPY_SOURCE;
 	case eTextureLayout::TransferDest          : return D3D12_RESOURCE_STATE_COPY_DEST;
 	case eTextureLayout::Present               : return D3D12_RESOURCE_STATE_PRESENT;

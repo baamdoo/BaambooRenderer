@@ -8,11 +8,14 @@
 #include "Dx12DescriptorPool.h"
 #include "Dx12ResourceManager.h"
 #include "Dx12Timer.h"
+
 #include "RenderResource/Dx12Buffer.h"
 #include "RenderResource/Dx12Texture.h"
 #include "RenderResource/Dx12RenderTarget.h"
 #include "RenderResource/Dx12SceneResource.h"
 #include "RenderResource/Dx12RenderTarget.h"
+#include "RenderResource/Dx12ShaderBindingTable.h"
+#include "RenderResource/Dx12AccelerationStructure.h"
 
 namespace dx12
 {
@@ -38,6 +41,9 @@ public:
 	void CopyTexture(const Arc< Dx12Texture >& pDstTexture, const Arc< Dx12Texture >& pSrcTexture);
 	void ResolveSubresource(Dx12Resource* pDstResource, Dx12Resource* pSrcResource, u32 dstSubresource = 0, u32 srcSubresource = 0);
 
+	void BuildBLAS(Dx12BottomLevelAS& pBLAS);
+	void BuildTLAS(Dx12TopLevelAS& pTLAS);
+
 	void SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY primitiveTopology);
 
 	void ClearTexture(const Arc< Dx12Texture >& pTexture, D3D12_RESOURCE_STATES stateAfter);
@@ -53,6 +59,7 @@ public:
 
 	void SetRenderPipeline(Dx12GraphicsPipeline* pGraphicsPipelineState);
 	void SetRenderPipeline(Dx12ComputePipeline* pComputePipelineState);
+	void SetRenderPipeline(Dx12RaytracingPipeline* pRaytracingPipelineState);
 
 	void SetDescriptorHeaps(const std::vector< ID3D12DescriptorHeap* >& d3d12DescriptorHeaps);
 
@@ -83,6 +90,8 @@ public:
 	void SetComputeShaderResourceView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle);
 	void SetComputeUnorderedAccessView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle);
 
+	void SetAccelerationStructureSRV(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS gpuAddress);
+
 	void StageDescriptor(
 		const std::string& name,
 		Arc< Dx12StructuredBuffer > pBuffer,
@@ -101,9 +110,11 @@ public:
 	void DrawIndexed(u32 indexCount, u32 instanceCount = 1, u32 startIndex = 0, u32 baseVertex = 0, u32 startInstance = 0);
 	void DrawScene(const Dx12SceneResource& sceneResource);
 	void Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ);
+	void DispatchRays(Dx12ShaderBindingTable& sbt, u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ);
 
 	bool IsComputeContext() const { return m_pComputePipeline != nullptr; }
 	bool IsGraphicsContext() const { return m_pGraphicsPipeline != nullptr; }
+	bool IsRaytracingContext() const { return m_pRaytracingPipeline != nullptr; }
 
 	double GetLastFrameElapsedTime() const;
 
@@ -134,8 +145,9 @@ private:
 
 	Arc< Dx12RootSignature > m_pRootSignature;
 
-	Dx12GraphicsPipeline* m_pGraphicsPipeline = nullptr;
-	Dx12ComputePipeline*  m_pComputePipeline  = nullptr;
+	Dx12GraphicsPipeline*   m_pGraphicsPipeline   = nullptr;
+	Dx12ComputePipeline*    m_pComputePipeline    = nullptr;
+	Dx12RaytracingPipeline* m_pRaytracingPipeline = nullptr;
 
 	D3D_PRIMITIVE_TOPOLOGY m_PrimitiveTopology = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
 
@@ -182,8 +194,10 @@ void Dx12CommandContext::Impl::Open()
 	if (m_Type != D3D12_COMMAND_LIST_TYPE_COPY)
 		m_LastFrameElapsedTime = m_Timer.GetElapsedTime();
 
-	m_pGraphicsPipeline = nullptr;
-	m_pComputePipeline  = nullptr;
+	m_pGraphicsPipeline   = nullptr;
+	m_pComputePipeline    = nullptr;
+	m_pRaytracingPipeline = nullptr;
+
 	m_pRootSignature    = nullptr;
 	m_PrimitiveTopology = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
 
@@ -268,7 +282,7 @@ void Dx12CommandContext::Impl::CopyBuffer(ID3D12Resource* d3d12DstBuffer, ID3D12
 
 void Dx12CommandContext::Impl::CopyTexture(const Arc< Dx12Texture >& pDstTexture, const Arc< Dx12Texture >& pSrcTexture)
 {
-	TransitionBarrier(pDstTexture.get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, false);
+	TransitionBarrier(pDstTexture.get(), D3D12_RESOURCE_STATE_COPY_DEST);
 	TransitionBarrier(pSrcTexture.get(), D3D12_RESOURCE_STATE_COPY_SOURCE);
 
 	D3D12_RESOURCE_DESC Desc = pDstTexture->Desc();
@@ -300,6 +314,46 @@ void Dx12CommandContext::Impl::ResolveSubresource(Dx12Resource* pDstResource, Dx
 		m_d3d12CommandList10->ResolveSubresource(pDstResource->GetD3D12Resource(), dstSubresource,
 			pSrcResource->GetD3D12Resource(), srcSubresource, pDstResource->Desc().Format);
 	}
+}
+
+void Dx12CommandContext::Impl::BuildBLAS(Dx12BottomLevelAS& BLAS)
+{
+	FlushResourceBarriers();
+
+	const auto& buildInputs = BLAS.GetBuildInputs();
+
+	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC buildDesc = {};
+	buildDesc.Inputs                           = buildInputs;
+	buildDesc.DestAccelerationStructureData    = BLAS.GetResultBuffer()->GetGPUVirtualAddress();
+	buildDesc.ScratchAccelerationStructureData = BLAS.GetScratchBuffer()->GetGPUVirtualAddress();
+	buildDesc.SourceAccelerationStructureData  = 0;
+
+	m_d3d12CommandList10->BuildRaytracingAccelerationStructure(&buildDesc, 0, nullptr);
+
+	D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::UAV(BLAS.GetResultBuffer());
+	m_d3d12CommandList10->ResourceBarrier(1, &barrier);
+
+	BLAS.MarkBuilt();
+}
+
+void Dx12CommandContext::Impl::BuildTLAS(Dx12TopLevelAS& TLAS)
+{
+	FlushResourceBarriers();
+
+	const auto& buildInputs = TLAS.GetBuildInputs();
+
+	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC buildDesc = {};
+	buildDesc.Inputs                           = buildInputs;
+	buildDesc.DestAccelerationStructureData    = TLAS.GetResultBuffer()->GetGPUVirtualAddress();
+	buildDesc.ScratchAccelerationStructureData = TLAS.GetScratchBuffer()->GetGPUVirtualAddress();
+	buildDesc.SourceAccelerationStructureData  = 0;
+
+	m_d3d12CommandList10->BuildRaytracingAccelerationStructure(&buildDesc, 0, nullptr);
+
+	D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::UAV(TLAS.GetResultBuffer());
+	m_d3d12CommandList10->ResourceBarrier(1, &barrier);
+
+	TLAS.MarkBuilt();
 }
 
 void Dx12CommandContext::Impl::SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY primitiveTopology)
@@ -413,7 +467,8 @@ void Dx12CommandContext::Impl::SetScissorRects(const std::vector< D3D12_RECT >& 
 
 void Dx12CommandContext::Impl::SetRenderPipeline(Dx12GraphicsPipeline* pGraphicsPipeline)
 {
-	m_pComputePipeline = nullptr;
+	m_pComputePipeline    = nullptr;
+	m_pRaytracingPipeline = nullptr;
 	if (m_pGraphicsPipeline != pGraphicsPipeline)
 	{
 		m_pGraphicsPipeline = pGraphicsPipeline;
@@ -432,7 +487,8 @@ void Dx12CommandContext::Impl::SetRenderPipeline(Dx12GraphicsPipeline* pGraphics
 
 void Dx12CommandContext::Impl::SetRenderPipeline(Dx12ComputePipeline* pComputePipeline)
 {
-	m_pGraphicsPipeline = nullptr;
+	m_pGraphicsPipeline   = nullptr;
+	m_pRaytracingPipeline = nullptr;
 	if (m_pComputePipeline != pComputePipeline)
 	{
 		m_pComputePipeline = pComputePipeline;
@@ -446,6 +502,26 @@ void Dx12CommandContext::Impl::SetRenderPipeline(Dx12ComputePipeline* pComputePi
 		}
 
 		m_d3d12CommandList10->SetPipelineState(m_pComputePipeline->GetD3D12PipelineState());
+	}
+}
+
+void Dx12CommandContext::Impl::SetRenderPipeline(Dx12RaytracingPipeline* pRaytracingPipelineState)
+{
+	m_pComputePipeline  = nullptr;
+	m_pGraphicsPipeline = nullptr;
+	if (m_pRaytracingPipeline != pRaytracingPipelineState)
+	{
+		m_pRaytracingPipeline = pRaytracingPipelineState;
+
+		const auto& pRootSignature = m_pRaytracingPipeline->GetGlobalRootSignature();
+		if (m_pRootSignature != pRootSignature)
+		{
+			m_pRootSignature = pRootSignature;
+
+			m_d3d12CommandList10->SetComputeRootSignature(m_pRootSignature->GetD3D12RootSignature());
+		}
+
+		m_d3d12CommandList10->SetPipelineState1(m_pRaytracingPipeline->GetD3D12StateObject());
 	}
 }
 
@@ -621,6 +697,30 @@ void Dx12CommandContext::Impl::SetComputeUnorderedAccessView(const std::string& 
 	m_d3d12CommandList10->SetComputeRootUnorderedAccessView(rootIndex, gpuHandle);
 }
 
+void Dx12CommandContext::Impl::SetAccelerationStructureSRV(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS gpuAddress)
+{
+	u32 rootIndex = INVALID_INDEX;
+
+	if (IsRaytracingContext())
+	{
+		auto [_, idx] = m_pRaytracingPipeline->GetResourceBindingIndex(name);
+		rootIndex = idx;
+	}
+	else if (IsComputeContext())
+	{
+		auto [_, idx] = m_pComputePipeline->GetResourceBindingIndex(name);
+		rootIndex = idx;
+	}
+
+	if (rootIndex == INVALID_INDEX)
+	{
+		__debugbreak();
+		return;
+	}
+
+	m_d3d12CommandList10->SetComputeRootShaderResourceView(rootIndex, gpuAddress);
+}
+
 void Dx12CommandContext::Impl::StageDescriptor(
 	const std::string& name, 
 	Arc< Dx12StructuredBuffer > pBuffer, 
@@ -635,7 +735,8 @@ void Dx12CommandContext::Impl::StageDescriptor(
 	D3D12_DESCRIPTOR_HEAP_TYPE heapType)
 {
 	const auto& state = pTexture->GetCurrentState();
-	bool bIsUAV = IsComputeContext() && state.GetSubresourceState() == D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+	bool bIsUAV = 
+		(IsComputeContext() || IsRaytracingContext()) && state.GetSubresourceState() == D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 
 	if (bIsUAV)
 	{
@@ -663,6 +764,17 @@ void Dx12CommandContext::Impl::StageDescriptor(const std::string& name, u32 heap
 	else if (IsComputeContext())
 	{
 		auto [offset, rootIndex] = m_pComputePipeline->GetResourceBindingIndex(name);
+		if (rootIndex == INVALID_INDEX)
+		{
+			__debugbreak();
+			return;
+		}
+
+		SetComputeRootConstant(rootIndex, heapIdx);
+	}
+	else if (IsRaytracingContext())
+	{
+		auto [offset, rootIndex] = m_pRaytracingPipeline->GetResourceBindingIndex(name);
 		if (rootIndex == INVALID_INDEX)
 		{
 			__debugbreak();
@@ -726,6 +838,14 @@ void Dx12CommandContext::Impl::Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numG
 	m_d3d12CommandList10->Dispatch(numGroupsX, numGroupsY, numGroupsZ);
 }
 
+void Dx12CommandContext::Impl::DispatchRays(Dx12ShaderBindingTable& sbt, u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ)
+{
+	FlushResourceBarriers();
+
+	const auto& desc = sbt.GetDispatchRaysDesc(numGroupsX, numGroupsY, numGroupsZ);
+	m_d3d12CommandList10->DispatchRays(&desc);
+}
+
 void Dx12CommandContext::Impl::AddBarrier(const D3D12_RESOURCE_BARRIER& barrier, bool bFlushImmediate)
 {
 	m_ResourceBarriers[m_NumBarriersToFlush++] = barrier;
@@ -780,7 +900,7 @@ void Dx12CommandContext::Close()
 
 void Dx12CommandContext::ClearTexture(Arc< render::Texture > pTexture, render::eTextureLayout newLayout)
 {
-	m_Impl->ClearTexture(StaticCast<Dx12Texture>(pTexture), DX12_RESOURCE_STATE(newLayout, render::Compute));
+	m_Impl->ClearTexture(StaticCast<Dx12Texture>(pTexture), DX12_RESOURCE_STATE(newLayout, true));
 }
 
 void Dx12CommandContext::ClearRenderTarget(const Arc< Dx12Texture >& pTexture)
@@ -828,7 +948,13 @@ void Dx12CommandContext::TransitionBarrier(Arc< render::Texture > pTexture, rend
 	auto rhiTexture = StaticCast<Dx12Texture>(pTexture);
 	assert(rhiTexture);
 
-	m_Impl->TransitionBarrier(rhiTexture.get(), DX12_RESOURCE_STATE(newState, IsComputeContext() ? render::eShaderStage::Compute : render::eShaderStage::AllGraphics), subresource, bFlushImmediate);
+	m_Impl->TransitionBarrier(rhiTexture.get(), DX12_RESOURCE_STATE(newState, IsComputeContext() || IsRaytracingContext()), subresource, bFlushImmediate);
+}
+
+void Dx12CommandContext::UAVBarrier(Arc< render::Buffer > pBuffer, bool bFlushImmediate)
+{
+	auto dx12Buffer = StaticCast<Dx12Buffer>(pBuffer);
+	m_Impl->UAVBarrier(dx12Buffer.get(), bFlushImmediate);
 }
 
 void Dx12CommandContext::TransitionBarrier(Dx12Resource* pResource, D3D12_RESOURCE_STATES stateAfter, u32 subresource, bool bFlushImmediate)
@@ -836,14 +962,21 @@ void Dx12CommandContext::TransitionBarrier(Dx12Resource* pResource, D3D12_RESOUR
 	m_Impl->TransitionBarrier(pResource, stateAfter, subresource, bFlushImmediate);
 }
 
-void Dx12CommandContext::UAVBarrier(Dx12Resource* pResource, bool bFlushImmediate)
-{
-	m_Impl->UAVBarrier(pResource, bFlushImmediate);
-}
-
 void Dx12CommandContext::AliasingBarrier(Dx12Resource* pResourceBefore, Dx12Resource* pResourceAfter, bool bFlushImmediate)
 {
 	m_Impl->AliasingBarrier(pResourceBefore, pResourceAfter, bFlushImmediate);
+}
+
+void Dx12CommandContext::BuildBLAS(render::BottomLevelAccelerationStructure& blas)
+{
+	auto& dx12BLAS = static_cast<Dx12BottomLevelAS&>(blas);
+	m_Impl->BuildBLAS(dx12BLAS);
+}
+
+void Dx12CommandContext::BuildTLAS(render::TopLevelAccelerationStructure& tlas)
+{
+	auto& dx12TLAS = static_cast<Dx12TopLevelAS&>(tlas);
+	m_Impl->BuildTLAS(dx12TLAS);
 }
 
 void Dx12CommandContext::SetRenderPipeline(render::ComputePipeline* pRenderPipeline)
@@ -857,6 +990,14 @@ void Dx12CommandContext::SetRenderPipeline(render::ComputePipeline* pRenderPipel
 void Dx12CommandContext::SetRenderPipeline(render::GraphicsPipeline* pRenderPipeline)
 {
 	auto rhiRenderPipeline = static_cast<Dx12GraphicsPipeline*>(pRenderPipeline);
+	assert(rhiRenderPipeline);
+
+	m_Impl->SetRenderPipeline(rhiRenderPipeline);
+}
+
+void Dx12CommandContext::SetRenderPipeline(render::RaytracingPipeline* pRenderPipeline)
+{
+	auto rhiRenderPipeline = static_cast<Dx12RaytracingPipeline*>(pRenderPipeline);
 	assert(rhiRenderPipeline);
 
 	m_Impl->SetRenderPipeline(rhiRenderPipeline);
@@ -950,6 +1091,12 @@ void Dx12CommandContext::SetGraphicsShaderResourceView(const std::string& name, 
 	m_Impl->SetGraphicsShaderResourceView(name, srv);
 }
 
+void Dx12CommandContext::SetAccelerationStructure(const std::string& name, render::TopLevelAccelerationStructure& tlas)
+{
+	auto& dx12TLAS = static_cast<Dx12TopLevelAS&>(tlas);
+	m_Impl->SetAccelerationStructureSRV(name, dx12TLAS.GetGPUVirtualAddress());
+}
+
 void Dx12CommandContext::StageDescriptor(const std::string& name, Arc< render::Buffer > pBuffer, u32 offset)
 {
 	UNUSED(offset);
@@ -1017,6 +1164,12 @@ void Dx12CommandContext::Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ
 	m_Impl->Dispatch(numGroupsX, numGroupsY, numGroupsZ);
 }
 
+void Dx12CommandContext::DispatchRays(render::ShaderBindingTable& sbt, u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ)
+{
+	auto& rhiSBT = static_cast<Dx12ShaderBindingTable&>(sbt);
+	m_Impl->DispatchRays(rhiSBT, numGroupsX, numGroupsY, numGroupsZ);
+}
+
 double Dx12CommandContext::GetLastFrameElapsedTime() const
 {
 	return m_Impl->GetLastFrameElapsedTime();
@@ -1030,6 +1183,11 @@ bool Dx12CommandContext::IsComputeContext() const
 bool Dx12CommandContext::IsGraphicsContext() const
 {
 	return m_Impl->IsGraphicsContext();
+}
+
+bool Dx12CommandContext::IsRaytracingContext() const
+{
+	return m_Impl->IsRaytracingContext();
 }
 
 D3D12_COMMAND_LIST_TYPE Dx12CommandContext::GetCommandListType() const

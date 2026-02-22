@@ -278,6 +278,9 @@ project "Dx12Renderer"
 	filter { "files:**AS.hlsl" }
 		shadertype "Amplification"
 
+	filter { "files:**LIB.hlsl" }
+		shadertype "Library"
+
 	filter { "files:Dx12Renderer/RenderDevice/D3D12MemoryAllocator/src/**.cpp" }
 		flags "NoPCH"
 	filter { "files:ThirdParties/imgui/**.cpp" }

@@ -167,7 +167,118 @@ Shader::Shader(const char* name, CreationInfo&& info)
 
 
 //-------------------------------------------------------------------------
-// Pipelines
+// SBT
+//-------------------------------------------------------------------------
+Arc< ShaderBindingTable > ShaderBindingTable::Create(RenderDevice& rd, const char* name)
+{
+	return rd.CreateSBT(name);
+}
+
+ShaderBindingTable::ShaderBindingTable(const char* name)
+	: Super(name, eResourceType::SBT)
+{
+}
+
+ShaderBindingTable& ShaderBindingTable::SetRayGenerationRecord(const void* pIdentifier, const void* pData, u32 sizeInBytes)
+{
+	m_RayGenRecord.pIdentifier = pIdentifier;
+	m_RayGenRecord.Upload(pData, sizeInBytes);
+	return *this;
+}
+
+ShaderBindingTable& ShaderBindingTable::AddMissRecord(const std::string& missExportName, const void* pIdentifier, const void* pData, u32 localArgsSize)
+{
+	ShaderRecord record;
+	record.exportName  = missExportName;
+	record.pIdentifier = pIdentifier;
+	record.Upload(pData, localArgsSize);
+	m_MissRecords.push_back(std::move(record));
+
+	return *this;
+}
+
+ShaderBindingTable& ShaderBindingTable::AddHitGroupRecord(const std::string& hitGroupName, const void* pIdentifier, const void* pData, u32 localArgsSize)
+{
+	ShaderRecord record;
+	record.exportName  = hitGroupName;
+	record.pIdentifier = pIdentifier;
+	record.Upload(pData, localArgsSize);
+	m_HitGroupRecords.push_back(std::move(record));
+
+	return *this;
+}
+
+ShaderBindingTable& ShaderBindingTable::UpdateHitGroupLocalRootArguments(u32 recordIndex, const void* pIdentifier, const void* pData, u32 sizeInBytes)
+{
+	assert(recordIndex < m_HitGroupRecords.size() && "recordIndex out of range!");
+
+	m_HitGroupRecords[recordIndex].Upload(pData, sizeInBytes);
+	return *this;
+}
+
+void ShaderBindingTable::Reset()
+{
+	m_RayGenRecord = {};
+	m_MissRecords.clear();
+	m_HitGroupRecords.clear();
+}
+
+
+//-------------------------------------------------------------------------
+// Acceleration Structure
+//-------------------------------------------------------------------------
+Arc< BottomLevelAccelerationStructure > BottomLevelAccelerationStructure::Create(RenderDevice& rd, const char* name)
+{
+	return rd.CreateBLAS(name);
+}
+
+BottomLevelAccelerationStructure::BottomLevelAccelerationStructure(const char* name)
+	: Super(name, eResourceType::BLAS)
+{
+}
+
+BottomLevelAccelerationStructure& BottomLevelAccelerationStructure::AddGeometry(const GeometryDesc& geometry)
+{
+	m_Geometries.push_back(geometry);
+	return *this;
+}
+
+BottomLevelAccelerationStructure& BottomLevelAccelerationStructure::SetBuildFlags(RenderFlags flags)
+{
+	m_BuildFlags = flags;
+	return *this;
+}
+
+Arc< TopLevelAccelerationStructure > TopLevelAccelerationStructure::Create(RenderDevice& rd, const char* name)
+{
+	return rd.CreateTLAS(name);
+}
+
+TopLevelAccelerationStructure::TopLevelAccelerationStructure(const char* name)
+	: Super(name, eResourceType::TLAS)
+{
+}
+
+TopLevelAccelerationStructure& TopLevelAccelerationStructure::AddInstance(const AccelerationStructureInstanceDesc& instance)
+{
+	m_Instances.push_back(instance);
+	return *this;
+}
+
+TopLevelAccelerationStructure& TopLevelAccelerationStructure::SetBuildFlags(RenderFlags flags)
+{
+	m_BuildFlags = flags;
+	return *this;
+}
+
+void TopLevelAccelerationStructure::Reset()
+{
+	m_Instances.clear();
+}
+
+
+//-------------------------------------------------------------------------
+// Graphics Pipeline
 //-------------------------------------------------------------------------
 Box< GraphicsPipeline > GraphicsPipeline::Create(RenderDevice& rd, const char* name)
 {
@@ -220,6 +331,9 @@ std::pair< u32, u32 > GraphicsPipeline::GetResourceBindingIndex(const std::strin
 }
 
 
+//-------------------------------------------------------------------------
+// Compute Pipeline
+//-------------------------------------------------------------------------
 Box< ComputePipeline > ComputePipeline::Create(RenderDevice& rd, const char* name)
 {
 	return rd.CreateComputePipeline(name);
@@ -241,6 +355,71 @@ std::pair< u32, u32 > ComputePipeline::GetResourceBindingIndex(const std::string
 	auto iter = m_ResourceBindingMap.find(name);
 	if (iter == m_ResourceBindingMap.end())
 		return { -1, -1 };
+
+	return { (u32)(iter->second >> 32), (u32)(iter->second & 0xFFFFFFFF) };
+}
+
+
+//-------------------------------------------------------------------------
+// DXR Pipeline
+//-------------------------------------------------------------------------
+Box< RaytracingPipeline > RaytracingPipeline::Create(RenderDevice& rd, const char* name)
+{
+	return rd.CreateRaytracingPipeline(name);
+}
+
+RaytracingPipeline::RaytracingPipeline(const char* name)
+	: m_Name(name)
+{
+}
+
+RaytracingPipeline& RaytracingPipeline::SetShaderLibrary(Arc<Shader> pLibrary)
+{
+	m_pShaderLibrary = pLibrary;
+	return *this;
+}
+
+RaytracingPipeline& RaytracingPipeline::SetRayGenerationShader(const std::string& exportName)
+{
+	m_RayGenExport = exportName;
+	return *this;
+}
+
+RaytracingPipeline& RaytracingPipeline::AddMissShader(const std::string& exportName)
+{
+	m_MissExports.push_back(exportName);
+	return *this;
+}
+
+RaytracingPipeline& RaytracingPipeline::AddHitGroup(const RaytracingHitGroup& hitGroup)
+{
+	m_HitGroups.push_back(hitGroup);
+	return *this;
+}
+
+RaytracingPipeline& RaytracingPipeline::SetMaxPayloadSize(u32 sizeInBytes)
+{
+	m_MaxPayloadSizeInBytes = sizeInBytes;
+	return *this;
+}
+
+RaytracingPipeline& RaytracingPipeline::SetMaxAttributeSize(u32 sizeInBytes)
+{
+	m_MaxAttributeSizeInBytes = sizeInBytes;
+	return *this;
+}
+
+RaytracingPipeline& RaytracingPipeline::SetMaxRecursionDepth(u32 depth)
+{
+	m_MaxRecursionDepth = depth;
+	return *this;
+}
+
+std::pair< u32, u32 > RaytracingPipeline::GetResourceBindingIndex(const std::string& name)
+{
+	auto iter = m_ResourceBindingMap.find(name);
+	if (iter == m_ResourceBindingMap.end())
+		return { INVALID_INDEX, INVALID_INDEX };
 
 	return { (u32)(iter->second >> 32), (u32)(iter->second & 0xFFFFFFFF) };
 }

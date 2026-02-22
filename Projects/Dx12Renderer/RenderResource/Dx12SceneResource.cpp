@@ -1,5 +1,10 @@
 #include "RendererPch.h"
 #include "Dx12SceneResource.h"
+#include "Dx12Buffer.h"
+#include "Dx12Texture.h"
+#include "Dx12Shader.h"
+#include "Dx12AccelerationStructure.h"
+
 #include "RenderDevice/Dx12CommandContext.h"
 #include "RenderDevice/Dx12CommandQueue.h"
 #include "RenderDevice/Dx12Rootsignature.h"
@@ -7,9 +12,7 @@
 #include "RenderDevice/Dx12BufferAllocator.h"
 #include "RenderDevice/Dx12RenderPipeline.h"
 #include "RenderDevice/Dx12ResourceManager.h"
-#include "RenderResource/Dx12Buffer.h"
-#include "RenderResource/Dx12Texture.h"
-#include "RenderResource/Dx12Shader.h"
+
 #include "SceneRenderView.h"
 #include "Utils/Math.hpp"
 
@@ -76,11 +79,14 @@ Dx12SceneResource::Dx12SceneResource(Dx12RenderDevice& rd)
     m_pMaterialAllocator  = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MaterialPool", sizeof(MaterialData), _KB(8));
     m_pLightAllocator     = MakeBox< StaticBufferAllocator >(m_RenderDevice, "LightPool", sizeof(LightData), 1);
 
-    m_pVertexAllocator          = MakeBox< StaticBufferAllocator >(m_RenderDevice, "VertexPool", sizeof(Vertex), _MB(8LL));
-    m_pMeshletAllocator         = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshletPool", sizeof(Meshlet), _MB(8LL));
-    m_pMeshletVertexAllocator   = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshletVertexPool", sizeof(u32), _MB(8LL));
-    m_pMeshletTriangleAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshletTrianglePool", sizeof(u32), _MB(8LL) * 0.25f * 3);
+    m_pVertexAllocator          = MakeBox< StaticBufferAllocator >(m_RenderDevice, "VertexPool", sizeof(Vertex), _KB(8LL));
+    m_pIndexAllocator           = MakeBox< StaticBufferAllocator >(m_RenderDevice, "IndexPool", sizeof(u32), _KB(8LL));
+    m_pInstanceAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, "InstancePool", sizeof(InstanceData), _KB(8LL));
+    m_pMeshletAllocator         = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshletPool", sizeof(Meshlet), _KB(8LL));
+    m_pMeshletVertexAllocator   = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshletVertexPool", sizeof(u32), _KB(8LL));
+    m_pMeshletTriangleAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshletTrianglePool", sizeof(u32), _KB(8LL) * 3 / 4);
 
+    m_pTLAS = Dx12TopLevelAS::Create(m_RenderDevice, "SceneTLAS");
 
     // **
     // command signature
@@ -124,6 +130,8 @@ Dx12SceneResource::~Dx12SceneResource()
 
 void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 {
+    using namespace render;
+
     auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
 
     ResetFrameBuffers();
@@ -144,7 +152,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
     std::unordered_map< Dx12Texture*, u32 > srvIndexCache;
     for (auto& materialView : sceneView.materials)
     {
-        MaterialData material  = {};
+        MaterialData material = {};
         material.tint          = materialView.tint;
         material.roughness     = materialView.roughness;
         material.metallic      = materialView.metallic;
@@ -248,47 +256,93 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
     }
     UpdateFrameBuffer(materials.data(), (u32)materials.size(), sizeof(MaterialData), *m_pMaterialAllocator, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
 
+    u32 instID = 0;
+    std::vector< InstanceData >             instances;
     std::vector< IndirectDispatchMeshData > indirects;
     for (auto& [id, data] : sceneView.draws)
     {
+        InstanceData             instance = {};
         IndirectDispatchMeshData indirect = {};
         if (IsValidIndex(data.mesh))
         {
             assert(data.mesh < sceneView.meshes.size());
             auto& meshView = sceneView.meshes[data.mesh];
 
-            auto vHandle  = GetOrUpdateVertex(meshView.id, meshView.tag, meshView.vData, meshView.vCount);
-            auto mHandle  = GetOrUpdateMeshlets(meshView.id, meshView.tag, meshView.mData, meshView.mCount);
-            auto mvHandle = GetOrUpdateMeshletVertices(meshView.id, meshView.tag, meshView.mvData, meshView.mvCount);
-            auto mtHandle = GetOrUpdateMeshletTriangles(meshView.id, meshView.tag, meshView.mtData, meshView.mtCount);
-
-            indirect.dispatch.ThreadGroupCountX = mHandle.count;
-            indirect.dispatch.ThreadGroupCountY = 1;
-            indirect.dispatch.ThreadGroupCountZ = 1;
-
-            indirect.vOffset  = vHandle.offset;
-            indirect.mOffset  = mHandle.offset;
-            indirect.mvOffset = mvHandle.offset;
-            indirect.mtOffset = mtHandle.offset;
-
-            assert(IsValidIndex(data.transform) && data.transform < sceneView.transforms.size());
-            indirect.transformID = data.transform;
-
-            //indirect.sphereBounds = float4(meshView.sphere.Center(), meshView.sphere.Radius());
-
-            indirect.materialID = INVALID_INDEX;
-            if (IsValidIndex(data.material))
+            auto vHandle = GetOrUpdateVertex(meshView.id, meshView.tag, meshView.vData, meshView.vCount);
             {
-                assert(data.material < sceneView.materials.size());
-                indirect.materialID = data.material;
-            }
+                auto mHandle  = GetOrUpdateMeshlets(meshView.id, meshView.tag, meshView.mData, meshView.mCount);
+                auto mvHandle = GetOrUpdateMeshletVertices(meshView.id, meshView.tag, meshView.mvData, meshView.mvCount);
+                auto mtHandle = GetOrUpdateMeshletTriangles(meshView.id, meshView.tag, meshView.mtData, meshView.mtCount);
 
-            indirects.push_back(indirect);
-            m_NumMeshes++;
+                indirect.dispatch.ThreadGroupCountX = mHandle.count;
+                indirect.dispatch.ThreadGroupCountY = 1;
+                indirect.dispatch.ThreadGroupCountZ = 1;
+
+                indirect.vOffset  = vHandle.offset;
+                indirect.mOffset  = mHandle.offset;
+                indirect.mvOffset = mvHandle.offset;
+                indirect.mtOffset = mtHandle.offset;
+
+                assert(IsValidIndex(data.transform) && data.transform < sceneView.transforms.size());
+                indirect.transformID = data.transform;
+
+                //indirect.sphereBounds = float4(meshView.sphere.Center(), meshView.sphere.Radius());
+
+                indirect.materialID = INVALID_INDEX;
+                if (IsValidIndex(data.material))
+                {
+                    assert(data.material < sceneView.materials.size());
+                    indirect.materialID = data.material;
+                }
+
+                indirects.push_back(indirect);
+                m_NumMeshes++;
+            }
+            {
+                auto iHandle = GetOrUpdateIndex(meshView.id, meshView.tag, meshView.iData, meshView.iCount);
+                GetOrCreateBLAS(meshView.tag, vHandle, iHandle);
+
+                instance.vOffset    = vHandle.offset * vHandle.elementSizeInBytes;
+                instance.iOffset    = iHandle.offset * iHandle.elementSizeInBytes;
+                instance.materialID = INVALID_INDEX;
+                if (IsValidIndex(data.material))
+                {
+                    assert(data.material < sceneView.materials.size());
+                    instance.materialID = data.material;
+                }
+                instances.push_back(instance);
+            }
+            {
+                auto& transformView = sceneView.transforms[data.transform];
+
+                auto blasIter = m_BLASCache.find(meshView.tag);
+                if (blasIter == m_BLASCache.end() || !blasIter->second->IsBuilt())
+                    continue;
+
+                const mat4& m = transformView.mWorld;
+
+                // glm::mat4 (column-major) ¡æ 3x4 row-major
+                render::AccelerationStructureInstanceDesc inst = {};
+                inst.transform[0][0] = m[0][0]; inst.transform[0][1] = m[1][0]; inst.transform[0][2] = m[2][0]; inst.transform[0][3] = m[3][0];
+                inst.transform[1][0] = m[0][1]; inst.transform[1][1] = m[1][1]; inst.transform[1][2] = m[2][1]; inst.transform[1][3] = m[3][1];
+                inst.transform[2][0] = m[0][2]; inst.transform[2][1] = m[1][2]; inst.transform[2][2] = m[2][2]; inst.transform[2][3] = m[3][2];
+
+                inst.instanceID                          = instID++;
+                inst.pBLAS                               = blasIter->second.get();
+                inst.instanceContributionToHitGroupIndex = 0;
+
+                m_pTLAS->AddInstance(inst);
+            }
         }
     }
-    UpdateFrameBuffer(indirects.data(), (u32)indirects.size(), sizeof(IndirectDispatchMeshData), *m_pIndirectDataAllocator, D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
+    if (m_pTLAS->NumInstances() > 0)
+    {
+        m_pTLAS->Prepare();
+    }
+    BuildAccelerationStructures();
 
+    UpdateFrameBuffer(instances.data(), (u32)instances.size(), sizeof(InstanceData), *m_pInstanceAllocator, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
+    UpdateFrameBuffer(indirects.data(), (u32)indirects.size(), sizeof(IndirectDispatchMeshData), *m_pIndirectDataAllocator, D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
     UpdateFrameBuffer(&sceneView.light, 1, sizeof(LightData), *m_pLightAllocator, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
 
     auto ApplyJittering = [viewport = sceneView.viewport](const mat4& m_, float2 jitter)
@@ -339,31 +393,39 @@ void Dx12SceneResource::BindSceneResources(render::CommandContext& context)
     d3d12CommandList2->SetComputeRoot32BitConstant(vRootIdx, m_pVertexAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
     d3d12CommandList2->SetGraphicsRoot32BitConstant(vRootIdx, m_pVertexAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
 
-    auto mRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, GLOBAL_DESCRIPTOR_SPACE, 2);
+    auto iRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, GLOBAL_DESCRIPTOR_SPACE, 2);
+    d3d12CommandList2->SetComputeRoot32BitConstant(iRootIdx, m_pIndexAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
+    d3d12CommandList2->SetGraphicsRoot32BitConstant(iRootIdx, m_pIndexAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
+
+    auto instRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, GLOBAL_DESCRIPTOR_SPACE, 3);
+    d3d12CommandList2->SetComputeRoot32BitConstant(instRootIdx, m_pInstanceAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
+    d3d12CommandList2->SetGraphicsRoot32BitConstant(instRootIdx, m_pInstanceAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
+
+    auto mRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, GLOBAL_DESCRIPTOR_SPACE, 4);
     d3d12CommandList2->SetComputeRoot32BitConstant(mRootIdx, m_pMeshletAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
     d3d12CommandList2->SetGraphicsRoot32BitConstant(mRootIdx, m_pMeshletAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
 
-    auto mvRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, GLOBAL_DESCRIPTOR_SPACE, 3);
+    auto mvRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, GLOBAL_DESCRIPTOR_SPACE, 5);
     d3d12CommandList2->SetComputeRoot32BitConstant(mvRootIdx, m_pMeshletVertexAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
     d3d12CommandList2->SetGraphicsRoot32BitConstant(mvRootIdx, m_pMeshletVertexAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
 
-    auto mtRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, GLOBAL_DESCRIPTOR_SPACE, 4);
+    auto mtRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, GLOBAL_DESCRIPTOR_SPACE, 6);
     d3d12CommandList2->SetComputeRoot32BitConstant(mtRootIdx, m_pMeshletTriangleAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
     d3d12CommandList2->SetGraphicsRoot32BitConstant(mtRootIdx, m_pMeshletTriangleAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
 
-    auto transformBufferIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, GLOBAL_DESCRIPTOR_SPACE, 5);
+    auto transformBufferIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, GLOBAL_DESCRIPTOR_SPACE, 7);
     d3d12CommandList2->SetComputeRoot32BitConstant(transformBufferIdx, GetTransformBuffer()->GetShaderResourceHandle(), 0);
     d3d12CommandList2->SetGraphicsRoot32BitConstant(transformBufferIdx, GetTransformBuffer()->GetShaderResourceHandle(), 0);
 
-    auto materialBufferIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, GLOBAL_DESCRIPTOR_SPACE, 6);
+    auto materialBufferIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, GLOBAL_DESCRIPTOR_SPACE, 8);
     d3d12CommandList2->SetComputeRoot32BitConstant(materialBufferIdx, GetMaterialBuffer()->GetShaderResourceHandle(), 0);
     d3d12CommandList2->SetGraphicsRoot32BitConstant(materialBufferIdx, GetMaterialBuffer()->GetShaderResourceHandle(), 0);
 
-    auto lightRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_CBV, GLOBAL_DESCRIPTOR_SPACE, 7);
+    auto lightRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_CBV, GLOBAL_DESCRIPTOR_SPACE, 9);
     d3d12CommandList2->SetComputeRootConstantBufferView(lightRootIdx, GetLightBuffer()->GpuAddress());
     d3d12CommandList2->SetGraphicsRootConstantBufferView(lightRootIdx, GetLightBuffer()->GpuAddress());
 
-    auto sceneEnvironmentRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_CBV, GLOBAL_DESCRIPTOR_SPACE, 8);
+    auto sceneEnvironmentRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_CBV, GLOBAL_DESCRIPTOR_SPACE, 10);
     d3d12CommandList2->SetComputeRootConstantBufferView(sceneEnvironmentRootIdx, m_pSceneEnvironmentBuffer->GpuAddress());
     d3d12CommandList2->SetGraphicsRootConstantBufferView(sceneEnvironmentRootIdx, m_pSceneEnvironmentBuffer->GpuAddress());
 }
@@ -383,14 +445,14 @@ BufferHandle Dx12SceneResource::GetOrUpdateVertex(u64 entity, const std::string&
     BufferHandle handle = {};
     handle.gpuHandle          = allocation.pBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
     handle.elementSizeInBytes = m_pVertexAllocator->GetElementSize();
-    handle.offset             = allocation.offsetInBytes / handle.elementSizeInBytes;
+    handle.offset             = u32(allocation.offsetInBytes / handle.elementSizeInBytes);
     handle.count              = count;
 
     m_VertexCache.emplace(filepath, handle);
     return handle;
 }
 
-Arc< Dx12IndexBuffer > Dx12SceneResource::GetOrUpdateIndex(u64 entity, const std::string& filepath, const void* pData, u32 count)
+BufferHandle Dx12SceneResource::GetOrUpdateIndex(u64 entity, const std::string& filepath, const void* pData, u32 count)
 {
     std::string f = filepath.data();
     if (m_IndexCache.contains(f))
@@ -398,14 +460,19 @@ Arc< Dx12IndexBuffer > Dx12SceneResource::GetOrUpdateIndex(u64 entity, const std
         return m_IndexCache.find(f)->second;
     }
 
-    u64 sizeInBytes = sizeof(Index) * count;
-
     auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
-    auto pIB = Dx12IndexBuffer::Create(m_RenderDevice, "", count);
-    rm.UploadData(pIB, pData, sizeInBytes, 0, D3D12_RESOURCE_STATE_INDEX_BUFFER);
 
-    m_IndexCache.emplace(filepath, pIB);
-    return pIB;
+    auto allocation = m_pIndexAllocator->Allocate(count);
+    rm.UploadData(allocation.pBuffer, pData, allocation.sizeInBytes, allocation.offsetInBytes, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+    BufferHandle handle = {};
+    handle.gpuHandle          = allocation.pBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
+    handle.elementSizeInBytes = m_pIndexAllocator->GetElementSize();
+    handle.offset             = u32(allocation.offsetInBytes / handle.elementSizeInBytes);
+    handle.count              = count;
+
+    m_IndexCache.emplace(filepath, handle);
+    return handle;
 }
 
 BufferHandle Dx12SceneResource::GetOrUpdateMeshlets(u64 entity, const std::string& filepath, const void* pData, u32 count)
@@ -423,7 +490,7 @@ BufferHandle Dx12SceneResource::GetOrUpdateMeshlets(u64 entity, const std::strin
     BufferHandle handle = {};
     handle.gpuHandle          = allocation.pBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
     handle.elementSizeInBytes = m_pMeshletAllocator->GetElementSize();
-    handle.offset             = allocation.offsetInBytes / handle.elementSizeInBytes;
+    handle.offset             = u32(allocation.offsetInBytes / handle.elementSizeInBytes);
     handle.count              = count;
 
     m_MeshletCache.emplace(filepath, handle);
@@ -445,7 +512,7 @@ BufferHandle Dx12SceneResource::GetOrUpdateMeshletVertices(u64 entity, const std
     BufferHandle handle = {};
     handle.gpuHandle          = allocation.pBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
     handle.elementSizeInBytes = m_pMeshletVertexAllocator->GetElementSize();
-    handle.offset             = allocation.offsetInBytes / handle.elementSizeInBytes;
+    handle.offset             = u32(allocation.offsetInBytes / handle.elementSizeInBytes);
     handle.count              = count;
 
     m_MeshletVertexCache.emplace(filepath, handle);
@@ -466,12 +533,35 @@ BufferHandle Dx12SceneResource::GetOrUpdateMeshletTriangles(u64 entity, const st
 
     BufferHandle handle = {};
     handle.gpuHandle          = allocation.pBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
-    handle.elementSizeInBytes = sizeof(u8);// m_pMeshletTriangleAllocator->GetElementSize();
-    handle.offset             = allocation.offsetInBytes / handle.elementSizeInBytes;
+    handle.elementSizeInBytes = m_pMeshletTriangleAllocator->GetElementSize();
+    handle.offset             = u32(allocation.offsetInBytes / handle.elementSizeInBytes);
     handle.count              = count;
 
     m_MeshletTriangleCache.emplace(filepath, handle);
     return handle;
+}
+
+Arc< Dx12BottomLevelAS > Dx12SceneResource::GetOrCreateBLAS(const std::string& tag, const BufferHandle& vHandle, const BufferHandle& iHandle)
+{
+    auto iter = m_BLASCache.find(tag);
+    if (iter != m_BLASCache.end())
+        return iter->second;
+
+    auto pBLAS = Dx12BottomLevelAS::Create(m_RenderDevice, tag.c_str());
+
+    render::GeometryDesc geom = {};
+    geom.vertexBufferAddress = vHandle.gpuHandle + (vHandle.offset * vHandle.elementSizeInBytes);
+    geom.vertexCount         = vHandle.count;
+    geom.vertexStride        = vHandle.elementSizeInBytes;
+    geom.indexBufferAddress  = iHandle.gpuHandle + (iHandle.offset * iHandle.elementSizeInBytes);
+    geom.indexCount          = iHandle.count;
+    geom.geometryFlags       = render::eGeometryFlag_Opaque;
+    pBLAS->AddGeometry(geom);
+    pBLAS->Prepare();
+
+    m_BLASCache.emplace(tag, pBLAS);
+    m_PendingBLASBuilds.push_back(pBLAS.get());
+    return pBLAS;
 }
 
 Arc< Dx12Texture > Dx12SceneResource::GetOrLoadTexture(u64 entity, const std::string& filepath)
@@ -504,12 +594,35 @@ void Dx12SceneResource::UpdateFrameBuffer(const void* pData, u32 count, u64 elem
     if (count == 0 || elementSizeInBytes == 0)
         return;
 
-    u64 sizeInBytes = count * elementSizeInBytes;
-
     auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
 
     auto allocation = targetBuffer.Allocate(count);
     rm.UploadData(allocation.pBuffer, pData, allocation.sizeInBytes, allocation.offsetInBytes, stateAfter);
+}
+
+void Dx12SceneResource::BuildAccelerationStructures()
+{
+    bool bHasTLAS        = m_pTLAS->NumInstances() > 0;
+    bool bHasPendingBLAS = m_PendingBLASBuilds.empty() == false;
+    if (!bHasPendingBLAS && !bHasTLAS)
+        return;
+
+    auto pContext = m_RenderDevice.BeginCommand(D3D12_COMMAND_LIST_TYPE_DIRECT);
+    auto* cmdList = pContext->GetD3D12CommandList();
+
+    for (auto* pBLAS : m_PendingBLASBuilds)
+    {
+        pContext->BuildBLAS(*pBLAS);
+    }
+    m_PendingBLASBuilds.clear();
+
+    if (bHasTLAS)
+    {
+        pContext->BuildTLAS(*m_pTLAS);
+    }
+
+    pContext->Close();
+    m_RenderDevice.ExecuteCommand(std::move(pContext)).Wait();
 }
 
 ID3D12CommandSignature* Dx12SceneResource::GetSceneD3D12CommandSignature() const
@@ -542,6 +655,11 @@ Arc< Dx12StructuredBuffer > Dx12SceneResource::GetMeshletBuffer() const
     return m_pMeshletAllocator->GetBuffer();
 }
 
+Arc< render::TopLevelAccelerationStructure > Dx12SceneResource::GetTLAS() const
+{
+    return StaticCast< render::TopLevelAccelerationStructure >(m_pTLAS);
+}
+
 void Dx12SceneResource::ResetFrameBuffers()
 {
     m_NumMeshes = 0;
@@ -552,9 +670,14 @@ void Dx12SceneResource::ResetFrameBuffers()
     m_pLightAllocator->Reset();
 
     m_pVertexAllocator->Reset();
+    m_pIndexAllocator->Reset();
+    m_pInstanceAllocator->Reset();
     m_pMeshletAllocator->Reset();
     m_pMeshletVertexAllocator->Reset();
     m_pMeshletTriangleAllocator->Reset();
+
+    m_pTLAS->Reset();
+    m_PendingBLASBuilds.clear();
 }
 
 } // namespace dx12

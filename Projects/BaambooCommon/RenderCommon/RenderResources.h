@@ -14,7 +14,9 @@ enum class eResourceType : u8
     RenderTarget,
     Sampler,
     Shader,
-    AccelerationStructure
+    SBT,
+    BLAS,
+    TLAS,
 };
 
 class BAAMBOO_API Resource : public ArcBase
@@ -53,7 +55,7 @@ using Super = Resource;
 public:
     struct CreationInfo
     {
-        u64  count              = 0;
+        u32  count              = 0;
         u64  elementSizeInBytes = 0;
         bool bMap               = false;
 
@@ -388,6 +390,16 @@ enum eShaderStage
     Mesh = 0x00000080,
 };
 
+inline bool IsRaytracingShader(eShaderStage stage)
+{
+    return (stage == RayGeneration)
+        || (stage == AnyHit)
+        || (stage == ClosestHit)
+        || (stage == Miss)
+        || (stage == Interaction)
+        || (stage == Callable);
+}
+
 enum class eShaderResourceType
 {
     UniformBuffer = 0,
@@ -408,7 +420,6 @@ struct ShaderBytecode
 class BAAMBOO_API Shader : public Resource
 {
 using Super = Resource;
-
 public:
     struct CreationInfo
     {
@@ -428,6 +439,164 @@ protected:
     ShaderBytecode m_ShaderBytecode;
 
     eShaderStage m_Stage;
+};
+
+
+//-------------------------------------------------------------------------
+// SBT
+//-------------------------------------------------------------------------
+class BAAMBOO_API ShaderBindingTable : public Resource
+{
+using Super = Resource;
+public:
+    static Arc< ShaderBindingTable > Create(RenderDevice& rd, const char* name);
+
+    ShaderBindingTable(const char* name);
+    virtual ~ShaderBindingTable() = default;
+
+    ShaderBindingTable& SetRayGenerationRecord(const void* pIdentifier, const void* pData, u32 sizeInBytes);
+    ShaderBindingTable& AddMissRecord(const std::string& missExportName, const void* pIdentifier, const void* pData = nullptr, u32 localArgsSize = 0);
+    ShaderBindingTable& AddHitGroupRecord(const std::string& hitGroupName, const void* pIdentifier,  const void* pData = nullptr, u32 localArgsSize = 0);
+    ShaderBindingTable& UpdateHitGroupLocalRootArguments(u32 recordIndex, const void* pIdentifier, const void* pData, u32 sizeInBytes);
+
+    void Reset();
+
+    virtual void Build() = 0;
+
+    u32 GetNumMissRecords()     const { return static_cast<u32>(m_MissRecords.size()); }
+    u32 GetNumHitGroupRecords() const { return static_cast<u32>(m_HitGroupRecords.size()); }
+
+protected:
+    struct ShaderRecord
+    {
+        std::string       exportName;
+        std::vector< u8 > rootArgs;
+
+        void Upload(const void* pData, u32 sizeInBytes)
+        {
+            if (pData && sizeInBytes > 0)
+            {
+                rootArgs.resize(sizeInBytes);
+                memcpy(rootArgs.data(), pData, sizeInBytes);
+            }
+        }
+
+        [[nodiscard]] u32  Size()  const { return static_cast<u32>(rootArgs.size()); }
+        [[nodiscard]] bool IsEmpty() const { return rootArgs.empty(); }
+
+        const void* pIdentifier = nullptr;
+    };
+
+    ShaderRecord                m_RayGenRecord;
+    std::vector< ShaderRecord > m_MissRecords;
+    std::vector< ShaderRecord > m_HitGroupRecords;
+};
+
+
+//-------------------------------------------------------------------------
+// Acceleration Structure
+//-------------------------------------------------------------------------
+enum eAccelerationStructureBuildFlags
+{
+    eASBuildFlag_None            = 0,
+    eASBuildFlag_AllowUpdate     = 1 << 0,
+    eASBuildFlag_AllowCompaction = 1 << 1,
+    eASBuildFlag_PreferFastTrace = 1 << 2,
+    eASBuildFlag_PreferFastBuild = 1 << 3,
+    eASBuildFlag_MinimizeMemory  = 1 << 4,
+};
+
+enum eGeometryFlags
+{
+    eGeometryFlag_None              = 0,
+    eGeometryFlag_Opaque            = 1 << 0,
+    eGeometryFlag_NoDuplicateAnyHit = 1 << 1,
+};
+
+struct GeometryDesc
+{
+    u64 vertexBufferAddress = 0;
+    u32 vertexCount         = 0;
+    u32 vertexStride        = 0;
+
+    u64 indexBufferAddress = 0;
+    u32 indexCount         = 0;
+
+    u64 transformBufferAddress = 0;
+
+    RenderFlags geometryFlags = eGeometryFlag_Opaque;
+};
+
+struct AccelerationStructureInstanceDesc
+{
+    float transform[3][4] = {};
+
+    u32 instanceID                          = 0;
+    u8  instanceMask                        = 0xFF;
+    u32 instanceContributionToHitGroupIndex = 0;
+    u32 flags                               = 0;
+
+    class BottomLevelAccelerationStructure* pBLAS = nullptr;
+};
+
+class BAAMBOO_API BottomLevelAccelerationStructure : public Resource
+{
+using Super = Resource;
+public:
+    static Arc< BottomLevelAccelerationStructure > Create(RenderDevice& rd, const char* name);
+
+    BottomLevelAccelerationStructure(const char* name);
+    virtual ~BottomLevelAccelerationStructure() = default;
+
+    BottomLevelAccelerationStructure& AddGeometry(const GeometryDesc& geometry);
+    BottomLevelAccelerationStructure& SetBuildFlags(RenderFlags flags);
+
+    virtual void Prepare() = 0;
+
+    [[nodiscard]] virtual u64 GetGPUVirtualAddress() const = 0;
+    [[nodiscard]] virtual bool IsBuilt() const = 0;
+
+    [[nodiscard]]
+    const std::string& GetName() const { return m_Name; }
+
+protected:
+    std::string m_Name;
+
+    std::vector< GeometryDesc > m_Geometries;
+
+    RenderFlags m_BuildFlags = eASBuildFlag_PreferFastTrace;
+};
+
+class BAAMBOO_API TopLevelAccelerationStructure : public Resource
+{
+using Super = Resource;
+public:
+    static Arc< TopLevelAccelerationStructure > Create(RenderDevice& rd, const char* name);
+
+    TopLevelAccelerationStructure(const char* name);
+    virtual ~TopLevelAccelerationStructure() = default;
+
+    TopLevelAccelerationStructure& AddInstance(const AccelerationStructureInstanceDesc& instance);
+    TopLevelAccelerationStructure& SetBuildFlags(RenderFlags flags);
+
+    void Reset();
+
+    virtual void Prepare() = 0;
+
+    [[nodiscard]] u32 NumInstances() const { return static_cast<u32>(m_Instances.size()); }
+
+    [[nodiscard]] virtual u64 GetGPUVirtualAddress() const = 0;
+    [[nodiscard]] virtual bool IsBuilt() const = 0;
+
+    [[nodiscard]]
+    const std::string& GetName() const { return m_Name; }
+
+protected:
+    std::string m_Name;
+
+    std::vector< AccelerationStructureInstanceDesc > m_Instances;
+
+    RenderFlags m_BuildFlags = eASBuildFlag_PreferFastTrace;
 };
 
 
@@ -594,6 +763,55 @@ protected:
     std::unordered_map< std::string, u64 > m_ResourceBindingMap;
 };
 
+class BAAMBOO_API RaytracingPipeline : public ArcBase
+{
+public:
+    struct RaytracingHitGroup
+    {
+        std::string hitGroupName;
+        std::string closestHitShaderExport;
+        std::string anyHitShaderExport;
+        std::string intersectionShaderExport;
+    };
+
+    static Box< RaytracingPipeline > Create(RenderDevice& rd, const char* name);
+
+    RaytracingPipeline(const char* name);
+    virtual ~RaytracingPipeline() = default;
+
+    RaytracingPipeline& SetShaderLibrary(Arc< Shader > pLibrary);
+    RaytracingPipeline& SetRayGenerationShader(const std::string& exportName);
+    RaytracingPipeline& AddMissShader(const std::string& exportName);
+    RaytracingPipeline& AddHitGroup(const RaytracingHitGroup& hitGroup);
+
+    RaytracingPipeline& SetMaxPayloadSize(u32 sizeInBytes);
+    RaytracingPipeline& SetMaxAttributeSize(u32 sizeInBytes);
+    RaytracingPipeline& SetMaxRecursionDepth(u32 depth);
+
+    virtual void Build() = 0;
+
+    virtual const void* GetShaderIdentifier(const std::string& exportName) const = 0;
+
+    std::pair< u32, u32 > GetResourceBindingIndex(const std::string& name);
+
+protected:
+    std::string m_Name;
+
+    Arc< Shader > m_pShaderLibrary;
+
+    std::string                       m_RayGenExport;
+    std::vector< std::string >        m_MissExports;
+    std::vector< RaytracingHitGroup > m_HitGroups;
+
+    u32 m_MaxRecursionDepth       = 1;
+    u32 m_MaxPayloadSizeInBytes   = 4 * sizeof(float);
+    u32 m_MaxAttributeSizeInBytes = 2 * sizeof(float);
+
+    // [name, set:binding] - Vulkan
+    // [name, offset:rootIndex] - Dx12
+    std::unordered_map< std::string, u64 > m_ResourceBindingMap;
+};
+
 
 //-------------------------------------------------------------------------
 // Scene Resource
@@ -605,6 +823,8 @@ public:
 
     virtual void UpdateSceneResources(const SceneRenderView& renderView) = 0;
     virtual void BindSceneResources(class CommandContext& context) = 0;
+
+    virtual Arc< TopLevelAccelerationStructure > GetTLAS() const { return nullptr; }
 };
 
 

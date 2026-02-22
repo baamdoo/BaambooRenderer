@@ -11,6 +11,8 @@ namespace dx12
 class Dx12RootSignature;
 class CommandSignature;
 class StaticBufferAllocator;
+class Dx12BottomLevelAS;
+class Dx12TopLevelAS;
 
 struct BufferHandle
 {
@@ -30,11 +32,13 @@ struct Dx12SceneResource : public render::SceneResource
     virtual void BindSceneResources(render::CommandContext& context) override;
 
     BufferHandle GetOrUpdateVertex(u64 entity, const std::string& filepath, const void* pData, u32 count);
-    Arc< Dx12IndexBuffer > GetOrUpdateIndex(u64 entity, const std::string& filepath, const void* pData, u32 count);
+    BufferHandle GetOrUpdateIndex(u64 entity, const std::string& filepath, const void* pData, u32 count);
 
     BufferHandle GetOrUpdateMeshlets(u64 entity, const std::string& filepath, const void* pData, u32 count);
     BufferHandle GetOrUpdateMeshletVertices(u64 entity, const std::string& filepath, const void* pData, u32 count);
     BufferHandle GetOrUpdateMeshletTriangles(u64 entity, const std::string& filepath, const void* pData, u32 count);
+
+    Arc< Dx12BottomLevelAS > GetOrCreateBLAS(const std::string& tag, const BufferHandle& vHandle, const BufferHandle& iHandle);
 
     Arc< Dx12Texture > GetOrLoadTexture(u64 entity, const std::string& filepath);
     Arc< Dx12Texture > GetTexture(const std::string& filepath);
@@ -51,11 +55,13 @@ struct Dx12SceneResource : public render::SceneResource
     [[nodiscard]]
     inline u32 NumMeshes() const { return m_NumMeshes; }
 
-    std::unordered_map< std::string, u64 > resourceBindingMapTemp;
+    [[nodiscard]]
+    virtual Arc< render::TopLevelAccelerationStructure > GetTLAS() const override;
 
 private:
     void ResetFrameBuffers();
     void UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator& targetBuffer, D3D12_RESOURCE_STATES stateAfter);
+    void BuildAccelerationStructures();
 
     Dx12RenderDevice& m_RenderDevice;
 
@@ -69,6 +75,8 @@ private:
     Box< StaticBufferAllocator > m_pLightAllocator;
 
     Box< StaticBufferAllocator > m_pVertexAllocator;
+    Box< StaticBufferAllocator > m_pIndexAllocator;
+    Box< StaticBufferAllocator > m_pInstanceAllocator;
     Box< StaticBufferAllocator > m_pMeshletAllocator;
     Box< StaticBufferAllocator > m_pMeshletVertexAllocator;
     Box< StaticBufferAllocator > m_pMeshletTriangleAllocator;
@@ -78,13 +86,16 @@ private:
     Arc< Dx12ConstantBuffer > m_pSceneEnvironmentBuffer;
 
     std::unordered_map< std::string, BufferHandle > m_VertexCache;
+    std::unordered_map< std::string, BufferHandle > m_IndexCache;
     std::unordered_map< std::string, BufferHandle > m_MeshletCache;
     std::unordered_map< std::string, BufferHandle > m_MeshletVertexCache;
     std::unordered_map< std::string, BufferHandle > m_MeshletTriangleCache;
 
-    std::unordered_map< std::string, Arc< Dx12IndexBuffer > > m_IndexCache;
-
     std::unordered_map< std::string, Arc< Dx12Texture > > m_TextureCache;
+
+    Arc< Dx12TopLevelAS > m_pTLAS;
+    std::unordered_map< std::string, Arc< Dx12BottomLevelAS > > m_BLASCache;
+    std::vector< Dx12BottomLevelAS* >                           m_PendingBLASBuilds;
 
     u32 m_NumMeshes = 0;
 };

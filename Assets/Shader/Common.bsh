@@ -36,6 +36,14 @@ struct SkinnedVertex
     float weight0, weight1, weight2, weight3;
 };
 
+struct InstanceData
+{
+	uint vOffset;
+	uint iOffset;
+	uint materialID;
+	uint transformID;
+};
+
 struct Meshlet
 {
 	uint vertexOffset;

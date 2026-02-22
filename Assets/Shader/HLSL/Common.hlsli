@@ -29,21 +29,30 @@ struct CameraData
 
 #ifdef _MESH
 ConstantBuffer< DescriptorHeapIndex > g_Vertices         : register(b1, space0);
-ConstantBuffer< DescriptorHeapIndex > g_Meshlets         : register(b2, space0);
-ConstantBuffer< DescriptorHeapIndex > g_MeshletVertices  : register(b3, space0);
-ConstantBuffer< DescriptorHeapIndex > g_MeshletTriangles : register(b4, space0);
+ConstantBuffer< DescriptorHeapIndex > g_Indices          : register(b2, space0);
+ConstantBuffer< DescriptorHeapIndex > g_Instances        : register(b3, space0);
+ConstantBuffer< DescriptorHeapIndex > g_Meshlets         : register(b4, space0);
+ConstantBuffer< DescriptorHeapIndex > g_MeshletVertices  : register(b5, space0);
+ConstantBuffer< DescriptorHeapIndex > g_MeshletTriangles : register(b6, space0);
 #endif // _MESH
 
 #ifdef _TRANSFORM
-ConstantBuffer< DescriptorHeapIndex > g_Transforms : register(b5, space0);
+ConstantBuffer< DescriptorHeapIndex > g_Transforms : register(b7, space0);
 #endif // _TRANSFORM
 
+enum MaterialType
+{
+    Default = 0,
+    Matte   = 1,
+    Mirror  = 2,
+    Glass   = 3
+};
 #ifdef _MATERIAL
-ConstantBuffer< DescriptorHeapIndex > g_Materials : register(b6, space0);
+ConstantBuffer< DescriptorHeapIndex > g_Materials : register(b8, space0);
 #endif // _MATERIAL
 
 #ifdef _LIGHT
-ConstantBuffer< LightingData > g_Lights : register(b7, space0);
+ConstantBuffer< LightingData > g_Lights : register(b9, space0);
 #endif // _LIGHT
 
 struct AtmosphereData
@@ -112,7 +121,7 @@ struct SceneEnvironmentData
     AtmosphereData atmosphere;
 	CloudData      cloud;
 };
-ConstantBuffer< SceneEnvironmentData > g_SceneEnvironment : register(b8, space0);
+ConstantBuffer< SceneEnvironmentData > g_SceneEnvironment : register(b10, space0);
 
 AtmosphereData GetAtmosphereData()
 {
@@ -127,7 +136,9 @@ CloudData GetCloudData()
 
 #define GetResource(idx) ResourceDescriptorHeap[NonUniformResourceIndex(idx)]
 
-#define ROOT_CONSTANT_SPACE space100
+#define ROOT_CONSTANT_SPACE     space100
+#define MISS_ARGUMENT_SPACE     space200
+#define HITGROUP_ARGUMENT_SPACE space300
 
 #define SAMPLER_INDEX_LINEAR_CLAMP     s0
 #define SAMPLER_INDEX_LINEAR_WRAP      s1

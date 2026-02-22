@@ -6,10 +6,13 @@
 #include "Dx12DescriptorAllocation.h"
 #include "Dx12RenderPipeline.h"
 #include "Dx12ResourceManager.h"
+
 #include "RenderResource/Dx12Resource.h"
 #include "RenderResource/Dx12SceneResource.h"
 #include "RenderResource/Dx12RenderTarget.h"
 #include "RenderResource/Dx12Shader.h"
+#include "RenderResource/Dx12ShaderBindingTable.h"
+#include "RenderResource/Dx12AccelerationStructure.h"
 
 #include "D3D12MemAlloc.h"
 
@@ -42,6 +45,22 @@ Dx12RenderDevice::Dx12RenderDevice(bool bEnableGBV)
 			featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
 		}
 		m_HighestRootSignatureVersion = featureData.HighestVersion;
+	}
+	{
+		D3D12_FEATURE_DATA_D3D12_OPTIONS5 options5 = {};
+		if (SUCCEEDED(m_d3d12Device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &options5, sizeof(options5))))
+		{
+			m_Supports.bRayTracing = options5.RaytracingTier >= D3D12_RAYTRACING_TIER_1_1;
+			if (m_Supports.bRayTracing)
+			{
+				printf("D3D12RayTracing supports!\n");
+			}
+			else
+			{
+				printf("D3D12RayTracing doesn't support!\n");
+				__debugbreak();
+			}
+		}
 	}
 	{
 		D3D12_FEATURE_DATA_D3D12_OPTIONS7 options7 = {};
@@ -120,14 +139,34 @@ Arc< render::Shader > Dx12RenderDevice::CreateShader(const char* name, render::S
 	return Dx12Shader::Create(*this, name, std::move(info));
 }
 
-Box< render::ComputePipeline > Dx12RenderDevice::CreateComputePipeline(const char* name)
+Arc< render::ShaderBindingTable > Dx12RenderDevice::CreateSBT(const char* name)
 {
-	return MakeBox< Dx12ComputePipeline >(*this, name);
+	return Dx12ShaderBindingTable::Create(*this, name);
+}
+
+Arc< render::BottomLevelAccelerationStructure > Dx12RenderDevice::CreateBLAS(const char* name)
+{
+	return Dx12BottomLevelAS::Create(*this, name);
+}
+
+Arc< render::TopLevelAccelerationStructure > Dx12RenderDevice::CreateTLAS(const char* name)
+{
+	return Dx12TopLevelAS::Create(*this, name);
 }
 
 Box< render::GraphicsPipeline > Dx12RenderDevice::CreateGraphicsPipeline(const char* name)
 {
 	return MakeBox< Dx12GraphicsPipeline >(*this, name);
+}
+
+Box< render::ComputePipeline > Dx12RenderDevice::CreateComputePipeline(const char* name)
+{
+	return MakeBox< Dx12ComputePipeline >(*this, name);
+}
+
+Box< render::RaytracingPipeline > Dx12RenderDevice::CreateRaytracingPipeline(const char* name)
+{
+	return MakeBox< Dx12RaytracingPipeline >(*this, name);
 }
 
 u32 Dx12RenderDevice::Swap()
