@@ -94,6 +94,9 @@ enum
 	eContentButton_Metallic,
 	eContentButton_Roughness,
 	eContentButton_Emission,
+	eContentButton_Clearcoat,
+	eContentButton_Anisotropy,
+	eContentButton_Sheen,
 
 	eContentButton_Skybox,
 };
@@ -118,7 +121,7 @@ void Engine::Initialize(eRendererAPI eApi)
 	auto pImGuiContext = ImGui::InitUI();
 	if (!InitWindow())
 		throw std::runtime_error("Failed to initialize window!");
-	if (!LoadRenderer(s_RendererAPI, m_pWindow, pImGuiContext, &m_pRendererBackend))
+	if (!LoadRenderer(s_RendererAPI, m_pWindow, m_DeviceSettings, pImGuiContext, &m_pRendererBackend))
 		throw std::runtime_error("Failed to load backend!");
 	if (!LoadScene())
 		throw std::runtime_error("Failed to create scene!");
@@ -212,9 +215,9 @@ void Engine::GameLoop(float dt)
 	m_pScene->Update(dt, *m_pCamera);
 
 	if (m_RenderViewQueue.size() >= NUM_TOLERANCE_ASYNC_FRAME_GAME_TO_RENDER)
-		m_RenderViewQueue.replace(m_pScene->RenderView(*m_pCamera, float2(m_pWindow->Width(), m_pWindow->Height()), m_Frame, m_bDrawUI, m_bRaytracer));
+		m_RenderViewQueue.replace(m_pScene->RenderView(*m_pCamera, float2(m_pWindow->Width(), m_pWindow->Height()), m_Frame, m_pRendererBackend->GetDevice()->GetDeviceSettings()));
 	else
-		m_RenderViewQueue.push(m_pScene->RenderView(*m_pCamera, float2(m_pWindow->Width(), m_pWindow->Height()), m_Frame, m_bDrawUI, m_bRaytracer));
+		m_RenderViewQueue.push(m_pScene->RenderView(*m_pCamera, float2(m_pWindow->Width(), m_pWindow->Height()), m_Frame, m_pRendererBackend->GetDevice()->GetDeviceSettings()));
 }
 
 void Engine::RenderLoop()
@@ -265,7 +268,7 @@ void Engine::RenderLoop()
 					}
 				}
 
-				if (m_bDrawUI)
+				if (m_pRendererBackend->GetDevice()->GetDeviceSettings().bDrawUI)
 				{
 					ImGui::DrawUI(*this);
 				}
@@ -278,7 +281,7 @@ void Engine::RenderLoop()
 
 				assert(g_FrameData.pColor);
 
-				m_pRendererBackend->EndFrame(std::move(pContext), g_FrameData.pColor.lock(), m_bDrawUI);
+				m_pRendererBackend->EndFrame(std::move(pContext), g_FrameData.pColor.lock(), m_pRendererBackend->GetDevice()->GetDeviceSettings().bDrawUI);
 
 				m_Frame++;
 				g_FrameData.componentMarker = 0;
@@ -483,25 +486,88 @@ void Engine::DrawUI()
 					{
 						auto& component = ImGui::SelectedEntity.GetComponent< MaterialComponent >();
 
-						ImGui::Text("Tint");
-						bMark |= ImGui::DragFloat3("##Tint", glm::value_ptr(component.tint), 0.01f, 0.0f, 1.0f, "%.2f");
-						ImGui::Text("Roughness");
-						bMark |= ImGui::DragFloat("##Roughness", &component.roughness, 0.01f, 0.0f, 1.0f, "%.2f");
-						ImGui::Text("Metallic");
-						bMark |= ImGui::DragFloat("##Metallic", &component.metallic, 0.01f, 0.0f, 1.0f, "%.2f");
+						ImGui::Indent();
+						{
+							if (ImGui::CollapsingHeader("Basic"))
+							{
+								ImGui::Text("Tint");
+								bMark |= ImGui::DragFloat3("##Tint", glm::value_ptr(component.tint), 0.01f, 0.0f, 1.0f, "%.2f");
 
-						if (ImGui::Button("AlbedoTex")) ImGui::ContentBrowserSetup = eContentButton_Albedo;
-						ImGui::SameLine(); ImGui::Text(component.albedoTex.c_str());
-						if (ImGui::Button("NormalTex")) ImGui::ContentBrowserSetup = eContentButton_Normal;
-						ImGui::SameLine(); ImGui::Text(component.normalTex.c_str());
-						if (ImGui::Button("AoTex")) ImGui::ContentBrowserSetup = eContentButton_Ao;
-						ImGui::SameLine(); ImGui::Text(component.aoTex.c_str());
-						if (ImGui::Button("RoughnessTex")) ImGui::ContentBrowserSetup = eContentButton_Roughness;
-						ImGui::SameLine(); ImGui::Text(component.roughnessTex.c_str());
-						if (ImGui::Button("MetallicTex")) ImGui::ContentBrowserSetup = eContentButton_Metallic;
-						ImGui::SameLine(); ImGui::Text(component.metallicTex.c_str());
-						if (ImGui::Button("EmissionTex")) ImGui::ContentBrowserSetup = eContentButton_Emission;
-						ImGui::SameLine(); ImGui::Text(component.emissionTex.c_str());
+								if (ImGui::Button("AlbedoTex")) ImGui::ContentBrowserSetup = eContentButton_Albedo;
+								ImGui::SameLine(); ImGui::Text(component.albedoTex.c_str());
+								if (ImGui::Button("NormalTex")) ImGui::ContentBrowserSetup = eContentButton_Normal;
+								ImGui::SameLine(); ImGui::Text(component.normalTex.c_str());
+							}
+
+							if (ImGui::CollapsingHeader("ORM"))
+							{
+								ImGui::Text("Roughness");
+								bMark |= ImGui::DragFloat("##Roughness", &component.roughness, 0.01f, 0.0f, 1.0f, "%.2f");
+								ImGui::Text("Metallic");
+								bMark |= ImGui::DragFloat("##Metallic", &component.metallic, 0.01f, 0.0f, 1.0f, "%.2f");
+
+								if (ImGui::Button("AoTex")) ImGui::ContentBrowserSetup = eContentButton_Ao;
+								ImGui::SameLine(); ImGui::Text(component.aoTex.c_str());
+								if (ImGui::Button("RoughnessTex")) ImGui::ContentBrowserSetup = eContentButton_Roughness;
+								ImGui::SameLine(); ImGui::Text(component.roughnessTex.c_str());
+								if (ImGui::Button("MetallicTex")) ImGui::ContentBrowserSetup = eContentButton_Metallic;
+								ImGui::SameLine(); ImGui::Text(component.metallicTex.c_str());
+							}
+
+							if (ImGui::CollapsingHeader("Emission"))
+							{
+								ImGui::Text("EmissivePower");
+								bMark |= ImGui::DragFloat("##EmissivePower", &component.emissivePower, 0.01f, 0.0f, 10.0f, "%.2f");
+
+								if (ImGui::Button("EmissionTex")) ImGui::ContentBrowserSetup = eContentButton_Emission;
+								ImGui::SameLine(); ImGui::Text(component.emissionTex.c_str());
+							}
+
+							if (ImGui::CollapsingHeader("Clearcoat"))
+							{
+								bMark |= ImGui::DragFloat("Factor##CC", &component.clearcoat, 0.01f, 0.0f, 1.0f);
+								bMark |= ImGui::DragFloat("Roughness##CC", &component.clearcoatRoughness, 0.01f, 0.0f, 1.0f);
+
+								if (ImGui::Button("ClearcoatTex")) ImGui::ContentBrowserSetup = eContentButton_Clearcoat;
+								ImGui::SameLine(); ImGui::Text(component.clearcoatTex.c_str());
+							}
+
+							if (ImGui::CollapsingHeader("Anisotropy"))
+							{
+								bMark |= ImGui::DragFloat("Strength##Aniso", &component.anisotropy, 0.01f, 0.0f, 1.0f);
+								bMark |= ImGui::DragFloat("Rotation##Aniso", &component.anisotropyRotation, 0.01f, 0.0f, 6.283f);
+
+								if (ImGui::Button("AnisotropyTex")) ImGui::ContentBrowserSetup = eContentButton_Anisotropy;
+								ImGui::SameLine(); ImGui::Text(component.anisotropyTex.c_str());
+							}
+
+							if (ImGui::CollapsingHeader("Sheen"))
+							{
+								bMark |= ImGui::ColorEdit3("Color##Sheen", glm::value_ptr(component.sheenColor));
+								bMark |= ImGui::DragFloat("Roughness##Sheen", &component.sheenRoughness, 0.01f, 0.0f, 1.0f);
+
+								if (ImGui::Button("SheenTex")) ImGui::ContentBrowserSetup = eContentButton_Sheen;
+								ImGui::SameLine(); ImGui::Text(component.sheenTex.c_str());
+							}
+
+							if (ImGui::CollapsingHeader("Subsurface"))
+							{
+								bMark |= ImGui::DragFloat("Factor##SS", &component.subsurface, 0.01f, 0.0f, 1.0f);
+							}
+
+							if (ImGui::CollapsingHeader("Transmission"))
+							{
+								bMark |= ImGui::DragFloat("Factor##Trans", &component.transmission, 0.01f, 0.0f, 1.0f);
+							}
+
+							ImGui::Separator();
+							ImGui::Text("Alpha Cutoff");
+							bMark |= ImGui::DragFloat("##AlphaCutoff", &component.alphaCutoff, 0.01f, 0.0f, 1.0f);
+							ImGui::Text("SpecularStrength");
+							bMark |= ImGui::DragFloat("##Specular", &component.specularStrength, 0.01f, 0.0f, 1.0f);
+							ImGui::Text("IOR");
+							bMark |= ImGui::DragFloat("##IOR", &component.ior, 0.01f, 1.0f, 10.0f, "%.2f");
+						}
 					}
 
 					if (bMark)
@@ -553,7 +619,7 @@ void Engine::DrawUI()
 
 					case eLightType::Directional:
 					{
-						bMark |= ImGui::DragFloat("Illuminance (lux)", &component.illuminanceLux, 0.1f, 0.0f, 10.0f, "%.1f");
+						bMark |= ImGui::DragFloat("Illuminance (lux)", &component.illuminanceLux, 0.01f, 0.0f, 10.0f, "%.2f");
 						if (ImGui::IsItemHovered())
 						{
 							ImGui::BeginTooltip();
@@ -989,10 +1055,10 @@ void Engine::DrawUI()
 					auto& scriptComponent = ImGui::SelectedEntity.GetComponent< ScriptComponent >();
 
 					ImGui::Checkbox("Move", &scriptComponent.bMove);
-					ImGui::DragFloat3("MoveVelocity", glm::value_ptr(scriptComponent.moveVelocity), 0.1f, -10.0f, 10.0f);
+					ImGui::DragFloat3("MoveVelocity", glm::value_ptr(scriptComponent.moveVelocity), 0.01f, -10.0f, 10.0f);
 
 					ImGui::Checkbox("Rotate", &scriptComponent.bRotate);
-					ImGui::DragFloat3("RotationVelocity", glm::value_ptr(scriptComponent.rotationVelocity), 0.01f, -1.0f, 1.0f);
+					ImGui::DragFloat3("RotationVelocity", glm::value_ptr(scriptComponent.rotationVelocity), 0.001f, -1.0f, 1.0f);
 				}
 			}
 
@@ -1049,14 +1115,14 @@ void Engine::DrawUI()
 			{
 				transformComponent.transform.position += scriptComponent.moveVelocity;
 
-				m_pScene->Registry().patch< TransformComponent >(ImGui::SelectedEntity.ID(), [](auto&) {});
+				m_pScene->Registry().patch< TransformComponent >(id, [](auto&) {});
 			}
 
 			if (scriptComponent.bRotate)
 			{
 				transformComponent.transform.Rotate(scriptComponent.rotationVelocity.y, scriptComponent.rotationVelocity.x, scriptComponent.rotationVelocity.z);
 
-				m_pScene->Registry().patch< TransformComponent >(ImGui::SelectedEntity.ID(), [](auto&) {});
+				m_pScene->Registry().patch< TransformComponent >(id, [](auto&) {});
 			}
 		});
 

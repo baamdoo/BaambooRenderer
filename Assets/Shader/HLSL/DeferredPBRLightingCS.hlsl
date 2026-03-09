@@ -170,7 +170,7 @@ void main(uint3 tID : SV_DispatchThreadID)
     float  depth = DepthBuffer.SampleLevel(g_PointClampSampler, uv, 0);
     if (depth == 0.0)
     {
-        TextureCube< float4 > SkyboxLUT = GetResource(g_SkyboxLUT.index);
+        TextureCube< float3 > SkyboxLUT = GetResource(g_SkyboxLUT.index);
 
         float3 rayDir = normalize(ReconstructWorldPos(uv, 0.0, g_Camera.mViewProjInv));
 

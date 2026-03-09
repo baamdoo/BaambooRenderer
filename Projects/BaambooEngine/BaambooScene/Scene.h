@@ -76,7 +76,7 @@ public:
 	void OnWindowResized(u32 width, u32 height);
 
 	[[nodiscard]]
-	SceneRenderView RenderView(const EditorCamera& edCamera, float2 viewport, u64 frame, bool bDrawUI, bool bRaytracer) const;
+	SceneRenderView RenderView(const EditorCamera& edCamera, float2 viewport, u64 frame, const render::DeviceSettings& ds) const;
 
 	[[nodiscard]]
 	const std::string& Name() const { return m_Name; }

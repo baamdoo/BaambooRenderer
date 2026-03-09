@@ -4,15 +4,11 @@
 namespace render 
 {
 
-struct DeviceSupports
-{
-    bool bRayTracing;
-    bool bMeshShader;
-};
-
 class RenderDevice
 {
 public:
+    RenderDevice(const DeviceSettings& ds)
+        : m_Settings(ds) {}
     virtual ~RenderDevice() = default;
 
     virtual void Flush() = 0;
@@ -50,7 +46,7 @@ public:
     void SetWindowWidth(u32 width) { m_WindowWidth = width; }
     void SetWindowHeight(u32 height) { m_WindowHeight = height; }
 
-    inline const DeviceSupports& GetDeviceSupports() const { return m_Supports; }
+    inline const DeviceSettings& GetDeviceSettings() const { return m_Settings; }
 
 protected:
     u32 m_NumContexts  = 0;
@@ -59,7 +55,7 @@ protected:
     u32 m_WindowWidth  = 0;
     u32 m_WindowHeight = 0;
 
-    DeviceSupports m_Supports = {};
+    DeviceSettings m_Settings = {};
 };
 
 } // namespace render

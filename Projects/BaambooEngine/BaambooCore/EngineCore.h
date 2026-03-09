@@ -8,9 +8,9 @@
 #include <string>
 #include <filesystem>
 
-bool typedef (__stdcall* CreateInstance)(baamboo::Window* pWindow, struct ImGuiContext* pImGuiContext, void* ppv);
+bool typedef (__stdcall* CreateInstance)(baamboo::Window* pWindow, const render::DeviceSettings& ds, struct ImGuiContext* pImGuiContext, void* ppv);
 
-inline bool LoadRenderer(eRendererAPI eApi, baamboo::Window* pWindow, struct ImGuiContext* pImGuiContext, OUT render::Renderer** ppRenderer)
+inline bool LoadRenderer(eRendererAPI eApi, baamboo::Window* pWindow, const render::DeviceSettings& ds, struct ImGuiContext* pImGuiContext, OUT render::Renderer** ppRenderer)
 {
 	HMODULE hEngineDLL = nullptr;
 	std::wstring enginePath;
@@ -49,5 +49,5 @@ inline bool LoadRenderer(eRendererAPI eApi, baamboo::Window* pWindow, struct ImG
 	}
 
 	CreateInstance fnCreateInstance = (CreateInstance)GetProcAddress(hEngineDLL, "DllCreateInstance");
-	return fnCreateInstance(pWindow, pImGuiContext, ppRenderer);
+	return fnCreateInstance(pWindow, ds, pImGuiContext, ppRenderer);
 }

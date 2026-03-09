@@ -249,6 +249,11 @@ BottomLevelAccelerationStructure& BottomLevelAccelerationStructure::SetBuildFlag
 	return *this;
 }
 
+void BottomLevelAccelerationStructure::Reset()
+{
+	m_Geometries.clear();
+}
+
 Arc< TopLevelAccelerationStructure > TopLevelAccelerationStructure::Create(RenderDevice& rd, const char* name)
 {
 	return rd.CreateTLAS(name);

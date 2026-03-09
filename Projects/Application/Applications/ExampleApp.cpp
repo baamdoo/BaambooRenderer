@@ -1,9 +1,12 @@
 #include "ExampleApp.h"
+
 #include "BaambooCore/Common.h"
 #include "BaambooCore/Window.h"
 #include "BaambooCore/Input.hpp"
+
 #include "BaambooScene/Entity.h"
 #include "BaambooScene/Components.h"
+
 #include "BaambooScene/RenderNodes/AtmosphereNode.h"
 #include "BaambooScene/RenderNodes/GBufferNode.h"
 #include "BaambooScene/RenderNodes/CloudNode.h"
@@ -18,6 +21,8 @@ using namespace baamboo;
 
 void ExampleApp::Initialize(eRendererAPI api)
 {
+	m_DeviceSettings.bMeshShader = true;
+
 	Super::Initialize(api);
 
 	m_CameraController.SetLookAt(float3(0.0f, 0.0f, 0.0f), float3(0.0f, 0.0f, 1.0f));
@@ -252,25 +257,28 @@ void ExampleApp::ConfigureSceneObjects()
 	// static mesh
 	{
 		MeshDescriptor descriptor = {};
-		descriptor.rootPath    = GetModelPath();
-		descriptor.bOptimize   = true;
-		descriptor.rendererAPI = s_RendererAPI;
-		descriptor.bWindingCW  = true;
+		descriptor.rootPath          = GetModelPath();
+		descriptor.bOptimize         = true;
+		descriptor.rendererAPI       = s_RendererAPI;
+		descriptor.bWindingCW        = true;
+		descriptor.bGenerateMeshlets = true;
 
-		/*auto entity = m_pScene->ImportModel(MODEL_PATH.append("kitten.obj"), descriptor);
+		auto entity = m_pScene->ImportModel(MODEL_PATH.append("kitten.obj"), descriptor);
 		entity.AttachComponent< ScriptComponent >();
 
 		auto& entitytc = entity.GetComponent< TransformComponent >();
 		entitytc.transform.position = { 0.0f, 0.0f, 500.0f };
-		entitytc.transform.scale = { 100.0f, 100.0f, 100.0f };*/
+		entitytc.transform.scale = { 100.0f, 100.0f, 100.0f };
 
-
-		/*auto dhEntity = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
-		auto& tcdh = dhEntity.GetComponent< TransformComponent >();
-		tcdh.transform.position = { -1.0f, 0.0f, 0.0f };
+		auto dhEntity = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
+		auto& tc = dhEntity.GetComponent< TransformComponent >();
+		tc.transform.position = { -100.0f, 0.0f, 0.0f };
+		tc.transform.scale = { 100.0f, 100.0f, 100.0f };
 
 		auto dhEntity2 = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
-		tcdh.transform.position = { 1.0f, 0.0f, 0.0f };*/
+		auto& tc2 = dhEntity2.GetComponent< TransformComponent >();
+		tc2.transform.position = { 100.0f, 0.0f, 0.0f };
+		tc2.transform.scale = { 100.0f, 100.0f, 100.0f };
 	}
 
 	// animated mesh

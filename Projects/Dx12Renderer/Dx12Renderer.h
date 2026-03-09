@@ -16,7 +16,7 @@ class RenderModule;
 class Renderer : public render::Renderer
 {
 public:
-	explicit Renderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext);
+	explicit Renderer(baamboo::Window* pWindow, const render::DeviceSettings& ds, ImGuiContext* pImGuiContext);
 	virtual ~Renderer() override;
 
 	virtual void NewFrame() override;

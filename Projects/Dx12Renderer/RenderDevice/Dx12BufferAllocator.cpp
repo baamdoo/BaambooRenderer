@@ -155,6 +155,8 @@ StaticBufferAllocator::~StaticBufferAllocator()
 
 StaticBufferAllocator::Allocation StaticBufferAllocator::Allocate(u64 numElements, u64 elementSizeInBytes)
 {
+	Allocation allocation = {};
+
 	auto sizeInBytes = numElements * (elementSizeInBytes == 0 ? m_ElementSizeInBytes : elementSizeInBytes);
 	auto alignedSize = baamboo::math::AlignUp(sizeInBytes, m_Alignment);
 	
@@ -164,7 +166,6 @@ StaticBufferAllocator::Allocation StaticBufferAllocator::Allocate(u64 numElement
 		Resize(m_ElementSizeInBytes, newSize / m_ElementSizeInBytes);
 	}
 
-	Allocation allocation = {};
 	allocation.pBuffer       = m_pBuffer;
 	allocation.sizeInBytes   = alignedSize;
 	allocation.offsetInBytes = m_OffsetInBytes;
@@ -178,6 +179,11 @@ StaticBufferAllocator::Allocation StaticBufferAllocator::Allocate(u64 numElement
 void StaticBufferAllocator::Reset()
 {
 	m_OffsetInBytes = 0;
+}
+
+void StaticBufferAllocator::Resize(u64 numElements)
+{
+	Resize(m_ElementSizeInBytes, numElements);
 }
 
 void StaticBufferAllocator::Resize(u64 elementSizeInBytes, u64 numElements)

@@ -18,6 +18,8 @@ using namespace baamboo;
 
 void BistroApp::Initialize(eRendererAPI api)
 {
+	m_DeviceSettings.bMeshShader = true;
+
 	Super::Initialize(api);
 
 	m_CameraController.SetLookAt(float3(0.0, 0.0f, -5.0f), float3(0.0f, 0.0f, 1.0f));
@@ -256,9 +258,9 @@ void BistroApp::ConfigureSceneObjects()
 		descriptor.bGenerateMeshlets = true;
 
 		auto entity = m_pScene->ImportModel(MODEL_PATH.append("kitten.obj"), descriptor);
-		/*auto entity2 = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
+		auto entity2 = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
 		auto& tc2 = entity2.GetComponent< TransformComponent >();
-		tc2.transform.position = float3(-10.0f, 0.0f, 0.0f);*/
+		tc2.transform.position = float3(-10.0f, 0.0f, 0.0f);
 		entity.AttachComponent< ScriptComponent >();
 	}
 

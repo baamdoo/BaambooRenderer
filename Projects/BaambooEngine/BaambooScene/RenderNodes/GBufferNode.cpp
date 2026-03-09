@@ -65,10 +65,8 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 		            .AttachTexture(eAttachmentPoint::Color3, pAttachment3)
 		            .AttachTexture(eAttachmentPoint::DepthStencil, pAttachmentDepth).Build();
 
-	
-
 	m_pGBufferPSO = GraphicsPipeline::Create(m_RenderDevice, "GBufferPSO");
-	if (!m_RenderDevice.GetDeviceSupports().bMeshShader)
+	if (!m_RenderDevice.GetDeviceSettings().bMeshShader)
 	{
 		auto pVS = Shader::Create(m_RenderDevice, "GBufferVS",
 			{
@@ -78,7 +76,7 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 
 		auto pFS = Shader::Create(m_RenderDevice, "GBufferPS",
 			{
-				.stage = eShaderStage::Fragment,
+				.stage    = eShaderStage::Fragment,
 				.filename = "GBufferPS"
 			});
 
@@ -96,7 +94,7 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 
 		auto pFS = Shader::Create(m_RenderDevice, "GBufferPS",
 			{
-				.stage = eShaderStage::Fragment,
+				.stage    = eShaderStage::Fragment,
 				.filename = "GBufferTestPS"
 			});
 

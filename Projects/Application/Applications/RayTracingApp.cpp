@@ -6,7 +6,9 @@
 
 #include "BaambooScene/Entity.h"
 #include "BaambooScene/Components.h"
+#include "BaambooScene/RenderNodes/SkyboxNode.h"
 #include "BaambooScene/RenderNodes/RaytracingNode.h"
+#include "BaambooScene/RenderNodes/PostProcessNode.h"
 
 #include <imgui/imgui.h>
 #include <imgui/backends/imgui_impl_glfw.h>
@@ -15,12 +17,12 @@ using namespace baamboo;
 
 void RayTracingApp::Initialize(eRendererAPI api)
 {
+	m_DeviceSettings.bRaytracing = true;
+
 	Super::Initialize(api);
 
 	m_CameraController.SetLookAt(float3(0.0, 0.0f, -5.0f), float3(0.0f, 0.0f, 1.0f));
 	m_pCamera = new EditorCamera(m_CameraController, m_pWindow->Width(), m_pWindow->Height());
-
-	m_bRaytracer = true;
 }
 
 void RayTracingApp::Update(float dt)
@@ -159,12 +161,14 @@ bool RayTracingApp::LoadScene()
 
 void RayTracingApp::DrawUI()
 {
-	m_bDrawUI = false;
+	Super::DrawUI();
 }
 
 void RayTracingApp::ConfigureRenderGraph()
 {
+	m_pScene->AddRenderNode(MakeArc< StaticSkyboxNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< RaytracingTestNode >(*m_pRendererBackend->GetDevice()));
+	m_pScene->AddRenderNode(MakeArc< PostProcessNode >(*m_pRendererBackend->GetDevice()));
 }
 
 void RayTracingApp::ConfigureSceneObjects()
@@ -176,9 +180,44 @@ void RayTracingApp::ConfigureSceneObjects()
 		descriptor.bOptimize         = true;
 		descriptor.rendererAPI       = s_RendererAPI;
 		descriptor.bWindingCW        = true;
-		descriptor.bGenerateMeshlets = true;
+		descriptor.bGenerateMeshlets = false;
 
 		auto entity = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
 		entity.AttachComponent< ScriptComponent >();
+
+		auto entity4 = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
+		auto& tc4 = entity4.GetComponent< TransformComponent >();
+		tc4.transform.position = float3(0.0f, 5.0f, 0.0f);
+
+		auto entity3 = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
+		entity3.AttachComponent< MaterialComponent >();
+		auto& tc3 = entity3.GetComponent< TransformComponent >();
+		tc3.transform.position = float3(0.0f, -5.0f, 0.0f);
+		tc3.transform.scale = float3(10.0f, 1.0f, 10.0f);
+	}
+	// environment
+	{
+		auto environment = m_pScene->CreateEntity("Environment");
+		auto& transformComponent = environment.GetComponent< TransformComponent >();
+		transformComponent.transform.position = float3(-0.22427f, 0.84396f, -0.48726);
+
+		auto& light = environment.AttachComponent< LightComponent >();
+		light.type             = eLightType::Directional;
+		light.color            = float3(1.0f, 0.95f, 0.8f);
+		light.temperatureK     = 10000.0f;
+		light.illuminanceLux   = 5.0f;
+		light.angularRadiusRad = 0.00465f;
+
+		auto& atmosphere = environment.AttachComponent< AtmosphereComponent >();
+		atmosphere.skybox = TEXTURE_PATH.string() + "Skybox_Field.jpg";
+	}
+	// post-process volume
+	{
+		auto  volume = m_pScene->CreateEntity("PostProcessVolume");
+		auto& pp     = volume.AttachComponent< PostProcessComponent >();
+
+		pp.tonemap.op    = eToneMappingOp::ACES;
+		pp.tonemap.ev100 = 0.0f;
+		pp.tonemap.gamma = 1.0f;
 	}
 }

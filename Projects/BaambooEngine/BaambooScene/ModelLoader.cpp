@@ -224,21 +224,52 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
             material.name = aiMat->GetName().C_Str();
 
             aiColor3D color;
-            if (aiMat->Get(AI_MATKEY_COLOR_AMBIENT, color) == AI_SUCCESS)
-                material.ambient = float3(color.r, color.g, color.b);
             if (aiMat->Get(AI_MATKEY_COLOR_DIFFUSE, color) == AI_SUCCESS)
                 material.diffuse = float3(color.r, color.g, color.b);
             if (aiMat->Get(AI_MATKEY_COLOR_SPECULAR, color) == AI_SUCCESS)
                 material.specular = float3(color.r, color.g, color.b);
+            if (aiMat->Get(AI_MATKEY_SHEEN_COLOR_FACTOR, color) == AI_SUCCESS)
+                material.sheenColor = float3(color.r, color.g, color.b);
 
-            float value;
-            if (aiMat->Get(AI_MATKEY_SHININESS, value) == AI_SUCCESS)
-                material.shininess = value;
+            float shininess = 32.0f;
+            if (aiMat->Get(AI_MATKEY_SHININESS, shininess) == AI_SUCCESS)
+                material.shininess = shininess;
 
-            if (aiMat->Get(AI_MATKEY_METALLIC_FACTOR, value) == AI_SUCCESS)
-                material.metallic = value;
-            if (aiMat->Get(AI_MATKEY_ROUGHNESS_FACTOR, value) == AI_SUCCESS)
-                material.roughness = value;
+            float metallic = 0.0f;
+            if (aiMat->Get(AI_MATKEY_METALLIC_FACTOR, metallic) == AI_SUCCESS)
+                material.metallic = metallic;
+
+            float roughness = 0.5f;
+            if (aiMat->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness) == AI_SUCCESS)
+                material.roughness = roughness;
+
+            float clearcoat = 0.0f;
+            if (aiMat->Get(AI_MATKEY_CLEARCOAT_FACTOR, clearcoat) == AI_SUCCESS)
+                material.clearcoat = clearcoat;
+
+            float clearcoatRoughness = 0.0f;
+            if (aiMat->Get(AI_MATKEY_CLEARCOAT_ROUGHNESS_FACTOR, clearcoatRoughness) == AI_SUCCESS)
+                material.clearcoatRoughness = clearcoatRoughness;
+
+            float transmission = 0.0f;
+            if (aiMat->Get(AI_MATKEY_TRANSMISSION_FACTOR, transmission) == AI_SUCCESS)
+                material.transmission = transmission;
+
+            float ior = 0.0f;
+            if (aiMat->Get(AI_MATKEY_REFRACTI, ior) == AI_SUCCESS)
+                material.ior = ior;
+
+            float anisotropy = 0.0f;
+            if (aiMat->Get(AI_MATKEY_ANISOTROPY_FACTOR, anisotropy) == AI_SUCCESS)
+                material.anisotropy = anisotropy;
+
+            float anisotropyRotation = 0.0f;
+            if (aiMat->Get(AI_MATKEY_ANISOTROPY_FACTOR, anisotropyRotation) == AI_SUCCESS)
+                material.anisotropyRotation = anisotropyRotation;
+
+            float sheenRoughness = 0.0f;
+            if (aiMat->Get(AI_MATKEY_SHEEN_ROUGHNESS_FACTOR, sheenRoughness) == AI_SUCCESS)
+                material.sheenRoughness = sheenRoughness;
 
             material.albedoPath     = GetTextureFilename(aiMat, aiTextureType_DIFFUSE);
             if (material.albedoPath.empty())
@@ -254,7 +285,11 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
             if (material.aoPath.empty())
                 material.aoPath     = GetTextureFilename(aiMat, aiTextureType_LIGHTMAP);
 
-            material.emissivePath   = GetTextureFilename(aiMat, aiTextureType_EMISSIVE);
+            material.emissivePath     = GetTextureFilename(aiMat, aiTextureType_EMISSIVE);
+            material.clearcoatPath    = GetTextureFilename(aiMat, aiTextureType_CLEARCOAT);
+            material.sheenPath        = GetTextureFilename(aiMat, aiTextureType_SHEEN);
+            material.anisotropyPath   = GetTextureFilename(aiMat, aiTextureType_ANISOTROPY);
+            material.transmissionPath = GetTextureFilename(aiMat, aiTextureType_TRANSMISSION);
 
             m_Materials.push_back(material);
         }

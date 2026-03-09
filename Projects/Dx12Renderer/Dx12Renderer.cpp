@@ -49,7 +49,7 @@ static std::wstring GetLatestWinPixGpuCapturerPath()
 	return pixInstallationPath / newestVersionFound / L"WinPixGpuCapturer.dll";
 }
 
-Renderer::Renderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext)
+Renderer::Renderer(baamboo::Window* pWindow, const render::DeviceSettings& ds, ImGuiContext* pImGuiContext)
 {
 	DX_CHECK(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
 	if (auto pixPath = GetLatestWinPixGpuCapturerPath(); !pixPath.empty())
@@ -63,7 +63,7 @@ Renderer::Renderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext)
 	}
 	//system("PAUSE");
 
-	m_pRenderDevice = new Dx12RenderDevice(false);
+	m_pRenderDevice = new Dx12RenderDevice(ds, false);
 	m_pSwapChain    = new Dx12SwapChain(*m_pRenderDevice, *pWindow);
 	m_pImGuiModule  = MakeBox< ImGuiModule >(*m_pRenderDevice, pImGuiContext);
 

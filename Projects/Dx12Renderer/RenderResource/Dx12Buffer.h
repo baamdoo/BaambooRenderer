@@ -26,7 +26,7 @@ public:
     virtual void Resize(u64 sizeInBytes, bool bReset = false) override;
 
     eBufferType GetType() const { return m_Type; }
-    virtual u64 SizeInBytes() const { return m_Count * m_ElementSize; }
+    virtual u64 SizeInBytes() const { return m_BufferSize; }
     inline u32 GetBufferCount() const { return m_Count; }
     inline u64 GetElementSize() const { return m_ElementSize; }
 
@@ -38,6 +38,7 @@ protected:
 
     u32 m_Count;
     u64 m_ElementSize;
+    u64 m_BufferSize;
     u8* m_pSystemMemory = nullptr;
 };
 

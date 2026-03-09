@@ -108,17 +108,39 @@ struct MaterialData
 {
 	float tintR, tintG, tintB; 
 	float metallic; 
+	
 	float roughness;
 	float ior;
 	float emissivePower;
-	float padding0;
+	float alphaCutoff;
+
+	float clearcoat;
+    float clearcoatRoughness;
+    float anisotropy;
+    float anisotropyRotation;
+
+	float sheenColorR, sheenColorG, sheenColorB;
+    float sheenRoughness;
+
+	float subsurface;
+    float transmission;
+    float specularStrength;
+    uint  materialType;
 
 	uint albedoID;
 	uint normalID;
 	uint specularID;
 	uint metallicRoughnessAoID;
+
 	uint emissiveID;
-	uint padding2, padding3, padding4;
+	uint clearcoatID;
+	uint sheenID;
+	uint anisotropyID;
+
+	uint subsurfaceID;
+    uint transmissionID;
+    uint padding0;
+    uint padding1;
 };
 
 

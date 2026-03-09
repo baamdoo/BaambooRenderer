@@ -19,7 +19,8 @@
 namespace dx12
 {
 
-Dx12RenderDevice::Dx12RenderDevice(bool bEnableGBV)
+Dx12RenderDevice::Dx12RenderDevice(const render::DeviceSettings& ds, bool bEnableGBV)
+	: Super(ds)
 {
 	CreateDevice(bEnableGBV);
 
@@ -50,14 +51,16 @@ Dx12RenderDevice::Dx12RenderDevice(bool bEnableGBV)
 		D3D12_FEATURE_DATA_D3D12_OPTIONS5 options5 = {};
 		if (SUCCEEDED(m_d3d12Device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &options5, sizeof(options5))))
 		{
-			m_Supports.bRayTracing = options5.RaytracingTier >= D3D12_RAYTRACING_TIER_1_1;
-			if (m_Supports.bRayTracing)
+			bool bRaytracing = options5.RaytracingTier >= D3D12_RAYTRACING_TIER_1_1;
+			if (bRaytracing)
 			{
-				printf("D3D12RayTracing supports!\n");
+				printf("D3D12Raytracing supports!\n");
 			}
 			else
 			{
-				printf("D3D12RayTracing doesn't support!\n");
+				m_Settings.bRaytracing = false;
+
+				printf("D3D12Raytracing doesn't support!\n");
 				__debugbreak();
 			}
 		}
@@ -66,13 +69,15 @@ Dx12RenderDevice::Dx12RenderDevice(bool bEnableGBV)
 		D3D12_FEATURE_DATA_D3D12_OPTIONS7 options7 = {};
 		if (SUCCEEDED(m_d3d12Device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS7, &options7, sizeof(options7))))
 		{
-			m_Supports.bMeshShader = options7.MeshShaderTier >= D3D12_MESH_SHADER_TIER_1;
-			if (m_Supports.bMeshShader)
+			bool bMeshShader = options7.MeshShaderTier >= D3D12_MESH_SHADER_TIER_1;
+			if (bMeshShader)
 			{
 				printf("D3D12MeshShader supports!\n");
 			}
 			else
 			{
+				m_Settings.bMeshShader = false;
+
 				printf("D3D12MeshShader doesn't support!\n");
 				__debugbreak();
 			}

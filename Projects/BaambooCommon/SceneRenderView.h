@@ -68,13 +68,24 @@ struct MaterialRenderView
 	u64 id;
 
 	float3 tint;
-	float3 ambient;
+	float  shininess;
+	float  metallic;
+	float  roughness;
+	float  ior;
+	float  emissivePower;
 
-	float shininess;
-	float metallic;
-	float roughness;
-	float ior;
-	float emissivePower;
+	float  alphaCutoff;
+	float  clearcoat;
+	float  clearcoatRoughness;
+	float  anisotropy;
+	float  anisotropyRotation;
+
+	float3 sheenColor;
+	float  sheenRoughness;
+
+	float  subsurface;
+	float  transmission;
+	float  specularStrength;
 
 	std::string albedoTex;
 	std::string normalTex;
@@ -82,6 +93,11 @@ struct MaterialRenderView
 	std::string roughnessTex;
 	std::string metallicTex;
 	std::string emissionTex;
+	std::string clearcoatTex;
+	std::string sheenTex;
+	std::string anisotropyTex;
+	std::string subsurfaceTex;
+	std::string transmissionTex;
 };
 
 struct DrawRenderView
@@ -180,9 +196,6 @@ struct SceneRenderView
 	u64   frame;
 
 	float2 viewport;
-
-	bool bDrawUI;
-	bool bRaytracer;
 
 	std::vector< Arc< render::RenderNode > > rg;
 

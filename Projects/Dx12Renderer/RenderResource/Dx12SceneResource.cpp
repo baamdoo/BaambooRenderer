@@ -82,9 +82,9 @@ Dx12SceneResource::Dx12SceneResource(Dx12RenderDevice& rd)
     m_pVertexAllocator          = MakeBox< StaticBufferAllocator >(m_RenderDevice, "VertexPool", sizeof(Vertex), _KB(8LL));
     m_pIndexAllocator           = MakeBox< StaticBufferAllocator >(m_RenderDevice, "IndexPool", sizeof(u32), _KB(8LL));
     m_pInstanceAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, "InstancePool", sizeof(InstanceData), _KB(8LL));
-    m_pMeshletAllocator         = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshletPool", sizeof(Meshlet), _KB(8LL));
-    m_pMeshletVertexAllocator   = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshletVertexPool", sizeof(u32), _KB(8LL));
-    m_pMeshletTriangleAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshletTrianglePool", sizeof(u32), _KB(8LL) * 3 / 4);
+    m_pMeshletAllocator         = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshletPool", sizeof(Meshlet), _MB(8LL));
+    m_pMeshletVertexAllocator   = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshletVertexPool", sizeof(u32), _MB(8LL));
+    m_pMeshletTriangleAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshletTrianglePool", sizeof(u32), _MB(8LL) * 3 / 4);
 
     m_pTLAS = Dx12TopLevelAS::Create(m_RenderDevice, "SceneTLAS");
 
@@ -94,18 +94,7 @@ Dx12SceneResource::Dx12SceneResource(Dx12RenderDevice& rd)
     auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
     m_pRootSignature = rm.GetGlobalRootSignature();
 
-    if (m_RenderDevice.GetDeviceSupports().bMeshShader)
-    {
-        m_pIndirectDataAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, "IndirectDataPool", sizeof(IndirectDispatchMeshData), _KB(8));
-        m_pIndirectDispatchSignature = new CommandSignature(
-            m_RenderDevice,
-            CommandSignatureDesc(2, sizeof(IndirectDispatchMeshData))
-                .AddConstant(0, 0, 6)
-                .AddDispatchMesh(),
-            m_pRootSignature->GetD3D12RootSignature()
-        );
-    }
-    else
+    if (!m_RenderDevice.GetDeviceSettings().bMeshShader)
     {
         m_pIndirectDataAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, "IndirectDataPool", sizeof(IndirectDrawData), _KB(8));
         m_pIndirectDrawSignature = new CommandSignature(
@@ -117,6 +106,17 @@ Dx12SceneResource::Dx12SceneResource(Dx12RenderDevice& rd)
                 .AddIndexBufferView()
                 .AddDrawIndexed(),
             m_pRootSignature->GetD3D12RootSignature());
+    }
+    else
+    {
+        m_pIndirectDataAllocator     = MakeBox< StaticBufferAllocator >(m_RenderDevice, "IndirectDataPool", sizeof(IndirectDispatchMeshData), _KB(8));
+        m_pIndirectDispatchSignature = new CommandSignature(
+            m_RenderDevice,
+            CommandSignatureDesc(2, sizeof(IndirectDispatchMeshData))
+                .AddConstant(0, 0, 6)
+                .AddDispatchMesh(),
+            m_pRootSignature->GetD3D12RootSignature()
+        );
     }
 }
 
@@ -159,33 +159,45 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
         material.ior           = materialView.ior;
         material.emissivePower = materialView.emissivePower;
 
+        material.alphaCutoff        = materialView.alphaCutoff;
+        material.clearcoat          = materialView.clearcoat;
+        material.clearcoatRoughness = materialView.clearcoatRoughness;
+        material.anisotropy         = materialView.anisotropy;
+        material.anisotropyRotation = materialView.anisotropyRotation;
+        material.sheenColor         = materialView.sheenColor;
+        material.sheenRoughness     = materialView.sheenRoughness;
+        material.subsurface         = materialView.subsurface;
+        material.transmission       = materialView.transmission;
+        material.specularStrength   = materialView.specularStrength;
+        material.materialType       = 0; // Default
+
         material.albedoID = INVALID_INDEX;
         if (!materialView.albedoTex.empty())
         {
-            auto pAlbedo = GetOrLoadTexture(materialView.id, materialView.albedoTex);
-            if (srvIndexCache.contains(pAlbedo.get()))
+            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.albedoTex);
+            if (srvIndexCache.contains(pMaterialTex.get()))
             {
-                material.albedoID = srvIndexCache[pAlbedo.get()];
+                material.albedoID = srvIndexCache[pMaterialTex.get()];
             }
             else
             {
-                material.albedoID = pAlbedo->GetShaderResourceHandle();
-                srvIndexCache.emplace(pAlbedo.get(), material.albedoID);
+                material.albedoID = pMaterialTex->GetShaderResourceHandle();
+                srvIndexCache.emplace(pMaterialTex.get(), material.albedoID);
             }
         }
 
         material.normalID = INVALID_INDEX;
         if (!materialView.normalTex.empty())
         {
-            auto pNormal = GetOrLoadTexture(materialView.id, materialView.normalTex);
-            if (srvIndexCache.contains(pNormal.get()))
+            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.normalTex);
+            if (srvIndexCache.contains(pMaterialTex.get()))
             {
-                material.normalID = srvIndexCache[pNormal.get()];
+                material.normalID = srvIndexCache[pMaterialTex.get()];
             }
             else
             {
-                material.normalID = pNormal->GetShaderResourceHandle();
-                srvIndexCache.emplace(pNormal.get(), material.normalID);
+                material.normalID = pMaterialTex->GetShaderResourceHandle();
+                srvIndexCache.emplace(pMaterialTex.get(), material.normalID);
             }
         }
 
@@ -237,24 +249,121 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
             srvIndexCache.emplace(pORM.get(), material.metallicRoughnessAoID);
         }
 
-        material.emissionID = INVALID_INDEX;
+        material.emissiveID = INVALID_INDEX;
         if (!materialView.emissionTex.empty())
         {
-            auto pEmission = GetOrLoadTexture(materialView.id, materialView.emissionTex);
-            if (srvIndexCache.contains(pEmission.get()))
+            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.emissionTex);
+            if (srvIndexCache.contains(pMaterialTex.get()))
             {
-                material.emissionID = srvIndexCache[pEmission.get()];
+                material.emissiveID = srvIndexCache[pMaterialTex.get()];
             }
             else
             {
-                material.emissionID = pEmission->GetShaderResourceHandle();
-                srvIndexCache.emplace(pEmission.get(), material.emissionID);
+                material.emissiveID = pMaterialTex->GetShaderResourceHandle();
+                srvIndexCache.emplace(pMaterialTex.get(), material.emissiveID);
+            }
+        }
+
+        material.clearcoatID = INVALID_INDEX;
+        if (!materialView.clearcoatTex.empty())
+        {
+            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.emissionTex);
+            if (srvIndexCache.contains(pMaterialTex.get()))
+            {
+                material.clearcoatID = srvIndexCache[pMaterialTex.get()];
+            }
+            else
+            {
+                material.clearcoatID = pMaterialTex->GetShaderResourceHandle();
+                srvIndexCache.emplace(pMaterialTex.get(), material.clearcoatID);
+            }
+        }
+
+        material.sheenID = INVALID_INDEX;
+        if (!materialView.sheenTex.empty())
+        {
+            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.sheenTex);
+            if (srvIndexCache.contains(pMaterialTex.get()))
+            {
+                material.sheenID = srvIndexCache[pMaterialTex.get()];
+            }
+            else
+            {
+                material.sheenID = pMaterialTex->GetShaderResourceHandle();
+                srvIndexCache.emplace(pMaterialTex.get(), material.sheenID);
+            }
+        }
+
+        material.anisotropyID = INVALID_INDEX;
+        if (!materialView.anisotropyTex.empty())
+        {
+            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.anisotropyTex);
+            if (srvIndexCache.contains(pMaterialTex.get()))
+            {
+                material.anisotropyID = srvIndexCache[pMaterialTex.get()];
+            }
+            else
+            {
+                material.anisotropyID = pMaterialTex->GetShaderResourceHandle();
+                srvIndexCache.emplace(pMaterialTex.get(), material.anisotropyID);
+            }
+        }
+
+        material.subsurfaceID = INVALID_INDEX;
+        if (!materialView.subsurfaceTex.empty())
+        {
+            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.subsurfaceTex);
+            if (srvIndexCache.contains(pMaterialTex.get()))
+            {
+                material.subsurfaceID = srvIndexCache[pMaterialTex.get()];
+            }
+            else
+            {
+                material.subsurfaceID = pMaterialTex->GetShaderResourceHandle();
+                srvIndexCache.emplace(pMaterialTex.get(), material.subsurfaceID);
+            }
+        }
+
+        material.transmissionID = INVALID_INDEX;
+        if (!materialView.transmissionTex.empty())
+        {
+            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.transmissionTex);
+            if (srvIndexCache.contains(pMaterialTex.get()))
+            {
+                material.transmissionID = srvIndexCache[pMaterialTex.get()];
+            }
+            else
+            {
+                material.transmissionID = pMaterialTex->GetShaderResourceHandle();
+                srvIndexCache.emplace(pMaterialTex.get(), material.transmissionID);
             }
         }
 
         materials.push_back(material);
     }
     UpdateFrameBuffer(materials.data(), (u32)materials.size(), sizeof(MaterialData), *m_pMaterialAllocator, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
+
+    u64 totalVertexCount = 0;
+    u64 totalIndexCount  = 0;
+    for (auto& [id, data] : sceneView.draws)
+    {
+        if (IsValidIndex(data.mesh))
+        {
+            assert(data.mesh < sceneView.meshes.size());
+            auto& meshView = sceneView.meshes[data.mesh];
+
+            totalVertexCount += meshView.vCount;
+            totalIndexCount  += meshView.iCount;
+        }
+    }
+    if (m_pVertexAllocator->GetElementCount() < totalVertexCount)
+    {
+        m_pVertexAllocator->Resize(totalVertexCount * 2);
+    };
+    if (m_pIndexAllocator->GetElementCount() < totalIndexCount)
+    {
+        m_pIndexAllocator->Resize(totalIndexCount * 2);
+    };
 
     u32 instID = 0;
     std::vector< InstanceData >             instances;
@@ -296,14 +405,14 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
                 }
 
                 indirects.push_back(indirect);
-                m_NumMeshes++;
             }
             {
                 auto iHandle = GetOrUpdateIndex(meshView.id, meshView.tag, meshView.iData, meshView.iCount);
                 GetOrCreateBLAS(meshView.tag, vHandle, iHandle);
 
-                instance.vOffset    = vHandle.offset * vHandle.elementSizeInBytes;
-                instance.iOffset    = iHandle.offset * iHandle.elementSizeInBytes;
+                instance.vOffset = vHandle.offset;
+                instance.iOffset = iHandle.offset;
+
                 instance.materialID = INVALID_INDEX;
                 if (IsValidIndex(data.material))
                 {
@@ -333,6 +442,8 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 
                 m_pTLAS->AddInstance(inst);
             }
+
+            m_NumMeshes++;
         }
     }
     if (m_pTLAS->NumInstances() > 0)
@@ -533,7 +644,7 @@ BufferHandle Dx12SceneResource::GetOrUpdateMeshletTriangles(u64 entity, const st
 
     BufferHandle handle = {};
     handle.gpuHandle          = allocation.pBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
-    handle.elementSizeInBytes = m_pMeshletTriangleAllocator->GetElementSize();
+    handle.elementSizeInBytes = sizeof(u8);
     handle.offset             = u32(allocation.offsetInBytes / handle.elementSizeInBytes);
     handle.count              = count;
 
@@ -627,7 +738,8 @@ void Dx12SceneResource::BuildAccelerationStructures()
 
 ID3D12CommandSignature* Dx12SceneResource::GetSceneD3D12CommandSignature() const
 {
-    return m_pIndirectDispatchSignature->GetD3D12CommandSignature();
+    return !m_RenderDevice.GetDeviceSettings().bMeshShader 
+        ? m_pIndirectDrawSignature->GetD3D12CommandSignature() : m_pIndirectDispatchSignature->GetD3D12CommandSignature();
 }
 
 Arc< Dx12StructuredBuffer > Dx12SceneResource::GetIndirectBuffer() const

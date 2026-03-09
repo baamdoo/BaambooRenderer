@@ -39,9 +39,9 @@ namespace baamboo
 	class Window;
 }
 
-bool DllCreateInstance(baamboo::Window* pWindow, ImGuiContext* pImGuiContext, void** ppv)
+bool DllCreateInstance(baamboo::Window* pWindow, const render::DeviceSettings& ds, ImGuiContext* pImGuiContext, void** ppv)
 {
-	render::Renderer* pEngine = new dx12::Renderer(pWindow, pImGuiContext);
+	render::Renderer* pEngine = new dx12::Renderer(pWindow, ds, pImGuiContext);
 	if (!pEngine)
 		return false;
 

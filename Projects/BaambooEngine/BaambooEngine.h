@@ -56,8 +56,7 @@ protected:
 	int  m_ResizeHeight = -1;
 	bool m_bWindowResized = false;
 
-	bool m_bDrawUI    = true;
-	bool m_bRaytracer = false;
+	render::DeviceSettings m_DeviceSettings;
 
 private:
 	u64    m_Frame       = 0;

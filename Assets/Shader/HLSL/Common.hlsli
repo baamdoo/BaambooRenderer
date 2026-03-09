@@ -40,13 +40,6 @@ ConstantBuffer< DescriptorHeapIndex > g_MeshletTriangles : register(b6, space0);
 ConstantBuffer< DescriptorHeapIndex > g_Transforms : register(b7, space0);
 #endif // _TRANSFORM
 
-enum MaterialType
-{
-    Default = 0,
-    Matte   = 1,
-    Mirror  = 2,
-    Glass   = 3
-};
 #ifdef _MATERIAL
 ConstantBuffer< DescriptorHeapIndex > g_Materials : register(b8, space0);
 #endif // _MATERIAL

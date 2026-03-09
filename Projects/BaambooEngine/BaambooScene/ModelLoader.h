@@ -60,13 +60,24 @@ struct MaterialData
 {
 	std::string name;
 
-	float3 ambient   = float3(0.2f);
-	float3 diffuse   = float3(0.8f);
-	float3 specular  = float3(0.1f);
-	float  shininess = 32.0f;
-	float  metallic  = 0.0f;
-	float  roughness = 0.5f;
-	float  ao        = 1.0f;
+	float3 diffuse;
+	float3 specular;
+
+	float shininess;
+	float metallic;
+	float roughness;
+
+	float ior;
+	float clearcoat;
+	float clearcoatRoughness;
+	float alphaCutoff;
+
+	float anisotropy;
+	float anisotropyRotation;
+	float transmission;
+
+	float3 sheenColor;
+	float  sheenRoughness;
 
 	std::string albedoPath;
 	std::string normalPath;
@@ -74,6 +85,10 @@ struct MaterialData
 	std::string roughnessPath;
 	std::string aoPath;
 	std::string emissivePath;
+	std::string clearcoatPath;
+	std::string sheenPath;
+	std::string anisotropyPath;
+	std::string transmissionPath;
 };
 
 struct MeshDescriptor

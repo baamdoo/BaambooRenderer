@@ -36,7 +36,8 @@ Dx12Buffer::Dx12Buffer(Dx12RenderDevice& rd, const char* name, CreationInfo&& in
 		}, eResourceType::Buffer)
 	, m_Count(m_CreationInfo.count)
 	, m_Type(type)
-	, m_ElementSize(baamboo::math::AlignUp(m_CreationInfo.elementSizeInBytes, (u64)D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT))
+	, m_ElementSize(m_CreationInfo.elementSizeInBytes)
+	, m_BufferSize(baamboo::math::AlignUp(m_CreationInfo.count* m_CreationInfo.elementSizeInBytes, (u64)D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT))
 {
 	if (m_CreationInfo.bMap)
 	{

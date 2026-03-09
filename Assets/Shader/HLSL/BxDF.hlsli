@@ -40,11 +40,23 @@
 namespace BxDF 
 {
 
-// This namespace implements BTDF for a perfect transmitter that uses a single index of refraction (ior)
-// and iorOut represent air, i.e. 1.
 bool IsBlack(float3 color)
 {
     return !any(color);
+}
+    
+// Fresnel reflectance - schlick approximation.
+float3 Fresnel(in float3 F0, in float cosTheta)
+{
+    return F0 + (1 - F0) * pow(1 - cosTheta, 5);
+}
+
+float3 ComputeF0(float3 albedo, float metallic, float ior)
+{
+    float  f0           = pow((ior - 1.0) / (ior + 1.0), 2.0);
+    float3 dielectricF0 = float3(f0, f0, f0);
+
+    return lerp(dielectricF0, albedo, metallic);
 }
 
 namespace Diffuse 
@@ -94,12 +106,6 @@ namespace Diffuse
             
     }
         
-}
-
-// Fresnel reflectance - schlick approximation.
-float3 Fresnel(in float3 F0, in float cos_thetai)
-{
-    return F0 + (1 - F0) * pow(1 - cos_thetai, 5);
 }
 
 namespace Specular 
@@ -156,7 +162,8 @@ namespace Specular
     }
 
     // Ref: Chapter 9.8, RTR
-    namespace GGX {
+    namespace GGX 
+    {
 
         // Compute the value of BRDF
         float3 F(in float Roughness, in float3 N, in float3 V, in float3 L, in float3 Fo)
@@ -199,53 +206,302 @@ namespace Specular
         }
     }
 }
-
-
-float3 Lighting(
-    in MaterialType materialType,
-    in float3 Albedo,
-    in float3 Fo,
-    in float3 Radiance,
-    in bool isInShadow,
-    in float AmbientCoef,
-    in float Roughness,
-    in float3 N,
-    in float3 V,
-    in float3 L)
+    
+namespace Clearcoat
 {
-    float NoL = dot(N, L);
-    Roughness = max(0.1, Roughness);
-        
-    float3 directLighting = 0;
-    if (!isInShadow && NoL > 0)
+
+    float V_Kelemen(float LoH)
     {
-        // Diffuse.
-        float3 diffuse;
-        if (materialType == MaterialType::Default)
-        {
-            diffuse = BxDF::Diffuse::Hammon::F(Albedo, Roughness, N, V, L, Fo);
-        }
-        else
-        {
-            diffuse = BxDF::Diffuse::Lambert::F(Albedo);
-        }
+        return 0.25 / max(LoH * LoH, 1e-4);
+    }
+        
+    float3 Evaluate(
+        in float clearcoatFactor,
+        in float clearcoatRoughness,
+        in float3 N,
+        in float3 V,
+        in float3 L,
+        out float attenuation)
+    {
+        attenuation = 1.0;
+        if (clearcoatFactor <= 0.0)
+            return float3(0, 0, 0);
 
-        // Specular.
-        float3 directDiffuse  = diffuse;
-        float3 directSpecular = 0;
+        float3 H = normalize(V + L);
+            
+        float NoH = saturate(dot(N, H));
+        float NoL = saturate(dot(N, L));
+        float NoV = saturate(dot(N, V));
+        float LoH = saturate(dot(L, H));
 
-        if (materialType == MaterialType::Default)
-        {
-            directSpecular = BxDF::Specular::GGX::F(Roughness, N, V, L, Fo);
-        }
+        if (NoL <= 0.0 || NoV <= 0.0)
+            return float3(0, 0, 0);
 
-        directLighting = NoL * Radiance * (directDiffuse + directSpecular);
+        float a = max(clearcoatRoughness, 0.045);
+        float a2 = a * a;
+
+        float denom = NoH * NoH * (a2 - 1.0) + 1.0;
+        float D = a2 / (PI * denom * denom);
+
+        float3 F0_cc = float3(0.04, 0.04, 0.04);
+        float3 F = Fresnel(F0_cc, LoH);
+
+        float Vis = V_Kelemen(LoH);
+
+        float3 ccSpecular = D * F * Vis;
+
+        float Fc = 0.04 + 0.96 * pow(1.0 - NoV, 5.0);
+        attenuation = 1.0 - clearcoatFactor * Fc;
+
+        return clearcoatFactor * ccSpecular;
+    }
+        
+}
+    
+namespace Anisotropic
+{
+
+    float D_GGX_Anisotropic(float NoH, float ToH, float BoH, float at, float ab)
+    {
+        float d = ToH * ToH / (at * at) + BoH * BoH / (ab * ab) + NoH * NoH;
+        return 1.0 / (PI * at * ab * d * d);
     }
 
-    float3 indirectDiffuse  = AmbientCoef * Albedo;
-    float3 indirectLighting = indirectDiffuse;
+    float V_SmithGGX_Anisotropic(float NoV, float NoL, float ToV, float BoV, float ToL, float BoL, float at, float ab)
+    {
+        float lambdaV = NoL * length(float3(at * ToV, ab * BoV, NoV));
+        float lambdaL = NoV * length(float3(at * ToL, ab * BoL, NoL));
+        return 0.5 / max(lambdaV + lambdaL, 1e-7);
+    }
 
-    return directLighting + indirectLighting;
+    void ComputeAnisotropicRoughness(float roughness, float anisotropyFactor, out float at, out float ab)
+    {
+        float a = roughness * roughness;
+        at = max(a * (1.0 + anisotropyFactor), 0.001);
+        ab = max(a * (1.0 - anisotropyFactor), 0.001);
+    }
+
+    float3 Evaluate(
+        in float roughness,
+        in float anisotropyFactor,
+        in float anisotropyRotation,
+        in float3 N,
+        in float3 V,
+        in float3 L,
+        in float3 T,
+        in float3 B,
+        in float3 F0)
+    {
+        if (anisotropyFactor <= 0.0)
+            return Specular::GGX::F(roughness, N, V, L, F0);
+
+        float cosR = cos(anisotropyRotation);
+        float sinR = sin(anisotropyRotation);
+            
+        float3 T2 = T * cosR + B * sinR;
+        float3 B2 = B * cosR - T * sinR;
+
+        float3 H = normalize(V + L);
+
+        float NoV = max(dot(N, V), 1e-4);
+        float NoL = saturate(dot(N, L));
+        float NoH = saturate(dot(N, H));
+        float LoH = saturate(dot(L, H));
+
+        if (NoL <= 0.0)
+            return float3(0, 0, 0);
+
+        float ToH = dot(T2, H);
+        float BoH = dot(B2, H);
+        float ToV = dot(T2, V);
+        float BoV = dot(B2, V);
+        float ToL = dot(T2, L);
+        float BoL = dot(B2, L);
+
+        float at, ab;
+        ComputeAnisotropicRoughness(roughness, anisotropyFactor, at, ab);
+
+        float  D   = D_GGX_Anisotropic(NoH, ToH, BoH, at, ab);
+        float  Vis = V_SmithGGX_Anisotropic(NoV, NoL, ToV, BoV, ToL, BoL, at, ab);
+        float3 F   = Fresnel(F0, LoH);
+
+        return D * Vis * F;
+    }
+        
+}
+    
+namespace Sheen
+{
+
+    float D_Charlie(float roughness, float NoH)
+    {
+        float a        = roughness * roughness;
+        float invAlpha = 1.0 / a;
+            
+        float cos2h = NoH * NoH;
+        float sin2h = max(1.0 - cos2h, 0.0078125);
+        return (2.0 + invAlpha) * pow(sin2h, invAlpha * 0.5) / (2.0 * PI);
+    }
+
+    float V_Ashikhmin(float NoV, float NoL)
+    {
+        return 1.0 / (4.0 * (NoL + NoV - NoL * NoV));
+    }
+
+    float3 Evaluate(
+        in float3 sheenColor,
+        in float sheenRoughness,
+        in float3 N,
+        in float3 V,
+        in float3 L)
+    {
+        if (all(sheenColor <= float3(0, 0, 0)))
+            return float3(0, 0, 0);
+
+        float3 H = normalize(V + L);
+            
+        float NoH = saturate(dot(N, H));
+        float NoV = max(dot(N, V), 1e-4);
+        float NoL = saturate(dot(N, L));
+
+        if (NoL <= 0.0)
+            return float3(0, 0, 0);
+
+        float D   = D_Charlie(max(sheenRoughness, 0.045), NoH);
+        float Vis = V_Ashikhmin(NoV, NoL);
+
+        return sheenColor * D * Vis;
+    }
+
+    float EnergyAttenuation(float3 sheenColor, float sheenRoughness, float NoV)
+    {
+        // Simplified approximation without LUT
+        float fresnel  = pow(1.0 - NoV, 5.0);
+        float maxSheen = max(sheenColor.r, max(sheenColor.g, sheenColor.b));
+        return saturate(1.0 - maxSheen * (0.5 + 0.5 * fresnel) * (1.0 - sheenRoughness));
+    }
+
+}
+    
+namespace Subsurface
+{
+
+    float3 WrapDiffuse(
+        in float3 albedo,
+        in float subsurfaceFactor,
+        in float3 N,
+        in float3 L)
+    {
+        float NoL  = dot(N, L);
+        float wrap = subsurfaceFactor;
+
+        float wrapNoL = (NoL + wrap) / ((1.0 + wrap) * (1.0 + wrap));
+              wrapNoL = max(wrapNoL, 0.0);
+
+        return albedo * wrapNoL;
+    }
+
+    float3 Evaluate(
+        in float3 albedo,
+        in float subsurfaceFactor,
+        in float3 N,
+        in float3 V,
+        in float3 L)
+    {
+        if (subsurfaceFactor <= 0.0)
+            return float3(0, 0, 0);
+
+        float3 H_back      = normalize(L + N * 0.6);
+        float  VoH_back    = saturate(dot(V, -H_back));
+        float  backScatter = pow(VoH_back, 3.0) * subsurfaceFactor;
+
+        float3 wrapDiffuse = WrapDiffuse(albedo, subsurfaceFactor * 0.5, N, L);
+
+        return wrapDiffuse + albedo * backScatter * 0.25;
+    }
+
+}
+    
+    
+struct MaterialParams
+{
+    float3 albedo;
+    float3 F0;
+        
+    float roughness;
+    float metallic;
+
+    float clearcoat;
+    float clearcoatRoughness;
+    float anisotropy;
+    float anisotropyRotation;
+        
+    float3 sheenColor;
+    float  sheenRoughness;
+    float  subsurface;
+    float  specularStrength;
+};
+    
+float3 Evaluate(
+    in MaterialParams mp,
+    in float3 N,
+    in float3 V,
+    in float3 L,
+    in float3 T,
+    in float3 B)
+{
+    float NoL = saturate(dot(N, L));
+    if (NoL <= 0.0 && mp.subsurface <= 0.0)
+        return float3(0, 0, 0);
+        
+    // 式式式式式式式式式式式式式式式式 Base Diffuse 式式式式式式式式式式式式式式式式
+    float3 diffuse = Diffuse::Hammon::F(mp.albedo, mp.roughness, N, V, L, mp.F0);
+    
+    float3 sssContrib = float3(0, 0, 0);
+    if (mp.subsurface > 0.0)
+    {
+        diffuse    *= (1.0 - mp.subsurface);
+        sssContrib = Subsurface::Evaluate(mp.albedo, mp.subsurface, N, V, L);
+    }
+        
+    // 式式式式式式式式式式式式式式式式 Base Specular 式式式式式式式式式式式式式式式式
+    float3 specular;
+    if (mp.anisotropy > 0.0 && any(T))
+    {
+        specular = Anisotropic::Evaluate(
+            mp.roughness, mp.anisotropy, mp.anisotropyRotation,
+            N, V, L, T, B, mp.F0);
+        }
+    else
+    {
+        specular = Specular::GGX::F(mp.roughness, N, V, L, mp.F0);
+    }
+    specular *= mp.specularStrength;
+    
+    // 式式式式式式式式式式式式式式式式 Sheen Layer 式式式式式式式式式式式式式式式式
+    float3 sheen            = float3(0, 0, 0);
+    float  sheenAttenuation = 1.0;
+    if (any(mp.sheenColor > float3(0, 0, 0)))
+    {
+        sheen            = Sheen::Evaluate(mp.sheenColor, mp.sheenRoughness, N, V, L);
+        sheenAttenuation = Sheen::EnergyAttenuation(mp.sheenColor, mp.sheenRoughness, max(dot(N, V), 1e-4));
+    }
+
+    // 式式式式式式式式式式式式式式式式 Clearcoat Layer 式式式式式式式式式式式式式式式式
+    float3 clearcoatSpec = float3(0, 0, 0);
+    float  ccAttenuation = 1.0;
+    if (mp.clearcoat > 0.0)
+    {
+        clearcoatSpec = Clearcoat::Evaluate(mp.clearcoat, mp.clearcoatRoughness, N, V, L, ccAttenuation);
+    }
+
+    // 式式式式式式式式式式式式式式式式 Compose 式式式式式式式式式式式式式式式式
+    // Energy conservation: base is attenuated by clearcoat and sheen
+    float3 H = normalize(V + L);
+    float3 F = BxDF::Fresnel(mp.F0, saturate(dot(H, V)));
+    float3 baseBRDF = (diffuse * (1.0 - F) + specular) * ccAttenuation * sheenAttenuation;
+
+    return NoL * (baseBRDF + sheen) + sssContrib * ccAttenuation * sheenAttenuation + clearcoatSpec;
 }
     
 }

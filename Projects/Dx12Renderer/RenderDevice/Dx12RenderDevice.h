@@ -29,8 +29,9 @@ private:
 
 class Dx12RenderDevice : public render::RenderDevice
 {
+using Super = render::RenderDevice;
 public:
-	Dx12RenderDevice(bool bEnableGBV = false);
+	Dx12RenderDevice(const render::DeviceSettings& ds, bool bEnableGBV = false);
 	~Dx12RenderDevice();
 
 	u32 Swap();

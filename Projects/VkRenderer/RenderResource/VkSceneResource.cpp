@@ -242,32 +242,32 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 		material.albedoID = INVALID_INDEX;
 		if (!materialView.albedoTex.empty())
 		{
-			auto pAlbedo = GetOrLoadTexture(materialView.id, materialView.albedoTex);
-			if (srvIndexCache.contains(pAlbedo.get()))
+			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.albedoTex);
+			if (srvIndexCache.contains(pMaterialTex.get()))
 			{
-				material.albedoID = srvIndexCache[pAlbedo.get()];
+				material.albedoID = srvIndexCache[pMaterialTex.get()];
 			}
 			else
 			{
-				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pAlbedo->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
+				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pMaterialTex->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
 				material.albedoID = (u32)imageInfos.size() - 1;
-				srvIndexCache.emplace(pAlbedo.get(), material.albedoID);
+				srvIndexCache.emplace(pMaterialTex.get(), material.albedoID);
 			}
 		}
 
 		material.normalID = INVALID_INDEX;
 		if (!materialView.normalTex.empty())
 		{
-			auto pNormal = GetOrLoadTexture(materialView.id, materialView.normalTex);
-			if (srvIndexCache.contains(pNormal.get()))
+			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.normalTex);
+			if (srvIndexCache.contains(pMaterialTex.get()))
 			{
-				material.normalID = srvIndexCache[pNormal.get()];
+				material.normalID = srvIndexCache[pMaterialTex.get()];
 			}
 			else
 			{
-				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pNormal->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
+				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pMaterialTex->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
 				material.normalID = (u32)imageInfos.size() - 1;
-				srvIndexCache.emplace(pNormal.get(), material.normalID);
+				srvIndexCache.emplace(pMaterialTex.get(), material.normalID);
 			}
 		}
 
@@ -320,19 +320,99 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 			srvIndexCache.emplace(pORM.get(), material.metallicRoughnessAoID);
 		}
 
-		material.emissionID = INVALID_INDEX;
+		material.emissiveID = INVALID_INDEX;
 		if (!materialView.emissionTex.empty())
 		{
-			auto pEmission = GetOrLoadTexture(materialView.id, materialView.emissionTex);
-			if (srvIndexCache.contains(pEmission.get()))
+			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.emissionTex);
+			if (srvIndexCache.contains(pMaterialTex.get()))
 			{
-				material.emissionID = srvIndexCache[pEmission.get()];
+				material.emissiveID = srvIndexCache[pMaterialTex.get()];
 			}
 			else
 			{
-				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pEmission->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
-				material.emissionID = (u32)imageInfos.size() - 1;
-				srvIndexCache.emplace(pEmission.get(), material.emissionID);
+				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pMaterialTex->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
+				material.emissiveID = (u32)imageInfos.size() - 1;
+				srvIndexCache.emplace(pMaterialTex.get(), material.emissiveID);
+			}
+		}
+
+		material.clearcoatID = INVALID_INDEX;
+		if (!materialView.clearcoatTex.empty())
+		{
+			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.emissionTex);
+			if (srvIndexCache.contains(pMaterialTex.get()))
+			{
+				material.clearcoatID = srvIndexCache[pMaterialTex.get()];
+			}
+			else
+			{
+				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pMaterialTex->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
+				material.clearcoatID = (u32)imageInfos.size() - 1;
+				srvIndexCache.emplace(pMaterialTex.get(), material.clearcoatID);
+			}
+		}
+
+		material.sheenID = INVALID_INDEX;
+		if (!materialView.sheenTex.empty())
+		{
+			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.sheenTex);
+			if (srvIndexCache.contains(pMaterialTex.get()))
+			{
+				material.sheenID = srvIndexCache[pMaterialTex.get()];
+			}
+			else
+			{
+				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pMaterialTex->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
+				material.sheenID = (u32)imageInfos.size() - 1;
+				srvIndexCache.emplace(pMaterialTex.get(), material.sheenID);
+			}
+		}
+
+		material.anisotropyID = INVALID_INDEX;
+		if (!materialView.anisotropyTex.empty())
+		{
+			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.anisotropyTex);
+			if (srvIndexCache.contains(pMaterialTex.get()))
+			{
+				material.anisotropyID = srvIndexCache[pMaterialTex.get()];
+			}
+			else
+			{
+				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pMaterialTex->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
+				material.anisotropyID = (u32)imageInfos.size() - 1;
+				srvIndexCache.emplace(pMaterialTex.get(), material.anisotropyID);
+			}
+		}
+
+		material.subsurfaceID = INVALID_INDEX;
+		if (!materialView.subsurfaceTex.empty())
+		{
+			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.subsurfaceTex);
+			if (srvIndexCache.contains(pMaterialTex.get()))
+			{
+				material.subsurfaceID = srvIndexCache[pMaterialTex.get()];
+			}
+			else
+			{
+				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pMaterialTex->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
+				material.subsurfaceID = (u32)imageInfos.size() - 1;
+				srvIndexCache.emplace(pMaterialTex.get(), material.subsurfaceID);
+			}
+		}
+
+		material.transmissionID = INVALID_INDEX;
+		if (!materialView.transmissionTex.empty())
+		{
+			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.transmissionTex);
+			if (srvIndexCache.contains(pMaterialTex.get()))
+			{
+				material.transmissionID = srvIndexCache[pMaterialTex.get()];
+			}
+			else
+			{
+				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pMaterialTex->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
+				material.transmissionID = (u32)imageInfos.size() - 1;
+				srvIndexCache.emplace(pMaterialTex.get(), material.transmissionID);
 			}
 		}
 

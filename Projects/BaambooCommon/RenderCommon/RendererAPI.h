@@ -46,6 +46,13 @@ class RenderTarget;
 class Sampler;
 class RenderDevice;
 
+struct DeviceSettings
+{
+	bool bDrawUI     = true;
+	bool bRaytracing = false;
+	bool bMeshShader = false;
+};
+
 class Renderer 
 {
 public:

@@ -354,7 +354,7 @@ void Scene::OnWindowResized(u32 width, u32 height)
 			node->Resize(width, height);
 }
 
-SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport, u64 frame, bool bDrawUI, bool bRaytracer) const
+SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport, u64 frame, const render::DeviceSettings& ds) const
 {
 	bool bMarkedAny = false;
 	for (const auto& pair : m_EntityDirtyMasks)
@@ -366,8 +366,6 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport,
 	view.time       = s_SceneRunningTime;
 	view.frame      = frame;
 	view.viewport   = viewport;
-	view.bDrawUI    = bDrawUI;
-	view.bRaytracer = bRaytracer;
 
 	view.rg = m_RenderGraph.GetRenderNodes();
 
@@ -385,6 +383,10 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport,
 	m_pStaticMeshSystem->CollectRenderData(view);
 	m_pSkyLightSystem->CollectRenderData(view);
 	m_pLocalLightSystem->CollectRenderData(view);
+	{
+		view.light.ambientColor     = float3(1.0f, 1.0f, 1.0f);
+		view.light.ambientIntensity = 0.02f;
+	}
 	m_pAtmosphereSystem->CollectRenderData(view);
 	m_pCloudSystem->CollectRenderData(view);
 	m_pPostProcessSystem->CollectRenderData(view);

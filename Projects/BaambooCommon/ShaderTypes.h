@@ -16,19 +16,41 @@ struct MaterialData
 {
     float3 tint;
     float  metallic;
-    float  roughness;
-    float  ior;
-    float  emissivePower;
-    float  padding0;
+
+    float roughness;
+    float ior;
+    float emissivePower;
+    float alphaCutoff;
+
+    float clearcoat;
+    float clearcoatRoughness;
+    float anisotropy;
+    float anisotropyRotation;
+
+    float3 sheenColor;
+    float  sheenRoughness;
+
+    float subsurface;
+    float transmission;
+    float specularStrength;
+    u32   materialType;
 
     u32 albedoID;
     u32 normalID;
-    u32 specularID;
+    u32 specularTexID;
     u32 metallicRoughnessAoID;
-    u32 emissionID;
 
-    float3 padding1;
+    u32 emissiveID;
+    u32 clearcoatID;
+    u32 sheenID;
+    u32 anisotropyID;
+
+    u32 subsurfaceID;
+    u32 transmissionID;
+    u32 padding0;
+    u32 padding1;
 };
+static_assert(sizeof(MaterialData) == 128);
 
 
 struct CameraData

@@ -88,10 +88,14 @@ public:
 
     [[nodiscard]]
     Allocation Allocate(u64 numElements, u64 elementSizeInBytes = 0);
+
     void Reset();
+    void Resize(u64 numElements);
 
     [[nodiscard]]
     u64 GetElementSize() const { return m_ElementSizeInBytes; }
+    [[nodiscard]]
+    u64 GetElementCount() const { return m_SizeInBytes / m_ElementSizeInBytes; }
     [[nodiscard]]
     u64 GetAllocatedSize() const { return m_OffsetInBytes; }
     [[nodiscard]]

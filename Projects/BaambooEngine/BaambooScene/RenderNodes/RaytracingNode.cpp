@@ -20,7 +20,7 @@ RaytracingTestNode::RaytracingTestNode(render::RenderDevice& rd)
 			"RayTracingTest::Output",
 			{
 				.resolution = { m_RenderDevice.WindowWidth(), m_RenderDevice.WindowHeight(), 1 },
-				.format     = eFormat::RGBA8_UNORM,
+				.format     = eFormat::RGBA16_FLOAT,
 				.imageUsage = eTextureUsage_Sample | eTextureUsage_Storage | eTextureUsage_TransferSource
 			});
 
@@ -28,27 +28,36 @@ RaytracingTestNode::RaytracingTestNode(render::RenderDevice& rd)
 	m_pRaytracingPSO = RaytracingPipeline::Create(m_RenderDevice, "RayTracingTestPSO");
 	m_pRaytracingPSO->SetShaderLibrary(
 			Shader::Create(m_RenderDevice, "RaytracingTestLib",
-				{
+			    {
 					.stage    = eShaderStage::RayGeneration,
 					.filename = "RaytracingTestLib"
 				}))
-		   .SetRayGenerationShader("RayGen")
-		   .AddMissShader("Miss")
-		   .AddHitGroup(
-		       {
-		           .hitGroupName           = "HitGroup",
-		           .closestHitShaderExport = "ClosestHit"
-		       })
-		   .SetMaxPayloadSize(sizeof(float) * 5)
-		   .SetMaxAttributeSize(sizeof(float) * 2)
-		   .SetMaxRecursionDepth(1)
-		   .Build();
+		    .SetRayGenerationShader("RayGen")
+		    .AddMissShader("RadianceMiss")
+		    .AddMissShader("ShadowMiss")
+		    .AddHitGroup(
+		        {
+		            .hitGroupName           = "RadianceHitGroup",
+		            .closestHitShaderExport = "ClosestHit",
+		            .anyHitShaderExport     = "RadianceAnyHit",
+		        })
+			.AddHitGroup(
+		        {
+		            .hitGroupName           = "ShadowHitGroup",
+		            .anyHitShaderExport     = "ShadowAnyHit",
+		        })
+		    .SetMaxPayloadSize(sizeof(float) * 5)
+		    .SetMaxAttributeSize(sizeof(float) * 2)
+		    .SetMaxRecursionDepth(4)
+		    .Build();
 
 	// 式式 Shader Binding Table 式式
 	m_pSBT = ShaderBindingTable::Create(m_RenderDevice, "RayTracingTestSBT");
 	m_pSBT->SetRayGenerationRecord(m_pRaytracingPSO->GetShaderIdentifier("RayGen"), nullptr, 0)
-		   .AddMissRecord("Miss", m_pRaytracingPSO->GetShaderIdentifier("Miss"))
-		   .AddHitGroupRecord("HitGroup", m_pRaytracingPSO->GetShaderIdentifier("HitGroup"))
+		   .AddMissRecord("RadianceMiss", m_pRaytracingPSO->GetShaderIdentifier("RadianceMiss"))
+		   .AddMissRecord("ShadowMiss", m_pRaytracingPSO->GetShaderIdentifier("ShadowMiss"))
+		   .AddHitGroupRecord("RadianceHitGroup", m_pRaytracingPSO->GetShaderIdentifier("RadianceHitGroup"))
+		   .AddHitGroupRecord("ShadowHitGroup", m_pRaytracingPSO->GetShaderIdentifier("ShadowHitGroup"))
 		   .Build();
 }
 
@@ -66,12 +75,22 @@ void RaytracingTestNode::Apply(render::CommandContext& context, const SceneRende
 		g_FrameData.pColor = rm.GetFlatBlackTexture();
 		return;
 	}
+	const auto& pSkyboxLUT = g_FrameData.pSkyboxLUT.valid() ? g_FrameData.pSkyboxLUT.lock() : rm.GetFlatBlackTextureCube();
 
 	context.SetRenderPipeline(m_pRaytracingPSO.get());
 
+	context.TransitionBarrier(pSkyboxLUT, eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(m_pOutputTexture, eTextureLayout::General);
 
+	struct
+	{
+		u32   frameIndex;
+		float timeSec;
+	} constant = { renderView.frame, renderView.time };
+	context.SetComputeConstants(sizeof(constant), &constant);
 	context.SetAccelerationStructure("g_Scene", *pTLAS);
+
+	context.StageDescriptor("g_Skybox", pSkyboxLUT);
 	context.StageDescriptor("g_Output", m_pOutputTexture);
 
 	context.DispatchRays(*m_pSBT, m_pOutputTexture->Width(), m_pOutputTexture->Height());

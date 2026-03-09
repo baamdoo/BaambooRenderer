@@ -551,6 +551,7 @@ public:
     BottomLevelAccelerationStructure& AddGeometry(const GeometryDesc& geometry);
     BottomLevelAccelerationStructure& SetBuildFlags(RenderFlags flags);
 
+    virtual void Reset();
     virtual void Prepare() = 0;
 
     [[nodiscard]] virtual u64 GetGPUVirtualAddress() const = 0;
