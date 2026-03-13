@@ -117,19 +117,45 @@ void StaticMeshSystem::CollectRenderData(SceneRenderView& outView) const
     outView.meshes.reserve(m_RenderData.size());
     outView.materials.reserve(m_RenderData.size());
 
+    std::unordered_map< std::string_view, u32 > meshIndexMap;
+    std::unordered_map< u64, u32 >              materialIndexMap;
+
     for (const auto& [id, entry] : m_RenderData)
     {
-        outView.meshes.push_back(entry.mesh);
-        u32 meshIndex = static_cast<u32>(outView.meshes.size()) - 1;
+        u32 meshIndex = INVALID_INDEX;
+        auto meshIt = meshIndexMap.find(entry.mesh.tag);
+        if (meshIt == meshIndexMap.end())
+        {
+            meshIndex = static_cast<u32>(outView.meshes.size());
 
-        auto& draw = outView.draws[u32(id)];
-        draw.mesh  = meshIndex;
+            outView.meshes.push_back(entry.mesh);
+            meshIndexMap.emplace(entry.mesh.tag, meshIndex);
+        }
+        else
+        {
+            meshIndex = meshIt->second;
+        }
 
+        u32 materialIndex = INVALID_INDEX;
         if (entry.bHasMaterial)
         {
-            outView.materials.push_back(entry.material);
-            draw.material = static_cast<u32>(outView.materials.size()) - 1;
+            auto matIt = materialIndexMap.find(entry.material.id);
+            if (matIt == materialIndexMap.end())
+            {
+                materialIndex = static_cast<u32>(outView.materials.size());
+
+                outView.materials.push_back(entry.material);
+                materialIndexMap.emplace(entry.material.id, materialIndex);
+            }
+            else
+            {
+                materialIndex = matIt->second;
+            }
         }
+
+        auto& draw = outView.draws[static_cast<u32>(id)];
+        draw.mesh     = meshIndex;
+        draw.material = materialIndex;
     }
 }
 

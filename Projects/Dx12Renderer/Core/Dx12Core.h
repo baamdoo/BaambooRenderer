@@ -163,7 +163,9 @@ struct IndirectDispatchMeshData
 {
 	u32 transformID;
 	u32 materialID;
+
 	u32 vOffset;
+	u32 mCount;
 	u32 mOffset;
 	u32 mvOffset;
 	u32 mtOffset;

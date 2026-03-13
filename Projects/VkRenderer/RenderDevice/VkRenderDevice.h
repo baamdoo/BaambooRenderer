@@ -14,8 +14,9 @@ enum class eCommandType;
 
 class VkRenderDevice : public render::RenderDevice
 {
+using Super = render::RenderDevice;
 public:
-	VkRenderDevice();
+	VkRenderDevice(const render::DeviceSettings& ds);
 	~VkRenderDevice();
 
 	u32 NextFrame();
@@ -32,9 +33,14 @@ public:
 	virtual Arc< render::Sampler > CreateSampler(const char* name, render::Sampler::CreationInfo&& info) override;
 
 	virtual Arc< render::Shader > CreateShader(const char* name, render::Shader::CreationInfo&& info) override;
+	virtual Arc< render::ShaderBindingTable > CreateSBT(const char* name) override;
+
+	virtual Arc< render::BottomLevelAccelerationStructure > CreateBLAS(const char* name) override;
+	virtual Arc< render::TopLevelAccelerationStructure > CreateTLAS(const char* name) override;
 
 	virtual Box< render::ComputePipeline > CreateComputePipeline(const char* name) override;
 	virtual Box< render::GraphicsPipeline > CreateGraphicsPipeline(const char* name) override;
+	virtual Box< render::RaytracingPipeline > CreateRaytracingPipeline(const char* name) override;
 
 	virtual Box< render::SceneResource > CreateSceneResource() override;
 

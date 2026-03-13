@@ -150,6 +150,13 @@ i32 Engine::Run()
 		auto dt        = m_GameTimer.GetDeltaSeconds();
 		m_RunningTime += dt;
 
+		if (m_GameTimer.GetTotalSeconds() > 1.0)
+		{
+			m_GameElapsedTime.store(m_GameTimer.GetDeltaMilliseconds(), std::memory_order_relaxed);
+
+			m_GameTimer.Reset();
+		}
+
 		Update(static_cast<float>(dt));
 
 		Input::Inst()->EndFrame();
@@ -214,10 +221,11 @@ void Engine::GameLoop(float dt)
 
 	m_pScene->Update(dt, *m_pCamera);
 
+	auto renderView = m_pScene->RenderView(*m_pCamera, float2(m_pWindow->Width(), m_pWindow->Height()), m_Frame, m_pRendererBackend->GetDevice()->GetDeviceSettings());
 	if (m_RenderViewQueue.size() >= NUM_TOLERANCE_ASYNC_FRAME_GAME_TO_RENDER)
-		m_RenderViewQueue.replace(m_pScene->RenderView(*m_pCamera, float2(m_pWindow->Width(), m_pWindow->Height()), m_Frame, m_pRendererBackend->GetDevice()->GetDeviceSettings()));
+		m_RenderViewQueue.replace(std::move(renderView));
 	else
-		m_RenderViewQueue.push(m_pScene->RenderView(*m_pCamera, float2(m_pWindow->Width(), m_pWindow->Height()), m_Frame, m_pRendererBackend->GetDevice()->GetDeviceSettings()));
+		m_RenderViewQueue.push(std::move(renderView));
 }
 
 void Engine::RenderLoop()
@@ -296,13 +304,12 @@ void Engine::DrawUI()
 	// engine stats
 	// **
 	ImGui::Begin("Engine Stats");
-	{
-		static double gameElapsed_ms = m_GameTimer.GetDeltaMilliseconds();
-		if (m_GameTimer.GetTotalSeconds() > 1.0f)
+		static double gameElapsedAcc_ms = 0.0;
+		gameElapsedAcc_ms += m_GameElapsedTime.load(std::memory_order_relaxed);
+		static double gameElapsed_ms = m_GameElapsedTime.load(std::memory_order_relaxed);
+		if (gameElapsedAcc_ms > 1000.0)
 		{
-			gameElapsed_ms = m_GameTimer.GetDeltaMilliseconds();
-
-			m_GameTimer.Reset();
+			gameElapsed_ms = m_GameElapsedTime.load(std::memory_order_relaxed);
 		}
 		ImGui::Text("GameLoop   %.3f ms(frame: %.1f FPS)", gameElapsed_ms, 1000.0f / gameElapsed_ms);
 
@@ -317,7 +324,6 @@ void Engine::DrawUI()
 		}
 		ImGui::Text("RenderLoop(CPU) %.3f ms(frame: %.1f FPS)", renderElapsedCpu_ms, 1000.0f / renderElapsedCpu_ms);
 		ImGui::Text("RenderLoop(GPU) %.3f ms(frame: %.1f FPS)", renderElapsedGpu_ms, 1000.0f / renderElapsedGpu_ms);
-	}
 	ImGui::End();
 
 	// **
@@ -1109,18 +1115,19 @@ void Engine::DrawUI()
 	}
 
 	// apply script behaviour
-	m_pScene->Registry().view< TransformComponent, ScriptComponent >().each([this](auto id, auto& transformComponent, auto& scriptComponent)
+	float dt = static_cast<float>(renderElapsedCpu_ms);
+	m_pScene->Registry().view< TransformComponent, ScriptComponent >().each([this, dt](auto id, auto& transformComponent, auto& scriptComponent)
 		{
 			if (scriptComponent.bMove)
 			{
-				transformComponent.transform.position += scriptComponent.moveVelocity;
+				transformComponent.transform.position += scriptComponent.moveVelocity * dt;
 
 				m_pScene->Registry().patch< TransformComponent >(id, [](auto&) {});
 			}
 
 			if (scriptComponent.bRotate)
 			{
-				transformComponent.transform.Rotate(scriptComponent.rotationVelocity.y, scriptComponent.rotationVelocity.x, scriptComponent.rotationVelocity.z);
+				transformComponent.transform.Rotate(scriptComponent.rotationVelocity.y * dt, scriptComponent.rotationVelocity.x * dt, scriptComponent.rotationVelocity.z * dt);
 
 				m_pScene->Registry().patch< TransformComponent >(id, [](auto&) {});
 			}

@@ -53,7 +53,7 @@ struct Meshlet
 
     float centerX, centerY, centerZ;
     float radius;
-    float coneAxisX, coneAxisY, coneAxisZ;
+	float coneAxisX, coneAxisY, coneAxisZ;
     float coneCutoff;
 };
 
@@ -64,8 +64,8 @@ struct Meshlet
 #ifdef _HLSL
 struct TransformData
 {
-    float4x4 mWorldToView;
-    float4x4 mViewToWorld;
+    float4x4 mLocalToWorld;
+    float4x4 mWorldToLocal;
 };
 
 struct BoneTransformData
@@ -76,28 +76,13 @@ struct BoneTransformData
 #elif defined(_GLSL)
 struct TransformData
 {
-	mat4 mWorldToView;
-	mat4 mViewToWorld;
+	mat4 mLocalToWorld;
+	mat4 mWorldToLocal;
 };
 
 struct BoneTransformData
 {
     mat4 mBoneTransform;
-};
-
-struct DrawData
-{
-	uint indexCount;
-    uint instanceCount;
-    uint firstIndex;
-    int  vertexOffset;
-    uint firstInstance;
-	
-    uint materialID;
-	uint transformID;
-	uint transformCount;
-
-	vec4 sphereBounds;
 };
 #endif
 

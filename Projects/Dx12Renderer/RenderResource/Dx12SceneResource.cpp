@@ -82,9 +82,9 @@ Dx12SceneResource::Dx12SceneResource(Dx12RenderDevice& rd)
     m_pVertexAllocator          = MakeBox< StaticBufferAllocator >(m_RenderDevice, "VertexPool", sizeof(Vertex), _KB(8LL));
     m_pIndexAllocator           = MakeBox< StaticBufferAllocator >(m_RenderDevice, "IndexPool", sizeof(u32), _KB(8LL));
     m_pInstanceAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, "InstancePool", sizeof(InstanceData), _KB(8LL));
-    m_pMeshletAllocator         = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshletPool", sizeof(Meshlet), _MB(8LL));
-    m_pMeshletVertexAllocator   = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshletVertexPool", sizeof(u32), _MB(8LL));
-    m_pMeshletTriangleAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshletTrianglePool", sizeof(u32), _MB(8LL) * 3 / 4);
+    m_pMeshletAllocator         = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshletPool", sizeof(Meshlet), _KB(8LL));
+    m_pMeshletVertexAllocator   = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshletVertexPool", sizeof(u32), _KB(8LL));
+    m_pMeshletTriangleAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshletTrianglePool", sizeof(u32), _KB(8LL));
 
     m_pTLAS = Dx12TopLevelAS::Create(m_RenderDevice, "SceneTLAS");
 
@@ -113,7 +113,7 @@ Dx12SceneResource::Dx12SceneResource(Dx12RenderDevice& rd)
         m_pIndirectDispatchSignature = new CommandSignature(
             m_RenderDevice,
             CommandSignatureDesc(2, sizeof(IndirectDispatchMeshData))
-                .AddConstant(0, 0, 6)
+                .AddConstant(0, 0, 7)
                 .AddDispatchMesh(),
             m_pRootSignature->GetD3D12RootSignature()
         );
@@ -343,8 +343,11 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
     }
     UpdateFrameBuffer(materials.data(), (u32)materials.size(), sizeof(MaterialData), *m_pMaterialAllocator, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
 
-    u64 totalVertexCount = 0;
-    u64 totalIndexCount  = 0;
+    u64 vTotalCount  = 0;
+    u64 iTotalCount  = 0;
+    u64 mTotalCount  = 0;
+    u64 mvTotalCount = 0;
+    u64 mtTotalCount = 0;
     for (auto& [id, data] : sceneView.draws)
     {
         if (IsValidIndex(data.mesh))
@@ -352,18 +355,18 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
             assert(data.mesh < sceneView.meshes.size());
             auto& meshView = sceneView.meshes[data.mesh];
 
-            totalVertexCount += meshView.vCount;
-            totalIndexCount  += meshView.iCount;
+            vTotalCount  += meshView.vCount;
+            iTotalCount  += meshView.iCount;
+            mTotalCount  += meshView.mCount;
+            mvTotalCount += meshView.mvCount;
+            mtTotalCount += meshView.mtCount;
         }
     }
-    if (m_pVertexAllocator->GetElementCount() < totalVertexCount)
-    {
-        m_pVertexAllocator->Resize(totalVertexCount * 2);
-    };
-    if (m_pIndexAllocator->GetElementCount() < totalIndexCount)
-    {
-        m_pIndexAllocator->Resize(totalIndexCount * 2);
-    };
+    if (m_pVertexAllocator->GetElementCount() < vTotalCount) m_pVertexAllocator->Resize(vTotalCount * 2);
+    if (m_pIndexAllocator->GetElementCount() < iTotalCount) m_pIndexAllocator->Resize(iTotalCount * 2);
+    if (m_pMeshletAllocator->GetElementCount() < mTotalCount) m_pMeshletAllocator->Resize(mTotalCount * 2);
+    if (m_pMeshletVertexAllocator->GetElementCount() < mvTotalCount) m_pMeshletVertexAllocator->Resize(mvTotalCount * 2);
+    if (m_pMeshletTriangleAllocator->GetElementCount() < mtTotalCount) m_pMeshletTriangleAllocator->Resize(mtTotalCount * 2);
 
     u32 instID = 0;
     std::vector< InstanceData >             instances;
@@ -383,11 +386,12 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
                 auto mvHandle = GetOrUpdateMeshletVertices(meshView.id, meshView.tag, meshView.mvData, meshView.mvCount);
                 auto mtHandle = GetOrUpdateMeshletTriangles(meshView.id, meshView.tag, meshView.mtData, meshView.mtCount);
 
-                indirect.dispatch.ThreadGroupCountX = mHandle.count;
+                indirect.dispatch.ThreadGroupCountX = baamboo::math::RoundUpAndDivide(mHandle.count, 32u);
                 indirect.dispatch.ThreadGroupCountY = 1;
                 indirect.dispatch.ThreadGroupCountZ = 1;
 
                 indirect.vOffset  = vHandle.offset;
+                indirect.mCount   = mHandle.count;
                 indirect.mOffset  = mHandle.offset;
                 indirect.mvOffset = mvHandle.offset;
                 indirect.mtOffset = mtHandle.offset;
@@ -430,7 +434,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 
                 const mat4& m = transformView.mWorld;
 
-                // glm::mat4 (column-major) ¡æ 3x4 row-major
+                // glm::mat4 (column-major) ï¿½ï¿½ 3x4 row-major
                 render::AccelerationStructureInstanceDesc inst = {};
                 inst.transform[0][0] = m[0][0]; inst.transform[0][1] = m[1][0]; inst.transform[0][2] = m[2][0]; inst.transform[0][3] = m[3][0];
                 inst.transform[1][0] = m[0][1]; inst.transform[1][1] = m[1][1]; inst.transform[1][2] = m[2][1]; inst.transform[1][3] = m[3][1];
@@ -639,12 +643,12 @@ BufferHandle Dx12SceneResource::GetOrUpdateMeshletTriangles(u64 entity, const st
     }
     auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
 
-    auto allocation = m_pMeshletTriangleAllocator->Allocate(count, sizeof(u8));
+    auto allocation = m_pMeshletTriangleAllocator->Allocate(count, sizeof(u32));
     rm.UploadData(allocation.pBuffer, pData, allocation.sizeInBytes, allocation.offsetInBytes, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 
     BufferHandle handle = {};
     handle.gpuHandle          = allocation.pBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
-    handle.elementSizeInBytes = sizeof(u8);
+    handle.elementSizeInBytes = m_pMeshletTriangleAllocator->GetElementSize();
     handle.offset             = u32(allocation.offsetInBytes / handle.elementSizeInBytes);
     handle.count              = count;
 
@@ -663,7 +667,7 @@ Arc< Dx12BottomLevelAS > Dx12SceneResource::GetOrCreateBLAS(const std::string& t
     render::GeometryDesc geom = {};
     geom.vertexBufferAddress = vHandle.gpuHandle + (vHandle.offset * vHandle.elementSizeInBytes);
     geom.vertexCount         = vHandle.count;
-    geom.vertexStride        = vHandle.elementSizeInBytes;
+    geom.vertexStride        = static_cast<u32>(vHandle.elementSizeInBytes);
     geom.indexBufferAddress  = iHandle.gpuHandle + (iHandle.offset * iHandle.elementSizeInBytes);
     geom.indexCount          = iHandle.count;
     geom.geometryFlags       = render::eGeometryFlag_Opaque;
@@ -719,8 +723,6 @@ void Dx12SceneResource::BuildAccelerationStructures()
         return;
 
     auto pContext = m_RenderDevice.BeginCommand(D3D12_COMMAND_LIST_TYPE_DIRECT);
-    auto* cmdList = pContext->GetD3D12CommandList();
-
     for (auto* pBLAS : m_PendingBLASBuilds)
     {
         pContext->BuildBLAS(*pBLAS);

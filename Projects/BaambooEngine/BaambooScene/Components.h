@@ -81,7 +81,7 @@ struct StaticMeshComponent
 	u32      numMeshlets         = 0;
 	u32*     pMeshletVertices    = nullptr;
 	u32      numMeshletVertices  = 0;
-	u8*      pMeshletTriangles   = nullptr;
+	u32*     pMeshletTriangles   = nullptr;
 	u32      numMeshletTriangles = 0;
 };
 

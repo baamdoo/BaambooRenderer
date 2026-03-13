@@ -127,6 +127,8 @@ private:
 
 	RenderGraph m_RenderGraph;
 
+	u32 m_NumDirtyEntities = 0;
+
 	// animations
 	std::unordered_map< u32, MeshData >      m_MeshData;
 	std::unordered_map< u32, Skeleton >      m_Skeletons;

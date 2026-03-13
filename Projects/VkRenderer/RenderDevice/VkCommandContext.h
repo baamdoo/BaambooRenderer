@@ -64,6 +64,7 @@ public:
 	void GenerateMips(Arc< VulkanTexture > texture);
 
 	virtual void TransitionBarrier(Arc< render::Texture > texture, render::eTextureLayout newState, u32 subresource = ALL_SUBRESOURCES, bool bFlushImmediate = false) override;
+	virtual void UAVBarrier(Arc < render::Buffer > pBuffer, bool bFlushImmediate) override;
 
 	// todo. unlock other types of barrier
 	void TransitionImageLayout(
@@ -87,6 +88,7 @@ public:
 
 	virtual void SetRenderPipeline(render::ComputePipeline* pPipeline) override;
 	virtual void SetRenderPipeline(render::GraphicsPipeline* pPipeline) override;
+	virtual void SetRenderPipeline(render::RaytracingPipeline* pRenderPipeline) override;
 
 	virtual void SetComputeConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) override;
 	virtual void SetGraphicsConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) override;
@@ -99,6 +101,8 @@ public:
 	virtual void SetComputeShaderResource(const std::string& name, Arc< render::Buffer > buffer) override;
 	virtual void SetGraphicsShaderResource(const std::string& name, Arc< render::Buffer > buffer) override;
 
+	virtual void SetAccelerationStructure(const std::string& name, render::TopLevelAccelerationStructure& tlas) override;
+
 	virtual void StageDescriptor(const std::string& name, Arc< render::Buffer > buffer, u32 offset = 0) override;
 	virtual void StageDescriptor(const std::string& name, Arc< render::Texture > texture, Arc< render::Sampler > samplerInCharge, u32 offset = 0) override;
 
@@ -109,6 +113,9 @@ public:
 	virtual void BeginRenderPass(Arc< render::RenderTarget > renderTarget) override;
 	virtual void EndRenderPass() override;
 
+	virtual void BuildBLAS(render::BottomLevelAccelerationStructure& blas) override;
+	virtual void BuildTLAS(render::TopLevelAccelerationStructure& tlas) override;
+
 	void BeginRendering(const VkRenderingInfo& renderInfo);
 	void EndRendering();
 
@@ -118,6 +125,7 @@ public:
 
 	virtual void Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ) override;
 	// TODO. virtual void DispatchIndirect(Arc< Buffer > argumentBuffer, u32 argumentBufferOffset = 0) override {}
+	virtual void DispatchRays(render::ShaderBindingTable& sbt, u32 width, u32 height, u32 depth = 1) override;
 
 	bool IsReady() const;
 	bool IsFenceComplete(VkFence vkFence) const;

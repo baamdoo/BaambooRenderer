@@ -275,7 +275,7 @@ project "Dx12Renderer"
 	filter { "files:**MS.hlsl" }
 		shadertype "Mesh"
 
-	filter { "files:**AS.hlsl" }
+	filter { "files:**TS.hlsl" }
 		shadertype "Amplification"
 
 	filter { "files:**LIB.hlsl" }

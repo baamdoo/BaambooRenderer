@@ -56,19 +56,30 @@ constexpr u32 COMMON_DESCRIPTORSET_INDEX = 0u;
 //-------------------------------------------------------------------------
 // Shader Types
 //-------------------------------------------------------------------------
+struct InstanceData
+{
+	u32 vOffset;
+	u32 iOffset;
+	u32 materialID;
+	u32 transformID;
+};
+
 struct IndirectDrawData
 {
-	u32 indexCount;
-	u32 instanceCount;
-	u32 firstIndex;
-	i32 vertexOffset;
-	u32 firstInstance;
-
-	u32	materialIndex;
 	u32 transformID;
-	u32 transformCount;
+	u32 materialID;
 
-	float4 sphereBounds;
+	u32 vOffset;
+	u32 mCount;
+	u32 mOffset;
+	u32 mvOffset;
+	u32 mtOffset;
+};
+
+struct IndirectCommandData
+{
+	VkDrawIndexedIndirectCommand      draw;
+	VkDrawMeshTasksIndirectCommandEXT dispatch;
 };
 
 

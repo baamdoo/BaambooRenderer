@@ -6,16 +6,19 @@
 #include "VkResourceManager.h"
 #include "VkDescriptorSet.h"
 #include "VkTimer.h"
+
 #include "RenderResource/VkBuffer.h"
 #include "RenderResource/VkTexture.h"
 #include "RenderResource/VkRenderTarget.h"
 #include "RenderResource/VkSceneResource.h"
 
+#include "Utils/Math.hpp"
+
 namespace vk
 {
 
 static PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR;
-static PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT;
+static PFN_vkCmdDrawMeshTasksIndirectEXT vkCmdDrawMeshTasksIndirectEXT;
 
 //-------------------------------------------------------------------------
 // Impl
@@ -897,18 +900,15 @@ void VkCommandContext::Impl::DrawIndexed(u32 indexCount, u32 instanceCount, u32 
 
 void VkCommandContext::Impl::DrawScene(const VkSceneResource& sceneResource)
 {
-	vkCmdDrawMeshTasksEXT = (PFN_vkCmdDrawMeshTasksEXT)vkGetInstanceProcAddr(m_RenderDevice.vkInstance(), "vkCmdDrawMeshTasksEXT");
+	vkCmdDrawMeshTasksIndirectEXT = (PFN_vkCmdDrawMeshTasksIndirectEXT)vkGetInstanceProcAddr(m_RenderDevice.vkInstance(), "vkCmdDrawMeshTasksIndirectEXT");
 
 	FlushBarriers();
 	BindShaderResources(VK_PIPELINE_BIND_POINT_GRAPHICS, m_pGraphicsPipeline->vkPipelineLayout());
 
 	if (m_pGraphicsPipeline->IsMeshPipeline())
 	{
-		const auto& meshletInfo = sceneResource.GetMeshletBufferInfo();
-		vkCmdDrawMeshTasksEXT(m_vkCommandBuffer, meshletInfo.range / sizeof(Meshlet), 1, 1);
-		// TODO
-		/*const auto& indirectInfo = sceneResource.GetIndirectBufferInfo();
-		vkCmdDrawMeshTasksIndirectCountEXT(m_vkCommandBuffer, indirectInfo.buffer, indirectInfo.offset, )*/
+		const auto& indirectInfo = sceneResource.GetIndirectBufferInfo();
+		vkCmdDrawMeshTasksIndirectEXT(m_vkCommandBuffer, indirectInfo.buffer, offsetof(IndirectCommandData, dispatch), sceneResource.NumMeshes(), sizeof(IndirectCommandData));
 	}
 	else
 	{
@@ -1101,6 +1101,11 @@ void VkCommandContext::TransitionBarrier(Arc< render::Texture > texture, render:
 	TransitionImageLayout(rhiTexture, VK_LAYOUT(newState), texture->IsDepthTexture() ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT, bFlushImmediate);
 }
 
+void VkCommandContext::UAVBarrier(Arc<render::Buffer> pBuffer, bool bFlushImmediate)
+{
+	// TODO
+}
+
 void VkCommandContext::TransitionImageLayout(
 	Arc< VulkanTexture > texture,
 	VkImageLayout newLayout,
@@ -1186,6 +1191,11 @@ void VkCommandContext::SetGraphicsShaderResource(const std::string& name, Arc< r
 	m_Impl->SetGraphicsShaderResource(name, rhiBuffer);
 }
 
+void VkCommandContext::SetAccelerationStructure(const std::string& name, render::TopLevelAccelerationStructure& tlas)
+{
+	// TODO
+}
+
 void VkCommandContext::StageDescriptor(const std::string& name, Arc< render::Buffer > buffer, u32 offset)
 {
 	auto rhiBuffer = StaticCast<VulkanBuffer>(buffer);
@@ -1220,6 +1230,11 @@ void VkCommandContext::SetRenderPipeline(render::GraphicsPipeline* pRenderPipeli
 	m_Impl->SetRenderPipeline(vkRenderPipeline);
 }
 
+void VkCommandContext::SetRenderPipeline(render::RaytracingPipeline* pRenderPipeline)
+{
+	// TODO
+}
+
 void VkCommandContext::SetRenderPipeline(render::ComputePipeline* pRenderPipeline)
 {
 	auto vkRenderPipeline = static_cast<VulkanComputePipeline*>(pRenderPipeline);
@@ -1239,6 +1254,16 @@ void VkCommandContext::BeginRenderPass(Arc< render::RenderTarget > renderTarget)
 void VkCommandContext::EndRenderPass()
 {
 	m_Impl->EndRenderPass();
+}
+
+void VkCommandContext::BuildBLAS(render::BottomLevelAccelerationStructure& blas)
+{
+	// TODO
+}
+
+void VkCommandContext::BuildTLAS(render::TopLevelAccelerationStructure& tlas)
+{
+	// TODO
 }
 
 void VkCommandContext::BeginRendering(const VkRenderingInfo& renderInfo)
@@ -1271,6 +1296,11 @@ void VkCommandContext::DrawScene(const render::SceneResource& sceneResource)
 void VkCommandContext::Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ)
 {
 	m_Impl->Dispatch(numGroupsX, numGroupsY, numGroupsZ);
+}
+
+void VkCommandContext::DispatchRays(render::ShaderBindingTable& sbt, u32 width, u32 height, u32 depth)
+{
+	// TODO
 }
 
 bool VkCommandContext::IsReady() const

@@ -36,9 +36,9 @@ VSOutput main(VSInput IN)
 
     TransformData transform = Transforms[g_TransformIndex];
 
-    float4 posWORLD     = mul(transform.mWorldToView, float4(IN.position, 1.0));
-    float4 normalWORLD  = mul(transform.mWorldToView, float4(IN.normal, 0.0));
-    float4 tangentWORLD = mul(transform.mWorldToView, float4(IN.tangent, 0.0));
+    float4 posWORLD     = mul(transform.mLocalToWorld, float4(IN.position, 1.0));
+    float4 normalWORLD  = mul(transform.mLocalToWorld, float4(IN.normal, 0.0));
+    float4 tangentWORLD = mul(transform.mLocalToWorld, float4(IN.tangent, 0.0));
 
     output.posWORLD     = posWORLD.xyz;
     output.uv           = IN.uv;

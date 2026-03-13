@@ -66,7 +66,9 @@ private:
 	ThreadQueue< SceneRenderView > m_RenderViewQueue;
 	std::atomic_bool               m_bRunning;
 
-	Timer m_GameTimer   = {};
+	Timer m_GameTimer = {};
+	std::atomic< double > m_GameElapsedTime{ 0.0 };
+
 	Timer m_RenderTimer = {};
 	double m_LastFrameGpuTimeElapsed = 0.0;
 	// mutex for sync between writing entity-components data in render-thread and reading(view-each) in game-thread

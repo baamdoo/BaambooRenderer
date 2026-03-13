@@ -158,19 +158,19 @@ BxDF::MaterialParams ReadMaterial(MaterialData material, float2 uv)
     return params;
 }
 
-bool ComputeRefraction(float3 incident, float3 normal, float eta, out float3 refracted)
+bool ComputeRefraction(float3 I, float3 N, float eta, out float3 refracted)
 {
-    float cosTi  = dot(-incident, normal);
-    float sin2Ti = max(0.0, 1.0 - cosTi * cosTi);
-    float sin2Tt = eta * eta * sin2Ti;
-    if (sin2Tt >= 1.0) 
+    float cosThetaIn    = dot(-I, N);
+    float sinThetaInSq  = max(0.0, 1.0 - cosThetaIn * cosThetaIn);
+    float sinThetaOutSq = eta * eta * sinThetaInSq;
+    if (sinThetaOutSq >= 1.0)
     { 
         refracted = float3(0, 0, 0); 
         return false; 
     }
-    float cosTt = sqrt(1.0 - sin2Tt);
+    float cosThetaOut = sqrt(1.0 - sinThetaOutSq);
 
-    refracted = normalize(eta * incident + (eta * cosTi - cosTt) * normal);
+    refracted = normalize(eta * I + (eta * cosThetaIn - cosThetaOut) * N);
     return true;
 }
 
@@ -593,11 +593,11 @@ void ClosestHit(inout RadiancePayload payload, in BuiltInTriangleIntersectionAtt
         float3 reflection = float3(0, 0, 0);
         if (curDepth <= MAX_RADIANCE_RECURSION_DEPTH)
         {
-            float3 R   = reflect(I, faceN);
+            float3 R   = reflect(V, faceN);
             reflection = TraceRadianceRay(OffsetRay(hitPosition, faceN), R, curDepth).radiance;
         }
 
-        float  eta        = bEntering ? (1.0 / ior) : ior;
+        float  eta        = bEntering ? (1.0 / ior) : ior; // ni / no
         float3 refraction = float3(0, 0, 0);
 
         float3 refractedDir;

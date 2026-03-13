@@ -19,8 +19,8 @@ void TransformSystem::OnComponentConstructed(entt::registry& registry, entt::ent
     auto& transform = registry.get< TransformComponent >(entity);
     transform.world = index;
 
-    if (index > m_mWorlds.size())
-        m_mWorlds.resize(index * 2);
+    if (index >= m_mWorlds.size())
+        m_mWorlds.resize(static_cast<u64>(index) * 2);
 
     m_mWorlds[index] = mat4(1.0f);
 }
@@ -45,13 +45,19 @@ std::vector< u64 > TransformSystem::UpdateRenderData(const EditorCamera& edCamer
         RemoveRenderData(entt::to_integral(entity));
     }
 
+    std::vector< u64 > markedEntities;
+    if (m_DirtyEntities.empty() && m_ExpiredEntities.empty())
+    {
+        ClearDirtyEntities();
+        return markedEntities;
+    }
+
     // Sort by depth for parent-first processing
     m_Registry.sort<TransformComponent>([](const auto& lhs, const auto& rhs) 
         {
 			return lhs.hierarchy.depth < rhs.hierarchy.depth;
         });
 
-    std::vector< u64 > markedEntities;
     for (auto entity : m_DirtyEntities)
     {
         if (!m_Registry.valid(entity))

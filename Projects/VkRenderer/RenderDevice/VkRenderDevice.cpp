@@ -22,7 +22,8 @@ VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
 	return VK_FALSE;
 }
 
-VkRenderDevice::VkRenderDevice()
+VkRenderDevice::VkRenderDevice(const render::DeviceSettings& ds)
+	: Super(ds)
 {
 	InstanceBuilder instanceBuilder;
 	m_vkInstance = instanceBuilder.AddExtensionLayer(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME).Build();
@@ -50,7 +51,7 @@ VkRenderDevice::VkRenderDevice()
 	m_PhysicalDeviceProperties = deviceBuilder.physicalDeviceProperties;
 	m_PhysicalDeviceMaintenance3Properties = deviceBuilder.physicalDeviceMaintenance3Properties;
 
-	m_Supports.bMeshShader = deviceBuilder.bSupportMeshShader;
+	m_Settings.bMeshShader = deviceBuilder.bSupportMeshShader;
 
 	m_pGraphicsQueue = new CommandQueue(*this, deviceBuilder.queueFamilyIndices.graphicsQueueIndex, eCommandType::Graphics);
 	m_pComputeQueue  = new CommandQueue(*this, deviceBuilder.queueFamilyIndices.computeQueueIndex, eCommandType::Compute);
@@ -157,6 +158,24 @@ Arc< render::Shader > VkRenderDevice::CreateShader(const char* name, render::Sha
 	return VulkanShader::Create(*this, name, std::move(info));
 }
 
+Arc< render::ShaderBindingTable > VkRenderDevice::CreateSBT(const char* name)
+{
+	// TODO
+	return nullptr;
+}
+
+Arc< render::BottomLevelAccelerationStructure > VkRenderDevice::CreateBLAS(const char* name)
+{
+	// TODO
+	return nullptr;
+}
+
+Arc< render::TopLevelAccelerationStructure > VkRenderDevice::CreateTLAS(const char* name)
+{
+	// TODO
+	return nullptr;
+}
+
 Box< render::ComputePipeline > VkRenderDevice::CreateComputePipeline(const char* name)
 {
 	return MakeBox< VulkanComputePipeline >(*this, name);
@@ -165,6 +184,12 @@ Box< render::ComputePipeline > VkRenderDevice::CreateComputePipeline(const char*
 Box< render::GraphicsPipeline > VkRenderDevice::CreateGraphicsPipeline(const char* name)
 {
 	return MakeBox< VulkanGraphicsPipeline >(*this, name);
+}
+
+Box< render::RaytracingPipeline > VkRenderDevice::CreateRaytracingPipeline(const char* name)
+{
+	// TODO
+	return nullptr;
 }
 
 Box< render::SceneResource > VkRenderDevice::CreateSceneResource()

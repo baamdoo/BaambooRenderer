@@ -85,10 +85,10 @@ void Scene::RemoveEntity(Entity entity)
 
 Entity Scene::ImportModel(const fs::path& filepath, MeshDescriptor descriptor)
 {
-	return ImportModel(CreateEntity(filepath.filename().string() + "_Root"), filepath, descriptor);
+	return ImportModel(Entity{}, filepath, descriptor);
 }
 
-Entity Scene::ImportModel(Entity rootEntity, const fs::path& filepath, MeshDescriptor descriptor)
+Entity Scene::ImportModel(Entity parentEntity, const fs::path& filepath, MeshDescriptor descriptor)
 {
 	if (auto it = s_ModelCache.find(filepath.string()); it != s_ModelCache.end())
 	{
@@ -101,44 +101,8 @@ Entity Scene::ImportModel(Entity rootEntity, const fs::path& filepath, MeshDescr
 	auto pRootNode = pLoader->GetRootNode();
 	m_ModelLoaderCache.emplace(filepath.string(), pLoader);
 
-	const AnimationData& animData = pLoader->GetAnimationData();
-	u32 skeletonID = INVALID_INDEX;
-
-	// If model has animations, create skeleton and animation components
-	if (pLoader->HasAnimations())
-	{
-		// Store skeleton (you'll need to add skeleton storage to Scene or a dedicated AnimationSystem)
-		skeletonID = StoreSkeletonData(animData.skeleton);
-
-		// Add skeleton component to root entity
-		rootEntity.AttachComponent< SkeletonComponent >().skeletonID = skeletonID;
-
-		// Add animation component if there are clips
-		if (!animData.clips.empty())
-		{
-			auto& animComp = rootEntity.AttachComponent<AnimationComponent>();
-			animComp.skeletonID = skeletonID;
-			animComp.currentClipID = 0; // Default to first clip
-			animComp.currentPose.boneTransforms.resize(animData.skeleton.bones.size());
-			animComp.currentPose.mBones.resize(animData.skeleton.bones.size());
-
-			// Initialize pose to bind pose
-			for (u64 i = 0; i < animData.skeleton.bones.size(); ++i)
-			{
-				animComp.currentPose.boneTransforms[i] = BoneTransform();
-				animComp.currentPose.mBones[i]         = mat4(1.0f);
-			}
-		}
-
-		// Store animation clips
-		for (const auto& clip : animData.clips)
-		{
-			StoreAnimationClip(clip);
-		}
-	}
-
 	std::string parentPath = filepath.parent_path().string() + "/";
-	std::function< void(const ModelNode*, Entity) > ProcessNode = [&](const ModelNode* node, Entity parent)
+	std::function< Entity(const ModelNode*, Entity) > ProcessNode = [&](const ModelNode* node, Entity parent)
 		{
 			Entity entity = CreateEntity(node->name);
 
@@ -165,20 +129,9 @@ Entity Scene::ImportModel(Entity rootEntity, const fs::path& filepath, MeshDescr
 			{
 				const MeshData& meshData = pLoader->GetMeshes()[meshIndex];
 
-				Entity meshEntity = CreateEntity(meshData.name);
-				entity.AttachChild(meshEntity.ID());
-
-				if (meshData.bHasSkinnedData && skeletonID != INVALID_INDEX)
-				{
-					// skinned mesh
-					auto& meshComponent = meshEntity.AttachComponent< SkinnedMeshComponent >();
-					meshComponent.skeletonID = skeletonID;
-					meshComponent.meshID     = StoreMeshData(meshData);
-				}
-				else
 				{
 					// static mesh
-					auto& meshComponent = meshEntity.AttachComponent< StaticMeshComponent >();
+					auto& meshComponent = entity.AttachComponent< StaticMeshComponent >();
 					meshComponent.path  = filepath.string();
 
 					meshComponent.aabb   = meshData.aabb;
@@ -199,12 +152,12 @@ Entity Scene::ImportModel(Entity rootEntity, const fs::path& filepath, MeshDescr
 						meshComponent.pMeshletVertices   = const_cast<u32*>(meshData.meshletVertices.data());
 
 						meshComponent.numMeshletTriangles = static_cast<u32>(meshData.meshletTriangles.size());
-						meshComponent.pMeshletTriangles   = const_cast<u8*>(meshData.meshletTriangles.data());
+						meshComponent.pMeshletTriangles   = const_cast<u32*>(meshData.meshletTriangles.data());
 					}
 				}
 
 				// Material
-				auto& material = meshEntity.AttachComponent< MaterialComponent >();
+				auto& material = entity.AttachComponent< MaterialComponent >();
 				if (meshData.materialIndex < pLoader->GetMaterials().size())
 				{
 					const MaterialData& matData = pLoader->GetMaterials()[meshData.materialIndex];
@@ -229,9 +182,11 @@ Entity Scene::ImportModel(Entity rootEntity, const fs::path& filepath, MeshDescr
 			{
 				ProcessNode(pChild, entity);
 			}
+
+			return entity;
 		};
 
-	ProcessNode(pRootNode, rootEntity);
+	Entity rootEntity = ProcessNode(pRootNode, parentEntity);
 
 	m_bLoading = false;
 
@@ -304,45 +259,67 @@ void Scene::Update(f32 dt, const EditorCamera& edCamera)
 
 	s_SceneRunningTime += dt;
 
+	m_NumDirtyEntities = 0;
 	for (auto entity : m_pTransformSystem->UpdateRenderData(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
+		if (dirtyMarks == 0)
+			m_NumDirtyEntities++;
+
 		dirtyMarks |= (1 << eComponentType::CTransform);
 	}
 
 	for (auto entity : m_pStaticMeshSystem->UpdateRenderData(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
+		if (dirtyMarks == 0)
+			m_NumDirtyEntities++;
+
 		dirtyMarks |= (1 << eComponentType::CStaticMesh);
 	}
 
 	for (auto entity : m_pSkyLightSystem->UpdateRenderData(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
+		if (dirtyMarks == 0)
+			m_NumDirtyEntities++;
+
 		dirtyMarks |= (1 << eComponentType::CSkyLight);
 	}
 
 	for (auto entity : m_pAtmosphereSystem->UpdateRenderData(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
+		if (dirtyMarks == 0)
+			m_NumDirtyEntities++;
+
 		dirtyMarks |= (1 << eComponentType::CAtmosphere);
 	}
 
 	for (auto entity : m_pCloudSystem->UpdateRenderData(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
+		if (dirtyMarks == 0)
+			m_NumDirtyEntities++;
+
 		dirtyMarks |= (1 << eComponentType::CCloud);
 	}
 
 	for (auto entity : m_pLocalLightSystem->UpdateRenderData(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
+		if (dirtyMarks == 0)
+			m_NumDirtyEntities++;
+
 		dirtyMarks |= (1 << eComponentType::CLocalLight);
 	}
 
 	for (auto entity : m_pPostProcessSystem->UpdateRenderData(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
+		if (dirtyMarks == 0)
+			m_NumDirtyEntities++;
+
 		dirtyMarks |= (1 << eComponentType::CPostProcess);
 	}
 }
@@ -356,12 +333,6 @@ void Scene::OnWindowResized(u32 width, u32 height)
 
 SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport, u64 frame, const render::DeviceSettings& ds) const
 {
-	bool bMarkedAny = false;
-	for (const auto& pair : m_EntityDirtyMasks)
-	{
-		bMarkedAny |= (pair.second > 0);
-	}
-
 	SceneRenderView view = {};
 	view.time       = s_SceneRunningTime;
 	view.frame      = frame;
@@ -370,7 +341,7 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport,
 	view.rg = m_RenderGraph.GetRenderNodes();
 
 	view.pSceneMutex       = &m_SceneMutex;
-	view.pEntityDirtyMarks = bMarkedAny ? &m_EntityDirtyMasks : nullptr;
+	view.pEntityDirtyMarks = (m_NumDirtyEntities > 0) ? &m_EntityDirtyMasks : nullptr;
 
 	view.camera.mView              = edCamera.GetView();
 	view.camera.mProj              = edCamera.GetProj();

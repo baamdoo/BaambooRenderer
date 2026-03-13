@@ -11,6 +11,7 @@
 #include "BaambooScene/RenderNodes/LightingNode.h"
 #include "BaambooScene/RenderNodes/PostProcessNode.h"
 
+#include <random>
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui/backends/imgui_impl_glfw.h>
 
@@ -257,11 +258,26 @@ void BistroApp::ConfigureSceneObjects()
 		descriptor.bWindingCW        = true;
 		descriptor.bGenerateMeshlets = true;
 
-		auto entity = m_pScene->ImportModel(MODEL_PATH.append("kitten.obj"), descriptor);
+		srand(42);
+		const u32 meshCount = 100;
+		for (u32 i = 0; i < meshCount; ++i)
+		{
+			auto entity = m_pScene->ImportModel(MODEL_PATH.append("kitten.obj"), descriptor);
+			entity.AttachComponent< ScriptComponent >();
+
+			auto& tc = entity.GetComponent< TransformComponent >();
+			float3 position = { float(rand()) / RAND_MAX, float(rand()) / RAND_MAX, float(rand()) / RAND_MAX + 0.5f };
+			tc.transform.position = position * 200.0f - 100.0f;
+
+			float scale = float(rand() / RAND_MAX) + 1.0f;
+			tc.transform.scale = { scale, scale, scale };
+			tc.transform.scale *= 10.0f;
+		}
+
 		auto entity2 = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
 		auto& tc2 = entity2.GetComponent< TransformComponent >();
 		tc2.transform.position = float3(-10.0f, 0.0f, 0.0f);
-		entity.AttachComponent< ScriptComponent >();
+		tc2.transform.scale *= 10.0f;
 	}
 
 	{

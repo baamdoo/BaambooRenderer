@@ -15,14 +15,14 @@ layout(location = 6) out vec4 outPosCLIP_curr;
 
 void main() 
 {
-    DrawData drawData = g_DrawBuffer.draws[gl_DrawID];
+    IndirectDrawData drawData = g_IndirectBuffer.draws[gl_DrawID];
     
     Vertex vertex           = g_VertexBuffer.vertices[gl_VertexIndex];
     TransformData transform = g_TransformBuffer.transforms[drawData.transformID];
     
-    vec4 posWORLD     = transform.mWorldToView * vec4(vertex.posX, vertex.posY, vertex.posZ, 1.0);
-    vec4 normalWORLD  = transform.mWorldToView * vec4(vertex.normalX, vertex.normalY, vertex.normalZ, 0.0);
-    vec4 tangentWORLD = transform.mWorldToView * vec4(vertex.tangentX, vertex.tangentY, vertex.tangentZ, 0.0);
+    vec4 posWORLD     = transform.mLocalToWorld * vec4(vertex.posX, vertex.posY, vertex.posZ, 1.0);
+    vec4 normalWORLD  = transform.mLocalToWorld * vec4(vertex.normalX, vertex.normalY, vertex.normalZ, 0.0);
+    vec4 tangentWORLD = transform.mLocalToWorld * vec4(vertex.tangentX, vertex.tangentY, vertex.tangentZ, 0.0);
     
     outPosWORLD     = posWORLD.xyz;
     outUv           = vec2(vertex.u, vertex.v);

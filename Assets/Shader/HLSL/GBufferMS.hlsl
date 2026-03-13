@@ -8,10 +8,11 @@ cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
     uint g_TransformIndex;
     uint g_MaterialIndex;
 
-    uint g_VertexIndex;
-    uint g_MeshletIndex;
-    uint g_MeshletVertexIndex;
-    uint g_MeshletTriangleIndex;
+    uint g_VertexOffset;
+    uint g_MeshletCount;
+    uint g_MeshletOffset;
+    uint g_MeshletVertexOffset;
+    uint g_MeshletTriangleOffset;
 };
 
 static StructuredBuffer< Vertex >  Vertices         = GetResource(g_Vertices.index);
@@ -30,13 +31,10 @@ uint hash(uint a)
     return a;
 }
 
-uint GetPackedTriangleIndex(uint byteOffset)
+struct AmplificationPayload
 {
-    uint wordIndex = byteOffset >> 2;
-
-    uint shift = (byteOffset & 3) << 3;
-    return (MeshletTriangles[wordIndex] >> shift) & 0xFF;
-}
+    uint meshletIndices[32];
+};
 
 struct MSOutput
 {
@@ -48,14 +46,15 @@ struct MSOutput
 [outputtopology("triangle")]
 void main(
     uint3 Gid : SV_GroupID, 
-    uint3 GTid : SV_GroupThreadID, 
+    uint3 GTid : SV_GroupThreadID,
+    in payload AmplificationPayload Payload,
     out vertices MSOutput vertices[64], 
     out indices uint3 triangles[126])
 {
     StructuredBuffer< TransformData > Transforms = GetResource(g_Transforms.index);
     TransformData transform = Transforms[g_TransformIndex];
 
-    uint mi = g_MeshletIndex + Gid.x;
+    uint mi = Payload.meshletIndices[Gid.x];
     uint ti = GTid.x;
 
     Meshlet meshlet = Meshlets[mi];
@@ -66,26 +65,26 @@ void main(
 
     for (uint i = ti; i < meshlet.vertexCount; i += 32)
     {
-        uint vi = g_VertexIndex + MeshletVertices[g_MeshletVertexIndex + meshlet.vertexOffset + i];
+        uint vi = g_VertexOffset + MeshletVertices[g_MeshletVertexOffset + meshlet.vertexOffset + i];
 
         Vertex vertex = Vertices[vi];
 
         float3 position = float3(vertex.posX, vertex.posY, vertex.posZ);
-        float4 posWORLD = mul(transform.mWorldToView, float4(position, 1.0));
+        float4 posWORLD = mul(transform.mLocalToWorld, float4(position, 1.0));
         // float3 normal   = float3(vertex.normalX, vertex.normalY, vertex.normalZ);
 
         vertices[i].position = mul(g_Camera.mViewProj, posWORLD);
         vertices[i].color    = float4(color, 1.0);
     }
 
-    uint baseTriByteOffset = g_MeshletTriangleIndex + meshlet.triangleOffset;
+    uint baseTriByteOffset = g_MeshletTriangleOffset + meshlet.triangleOffset;
     for (uint i = ti; i < meshlet.triangleCount; i += 32)
     {
-        uint currentTriOffset = baseTriByteOffset + (i * 3);
+        uint tPacked3 = MeshletTriangles[baseTriByteOffset + i];
 
-        uint t0 = GetPackedTriangleIndex(currentTriOffset + 0);
-        uint t1 = GetPackedTriangleIndex(currentTriOffset + 1);
-        uint t2 = GetPackedTriangleIndex(currentTriOffset + 2);
+        uint t0 = tPacked3 & 0xFF;
+        uint t1 = (tPacked3 >> 8) & 0xFF;
+        uint t2 = (tPacked3 >> 16) & 0xFF;
 
         triangles[i] = uint3(t0, t1, t2);
     }

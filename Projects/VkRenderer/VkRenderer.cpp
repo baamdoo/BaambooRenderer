@@ -19,11 +19,11 @@
 namespace vk
 {
 
-VkRenderer::VkRenderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext)
+VkRenderer::VkRenderer(baamboo::Window* pWindow, const render::DeviceSettings& ds, ImGuiContext* pImGuiContext)
 {
 	assert(pWindow);
 
-	m_pRenderDevice = new VkRenderDevice();
+	m_pRenderDevice = new VkRenderDevice(ds);
 	m_pSwapChain    = new SwapChain(*m_pRenderDevice, *pWindow);
 	m_pFrameManager = new FrameManager(*m_pRenderDevice, *m_pSwapChain);
 

@@ -6,6 +6,18 @@
 #define _GLSL
 #include "../Common.bsh"
 
+struct IndirectDrawData
+{
+	uint transformID;
+	uint materialID;
+
+	uint vOffset;
+    uint mCount;
+	uint mOffset;
+	uint mvOffset;
+	uint mtOffset;
+};
+
 #ifdef _CAMERA
 layout(set = DESCRIPTORSET_COMMON, binding = 0) uniform Camera 
 { 
@@ -41,13 +53,13 @@ layout(set = DESCRIPTORSET_COMMON, binding = 3) readonly buffer MeshletVertexBuf
 
 layout(set = DESCRIPTORSET_COMMON, binding = 4) readonly buffer MeshletTriangleBuffer 
 {
-    uint8_t meshletTriangles[];
+    uint meshletTriangles[];
 } g_MeshletTriangleBuffer;
 
-layout(set = DESCRIPTORSET_COMMON, binding = 5) readonly buffer DrawBuffer 
+layout(set = DESCRIPTORSET_COMMON, binding = 5) readonly buffer IndirectDrawBuffer 
 {
-    DrawData draws[];
-} g_DrawBuffer;
+    IndirectDrawData draws[];
+} g_IndirectBuffer;
 
 layout(set = DESCRIPTORSET_COMMON, binding = 6) readonly buffer Transform 
 {

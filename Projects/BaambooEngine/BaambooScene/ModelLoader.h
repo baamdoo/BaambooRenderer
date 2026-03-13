@@ -38,7 +38,7 @@ struct MeshData
 
 	std::vector< Meshlet > meshlets;
 	std::vector< u32 >     meshletVertices;
-	std::vector< u8 >      meshletTriangles;
+	std::vector< u32 >     meshletTriangles; // three u8s packed in u32
 
 	inline u32 GetVertexCount() const
 	{
@@ -109,16 +109,17 @@ struct ModelNode
 {
 	~ModelNode();
 
+	std::string name;
+
 	ModelNode*                pParent = nullptr;
 	std::vector< ModelNode* > pChilds;
 
 	std::vector< MeshData > meshes;
+	std::vector< u32 >      meshIndices;
 	std::vector< u32 >      materialIndices;
 	BoundingBox             aabb = {};
 
-	std::string name;
 	mat4 mTransform;
-	std::vector< u32 > meshIndices;
 	i32 parentIndex = -1;
 };
 

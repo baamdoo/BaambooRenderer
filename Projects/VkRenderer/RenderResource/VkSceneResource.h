@@ -41,15 +41,15 @@ struct VkSceneResource : public render::SceneResource
     VkDescriptorSet GetSceneDescriptorSet() const;
     [[nodiscard]]
     VkDescriptorSetLayout GetSceneDescriptorSetLayout() const { return m_vkSetLayout; }
-
     [[nodiscard]]
     VkDescriptorBufferInfo GetIndexBufferInfo() const;
-
     [[nodiscard]]
     VkDescriptorBufferInfo GetMeshletBufferInfo() const;
-
     [[nodiscard]]
     VkDescriptorBufferInfo GetIndirectBufferInfo() const;
+
+	[[nodiscard]]
+    u32 NumMeshes() const { return m_NumMeshes; }
 
     // TEMP
     std::vector< VkDescriptorImageInfo > imageInfos;
@@ -69,13 +69,14 @@ private:
     Box< StaticBufferAllocator > m_pVertexAllocator;
     Box< StaticBufferAllocator > m_pIndexAllocator;
     Box< StaticBufferAllocator > m_pIndirectDrawAllocator;
-    Box< StaticBufferAllocator > m_pTransformAllocator;
-    Box< StaticBufferAllocator > m_pMaterialAllocator;
-    Box< StaticBufferAllocator > m_pLightAllocator;
-
+    Box< StaticBufferAllocator > m_pIndirectCommandAllocator;
     Box< StaticBufferAllocator > m_pMeshletAllocator;
     Box< StaticBufferAllocator > m_pMeshletVertexAllocator;
     Box< StaticBufferAllocator > m_pMeshletTriangleAllocator;
+
+    Box< StaticBufferAllocator > m_pTransformAllocator;
+    Box< StaticBufferAllocator > m_pMaterialAllocator;
+    Box< StaticBufferAllocator > m_pLightAllocator;
 
     CameraData                 m_CameraCache = {};
     Arc< VulkanUniformBuffer > m_pCameraBuffer;
@@ -90,6 +91,8 @@ private:
     std::unordered_map< std::string, BufferHandle > m_MeshletTriangleCache;
 
     Arc< VulkanSampler > m_pDefaultSampler;
+
+    u32 m_NumMeshes = 0;
 };
 
 

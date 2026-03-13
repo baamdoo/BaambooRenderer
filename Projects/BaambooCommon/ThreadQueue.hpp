@@ -46,7 +46,7 @@ public:
         if (m_queue.empty())
             return std::nullopt;
 
-        T value = m_queue.front();
+        T value = std::move(m_queue.front());
         m_queue.pop();
         return value;
     }

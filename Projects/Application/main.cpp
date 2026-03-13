@@ -11,8 +11,8 @@ int main()
 	//eRendererAPI rendererAPI = eRendererAPI::Vulkan;
 
 	//ExampleApp app = {};
-	//BistroApp app = {};
-	RayTracingApp app = {};
+	BistroApp app = {};
+	//RayTracingApp app = {};
 	try
 	{
 		app.Initialize(rendererAPI);

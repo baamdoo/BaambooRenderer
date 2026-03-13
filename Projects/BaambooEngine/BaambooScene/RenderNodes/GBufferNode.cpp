@@ -86,6 +86,12 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 	}
 	else
 	{
+		auto pTS = Shader::Create(m_RenderDevice, "GBufferTS",
+			{
+				.stage    = eShaderStage::Task,
+				.filename = "GBufferTS"
+			});
+
 		auto pMS = Shader::Create(m_RenderDevice, "GBufferMS",
 			{
 				.stage    = eShaderStage::Mesh,
@@ -98,7 +104,7 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 				.filename = "GBufferTestPS"
 			});
 
-		m_pGBufferPSO->SetMeshShaders(pMS, pFS)
+		m_pGBufferPSO->SetMeshShaders(pMS, pFS, pTS)
 			          .SetRenderTarget(m_pRenderTarget)
 			          .SetDepthWriteEnable(true, eCompareOp::Greater).Build();
 	}

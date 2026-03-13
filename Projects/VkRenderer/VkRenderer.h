@@ -7,7 +7,7 @@ namespace vk
 class VkRenderer : public render::Renderer
 {
 public:
-	VkRenderer(baamboo::Window* pWindow, ImGuiContext* pImGuiContext);
+	VkRenderer(baamboo::Window* pWindow, const render::DeviceSettings& ds, ImGuiContext* pImGuiContext);
 	~VkRenderer();
 
 	virtual void NewFrame() override;

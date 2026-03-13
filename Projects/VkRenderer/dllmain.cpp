@@ -40,9 +40,9 @@ namespace baamboo
 	class Window;
 }
 
-bool DllCreateInstance(baamboo::Window* pWindow, ImGuiContext* pImGuiContext, OUT void** ppv)
+bool DllCreateInstance(baamboo::Window* pWindow, const render::DeviceSettings& ds, ImGuiContext* pImGuiContext, OUT void** ppv)
 {
-	render::Renderer* pRenderer = new vk::VkRenderer(pWindow, pImGuiContext);
+	render::Renderer* pRenderer = new vk::VkRenderer(pWindow, ds, pImGuiContext);
 	if (!pRenderer)
 		return false;
 

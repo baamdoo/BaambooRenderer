@@ -110,10 +110,9 @@ Entity Entity::Clone()
 		};
 	fpCloneEntity(*this, clonedEntity);
 
-	auto& orgTransform = GetComponent< TransformComponent >();
+	const auto& orgTransform = GetComponent< TransformComponent >();
 	if (orgTransform.hierarchy.firstChild != entt::null)
 	{
-
 		std::function< void(Entity, Entity) > fpCloneChildEntity = [&](Entity originalParent, Entity clonedParent)
 			{
 				auto& registry = m_pScene->m_Registry;
@@ -122,7 +121,7 @@ Entity Entity::Clone()
 				auto view = registry.view< TransformComponent >();
 				for (auto entity : view)
 				{
-					auto& transform = view.get< TransformComponent >(entity);
+					const auto& transform = view.get< TransformComponent >(entity);
 					if (transform.hierarchy.parent == originalParent.ID())
 					{
 						// Create child entity

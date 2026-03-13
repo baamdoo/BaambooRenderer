@@ -9,9 +9,6 @@
 namespace baamboo
 {
 
-u64 ModelLoader::ms_GlobalMeshletVertexOffset   = 0;
-u64 ModelLoader::ms_GlobalMeshletTriangleOffset = 0;
-
 mat4 ConvertMatrix(const aiMatrix4x4& aiMat)
 {
 	mat4 mResult;
@@ -56,7 +53,7 @@ ModelLoader::ModelLoader(fs::path filepath, MeshDescriptor descriptor)
 	const auto aiScene = importer.ReadFile(filepath.string(), importFlags);
 	if (!aiScene || aiScene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !aiScene->mRootNode) 
 	{
-		assert(false && importer.GetErrorString());
+		BB_ASSERT(false, "Model Loading Error - %s", importer.GetErrorString());
 		return;
 	}
 
@@ -531,7 +528,7 @@ AnimationClip ModelLoader::ProcessAnimationClip(aiAnimation* animation)
 void ModelLoader::GenerateMeshlets(MeshData& meshData, bool bOptimizeVertexCache)
 {
     const size_t maxVertices  = 64;
-    const size_t maxTriangles = 126;
+    const size_t maxTriangles = 124;
     const float  coneWeight   = 0.0f;
 
     size_t vertexCount = meshData.GetVertexCount();
@@ -546,13 +543,14 @@ void ModelLoader::GenerateMeshlets(MeshData& meshData, bool bOptimizeVertexCache
     size_t maxMeshlets = meshopt_buildMeshletsBound(meshData.indices.size(), maxVertices, maxTriangles);
     std::vector< meshopt_Meshlet > meshlets(maxMeshlets);
 
+    std::vector< u8 > meshletTrianglesUnpacked;
+	meshletTrianglesUnpacked.resize(maxMeshlets * maxTriangles * 3);
     meshData.meshletVertices.resize(maxMeshlets * maxVertices);
-    meshData.meshletTriangles.resize(maxMeshlets * maxTriangles * 3);
 
     size_t numMeshlets = meshopt_buildMeshlets(
         meshlets.data(),
         meshData.meshletVertices.data(),
-        meshData.meshletTriangles.data(),
+        meshletTrianglesUnpacked.data(),
         meshData.indices.data(),
         indexCount,
         static_cast<const float*>(meshData.GetVertexData()),
@@ -564,9 +562,11 @@ void ModelLoader::GenerateMeshlets(MeshData& meshData, bool bOptimizeVertexCache
     );
 
     const meshopt_Meshlet& last = meshlets[numMeshlets - 1];
-
     meshData.meshletVertices.resize(last.vertex_offset + last.vertex_count);
-    meshData.meshletTriangles.resize(last.triangle_offset + last.triangle_count * 3);
+    meshletTrianglesUnpacked.resize(last.triangle_offset + last.triangle_count * 3);
+
+    meshData.meshletTriangles.clear();
+    meshData.meshletTriangles.reserve(numMeshlets * maxTriangles);
 
     meshData.meshlets.reserve(numMeshlets);
     for (size_t i = 0; i < numMeshlets; ++i)
@@ -575,7 +575,7 @@ void ModelLoader::GenerateMeshlets(MeshData& meshData, bool bOptimizeVertexCache
 
         meshopt_Bounds bounds = meshopt_computeMeshletBounds(
             &meshData.meshletVertices[m.vertex_offset],
-            &meshData.meshletTriangles[m.triangle_offset],
+            &meshletTrianglesUnpacked[m.triangle_offset],
             m.triangle_count,
             static_cast<const float*>(meshData.GetVertexData()),
             vertexCount,
@@ -584,20 +584,25 @@ void ModelLoader::GenerateMeshlets(MeshData& meshData, bool bOptimizeVertexCache
 
         Meshlet newMeshlet = {};
         newMeshlet.vertexCount    = m.vertex_count;
-        newMeshlet.vertexOffset   = m.vertex_offset + ms_GlobalMeshletVertexOffset;
+        newMeshlet.vertexOffset   = m.vertex_offset;
         newMeshlet.triangleCount  = m.triangle_count;
-        newMeshlet.triangleOffset = m.triangle_offset + ms_GlobalMeshletTriangleOffset;
+        newMeshlet.triangleOffset = static_cast<u32>(meshData.meshletTriangles.size());
 
         newMeshlet.center     = float3(bounds.center[0], bounds.center[1], bounds.center[2]);
         newMeshlet.radius     = bounds.radius;
         newMeshlet.coneAxis   = float3(bounds.cone_axis[0], bounds.cone_axis[1], bounds.cone_axis[2]);
         newMeshlet.coneCutoff = bounds.cone_cutoff;
 
+        for (size_t t = 0; t < m.triangle_count; ++t)
+        {
+            u8 t0 = meshletTrianglesUnpacked[m.triangle_offset + t * 3 + 0];
+            u8 t1 = meshletTrianglesUnpacked[m.triangle_offset + t * 3 + 1];
+            u8 t2 = meshletTrianglesUnpacked[m.triangle_offset + t * 3 + 2];
+
+            meshData.meshletTriangles.push_back(u32((t2 << 16) | (t1 << 8) | (t0)));
+        }
         meshData.meshlets.push_back(newMeshlet);
     }
-
-    //ms_GlobalMeshletVertexOffset   += meshData.meshletVertices.size();
-    //ms_GlobalMeshletTriangleOffset += meshData.meshletTriangles.size();
 }
 
 std::string ModelLoader::GetTextureFilename(aiMaterial* mat, aiTextureType type)

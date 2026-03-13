@@ -23,8 +23,8 @@ enum
 	eCommonSetBindingIndex_MeshletVertex   = 3,
 	eCommonSetBindingIndex_MeshletTriangle = 4,
 
-	eCommonSetBindingIndex_IndirectDraw    = 5,
-	eCommonSetBindingIndex_Transform       = 6,
+	eCommonSetBindingIndex_IndirectDraw = 5,
+	eCommonSetBindingIndex_Transform    = 6,
 
 	eCommonSetBindingIndex_Material      = 7,
 	eCommonSetBindingIndex_SceneTextures = 100,
@@ -102,16 +102,17 @@ VkSceneResource::VkSceneResource(VkRenderDevice& rd)
 	m_pCameraBuffer           = VulkanUniformBuffer::Create(m_RenderDevice, "CameraBuffer", sizeof(CameraData), VK_BUFFER_USAGE_2_TRANSFER_DST_BIT);
 	m_pSceneEnvironmentBuffer = VulkanUniformBuffer::Create(m_RenderDevice, "CameraBuffer", sizeof(SceneEnvironmentData), VK_BUFFER_USAGE_2_TRANSFER_DST_BIT);
 
-	m_pVertexAllocator       = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(Vertex) * _MB(8LL));
-	m_pIndexAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(Index) * 3 * _MB(8LL), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-	m_pIndirectDrawAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(IndirectDrawData) * _KB(8LL), VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
-	m_pTransformAllocator    = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(TransformData) * _KB(8LL));
-	m_pMaterialAllocator     = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(MaterialData) * _KB(8LL));
-	m_pLightAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(LightData));
+	m_pVertexAllocator          = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(Vertex) * _KB(8LL));
+	m_pIndexAllocator           = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(Index) * 3 * _KB(8LL), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+	m_pIndirectDrawAllocator    = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(IndirectDrawData) * _KB(8LL), VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
+	m_pIndirectCommandAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(IndirectCommandData) * _KB(8LL), VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT);
+	m_pMeshletAllocator         = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(Meshlet) * _KB(8LL));
+	m_pMeshletVertexAllocator   = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(u32) * _KB(8LL));
+	m_pMeshletTriangleAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(u32) * _KB(8LL));
 
-	m_pMeshletAllocator         = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(Meshlet) * _MB(8LL));
-	m_pMeshletVertexAllocator   = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(u32) * _MB(8LL));
-	m_pMeshletTriangleAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(u8) * _MB(8LL));
+	m_pTransformAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(TransformData) * _KB(8LL));
+	m_pMaterialAllocator  = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(MaterialData) * _KB(8LL));
+	m_pLightAllocator     = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(LightData));
 
 	// **
 	// scene descriptor pool
@@ -120,11 +121,11 @@ VkSceneResource::VkSceneResource(VkRenderDevice& rd)
 	{
 		{ eCommonSetBindingIndex_Camera, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_ALL, VK_NULL_HANDLE },
 		{ eCommonSetBindingIndex_Vertex, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_MESH_BIT_EXT, VK_NULL_HANDLE },
-		{ eCommonSetBindingIndex_Meshlet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_MESH_BIT_EXT, VK_NULL_HANDLE },
-		{ eCommonSetBindingIndex_MeshletVertex, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_MESH_BIT_EXT, VK_NULL_HANDLE },
-		{ eCommonSetBindingIndex_MeshletTriangle, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_MESH_BIT_EXT, VK_NULL_HANDLE },
-		{ eCommonSetBindingIndex_IndirectDraw, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_MESH_BIT_EXT, VK_NULL_HANDLE },
-		{ eCommonSetBindingIndex_Transform, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_MESH_BIT_EXT, VK_NULL_HANDLE },
+		{ eCommonSetBindingIndex_Meshlet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT, VK_NULL_HANDLE },
+		{ eCommonSetBindingIndex_MeshletVertex, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT, VK_NULL_HANDLE },
+		{ eCommonSetBindingIndex_MeshletTriangle, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT, VK_NULL_HANDLE },
+		{ eCommonSetBindingIndex_IndirectDraw, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT, VK_NULL_HANDLE },
+		{ eCommonSetBindingIndex_Transform, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT, VK_NULL_HANDLE },
 		{ eCommonSetBindingIndex_Material, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, VK_NULL_HANDLE },
 		{ eCommonSetBindingIndex_Light, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, VK_NULL_HANDLE },
 		{ eCommonSetBindingIndex_Environment, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, VK_NULL_HANDLE },
@@ -420,52 +421,60 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 	}
 	UpdateFrameBuffer(materials.data(), (u32)materials.size(), sizeof(MaterialData), *m_pMaterialAllocator, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
 
-	std::vector< IndirectDrawData > indirects;
+	std::vector< IndirectDrawData >    indirectDraws;
+	std::vector< IndirectCommandData > indirectCommands;
 	for (auto& [id, data] : sceneView.draws)
 	{
-		IndirectDrawData indirect = {};
+		IndirectDrawData    indirectDraw = {};
+		IndirectCommandData indirectCommand = {};
 		if (data.mesh != INVALID_INDEX)
 		{
 			BB_ASSERT(data.mesh < sceneView.meshes.size(), "Mesh idx_%d should less than mesh size %d", data.mesh, (u32)sceneView.meshes.size());
 			auto& meshView = sceneView.meshes[data.mesh];
 
-			auto vertexHandle  = GetOrUpdateVertex(meshView.id, meshView.tag, meshView.vData, meshView.vCount);
-
-			BufferHandle indexHandle = {};
+			auto vHandle = GetOrUpdateVertex(meshView.id, meshView.tag, meshView.vData, meshView.vCount);
+			BufferHandle iHandle = {};
 			if (meshView.iData && meshView.iCount > 0)
-				indexHandle = GetOrUpdateIndex(meshView.id, meshView.tag, meshView.iData, meshView.iCount);
-
-			BufferHandle meshletHandle = {};
-			if (meshView.mData && meshView.mCount > 0)
+				iHandle = GetOrUpdateIndex(meshView.id, meshView.tag, meshView.iData, meshView.iCount);
 			{
-				meshletHandle = GetOrUpdateMeshlets(meshView.id, meshView.tag, meshView.mData, meshView.mCount);
-				GetOrUpdateMeshletVertices(meshView.id, meshView.tag, meshView.mvData, meshView.mvCount);
-				GetOrUpdateMeshletTriangles(meshView.id, meshView.tag, meshView.mtData, meshView.mtCount);
+				BufferHandle mHandle  = GetOrUpdateMeshlets(meshView.id, meshView.tag, meshView.mData, meshView.mCount);
+				BufferHandle mvHandle = GetOrUpdateMeshletVertices(meshView.id, meshView.tag, meshView.mvData, meshView.mvCount);
+				BufferHandle mtHandle = GetOrUpdateMeshletTriangles(meshView.id, meshView.tag, meshView.mtData, meshView.mtCount);
+
+				indirectCommand.dispatch.groupCountX = baamboo::math::RoundUpAndDivide(mHandle.count, 32u);
+				indirectCommand.dispatch.groupCountY = 1;
+				indirectCommand.dispatch.groupCountZ = 1;
+
+				indirectCommand.draw.indexCount    = iHandle.count;
+				indirectCommand.draw.instanceCount = 1;
+				indirectCommand.draw.firstIndex    = iHandle.offset;
+				indirectCommand.draw.vertexOffset  = static_cast<i32>(vHandle.offset);
+				indirectCommand.draw.firstInstance = 0;
+
+				indirectDraw.vOffset  = vHandle.offset;
+				indirectDraw.mCount   = mHandle.count;
+				indirectDraw.mOffset  = mHandle.offset;
+				indirectDraw.mvOffset = mvHandle.offset;
+				indirectDraw.mtOffset = mtHandle.offset;
+
+				indirectDraw.materialID = INVALID_INDEX;
+				if (data.material != INVALID_INDEX)
+				{
+					assert(data.material < sceneView.materials.size());
+					indirectDraw.materialID = data.material;
+				}
+
+				assert(data.transform != INVALID_INDEX && data.transform < sceneView.transforms.size());
+				indirectDraw.transformID = data.transform;
 			}
+			indirectDraws.push_back(indirectDraw);
+			indirectCommands.push_back(indirectCommand);
 
-			indirect.indexCount    = indexHandle.count;
-			indirect.instanceCount = 1;
-			indirect.firstIndex    = indexHandle.offset;
-			indirect.vertexOffset  = static_cast<i32>(vertexHandle.offset);
-			indirect.firstInstance = 0;
-
-			indirect.materialIndex = INVALID_INDEX;
-			if (data.material != INVALID_INDEX)
-			{
-				assert(data.material < sceneView.materials.size());
-				indirect.materialIndex = data.material;
-			}
-
-			assert(data.transform != INVALID_INDEX && data.transform < sceneView.transforms.size());
-			indirect.transformID    = data.transform;
-			indirect.transformCount = (u32)transforms.size();
-
-			indirect.sphereBounds = sceneView.transforms[indirect.transformID].mWorld * float4(meshView.sphere.Center(), meshView.sphere.Radius());
-
-			indirects.push_back(indirect);
+			m_NumMeshes++;
 		}
 	}
-	UpdateFrameBuffer(indirects.data(), (u32)indirects.size(), sizeof(IndirectDrawData), *m_pIndirectDrawAllocator, VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT);
+	UpdateFrameBuffer(indirectDraws.data(), (u32)indirectDraws.size(), sizeof(IndirectDrawData), *m_pIndirectDrawAllocator, VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	UpdateFrameBuffer(indirectCommands.data(), (u32)indirectCommands.size(), sizeof(IndirectCommandData), *m_pIndirectCommandAllocator, VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 	
 	UpdateFrameBuffer(&sceneView.light, 1, sizeof(LightData), *m_pLightAllocator, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 
@@ -513,6 +522,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView)
 	descriptorSet.StageDescriptor(m_pMeshletTriangleAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_MeshletTriangle, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 
 	descriptorSet.StageDescriptor(m_pIndirectDrawAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_IndirectDraw, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+	//descriptorSet.StageDescriptor(m_pIndirectCommandAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_IndirectCommand, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 	descriptorSet.StageDescriptor(m_pTransformAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Transform, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 
 	descriptorSet.StageDescriptor(m_pMaterialAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Material, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
@@ -560,10 +570,9 @@ BufferHandle VkSceneResource::GetOrUpdateVertex(u64 entity, const std::string& f
 {
 	auto& rm = static_cast<VkResourceManager&>(m_RenderDevice.GetResourceManager());
 
-	if (m_VertexCache.contains(filepath))
-	{
-		return m_VertexCache.find(filepath)->second;
-	}
+	auto it = m_VertexCache.find(filepath);
+	if (it != m_VertexCache.end())
+		return it->second;
 
 	u64 sizeInBytes = sizeof(Vertex) * count;
 
@@ -584,10 +593,9 @@ BufferHandle VkSceneResource::GetOrUpdateIndex(u64 entity, const std::string& fi
 {
 	auto& rm = static_cast<VkResourceManager&>(m_RenderDevice.GetResourceManager());
 
-	if (m_IndexCache.contains(filepath))
-	{
-		return m_IndexCache.find(filepath)->second;
-	}
+	auto it = m_IndexCache.find(filepath);
+	if (it != m_IndexCache.end())
+		return it->second;
 
 	u64 sizeInBytes = sizeof(Index) * count;
 
@@ -608,10 +616,9 @@ BufferHandle VkSceneResource::GetOrUpdateMeshlets(u64 entity, const std::string&
 {
 	auto& rm = static_cast<VkResourceManager&>(m_RenderDevice.GetResourceManager());
 
-	if (m_MeshletCache.contains(filepath))
-	{
-		return m_MeshletCache.find(filepath)->second;
-	}
+	auto it = m_MeshletCache.find(filepath);
+	if (it != m_MeshletCache.end())
+		return it->second;
 
 	u64 sizeInBytes = sizeof(Meshlet) * count;
 
@@ -632,10 +639,9 @@ BufferHandle VkSceneResource::GetOrUpdateMeshletVertices(u64 entity, const std::
 {
 	auto& rm = static_cast<VkResourceManager&>(m_RenderDevice.GetResourceManager());
 
-	if (m_MeshletVertexCache.contains(filepath))
-	{
-		return m_MeshletVertexCache.find(filepath)->second;
-	}
+	auto it = m_MeshletVertexCache.find(filepath);
+	if (it != m_MeshletVertexCache.end())
+		return it->second;
 
 	u64 sizeInBytes = sizeof(u32) * count;
 
@@ -656,19 +662,18 @@ BufferHandle VkSceneResource::GetOrUpdateMeshletTriangles(u64 entity, const std:
 {
 	auto& rm = static_cast<VkResourceManager&>(m_RenderDevice.GetResourceManager());
 
-	if (m_MeshletTriangleCache.contains(filepath))
-	{
-		return m_MeshletTriangleCache.find(filepath)->second;
-	}
+	auto it = m_MeshletTriangleCache.find(filepath);
+	if (it != m_MeshletTriangleCache.end())
+		return it->second;
 
-	auto allocation = m_pMeshletTriangleAllocator->Allocate(count, sizeof(u8));
-	rm.UploadData(allocation.vkBuffer, pData, sizeof(u8) * count, VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT, sizeof(u8) * allocation.offset);
+	auto allocation = m_pMeshletTriangleAllocator->Allocate(count, sizeof(u32));
+	rm.UploadData(allocation.vkBuffer, pData, sizeof(u32) * count, VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT, sizeof(u32) * allocation.offset);
 
 	BufferHandle handle = {};
 	handle.vkBuffer           = allocation.vkBuffer;
 	handle.offset             = allocation.offset;
 	handle.count              = count;
-	handle.elementSizeInBytes = sizeof(u8);
+	handle.elementSizeInBytes = sizeof(u32);
 
 	m_MeshletTriangleCache.emplace(filepath, handle);
 	return handle;
@@ -678,10 +683,9 @@ Arc< VulkanTexture > VkSceneResource::GetOrLoadTexture(u64 entity, const std::st
 {
 	auto& rm = m_RenderDevice.GetResourceManager();
 
-	if (m_TextureCache.contains(filepath))
-	{
-		return m_TextureCache.find(filepath)->second;
-	}
+	auto it = m_TextureCache.find(filepath);
+	if (it != m_TextureCache.end())
+		return it->second;
 
 	auto tex   = rm.LoadTexture(filepath);
 	auto vkTex = StaticCast<VulkanTexture>(tex);
@@ -694,16 +698,18 @@ Arc< VulkanTexture > VkSceneResource::GetOrLoadTexture(u64 entity, const std::st
 Arc< VulkanTexture > VkSceneResource::GetTexture(const std::string& filepath)
 {
 	std::string f = filepath.data();
-	if (m_TextureCache.contains(f))
-	{
-		return m_TextureCache.find(f)->second;
-	}
+	auto it = m_TextureCache.find(filepath);
+	if (it != m_TextureCache.end())
+		return it->second;
 
 	return nullptr;
 }
 
 void VkSceneResource::ResetFrameBuffers()
 {
+	m_NumMeshes = 0;
+
+	m_pIndirectCommandAllocator->Reset();
 	m_pIndirectDrawAllocator->Reset();
 	m_pTransformAllocator->Reset();
 	m_pMaterialAllocator->Reset();
@@ -735,7 +741,7 @@ VkDescriptorBufferInfo VkSceneResource::GetIndexBufferInfo() const
 
 VkDescriptorBufferInfo VkSceneResource::GetIndirectBufferInfo() const
 {
-	return m_pIndirectDrawAllocator->GetDescriptorInfo();
+	return m_pIndirectCommandAllocator->GetDescriptorInfo();
 }
 
 VkDescriptorBufferInfo VkSceneResource::GetMeshletBufferInfo() const
