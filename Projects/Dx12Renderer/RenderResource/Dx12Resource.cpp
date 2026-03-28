@@ -7,32 +7,40 @@ namespace dx12
 
 Dx12Resource::Dx12Resource(Dx12RenderDevice& rd, const char* name)
 	: m_RenderDevice(rd)
-	, m_Name(ConvertToWString(name))
+	, m_wName(ConvertToWString(name))
 {
 }
 
 Dx12Resource::Dx12Resource(Dx12RenderDevice& rd, const char* name, eResourceType type)
 	: m_RenderDevice(rd)
-	, m_Name(ConvertToWString(name))
+	, m_wName(ConvertToWString(name))
 	, m_Type(type)
 {
 }
 
 Dx12Resource::Dx12Resource(Dx12RenderDevice& rd, const char* name, Dx12ResourceCreationInfo&& info, eResourceType type)
 	: m_RenderDevice(rd)
-	, m_Name(ConvertToWString(name))
+	, m_wName(ConvertToWString(name))
 	, m_Type(type)
-	, m_CurrentState(info.initialState)
+	, m_CurrentState(D3D12_BARRIER_SYNC_NONE, D3D12_BARRIER_ACCESS_NO_ACCESS, info.initialLayout)
 {
 	auto d3d12Device = m_RenderDevice.GetD3D12Device();
 
 	switch (m_Type)
 	{
 	case eResourceType::Buffer:
-		ThrowIfFailed(d3d12Device->CreateCommittedResource(
-			&info.heapProps, info.heapFlags,
-			&info.desc, info.initialState,
-			nullptr, IID_PPV_ARGS(&m_d3d12Resource)));
+		ThrowIfFailed(d3d12Device->CreateCommittedResource3(
+			&info.heapProps, 
+			info.heapFlags,
+			&info.desc, 
+			D3D12_BARRIER_LAYOUT_UNDEFINED,
+			nullptr, 
+			nullptr, 
+			0, nullptr, 
+			IID_PPV_ARGS(&m_d3d12Resource))
+		);
+
+		m_CurrentState = ResourceState(D3D12_BARRIER_SYNC_NONE, D3D12_BARRIER_ACCESS_NO_ACCESS);
 		break;
 
 	case eResourceType::Texture:
@@ -52,15 +60,19 @@ Dx12Resource::Dx12Resource(Dx12RenderDevice& rd, const char* name, Dx12ResourceC
 			memcpy(&(m_pClearValue->DepthStencil), &info.clearValue.DepthStencil, sizeof(info.clearValue.DepthStencil));
 		}
 
-		ThrowIfFailed(d3d12Device->CreateCommittedResource(
+		ThrowIfFailed(d3d12Device->CreateCommittedResource3(
 			&info.heapProps, info.heapFlags,
-			&info.desc, info.initialState,
-			m_pClearValue, IID_PPV_ARGS(&m_d3d12Resource)));
+			&info.desc,
+			info.initialLayout,
+			m_pClearValue,
+			nullptr,
+			0, nullptr,
+			IID_PPV_ARGS(&m_d3d12Resource)));
 
+		m_CurrentState = ResourceState(D3D12_BARRIER_SYNC_NONE, D3D12_BARRIER_ACCESS_NO_ACCESS, info.initialLayout);
 		break;
 
 	case eResourceType::Sampler:
-
 		break;
 
 	case eResourceType::None:
@@ -70,8 +82,8 @@ Dx12Resource::Dx12Resource(Dx12RenderDevice& rd, const char* name, Dx12ResourceC
 	}
 
 	assert(m_d3d12Resource);
-	m_d3d12Resource->SetName(m_Name.data());
-	m_ResourceDesc = m_d3d12Resource->GetDesc();
+	m_d3d12Resource->SetName(m_wName.data());
+	m_ResourceDesc = m_d3d12Resource->GetDesc1();
 
 	SetFormatSupported();
 }
@@ -98,17 +110,17 @@ bool Dx12Resource::IsFormatSupported(D3D12_FORMAT_SUPPORT2 formatSupport) const
 	return (m_FormatSupport.Support2 & formatSupport) != 0;
 }
 
-void Dx12Resource::SetD3D12Resource(ID3D12Resource* d3d12Resource, D3D12_RESOURCE_STATES states)
+void Dx12Resource::SetD3D12Resource(ID3D12Resource2* d3d12Resource, const BarrierState& initialState)
 {
 	assert(d3d12Resource);
 	COM_RELEASE(m_d3d12Resource);
 
 	m_d3d12Resource = d3d12Resource;
-	m_ResourceDesc = m_d3d12Resource->GetDesc();
-	ThrowIfFailed(m_d3d12Resource->SetName(m_Name.data()));
+	m_ResourceDesc  = m_d3d12Resource->GetDesc1();
+	ThrowIfFailed(m_d3d12Resource->SetName(m_wName.data()));
 
 	SetFormatSupported();
-	m_CurrentState.SetSubresourceState(states, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
+	m_CurrentState.SetSubresourceState(initialState, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 }
 
 void Dx12Resource::SetFormatSupported()

@@ -14,6 +14,7 @@ public:
     struct FrameContext
 	{
         u32                     imageIndex;
+        u32                     contextIndex;
         Arc< VkCommandContext > rhiCommandContext;
     };
 

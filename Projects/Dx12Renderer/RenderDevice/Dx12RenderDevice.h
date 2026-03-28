@@ -60,10 +60,10 @@ public:
 
 	void UpdateSubresources(Dx12Resource* pResource, u32 firstSubresource, u32 numSubresources, const D3D12_SUBRESOURCE_DATA* pSrcData);
 
-	ID3D12Resource* CreateRHIResource(const D3D12_RESOURCE_DESC& desc, D3D12_RESOURCE_STATES initialState, D3D12_HEAP_PROPERTIES heapProperties, const D3D12_CLEAR_VALUE* pClearValue = nullptr);
+	ID3D12Resource2* CreateRHIResource(const D3D12_RESOURCE_DESC1& desc, D3D12_BARRIER_LAYOUT initialLayout, D3D12_HEAP_PROPERTIES heapProperties, const D3D12_CLEAR_VALUE* pClearValue = nullptr);
 
 	[[nodiscard]]
-	inline ID3D12Device5* GetD3D12Device() const { return m_d3d12Device; }
+	inline ID3D12Device12* GetD3D12Device() const { return m_d3d12Device; }
 
 	[[nodiscard]]
 	Dx12CommandQueue& GraphicsQueue() const { return *m_pGraphicsQueue; }
@@ -96,7 +96,7 @@ private:
 	void CreateDevice(bool bEnableGBV);
 
 private:
-	ID3D12Device5* m_d3d12Device = nullptr;
+	ID3D12Device12* m_d3d12Device = nullptr;
 
 	Dx12CommandQueue* m_pGraphicsQueue = nullptr;
 	Dx12CommandQueue* m_pComputeQueue  = nullptr;

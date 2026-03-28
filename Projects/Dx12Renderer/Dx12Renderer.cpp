@@ -88,6 +88,9 @@ void Renderer::NewFrame()
 
 Arc< render::CommandContext > Renderer::BeginFrame()
 {
+	auto& sr = static_cast<Dx12SceneResource&>(m_pRenderDevice->GetResourceManager().GetSceneResource());
+	sr.SetCurrentContextIndex(m_pRenderDevice->ContextIndex());
+
 	return m_pRenderDevice->GraphicsQueue().Allocate();
 }
 
@@ -115,7 +118,7 @@ void Renderer::EndFrame(Arc< render::CommandContext >&& pContext, Arc< render::T
 	{
 		rhiContext->CopyTexture(pBackImage, pColor);
 	}
-	rhiContext->TransitionBarrier(pBackImage.get(), D3D12_RESOURCE_STATE_PRESENT);
+	rhiContext->TransitionBarrier(pBackImage.get(), BarrierStates::Present);
 	rhiContext->Close();
 
 	auto fenceValue = cmdQueue.ExecuteCommandList(rhiContext);

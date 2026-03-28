@@ -24,7 +24,7 @@ struct VkSceneResource : public render::SceneResource
     VkSceneResource(VkRenderDevice& rd);
     ~VkSceneResource();
 
-    virtual void UpdateSceneResources(const SceneRenderView& sceneView) override;
+    virtual void UpdateSceneResources(const SceneRenderView& sceneView, render::CommandContext& context) override;
     virtual void BindSceneResources(render::CommandContext& context) override;
 
     BufferHandle GetOrUpdateVertex(u64 entity, const std::string& filepath, const void* pData, u32 count);
@@ -37,6 +37,8 @@ struct VkSceneResource : public render::SceneResource
     Arc< VulkanTexture > GetOrLoadTexture(u64 entity, const std::string& filepath);
     Arc< VulkanTexture > GetTexture(const std::string& filepath);
 
+    void SetCurrentContextIndex(u32 index) { m_ContextIndex = index; }
+
     [[nodiscard]]
     VkDescriptorSet GetSceneDescriptorSet() const;
     [[nodiscard]]
@@ -45,18 +47,18 @@ struct VkSceneResource : public render::SceneResource
     VkDescriptorBufferInfo GetIndexBufferInfo() const;
     [[nodiscard]]
     VkDescriptorBufferInfo GetMeshletBufferInfo() const;
-    [[nodiscard]]
-    VkDescriptorBufferInfo GetIndirectBufferInfo() const;
 
-	[[nodiscard]]
-    u32 NumMeshes() const { return m_NumMeshes; }
+    [[nodiscard]]
+    VkDescriptorBufferInfo GetInstanceInfo() const;
+
+    virtual const Arc< render::Buffer >& GetArgumentBuffer() const;
 
     // TEMP
     std::vector< VkDescriptorImageInfo > imageInfos;
 
 private:
     void ResetFrameBuffers();
-    void UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator& targetBuffer, VkPipelineStageFlags2 dstStageMask);
+    void UpdateFrameBuffer(VkCommandContext& context, const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator& targetBuffer, VkPipelineStageFlags2 dstStageMask);
 
 private:
     VkRenderDevice& m_RenderDevice;
@@ -68,19 +70,31 @@ private:
 
     Box< StaticBufferAllocator > m_pVertexAllocator;
     Box< StaticBufferAllocator > m_pIndexAllocator;
-    Box< StaticBufferAllocator > m_pIndirectDrawAllocator;
-    Box< StaticBufferAllocator > m_pIndirectCommandAllocator;
     Box< StaticBufferAllocator > m_pMeshletAllocator;
     Box< StaticBufferAllocator > m_pMeshletVertexAllocator;
     Box< StaticBufferAllocator > m_pMeshletTriangleAllocator;
 
-    Box< StaticBufferAllocator > m_pTransformAllocator;
-    Box< StaticBufferAllocator > m_pMaterialAllocator;
-    Box< StaticBufferAllocator > m_pLightAllocator;
+    CameraData m_CameraCache = {};
+    CullData   m_CullData = {};
 
-    CameraData                 m_CameraCache = {};
-    Arc< VulkanUniformBuffer > m_pCameraBuffer;
-    Arc< VulkanUniformBuffer > m_pSceneEnvironmentBuffer;
+    struct PerFrameData
+    {
+        Box< StaticBufferAllocator > pMeshDataAllocator;
+        Box< StaticBufferAllocator > pInstanceAllocator;
+        //Box< StaticBufferAllocator > pIndirectCommandAllocator;
+
+        Box< StaticBufferAllocator > pTransformAllocator;
+        Box< StaticBufferAllocator > pMaterialAllocator;
+        Box< StaticBufferAllocator > pLightAllocator;
+
+        Arc< VulkanUniformBuffer > pCameraBuffer;
+        Arc< VulkanUniformBuffer > pCullBuffer;
+        Arc< VulkanUniformBuffer > pSceneEnvironmentBuffer;
+
+        void Reset();
+    };
+    std::array< PerFrameData, MAX_FRAMES_IN_FLIGHT > m_FrameData;
+
 
     std::unordered_map< std::string, BufferHandle >         m_VertexCache;
     std::unordered_map< std::string, BufferHandle >         m_IndexCache;
@@ -91,8 +105,6 @@ private:
     std::unordered_map< std::string, BufferHandle > m_MeshletTriangleCache;
 
     Arc< VulkanSampler > m_pDefaultSampler;
-
-    u32 m_NumMeshes = 0;
 };
 
 

@@ -4,6 +4,8 @@
 namespace dx12
 {
 
+struct BarrierState;
+
 class DescriptorPool;
 class Dx12Buffer;
 class Dx12ConstantBuffer;
@@ -18,9 +20,9 @@ public:
 
     virtual Arc< render::Texture > LoadTexture(const std::string& filepath, bool bGenerateMips = false) override;
 
-    void UploadData(Dx12Resource* pResource, const void* pData, u64 sizeInBytes, u64 dstOffsetInBytes, D3D12_RESOURCE_STATES stateAfter);
-    void UploadData(Arc< Dx12Buffer > pBuffer, const void* pData, u64 sizeInBytes, u64 dstOffsetInBytes, D3D12_RESOURCE_STATES stateAfter);
-    void UploadData(Arc< Dx12Texture > pTexture, const void* pData, u64 sizeInBytes, D3D12_RESOURCE_STATES stateAfter);
+    void UploadData(Dx12Resource* pResource, const void* pData, u64 sizeInBytes, u64 dstOffsetInBytes, const BarrierState& stateAfter);
+    void UploadData(Arc< Dx12Buffer > pBuffer, const void* pData, u64 sizeInBytes, u64 dstOffsetInBytes, const BarrierState& stateAfter);
+    void UploadData(Arc< Dx12Texture > pTexture, const void* pData, u64 sizeInBytes, const BarrierState& stateAfter);
 
     [[nodiscard]]
     DescriptorAllocation AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE type, u32 numDescriptors = 1);

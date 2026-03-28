@@ -15,7 +15,7 @@ public:
     virtual ~Dx12Texture();
 
     virtual void Reset() override;
-    virtual void SetD3D12Resource(ID3D12Resource* d3d12Resource, D3D12_RESOURCE_STATES states = D3D12_RESOURCE_STATE_COMMON) override;
+    virtual void SetD3D12Resource(ID3D12Resource2* d3d12Resource, const BarrierState& initialState = BarrierStates::Common) override;
     void Resize(u32 width, u32 height, u32 depthOrArraySize = 1);
 
     void CreateShaderResourceView(const D3D12_SHADER_RESOURCE_VIEW_DESC& desc);

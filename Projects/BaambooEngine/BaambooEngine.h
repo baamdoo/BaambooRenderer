@@ -1,8 +1,9 @@
 #pragma once
-#include "ThreadQueue.hpp"
-#include "BaambooCore/Timer.h"
 #include "BaambooScene/Scene.h"
 #include "BaambooScene/Camera.h"
+
+#include "Timer.h"
+#include "ThreadQueue.hpp"
 #include "RenderCommon/RendererAPI.h"
 
 namespace baamboo { class Engine; }

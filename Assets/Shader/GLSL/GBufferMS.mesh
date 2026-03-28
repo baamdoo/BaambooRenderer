@@ -4,6 +4,7 @@
 
 #define _CAMERA
 #define _MESH
+#define _TRANSFORM
 #include "DescriptorCommon.hg"
 
 
@@ -31,10 +32,11 @@ layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 layout(triangles, max_vertices = 64, max_primitives = 124) out;
 void main()
 {
-	IndirectDrawData indirect  = g_IndirectBuffer.draws[Payload.drawID];
-	TransformData    transform = g_TransformBuffer.transforms[indirect.transformID];
+	InstanceData  instance  = g_Instances[Payload.drawID];
+	MeshData      mesh      = g_Meshes[instance.meshID];
+	TransformData transform = g_TransformBuffer.transforms[instance.transformID];
 
-	uint mi = Payload.meshletIndices[gl_WorkGroupID.x]; // + indirect.mOffset - This addition is already handled in TaskShader
+	uint mi = Payload.meshletIndices[gl_WorkGroupID.x]; // + mesh.mOffset - This addition is already handled in TaskShader
 	uint ti = gl_LocalInvocationID.x;
 
 	Meshlet meshlet = g_MeshletBuffer.meshlets[mi];
@@ -45,9 +47,9 @@ void main()
 
 	for (uint i = ti; i < meshlet.vertexCount; i += gl_WorkGroupSize.x)
 	{
-		uint vi = g_MeshletVertexBuffer.meshletVertices[meshlet.vertexOffset + indirect.mvOffset + i];
+		uint vi = g_MeshletVertexBuffer.meshletVertices[meshlet.vertexOffset + mesh.mvOffset + i];
 	
-		Vertex vertex = g_VertexBuffer.vertices[vi + indirect.vOffset];
+		Vertex vertex = g_VertexBuffer.vertices[vi + mesh.vOffset];
 	
 		vec3 position = vec3(vertex.posX, vertex.posY, vertex.posZ);
 		vec4 posWORLD = transform.mLocalToWorld * vec4(position, 1.0);
@@ -59,7 +61,7 @@ void main()
 		outColor[i] = vec4(color, 1.0);
 	}
 	
-	uint baseTriOffset = meshlet.triangleOffset + indirect.mtOffset; 
+	uint baseTriOffset = meshlet.triangleOffset + mesh.mtOffset; 
 	for (uint i = ti; i < meshlet.triangleCount; i += gl_WorkGroupSize.x)
 	{
 		uint tPacked3 = g_MeshletTriangleBuffer.meshletTriangles[baseTriOffset + i];

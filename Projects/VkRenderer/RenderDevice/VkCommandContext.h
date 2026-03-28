@@ -36,8 +36,10 @@ public:
     void Open(VkCommandBufferUsageFlags flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 	void Close();
 
-    virtual void CopyBuffer(Arc< render::Buffer > dstBuffer, Arc< render::Buffer > srcBuffer, u64 offsetInBytes = 0) override;
-    virtual void CopyTexture(Arc< render::Texture > dstTexture, Arc< render::Texture > srcTexture, u64 offsetInBytes = 0) override;
+	void UploadData(const Arc< render::Buffer >& pDstBuffer, const void* pData, u32 numElements, u64 elemSizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes);
+
+    virtual void CopyBuffer(const Arc< render::Buffer >& dstBuffer, const Arc< render::Buffer >& srcBuffer, u64 dstOffsetInBytes = 0, u64 srcOffsetInBytes = 0) override;
+    virtual void CopyTexture(const Arc< render::Texture >& dstTexture, const Arc< render::Texture >& srcTexture, u64 offsetInBytes = 0) override;
 
 	void CopyBuffer(
 		VkBuffer vkDstBuffer,
@@ -48,23 +50,26 @@ public:
 		VkDeviceSize srcOffset = 0,
 		bool bFlushImmediate = true);
 	void CopyBuffer(
-		Arc< VulkanBuffer > dstBuffer,
-		Arc< VulkanBuffer > srcBuffer,
+		const Arc< VulkanBuffer >& dstBuffer,
+		const Arc< VulkanBuffer >& srcBuffer,
 		VkDeviceSize sizeInBytes,
 		VkPipelineStageFlags2 dstStageMask,
 		VkDeviceSize dstOffset = 0,
 		VkDeviceSize srcOffset = 0,
 		bool bFlushImmediate = true);
 	void CopyBuffer(
-		Arc< VulkanTexture > dstTexture,
-		Arc< VulkanBuffer > srcBuffer,
+		const Arc< VulkanTexture >& dstTexture,
+		const Arc< VulkanBuffer >& srcBuffer,
 		const std::vector< VkBufferImageCopy >& regions,
 		bool bAllSubresources = true);
 	void BlitTexture(Arc< VulkanTexture > dstTexture, Arc< VulkanTexture > srcTexture);
 	void GenerateMips(Arc< VulkanTexture > texture);
 
-	virtual void TransitionBarrier(Arc< render::Texture > texture, render::eTextureLayout newState, u32 subresource = ALL_SUBRESOURCES, bool bFlushImmediate = false) override;
-	virtual void UAVBarrier(Arc < render::Buffer > pBuffer, bool bFlushImmediate) override;
+	// TODO. Enhance buffer barrier management
+	virtual void TransitionBufferToRead(const Arc< render::Buffer >& pBuffer, render::ePipelineStage dstStage, u64 offsetInBytes = 0, bool bFlushImmediate = false) override;
+	virtual void TransitionBufferToWrite(const Arc< render::Buffer >& pBuffer, render::ePipelineStage dstStage, u64 offsetInBytes = 0, bool bFlushImmediate = false) override;
+	virtual void TransitionBarrier(const Arc< render::Texture >& texture, render::eTextureLayout newState, u32 subresource = ALL_SUBRESOURCES, bool bFlushImmediate = false) override;
+	virtual void UAVBarrier(const Arc < render::Buffer >& pBuffer, bool bFlushImmediate) override;
 
 	// todo. unlock other types of barrier
 	void TransitionImageLayout(
@@ -80,9 +85,10 @@ public:
 		bool bFlushImmediate = true,
 		bool bFlatten = false);
 
-	virtual void ClearTexture(Arc< render::Texture > pTexture, render::eTextureLayout newLayout) override;
+	virtual void ClearBuffer(const Arc< render::Buffer >& pBuffer, u32 value, u64 offsetInBytes = 0) override;
+	virtual void ClearTexture(const Arc< render::Texture >& pTexture, render::eTextureLayout newLayout) override;
 	void ClearTexture(
-		Arc< VulkanTexture > texture,
+		const Arc< VulkanTexture >& texture,
 		VkImageLayout newLayout,
 		u32 baseMip = 0, u32 numMips = 1, u32 baseArray = 0, u32 numArrays = 1);
 
@@ -121,16 +127,17 @@ public:
 
 	virtual void Draw(u32 vertexCount, u32 instanceCount = 1, u32 firstVertex = 0, u32 firstInstance = 0) override;
 	virtual void DrawIndexed(u32 indexCount, u32 instanceCount = 1, u32 firstIndex = 0, i32 vertexOffset = 0, u32 firstInstance = 0) override;
-	virtual void DrawScene(const render::SceneResource& sceneResource) override;
+	virtual void DrawMeshTasksIndirect(const Arc< render::Buffer >& pArgumentBuffer, u64 offsetInBytes, u32 numDraws, u32 strideInBytes) override;
+	virtual void DrawMeshTasksIndirectCount(const Arc< render::Buffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< render::Buffer >& pCountBuffer, u32 numDraws, u32 strideInBytes) override;
 
 	virtual void Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ) override;
-	// TODO. virtual void DispatchIndirect(Arc< Buffer > argumentBuffer, u32 argumentBufferOffset = 0) override {}
 	virtual void DispatchRays(render::ShaderBindingTable& sbt, u32 width, u32 height, u32 depth = 1) override;
 
 	bool IsReady() const;
 	bool IsFenceComplete(VkFence vkFence) const;
 	void WaitForFence(VkFence vkFence) const;
 	void Flush() const;
+	void FlushBarriers() const;
 
 	eCommandType GetCommandType() const;
 

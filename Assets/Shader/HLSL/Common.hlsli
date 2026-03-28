@@ -30,22 +30,27 @@ struct CameraData
 #ifdef _MESH
 ConstantBuffer< DescriptorHeapIndex > g_Vertices         : register(b1, space0);
 ConstantBuffer< DescriptorHeapIndex > g_Indices          : register(b2, space0);
-ConstantBuffer< DescriptorHeapIndex > g_Instances        : register(b3, space0);
-ConstantBuffer< DescriptorHeapIndex > g_Meshlets         : register(b4, space0);
-ConstantBuffer< DescriptorHeapIndex > g_MeshletVertices  : register(b5, space0);
-ConstantBuffer< DescriptorHeapIndex > g_MeshletTriangles : register(b6, space0);
+ConstantBuffer< DescriptorHeapIndex > g_Meshlets         : register(b3, space0);
+ConstantBuffer< DescriptorHeapIndex > g_MeshletVertices  : register(b4, space0);
+ConstantBuffer< DescriptorHeapIndex > g_MeshletTriangles : register(b5, space0);
+ConstantBuffer< DescriptorHeapIndex > g_Meshes           : register(b6, space0);
+ConstantBuffer< DescriptorHeapIndex > g_Instances        : register(b7, space0);
 #endif // _MESH
 
+#ifdef _CULL
+ConstantBuffer< CullData > g_CullData : register(b8, space0);
+#endif
+
 #ifdef _TRANSFORM
-ConstantBuffer< DescriptorHeapIndex > g_Transforms : register(b7, space0);
+ConstantBuffer< DescriptorHeapIndex > g_Transforms : register(b9, space0);
 #endif // _TRANSFORM
 
 #ifdef _MATERIAL
-ConstantBuffer< DescriptorHeapIndex > g_Materials : register(b8, space0);
+ConstantBuffer< DescriptorHeapIndex > g_Materials : register(b10, space0);
 #endif // _MATERIAL
 
 #ifdef _LIGHT
-ConstantBuffer< LightingData > g_Lights : register(b9, space0);
+ConstantBuffer< LightingData > g_Lights : register(b11, space0);
 #endif // _LIGHT
 
 struct AtmosphereData
@@ -114,7 +119,7 @@ struct SceneEnvironmentData
     AtmosphereData atmosphere;
 	CloudData      cloud;
 };
-ConstantBuffer< SceneEnvironmentData > g_SceneEnvironment : register(b10, space0);
+ConstantBuffer< SceneEnvironmentData > g_SceneEnvironment : register(b12, space0);
 
 AtmosphereData GetAtmosphereData()
 {

@@ -105,7 +105,7 @@ inline std::wstring ConvertToWString(const std::string& str)
 //-------------------------------------------------------------------------
 // Predefined
 //-------------------------------------------------------------------------
-constexpr u32 NUM_FRAMES_IN_FLIGHT = 3u;
+constexpr u32 MAX_FRAMES_IN_FLIGHT = 3u;
 constexpr u32 NUM_SAMPLING = 1u;
 constexpr u32 NUM_RESOURCE_DESCRIPTOR_TYPE = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER + 1;
 constexpr u32 MAX_NUM_DESCRIPTOR_PER_POOL[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES] = { 1024, 32, 256, 8 };
@@ -149,14 +149,6 @@ struct IndirectDrawData
     D3D12_INDEX_BUFFER_VIEW  ibv;
 
     D3D12_DRAW_INDEXED_ARGUMENTS draws;
-};
-
-struct InstanceData
-{
-	u32 vOffset;
-	u32 iOffset;
-	u32 materialID;
-	u32 transformID;
 };
 
 struct IndirectDispatchMeshData
@@ -251,27 +243,50 @@ static DXGI_FORMAT ConvertToDx12Format(render::eFormat format)
 	return DXGI_FORMAT_UNKNOWN;
 }
 
-#define DX12_RESOURCE_STATE(state, stage) ConvertToDx12ResourceState(state, stage)
-static D3D12_RESOURCE_STATES ConvertToDx12ResourceState(render::eTextureLayout layout, bool bNonPixelShader)
+#define DX12_BARRIER_SYNC(stage) ConvertToD3D12BarrierSync(stage)
+static D3D12_BARRIER_SYNC ConvertToD3D12BarrierSync(render::ePipelineStage stage)
 {
 	using namespace render;
-	switch (layout)
+	switch (stage)
 	{
-	case eTextureLayout::Undefined             : return D3D12_RESOURCE_STATE_COMMON;
-	case eTextureLayout::General               : return D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-	case eTextureLayout::ColorAttachment       : return D3D12_RESOURCE_STATE_RENDER_TARGET;
-	case eTextureLayout::DepthStencilAttachment: return D3D12_RESOURCE_STATE_DEPTH_WRITE;
-	case eTextureLayout::DepthStencilReadOnly  : return D3D12_RESOURCE_STATE_DEPTH_READ;
-	case eTextureLayout::ShaderReadOnly        : return bNonPixelShader ? D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE : D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-	case eTextureLayout::TransferSource        : return D3D12_RESOURCE_STATE_COPY_SOURCE;
-	case eTextureLayout::TransferDest          : return D3D12_RESOURCE_STATE_COPY_DEST;
-	case eTextureLayout::Present               : return D3D12_RESOURCE_STATE_PRESENT;
+	case ePipelineStage::None:         return D3D12_BARRIER_SYNC_NONE;
+	case ePipelineStage::TopPipe:      return D3D12_BARRIER_SYNC_ALL;
+	case ePipelineStage::BottomPipe:   return D3D12_BARRIER_SYNC_ALL;
+	case ePipelineStage::DrawIndirect: return D3D12_BARRIER_SYNC_EXECUTE_INDIRECT;
+
+	case ePipelineStage::VertexInput:  return D3D12_BARRIER_SYNC_INDEX_INPUT | D3D12_BARRIER_SYNC_VERTEX_SHADING;
+	case ePipelineStage::VertexShader: return D3D12_BARRIER_SYNC_VERTEX_SHADING;
+	case ePipelineStage::HullShader:	 
+	case ePipelineStage::DomainShader:	 
+	case ePipelineStage::GeometryShader: 
+	case ePipelineStage::TaskShader:
+	case ePipelineStage::MeshShader:
+		return D3D12_BARRIER_SYNC_NON_PIXEL_SHADING;
+	case ePipelineStage::PixelShader: 
+	case ePipelineStage::ShadingRate:
+		return D3D12_BARRIER_SYNC_PIXEL_SHADING;
+
+	case ePipelineStage::EarlyFragmentTests:
+	case ePipelineStage::LateFragmentTests: 
+		return D3D12_BARRIER_SYNC_DEPTH_STENCIL;
+	case ePipelineStage::ColorAttachmentOutput: return D3D12_BARRIER_SYNC_RENDER_TARGET;
+	case ePipelineStage::ComputeShader:         return D3D12_BARRIER_SYNC_COMPUTE_SHADING;
+
+	case ePipelineStage::AllTransfer:
+	case ePipelineStage::Copy:
+	case ePipelineStage::Blit: 
+		return D3D12_BARRIER_SYNC_COPY;
+	case ePipelineStage::Resolve: return D3D12_BARRIER_SYNC_RESOLVE;
+
+	case ePipelineStage::Clear:                 return D3D12_BARRIER_SYNC_CLEAR_UNORDERED_ACCESS_VIEW;
+
+	case ePipelineStage::AccelerationStructureBuild: return D3D12_BARRIER_SYNC_BUILD_RAYTRACING_ACCELERATION_STRUCTURE;
+	case ePipelineStage::RayTracingShader:           return D3D12_BARRIER_SYNC_RAYTRACING;
 
 	default:
-		assert(false && "Invalid image layout!"); break;
+		assert(false && "Invalid pipeline stage bit!"); break;
 	}
-
-	return D3D12_RESOURCE_STATE_COMMON;
+	return D3D12_BARRIER_SYNC_NONE;
 }
 
 #define DX12_COMPAREOP(op) ConvertToDx12CompareOp(op)

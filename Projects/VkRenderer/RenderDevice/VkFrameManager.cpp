@@ -44,6 +44,7 @@ FrameManager::FrameContext FrameManager::BeginFrame()
     FrameContext context = {};
     context.rhiCommandContext = m_RenderDevice.BeginCommand(eCommandType::Graphics);
     context.imageIndex        = m_SwapChain.AcquireNextImage(context.rhiCommandContext->vkPresentCompleteSemaphore());
+    context.contextIndex      = m_ContextIndex;
 
     frame.bProcessing = true;
 

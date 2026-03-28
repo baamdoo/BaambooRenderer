@@ -3,6 +3,7 @@
 
 #define _CAMERA
 #define _MESH
+#define _TRANSFORM
 #include "DescriptorCommon.hg"
 
 layout(location = 0) out vec3 outPosWORLD;
@@ -15,10 +16,10 @@ layout(location = 6) out vec4 outPosCLIP_curr;
 
 void main() 
 {
-    IndirectDrawData drawData = g_IndirectBuffer.draws[gl_DrawID];
+    InstanceData instance = g_Instances[gl_DrawID];
     
     Vertex vertex           = g_VertexBuffer.vertices[gl_VertexIndex];
-    TransformData transform = g_TransformBuffer.transforms[drawData.transformID];
+    TransformData transform = g_TransformBuffer.transforms[instance.transformID];
     
     vec4 posWORLD     = transform.mLocalToWorld * vec4(vertex.posX, vertex.posY, vertex.posZ, 1.0);
     vec4 normalWORLD  = transform.mLocalToWorld * vec4(vertex.normalX, vertex.normalY, vertex.normalZ, 0.0);
@@ -28,7 +29,7 @@ void main()
     outUv           = vec2(vertex.u, vertex.v);
     outNormalWORLD  = normalize(normalWORLD.xyz);
     outTangentWORLD = normalize(tangentWORLD.xyz);
-    outMaterialID   = drawData.materialID;
+    outMaterialID   = instance.materialID;
     
     outPosCLIP_prev = g_Camera.mViewProjUnjitteredPrev * posWORLD;
     outPosCLIP_curr = g_Camera.mViewProjUnjittered * posWORLD;

@@ -53,6 +53,10 @@ Arc< render::CommandContext > VkRenderer::BeginFrame()
 	}
 
 	auto context = m_pFrameManager->BeginFrame();
+
+	auto& sr = static_cast<VkSceneResource&>(m_pRenderDevice->GetResourceManager().GetSceneResource());
+	sr.SetCurrentContextIndex(context.contextIndex);
+
 	return context.rhiCommandContext;
 }
 

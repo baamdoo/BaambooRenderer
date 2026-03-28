@@ -52,12 +52,10 @@ std::vector< u64 > StaticMeshSystem::UpdateRenderData(const EditorCamera& edCame
         u64 id = entt::to_integral(entity);
         MeshRenderDataEntry& entry = m_RenderData[id];
 
-        auto& tagComponent  = m_Registry.get< TagComponent >(entity);
         auto& meshComponent = m_Registry.get< StaticMeshComponent >(entity);
-        entry.mesh.id     = id;
-        entry.mesh.tag    = tagComponent.tag;
-        entry.mesh.aabb   = meshComponent.aabb;
-        entry.mesh.sphere = meshComponent.sphere;
+        entry.mesh.id  = id;
+        entry.mesh.tag = meshComponent.path;
+        
         entry.mesh.vData  = meshComponent.pVertices;
         entry.mesh.vCount = meshComponent.numVertices;
         entry.mesh.iData  = meshComponent.pIndices;
@@ -69,6 +67,9 @@ std::vector< u64 > StaticMeshSystem::UpdateRenderData(const EditorCamera& edCame
         entry.mesh.mvCount = meshComponent.numMeshletVertices;
         entry.mesh.mtData  = meshComponent.pMeshletTriangles;
         entry.mesh.mtCount = meshComponent.numMeshletTriangles;
+
+        entry.mesh.aabb   = meshComponent.aabb;
+        entry.mesh.sphere = meshComponent.sphere;
 
         entry.bHasMaterial = m_Registry.all_of< MaterialComponent >(entity);
         if (entry.bHasMaterial)

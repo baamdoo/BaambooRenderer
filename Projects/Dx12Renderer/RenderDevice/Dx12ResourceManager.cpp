@@ -39,22 +39,25 @@ Dx12ResourceManager::Dx12ResourceManager(Dx12RenderDevice& rd)
     }
 
     // Global CBVs
-    m_pGlobalRootSignature->AddCBV(0, GLOBAL_DESCRIPTOR_SPACE);          // g_Camera
-    m_pGlobalRootSignature->AddConstants(1, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Vertices
-    m_pGlobalRootSignature->AddConstants(2, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Indices
-    m_pGlobalRootSignature->AddConstants(3, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Instances
-    m_pGlobalRootSignature->AddConstants(4, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Meshlets
-    m_pGlobalRootSignature->AddConstants(5, GLOBAL_DESCRIPTOR_SPACE, 1); // g_MeshletVertices
-    m_pGlobalRootSignature->AddConstants(6, GLOBAL_DESCRIPTOR_SPACE, 1); // g_MeshletTriangles
-    m_pGlobalRootSignature->AddConstants(7, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Transforms
-    m_pGlobalRootSignature->AddConstants(8, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Materials
-    m_pGlobalRootSignature->AddCBV(9, GLOBAL_DESCRIPTOR_SPACE);          // g_Lights
-    m_pGlobalRootSignature->AddCBV(10, GLOBAL_DESCRIPTOR_SPACE);         // g_SceneEnvironment
+    m_pGlobalRootSignature->AddCBV(0, GLOBAL_DESCRIPTOR_SPACE);           // g_Camera
+    m_pGlobalRootSignature->AddConstants(1, GLOBAL_DESCRIPTOR_SPACE, 1);  // g_Vertices
+    m_pGlobalRootSignature->AddConstants(2, GLOBAL_DESCRIPTOR_SPACE, 1);  // g_Indices
+    m_pGlobalRootSignature->AddConstants(3, GLOBAL_DESCRIPTOR_SPACE, 1);  // g_Meshlets
+    m_pGlobalRootSignature->AddConstants(4, GLOBAL_DESCRIPTOR_SPACE, 1);  // g_MeshletVertices
+    m_pGlobalRootSignature->AddConstants(5, GLOBAL_DESCRIPTOR_SPACE, 1);  // g_MeshletTriangles
+    m_pGlobalRootSignature->AddConstants(6, GLOBAL_DESCRIPTOR_SPACE, 1);  // g_Meshes
+    m_pGlobalRootSignature->AddConstants(7, GLOBAL_DESCRIPTOR_SPACE, 1);  // g_Instances
+    m_pGlobalRootSignature->AddCBV(8, GLOBAL_DESCRIPTOR_SPACE);           // g_CullData
+    m_pGlobalRootSignature->AddConstants(9, GLOBAL_DESCRIPTOR_SPACE, 1);  // g_Transforms
+    m_pGlobalRootSignature->AddConstants(10, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Materials
+    m_pGlobalRootSignature->AddCBV(11, GLOBAL_DESCRIPTOR_SPACE);          // g_Lights
+    m_pGlobalRootSignature->AddCBV(12, GLOBAL_DESCRIPTOR_SPACE);          // g_SceneEnvironment
     // Local CBVs
-    for (u32 i = 0; i < (MAX_VIEWS - 8) / 2; ++i)
+    for (u32 i = 0; i < (MAX_VIEWS - 8) / 3; ++i)
     {
         m_pGlobalRootSignature->AddCBV(i, 1);
         m_pGlobalRootSignature->AddSRV(i, 1);
+        m_pGlobalRootSignature->AddUAV(i, 1);
     }
 
     // Samplers
@@ -97,7 +100,10 @@ Arc< render::Texture > Dx12ResourceManager::LoadTexture(const std::string& filep
 
         UINT subresourceSize = (UINT)subresourceDatas.size();
 
-        pTex->SetD3D12Resource(d3d12TexResource);
+        ID3D12Resource2* d3d12TexResource2 = nullptr;
+        d3d12TexResource->QueryInterface(IID_PPV_ARGS(&d3d12TexResource2));
+
+        pTex->SetD3D12Resource(d3d12TexResource2);
         m_RenderDevice.UpdateSubresources(pTex.get(), 0, subresourceSize, subresourceDatas.data());
     }
     else
@@ -106,11 +112,15 @@ Arc< render::Texture > Dx12ResourceManager::LoadTexture(const std::string& filep
         DX_CHECK(DirectX::LoadWICTextureFromFile(
             d3d12Device, path.c_str(), &d3d12TexResource, rawData, subresouceData));
 
-        pTex->SetD3D12Resource(d3d12TexResource);
+        ID3D12Resource2* d3d12TexResource2 = nullptr;
+        d3d12TexResource->QueryInterface(IID_PPV_ARGS(&d3d12TexResource2));
+
+        pTex->SetD3D12Resource(d3d12TexResource2);
 
         UINT subresouceSize = 1;
         m_RenderDevice.UpdateSubresources(pTex.get(), 0, subresouceSize, &subresouceData);
     }
+    COM_RELEASE(d3d12TexResource);
 
     return pTex;
 }
@@ -229,7 +239,7 @@ Arc< Dx12Texture > Dx12ResourceManager::LoadTextureArray(const fs::path& dirpath
         }
     }
 
-    D3D12_RESOURCE_DESC texArrayDesc = {};
+    D3D12_RESOURCE_DESC1 texArrayDesc = {};
     texArrayDesc.Dimension          = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
     texArrayDesc.Alignment          = 0;
     texArrayDesc.Width              = static_cast<UINT>(firstMetadata.width);
@@ -242,15 +252,17 @@ Arc< Dx12Texture > Dx12ResourceManager::LoadTextureArray(const fs::path& dirpath
     texArrayDesc.Layout             = D3D12_TEXTURE_LAYOUT_UNKNOWN;
     texArrayDesc.Flags              = D3D12_RESOURCE_FLAG_NONE;
 
-    ID3D12Resource* d3d12TexArrayResource = nullptr;
+    ID3D12Resource2* d3d12TexArrayResource = nullptr;
     auto heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
 
-    DX_CHECK(m_RenderDevice.GetD3D12Device()->CreateCommittedResource(
+    DX_CHECK(m_RenderDevice.GetD3D12Device()->CreateCommittedResource3(
         &heapProps,
         D3D12_HEAP_FLAG_NONE,
         &texArrayDesc,
-        D3D12_RESOURCE_STATE_COMMON,
+        D3D12_BARRIER_LAYOUT_COMMON,
         nullptr,
+        nullptr,
+        0, nullptr,
         IID_PPV_ARGS(&d3d12TexArrayResource)
     ));
 
@@ -283,7 +295,7 @@ Arc< Dx12Texture > Dx12ResourceManager::LoadTextureArray(const fs::path& dirpath
     return pTex;
 }
 
-void Dx12ResourceManager::UploadData(Dx12Resource* pResource, const void* pData, u64 sizeInBytes, u64 dstOffsetInBytes, D3D12_RESOURCE_STATES stateAfter)
+void Dx12ResourceManager::UploadData(Dx12Resource* pResource, const void* pData, u64 sizeInBytes, u64 dstOffsetInBytes, const BarrierState& stateAfter)
 {
     if (!m_pStagingBuffer)
     {
@@ -305,21 +317,21 @@ void Dx12ResourceManager::UploadData(Dx12Resource* pResource, const void* pData,
 
     auto pContext = m_RenderDevice.BeginCommand(D3D12_COMMAND_LIST_TYPE_DIRECT);
     {
-        pContext->TransitionBarrier(pResource, D3D12_RESOURCE_STATE_COPY_DEST);
-        pContext->CopyBuffer(pResource->GetD3D12Resource(), m_pStagingBuffer->GetD3D12Resource(), sizeInBytes, dstOffsetInBytes);
-        if (stateAfter != D3D12_RESOURCE_STATE_COMMON)
+        pContext->TransitionBarrier(pResource, BarrierStates::CopyDest);
+        pContext->CopyBuffer(pResource->GetD3D12Resource(), m_pStagingBuffer->GetD3D12Resource(), sizeInBytes, dstOffsetInBytes, 0);
+        if (stateAfter != BarrierStates::Common)
             pContext->TransitionBarrier(pResource, stateAfter);
         pContext->Close();
     }
     m_RenderDevice.ExecuteCommand(std::move(pContext)).Wait();
 }
 
-void Dx12ResourceManager::UploadData(Arc< Dx12Buffer > pBuffer, const void* pData, u64 sizeInBytes, u64 dstOffsetInBytes, D3D12_RESOURCE_STATES stateAfter)
+void Dx12ResourceManager::UploadData(Arc< Dx12Buffer > pBuffer, const void* pData, u64 sizeInBytes, u64 dstOffsetInBytes, const BarrierState& stateAfter)
 {
     UploadData(pBuffer.get(), pData, sizeInBytes, dstOffsetInBytes, stateAfter);
 }
 
-void Dx12ResourceManager::UploadData(Arc< Dx12Texture > pTexture, const void* pData, u64 sizeInBytes, D3D12_RESOURCE_STATES stateAfter)
+void Dx12ResourceManager::UploadData(Arc< Dx12Texture > pTexture, const void* pData, u64 sizeInBytes, const BarrierState& stateAfter)
 {
     UploadData(pTexture.get(), pData, sizeInBytes, 0, stateAfter);
 }

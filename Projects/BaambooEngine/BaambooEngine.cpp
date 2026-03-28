@@ -252,14 +252,14 @@ void Engine::RenderLoop()
 		const auto& renderView = renderViewOptional.value();
 		{
 			auto& rm = m_pRendererBackend->GetDevice()->GetResourceManager();
-			rm.GetSceneResource().UpdateSceneResources(renderView);
 
 			auto pContext = m_pRendererBackend->BeginFrame();
 			if (pContext)
 			{
-				m_LastFrameGpuTimeElapsed = pContext->GetLastFrameElapsedTime();
+				rm.GetSceneResource().UpdateSceneResources(renderView, *pContext);
 				rm.GetSceneResource().BindSceneResources(*pContext);
 
+				m_LastFrameGpuTimeElapsed = pContext->GetLastFrameElapsedTime();
 				if (renderView.pEntityDirtyMarks)
 				{
 					assert(renderView.pSceneMutex);

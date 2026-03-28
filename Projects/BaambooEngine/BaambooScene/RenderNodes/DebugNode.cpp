@@ -71,12 +71,13 @@ void DebugNode::ApplyBoundingLines(render::CommandContext& context, const SceneR
 	using namespace render;
 
 	auto& rm = m_RenderDevice.GetResourceManager();
+	auto& sr = rm.GetSceneResource();
 
 	context.BeginRenderPass(m_Bounding.pRenderTarget);
 	{
-		context.SetRenderPipeline(m_Bounding.pBoundingLinePSO.get());
+		//context.SetRenderPipeline(m_Bounding.pBoundingLinePSO.get());
 
-		context.DrawScene(rm.GetSceneResource());
+		context.DrawMeshTasksIndirect(sr.GetArgumentBuffer(), 0, sr.NumInstances(), sizeof(IndirectCommandData));
 	}
 	context.EndRenderPass();
 

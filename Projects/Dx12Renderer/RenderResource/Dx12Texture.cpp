@@ -25,23 +25,20 @@ static D3D12_RESOURCE_FLAGS ConvertToDx12ResourceFlags(RenderFlags usage)
     return flags;
 }
 
-static D3D12_RESOURCE_STATES ConvertToDx12ResourceStates(RenderFlags usage)
+inline D3D12_BARRIER_LAYOUT ConvertToInitialBarrierLayout(RenderFlags usage)
 {
-    D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON;
-    if (usage & render::eTextureUsage_ColorAttachment)
-    {
-        state = D3D12_RESOURCE_STATE_RENDER_TARGET;
-    }
-    if (usage & render::eTextureUsage_DepthStencilAttachment)
-    {
-        state = D3D12_RESOURCE_STATE_DEPTH_WRITE;
-    }
-    if (usage & render::eTextureUsage_Storage)
-    {
-        state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-    }
+    using namespace render;
 
-    return state;
+    if (usage & eTextureUsage_ColorAttachment)
+        return D3D12_BARRIER_LAYOUT_RENDER_TARGET;
+
+    if (usage & eTextureUsage_DepthStencilAttachment)
+        return D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE;
+
+    if (usage & eTextureUsage_Storage)
+        return D3D12_BARRIER_LAYOUT_UNORDERED_ACCESS;
+
+    return D3D12_BARRIER_LAYOUT_COMMON;
 }
 
 bool IsTypelessFormat(DXGI_FORMAT format)
@@ -349,12 +346,12 @@ Dx12Texture::Dx12Texture(Dx12RenderDevice& rd, const char* name, CreationInfo&& 
         {
             .desc = 
                 m_CreationInfo.imageType == render::eImageType::Texture1D ?
-                    CD3DX12_RESOURCE_DESC::Tex1D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, static_cast<UINT16>(m_CreationInfo.arrayLayers), m_CreationInfo.bGenerateMips ? 0 : 1, ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)) :
+                    CD3DX12_RESOURCE_DESC1::Tex1D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, static_cast<UINT16>(m_CreationInfo.arrayLayers), m_CreationInfo.bGenerateMips ? 0 : 1, ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)) :
                 m_CreationInfo.imageType == render::eImageType::Texture3D ?
-                    CD3DX12_RESOURCE_DESC::Tex3D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, m_CreationInfo.resolution.y, static_cast<UINT16>(m_CreationInfo.resolution.z), m_CreationInfo.bGenerateMips ? 0 : 1, ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)) :
-                    CD3DX12_RESOURCE_DESC::Tex2D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, m_CreationInfo.resolution.y, static_cast<UINT16>(m_CreationInfo.arrayLayers), m_CreationInfo.bGenerateMips ? 0 : 1, m_CreationInfo.sampleCount, 0, ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)),
-            .initialState = ConvertToDx12ResourceStates(m_CreationInfo.imageUsage),
-            .clearValue   = IsDepthTexture() == false ? 
+                    CD3DX12_RESOURCE_DESC1::Tex3D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, m_CreationInfo.resolution.y, static_cast<UINT16>(m_CreationInfo.resolution.z), m_CreationInfo.bGenerateMips ? 0 : 1, ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)) :
+                    CD3DX12_RESOURCE_DESC1::Tex2D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, m_CreationInfo.resolution.y, static_cast<UINT16>(m_CreationInfo.arrayLayers), m_CreationInfo.bGenerateMips ? 0 : 1, m_CreationInfo.sampleCount, 0, ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)),
+            .initialLayout = ConvertToInitialBarrierLayout(m_CreationInfo.imageUsage),
+            .clearValue    = IsDepthTexture() == false ? 
                 D3D12_CLEAR_VALUE
                 { 
                     DX12_FORMAT(m_CreationInfo.format), 
@@ -399,9 +396,9 @@ void Dx12Texture::Reset()
         m_UnorderedAccessView.Free();
 }
 
-void Dx12Texture::SetD3D12Resource(ID3D12Resource* d3d12Resource, D3D12_RESOURCE_STATES states)
+void Dx12Texture::SetD3D12Resource(ID3D12Resource2* d3d12Resource, const BarrierState& initialState)
 {
-    Dx12Resource::SetD3D12Resource(d3d12Resource, states);
+    Dx12Resource::SetD3D12Resource(d3d12Resource, initialState);
 
     m_Width  = static_cast<u32>(m_ResourceDesc.Width);
     m_Height = static_cast<u32>(m_ResourceDesc.Height);
@@ -417,16 +414,16 @@ void Dx12Texture::Resize(u32 width, u32 height, u32 depthOrArraySize)
         if (m_ResourceDesc.Width == width && m_ResourceDesc.Height == height)
             return;
 
-        CD3DX12_RESOURCE_DESC desc(m_ResourceDesc);
-        desc.Width = std::max(width, 1u);
-        desc.Height = std::max(height, 1u);
+        CD3DX12_RESOURCE_DESC1 desc(m_ResourceDesc);
+        desc.Width            = std::max(width, 1u);
+        desc.Height           = std::max(height, 1u);
         desc.DepthOrArraySize = static_cast<u16>(depthOrArraySize);
-        desc.MipLevels = desc.SampleDesc.Count > 1 ? 1 : m_ResourceDesc.MipLevels;
+        desc.MipLevels        = desc.SampleDesc.Count > 1 ? 1 : m_ResourceDesc.MipLevels;
         
         Reset();
 
-        ID3D12Resource* d3d12Resource = 
-            m_RenderDevice.CreateRHIResource(desc, m_CurrentState.GetSubresourceState(), CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), m_pClearValue);
+        ID3D12Resource2* d3d12Resource = 
+            m_RenderDevice.CreateRHIResource(desc, m_CurrentState.GetSubresourceState().Layout, CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), m_pClearValue);
 
         SetD3D12Resource(d3d12Resource, m_CurrentState.GetSubresourceState());
     }

@@ -26,15 +26,18 @@ class CommandContext : public ArcBase
 public:
     virtual ~CommandContext() = default;
 
-    // === Texture Operations ===
-    virtual void CopyBuffer(Arc< Buffer > pDstBuffer, Arc< Buffer > pSrcBuffer, u64 offsetInBytes = 0) = 0;
-    virtual void CopyTexture(Arc< Texture > pDstTexture, Arc< Texture > pSrcTexture, u64 offsetInBytes = 0) = 0;
+    // === Resource Operations ===
+    virtual void CopyBuffer(const Arc< Buffer >& pDstBuffer, const Arc< Buffer >& pSrcBuffer, u64 dstOffsetInBytes = 0, u64 srcOffsetInBytes = 0) = 0;
+    virtual void CopyTexture(const Arc< Texture >& pDstTexture, const Arc< Texture >& pSrcTexture, u64 offsetInBytes = 0) = 0;
 
-    virtual void ClearTexture(Arc< render::Texture > pTexture, render::eTextureLayout newLayout) = 0;
+    virtual void ClearBuffer(const Arc< Buffer >& pBuffer, u32 value, u64 offsetInBytes = 0) = 0;
+    virtual void ClearTexture(const Arc< Texture >& pTexture, render::eTextureLayout newLayout) = 0;
 
     // === Barriers ===
-    virtual void TransitionBarrier(Arc< Texture > texture, eTextureLayout newState, u32 subresource = ALL_SUBRESOURCES, bool flushImmediate = false) = 0;
-    virtual void UAVBarrier(Arc< Buffer > pBuffer, bool bFlushImmediate) = 0;
+    virtual void TransitionBufferToRead(const Arc< Buffer >& pBuffer, render::ePipelineStage dstStage, u64 offsetInBytes = 0, bool bFlushImmediate = false) = 0;
+    virtual void TransitionBufferToWrite(const Arc< Buffer >& pBuffer, render::ePipelineStage dstStage, u64 offsetInBytes = 0, bool bFlushImmediate = false) = 0;
+    virtual void TransitionBarrier(const Arc< Texture >& pTexture, eTextureLayout newState, u32 subresource = ALL_SUBRESOURCES, bool flushImmediate = false) = 0;
+    virtual void UAVBarrier(const Arc< Buffer >& pBuffer, bool bFlushImmediate) = 0;
 
     // === Render Target ===
     virtual void BeginRenderPass(Arc< RenderTarget > renderTarget) = 0;
@@ -80,7 +83,8 @@ public:
     virtual void DrawIndexed(u32 indexCount, u32 instanceCount = 1, u32 firstIndex = 0, i32 vertexOffset = 0, u32 firstInstance = 0) = 0;
     //virtual void DrawIndirect(Arc< Buffer > argumentBuffer, u32 argumentBufferOffset = 0) = 0;
     //virtual void DrawIndexedIndirect(Arc< Buffer > argumentBuffer, u32 argumentBufferOffset = 0) = 0;
-    virtual void DrawScene(const SceneResource& sceneResource) = 0;
+    virtual void DrawMeshTasksIndirect(const Arc< Buffer >& pArgumentBuffer, u64 offsetInBytes, u32 numDraws, u32 strideInBytes) = 0;
+    virtual void DrawMeshTasksIndirectCount(const Arc< Buffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< Buffer >& pCountBuffer, u32 numDraws, u32 strideInBytes) = 0;
 
     // === Compute Commands ===
     virtual void Dispatch(u32 threadGroupCountX, u32 threadGroupCountY, u32 threadGroupCountZ) = 0;

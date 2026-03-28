@@ -76,6 +76,11 @@ float atan2Fast(float y, float x)
     return t3;
 }
 
+uint roundUpAndDivide(uint value, uint alignment)
+{
+    return (value + alignment - 1) / alignment;
+}
+
 float3 ReconstructWorldPos(float2 uv, float depth, float4x4 mViewProjInv)
 {
     float4 posCLIP  = float4(uv.x * 2.0 - 1.0, uv.y * -2.0 + 1.0, depth, 1.0);

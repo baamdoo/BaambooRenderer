@@ -2,6 +2,7 @@
 #include "VkBufferAllocator.h"
 #include "VkCommandQueue.h"
 #include "VkCommandContext.h"
+#include "RenderResource/VkBuffer.h"
 #include "Utils/Math.hpp"
 
 namespace vk
@@ -66,103 +67,78 @@ DynamicBufferAllocator::Page* DynamicBufferAllocator::RequestPage()
 
 DynamicBufferAllocator::Page::Page(VkRenderDevice& rd, VkDeviceSize sizeInBytes)
 	: m_RenderDevice(rd)
-	, m_BaseCpuHandle(nullptr)
-	, m_Offset(0)
-	, m_PageSize(sizeInBytes)
+	, m_OffsetInBytes(0)
 {
-	VkBufferCreateInfo bufferInfo = {};
-	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	bufferInfo.size = sizeInBytes;
-	bufferInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-
-	VmaAllocationCreateInfo vmaInfo = {};
-	vmaInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
-	vmaInfo.usage = VMA_MEMORY_USAGE_AUTO;
-
-	VmaAllocationInfo vmaAllocationInfo = {};
-	VK_CHECK(vmaCreateBuffer(m_RenderDevice.vmaAllocator(), &bufferInfo, &vmaInfo, &m_vkBuffer, &m_vmaAllocation, &vmaAllocationInfo));
-
-	m_BaseCpuHandle = vmaAllocationInfo.pMappedData;
-	//VK_CHECK(vmaMapMemory(m_RenderDevice.vmaAllocator(), m_vmaAllocation, &m_BaseCpuHandle));
+	m_pBuffer = VulkanUniformBuffer::Create(m_RenderDevice, "AllocatedBuffer_Dynamic", sizeInBytes, VK_BUFFER_USAGE_2_TRANSFER_SRC_BIT);
 }
 
 DynamicBufferAllocator::Page::~Page()
 {
-	//vmaUnmapMemory(m_RenderDevice.vmaAllocator(), m_vmaAllocation);
-	vmaDestroyBuffer(m_RenderDevice.vmaAllocator(), m_vkBuffer, m_vmaAllocation);
 }
 
 DynamicBufferAllocator::Allocation DynamicBufferAllocator::Page::Allocate(VkDeviceSize sizeInBytes, VkDeviceSize alignment)
 {
 	VkDeviceSize alignedSize = baamboo::math::AlignUp(sizeInBytes, alignment);
 
-	m_Offset = baamboo::math::AlignUp(m_Offset, alignment);
-
 	Allocation allocation = {};
-	allocation.vkBuffer  = m_vkBuffer;
-	allocation.offset    = m_Offset;
-	allocation.size      = alignedSize;
-	allocation.cpuHandle = static_cast<u8*>(m_BaseCpuHandle) + m_Offset;
+	allocation.pBuffer       = m_pBuffer;
+	allocation.offsetInBytes = m_OffsetInBytes;
+	allocation.cpuHandle     = static_cast<u8*>(m_pBuffer->MappedMemory()) + m_OffsetInBytes;
 
-	m_Offset += alignedSize;
+	m_OffsetInBytes += alignedSize;
 
 	return allocation;
 }
 
 void DynamicBufferAllocator::Page::Reset()
 {
-	m_Offset = 0;
-	m_bActivated = false;
+	m_OffsetInBytes = 0;
+	m_bActivated    = false;
 }
 
 bool DynamicBufferAllocator::Page::HasSpace(VkDeviceSize sizeInBytes, VkDeviceSize alignment) const
 {
-	VkDeviceSize alignedSize = baamboo::math::AlignUp(sizeInBytes, alignment);
-	VkDeviceSize alignedOffset = baamboo::math::AlignUp(sizeInBytes, m_Offset);
+	VkDeviceSize alignedSize   = baamboo::math::AlignUp(sizeInBytes, alignment);
+	VkDeviceSize alignedOffset = baamboo::math::AlignUp(sizeInBytes, m_OffsetInBytes);
 
-	return alignedOffset + alignedSize <= m_PageSize;
+	return alignedOffset + alignedSize <= m_pBuffer->SizeInBytes();
 }
 
 
 //-------------------------------------------------------------------------
 // Static-Buffer Allocator
 //-------------------------------------------------------------------------
-StaticBufferAllocator::StaticBufferAllocator(VkRenderDevice& rd, VkDeviceSize bufferSize, VkBufferUsageFlags usage)
+StaticBufferAllocator::StaticBufferAllocator(VkRenderDevice& rd, VkDeviceSize bufferSize, VkBufferUsageFlags2 usage)
 	: m_RenderDevice(rd)
 {
-	m_Alignment = m_RenderDevice.DeviceProps().limits.minStorageBufferOffsetAlignment;
+	m_Alignment  = m_RenderDevice.DeviceProps().limits.minStorageBufferOffsetAlignment;
 	m_UsageFlags = usage |
-		           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-		           VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-		           VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-		           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+		           VK_BUFFER_USAGE_2_TRANSFER_DST_BIT |
+		           VK_BUFFER_USAGE_2_TRANSFER_SRC_BIT |
+		           VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
 
 	Resize(std::min(bufferSize, m_RenderDevice.DeviceMaintenance3Props().maxMemoryAllocationSize));
 }
 
 StaticBufferAllocator::~StaticBufferAllocator()
 {
-	vmaDestroyBuffer(m_RenderDevice.vmaAllocator(), m_vkBuffer, m_vmaAllocation);
 }
 
 StaticBufferAllocator::Allocation StaticBufferAllocator::Allocate(u32 numElements, u64 elementSizeInBytes)
 {
 	auto sizeInBytes = numElements * elementSizeInBytes;
 
-	//VkDeviceSize alignedSize = baamboo::math::AlignUp(sizeInBytes, m_Alignment);
-	//m_Offset = baamboo::math::AlignUp(m_Offset, m_Alignment);
-
-	if (m_Offset + sizeInBytes > m_Size)
+	if (m_Offset + sizeInBytes > m_pAllocatedBuffer->SizeInBytes())
 	{
 		VkDeviceSize newSize = (m_Offset + sizeInBytes) * 2;
 		Resize(newSize);
 	}
 
 	Allocation allocation = {};
-	allocation.vkBuffer   = m_vkBuffer;
-	allocation.offset     = (u32)(m_Offset / elementSizeInBytes);
-	allocation.size       = sizeInBytes;
-	allocation.gpuHandle  = m_BaseGpuHandle + m_Offset;
+	allocation.pBuffer     = m_pAllocatedBuffer;
+	allocation.offset      = (u32)(m_Offset / elementSizeInBytes);
+	allocation.sizeInBytes = sizeInBytes;
+	allocation.gpuHandle   = m_pAllocatedBuffer->DeviceAddress() + m_Offset;
 
 	m_Offset += sizeInBytes;
 
@@ -177,7 +153,7 @@ void StaticBufferAllocator::Reset()
 VkDescriptorBufferInfo StaticBufferAllocator::GetDescriptorInfo(u64 offset) const
 {
 	VkDescriptorBufferInfo descriptorInfo = {};
-	descriptorInfo.buffer = vkBuffer();
+	descriptorInfo.buffer = m_pAllocatedBuffer->vkBuffer();
 	descriptorInfo.offset = offset;
 	descriptorInfo.range  = GetAllocatedSize();
 	return descriptorInfo;
@@ -185,42 +161,18 @@ VkDescriptorBufferInfo StaticBufferAllocator::GetDescriptorInfo(u64 offset) cons
 
 void StaticBufferAllocator::Resize(VkDeviceSize sizeInBytes)
 {
-	VkBufferCreateInfo bufferInfo = {};
-	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	bufferInfo.size  = sizeInBytes;
-	bufferInfo.usage = m_UsageFlags;
-
-	VmaAllocationCreateInfo vmaInfo = {};
-	vmaInfo.usage = VMA_MEMORY_USAGE_AUTO;
-
-	VkBuffer          vkBuffer       = VK_NULL_HANDLE;
-	VmaAllocation     vmaAllocation  = VK_NULL_HANDLE;
-	VmaAllocationInfo allocationInfo = {};
-	VK_CHECK(vmaCreateBuffer(m_RenderDevice.vmaAllocator(), &bufferInfo, &vmaInfo, &vkBuffer, &vmaAllocation, &allocationInfo));
-
-	VkBufferDeviceAddressInfo addressInfo = {};
-	addressInfo.sType  = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-	addressInfo.buffer = vkBuffer;
-	VkDeviceAddress baseGpuHandle = vkGetBufferDeviceAddress(m_RenderDevice.vkDevice(), &addressInfo);
-
-	if (m_Offset > 0 && m_vkBuffer != VK_NULL_HANDLE) 
+	if (m_pAllocatedBuffer == nullptr)
 	{
-		auto pContext = m_RenderDevice.BeginCommand(eCommandType::Transfer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
-		pContext->CopyBuffer(vkBuffer, m_vkBuffer, m_Offset, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT);
-		pContext->Close();
-		m_RenderDevice.ExecuteCommand(pContext);
+		if (m_UsageFlags & VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT)
+			m_pAllocatedBuffer = VulkanStorageBuffer::Create(m_RenderDevice, "AllocatedBuffer_Static", sizeInBytes, m_UsageFlags);
+		else if (m_UsageFlags & VK_BUFFER_USAGE_2_UNIFORM_BUFFER_BIT)
+			m_pAllocatedBuffer = VulkanUniformBuffer::Create(m_RenderDevice, "AllocatedBuffer_Static", sizeInBytes, m_UsageFlags);
+		else if (m_UsageFlags & VK_BUFFER_USAGE_2_INDEX_BUFFER_BIT)
+			m_pAllocatedBuffer = VulkanIndexBuffer::Create(m_RenderDevice, "AllocatedBuffer_Static", (u32)(sizeInBytes / sizeof(u32)), VK_INDEX_TYPE_UINT32);
+		return;
 	}
 
-	if (m_vkBuffer != VK_NULL_HANDLE) 
-	{
-		vmaDestroyBuffer(m_RenderDevice.vmaAllocator(), m_vkBuffer, m_vmaAllocation);
-	}
-
-	m_vkBuffer       = vkBuffer;
-	m_vmaAllocation  = vmaAllocation;
-	m_AllocationInfo = allocationInfo;
-	m_BaseGpuHandle  = baseGpuHandle;
-	m_Size           = sizeInBytes;
+	m_pAllocatedBuffer->Resize(sizeInBytes);
 }
 
 } // namespace vk

@@ -64,8 +64,7 @@ Dx12RenderDevice::Dx12RenderDevice(const render::DeviceSettings& ds, bool bEnabl
 				__debugbreak();
 			}
 		}
-	}
-	{
+
 		D3D12_FEATURE_DATA_D3D12_OPTIONS7 options7 = {};
 		if (SUCCEEDED(m_d3d12Device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS7, &options7, sizeof(options7))))
 		{
@@ -79,6 +78,16 @@ Dx12RenderDevice::Dx12RenderDevice(const render::DeviceSettings& ds, bool bEnabl
 				m_Settings.bMeshShader = false;
 
 				printf("D3D12MeshShader doesn't support!\n");
+				__debugbreak();
+			}
+		}
+
+		D3D12_FEATURE_DATA_D3D12_OPTIONS12 options12 = {};
+		if (SUCCEEDED(m_d3d12Device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS12, &options12, sizeof(options12))))
+		{
+			if (!options12.EnhancedBarriersSupported)
+			{
+				printf("D3D12EnhancedBarriers doesn't support!\n");
 				__debugbreak();
 			}
 		}
@@ -176,10 +185,9 @@ Box< render::RaytracingPipeline > Dx12RenderDevice::CreateRaytracingPipeline(con
 
 u32 Dx12RenderDevice::Swap()
 {
-	u8 nextContextIndex = (m_ContextIndex + 1) % NUM_FRAMES_IN_FLIGHT;
-	m_ContextIndex = nextContextIndex;
+	m_ContextIndex = (m_ContextIndex + 1) % MAX_FRAMES_IN_FLIGHT;
 
-	return nextContextIndex;
+	return m_ContextIndex;
 }
 
 Box< render::SceneResource > Dx12RenderDevice::CreateSceneResource()
@@ -217,14 +225,20 @@ void Dx12RenderDevice::UpdateSubresources(Dx12Resource* pResource, u32 firstSubr
 	COM_RELEASE(d3d12UploadBuffer);
 }
 
-ID3D12Resource* Dx12RenderDevice::CreateRHIResource(const D3D12_RESOURCE_DESC& desc, D3D12_RESOURCE_STATES initialState, D3D12_HEAP_PROPERTIES heapProperties, const D3D12_CLEAR_VALUE* pClearValue)
+ID3D12Resource2* Dx12RenderDevice::CreateRHIResource(const D3D12_RESOURCE_DESC1& desc, D3D12_BARRIER_LAYOUT initialLayout, D3D12_HEAP_PROPERTIES heapProperties, const D3D12_CLEAR_VALUE* pClearValue)
 {
-	ID3D12Resource* d3d12Resource = nullptr;
+	ID3D12Resource2* d3d12Resource = nullptr;
 
-	ThrowIfFailed(m_d3d12Device->CreateCommittedResource(
-		&heapProperties, D3D12_HEAP_FLAG_NONE,
-		&desc, initialState,
-		pClearValue, IID_PPV_ARGS(&d3d12Resource)));
+	ThrowIfFailed(m_d3d12Device->CreateCommittedResource3(
+		&heapProperties,
+		D3D12_HEAP_FLAG_NONE,
+		&desc,
+		initialLayout,
+		pClearValue,
+		nullptr,
+		0, nullptr,
+		IID_PPV_ARGS(&d3d12Resource))
+	);
 
 	return d3d12Resource;
 }

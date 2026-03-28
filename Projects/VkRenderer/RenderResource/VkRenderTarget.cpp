@@ -229,29 +229,13 @@ void VulkanRenderTarget::InvalidateImageLayout()
 
 		if (i == eAttachmentPoint::DepthStencil)
 		{
-			pTex->SetState(
-				{
-					.access = VK_ACCESS_SHADER_READ_BIT,
-					.stage  = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-					.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-				});
+			pTex->SetState(BarrierStates::PixelShaderReadOnly);
 		}
 		else
 		{
 			pTex->SetState(
-				pTex->Desc().usage & VK_IMAGE_USAGE_SAMPLED_BIT ?
-				VulkanTexture::State
-				{
-					.access = VK_ACCESS_SHADER_READ_BIT,
-					.stage  = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-					.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-				} :
-				VulkanTexture::State
-				{
-					.access = VK_ACCESS_TRANSFER_READ_BIT,
-					.stage  = VK_PIPELINE_STAGE_TRANSFER_BIT,
-					.layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
-				});
+				pTex->Desc().usage & VK_IMAGE_USAGE_SAMPLED_BIT ? BarrierStates::PixelShaderReadOnly : BarrierStates::TransferSource
+			);
 		}
 	}
 }

@@ -6,18 +6,6 @@
 #define _GLSL
 #include "../Common.bsh"
 
-struct IndirectDrawData
-{
-	uint transformID;
-	uint materialID;
-
-	uint vOffset;
-    uint mCount;
-	uint mOffset;
-	uint mvOffset;
-	uint mtOffset;
-};
-
 #ifdef _CAMERA
 layout(set = DESCRIPTORSET_COMMON, binding = 0) uniform Camera 
 { 
@@ -56,24 +44,38 @@ layout(set = DESCRIPTORSET_COMMON, binding = 4) readonly buffer MeshletTriangleB
     uint meshletTriangles[];
 } g_MeshletTriangleBuffer;
 
-layout(set = DESCRIPTORSET_COMMON, binding = 5) readonly buffer IndirectDrawBuffer 
+layout(set = DESCRIPTORSET_COMMON, binding = 5) readonly buffer MeshBuffer 
 {
-    IndirectDrawData draws[];
-} g_IndirectBuffer;
+    MeshData g_Meshes[];
+};
 
-layout(set = DESCRIPTORSET_COMMON, binding = 6) readonly buffer Transform 
+layout(set = DESCRIPTORSET_COMMON, binding = 6) readonly buffer InstanceBuffer 
+{
+    InstanceData g_Instances[];
+};
+#endif // _MESH
+
+#ifdef _CULL
+layout(set = DESCRIPTORSET_COMMON, binding = 7) uniform CullBuffer 
+{
+    CullData g_CullData;
+};
+#endif // _CULL
+
+#ifdef _TRANSFORM
+layout(set = DESCRIPTORSET_COMMON, binding = 8) readonly buffer Transform 
 {
     TransformData transforms[];
 } g_TransformBuffer;
 #endif // _MESH
 
 #ifdef _MATERIAL
-layout(set = DESCRIPTORSET_COMMON, binding = 7) readonly buffer MaterialBuffer 
+layout(set = DESCRIPTORSET_COMMON, binding = 9) readonly buffer MaterialBuffer 
 {
     MaterialData materials[];
 } g_MaterialBuffer;
 
-layout(set = DESCRIPTORSET_COMMON, binding = 100) uniform  sampler2D g_SceneTextures[];
+layout(set = DESCRIPTORSET_COMMON, binding = 100) uniform sampler2D g_SceneTextures[];
 #endif // _MATERIAL
 
 
@@ -140,14 +142,14 @@ struct CloudData
 };
 
 #ifdef _LIGHT
-layout(set = DESCRIPTORSET_COMMON, binding = 8) readonly buffer LightBuffer
+layout(set = DESCRIPTORSET_COMMON, binding = 10) readonly buffer LightBuffer
 {
 	LightingData lightingData;
 } g_LightBuffer;
 #endif // _LIGHT
 
 #ifdef _SCENEENVIRONMENT
-layout(set = DESCRIPTORSET_COMMON, binding = 9) uniform SceneEnvironmentData 
+layout(set = DESCRIPTORSET_COMMON, binding = 11) uniform SceneEnvironmentData 
 {
     AtmosphereData atmosphere;
     CloudData      cloud;

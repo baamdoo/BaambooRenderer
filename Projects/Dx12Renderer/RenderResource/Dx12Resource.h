@@ -1,4 +1,5 @@
 #pragma once
+#include "Dx12BarrierState.h"
 #include "RenderDevice/Dx12DescriptorAllocation.h"
 
 #include <filesystem>
@@ -21,16 +22,20 @@ enum class eResourceType
 struct ResourceState
 {
 	ResourceState() = default;
-	explicit ResourceState(D3D12_RESOURCE_STATES state)
+	explicit ResourceState(const BarrierState& state)
 		: State(state) {}
+	ResourceState(D3D12_BARRIER_SYNC sync, D3D12_BARRIER_ACCESS access)
+		: State(sync, access) {}
+	ResourceState(D3D12_BARRIER_SYNC sync, D3D12_BARRIER_ACCESS access, D3D12_BARRIER_LAYOUT layout)
+		: State(sync, access, layout) {}
 
 	// iterator
 	auto begin() const noexcept { return SubresourceStates.begin(); }
 	auto end() const noexcept { return SubresourceStates.end(); }
 
-	bool IsValid() const { return State != D3D12_RESOURCE_STATE_INVALID;}
+	bool IsValid() const { return State != BarrierStates::Undefined;}
 
-	void SetSubresourceState(D3D12_RESOURCE_STATES state, u32 subresource)
+	void SetSubresourceState(const BarrierState& state, u32 subresource)
 	{
 		if (subresource == D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES)
 		{
@@ -43,27 +48,32 @@ struct ResourceState
 		}
 	}
 
-	D3D12_RESOURCE_STATES GetSubresourceState(u32 subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES) const
+	[[nodiscard]]
+	const BarrierState& GetSubresourceState(u32 subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES) const
 	{
-		D3D12_RESOURCE_STATES state = State;
-
-		const auto iter = SubresourceStates.find(subresource);
-		if (iter != SubresourceStates.end())
-			state = iter->second;
-
-		return state;
+		if (subresource != D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES)
+		{
+			const auto iter = SubresourceStates.find(subresource);
+			if (iter != SubresourceStates.end())
+				return iter->second;
+		}
+		return State;
 	}
 
-	D3D12_RESOURCE_STATES                  State = D3D12_RESOURCE_STATE_INVALID;
-	std::map< u32, D3D12_RESOURCE_STATES > SubresourceStates;
+	[[nodiscard]]
+	bool HasDivergentSubresources() const { return !SubresourceStates.empty(); }
+
+	BarrierState State = {};
+
+	std::map< u32, BarrierState > SubresourceStates;
 };
 
 struct Dx12ResourceCreationInfo
 {
-	D3D12_RESOURCE_DESC   desc;
-	D3D12_HEAP_PROPERTIES heapProps    = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-	D3D12_HEAP_FLAGS      heapFlags    = D3D12_HEAP_FLAG_NONE;
-	D3D12_RESOURCE_STATES initialState = D3D12_RESOURCE_STATE_COMMON;
+	D3D12_RESOURCE_DESC1  desc;
+	D3D12_HEAP_PROPERTIES heapProps     = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+	D3D12_HEAP_FLAGS      heapFlags     = D3D12_HEAP_FLAG_NONE;
+	D3D12_BARRIER_LAYOUT  initialLayout = D3D12_BARRIER_LAYOUT_UNDEFINED;
 	D3D12_CLEAR_VALUE     clearValue;
 };
 
@@ -81,16 +91,23 @@ public:
 	inline bool IsValid() const { return m_d3d12Resource != nullptr; }
 
 	[[nodiscard]]
-	ID3D12Resource* GetD3D12Resource() const { return m_d3d12Resource; }
+	inline bool IsBuffer() const { return m_Type == eResourceType::Buffer; }
 	[[nodiscard]]
-	D3D12_RESOURCE_DESC Desc() const { return m_ResourceDesc; }
+	inline bool IsTexture() const { return m_Type == eResourceType::Texture; }
+	[[nodiscard]]
+	inline bool IsSampler() const { return m_Type == eResourceType::Sampler; }
+
+	[[nodiscard]]
+	ID3D12Resource2* GetD3D12Resource() const { return m_d3d12Resource; }
+	[[nodiscard]]
+	D3D12_RESOURCE_DESC1 Desc() const { return m_ResourceDesc; }
 	[[nodiscard]]
 	const ResourceState& GetCurrentState() const { return m_CurrentState; }
 	[[nodiscard]]
 	D3D12_GPU_VIRTUAL_ADDRESS GpuAddress() const { assert(GetD3D12Resource()); return GetD3D12Resource()->GetGPUVirtualAddress(); }
 
-	virtual void SetD3D12Resource(ID3D12Resource* d3d12Resource, D3D12_RESOURCE_STATES states);
-	void SetCurrentState(D3D12_RESOURCE_STATES state, u32 subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES) { m_CurrentState.SetSubresourceState(state, subresource); }
+	virtual void SetD3D12Resource(ID3D12Resource2* d3d12Resource, const BarrierState& initialState = BarrierStates::Common);
+	void SetCurrentState(const BarrierState& state, u32 subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES) { m_CurrentState.SetSubresourceState(state, subresource); }
 
 protected:
 	bool IsFormatSupported(D3D12_FORMAT_SUPPORT1 formatSupport) const;
@@ -104,11 +121,11 @@ private:
 protected:
 	Dx12RenderDevice& m_RenderDevice;
 
-	std::wstring  m_Name;
+	std::wstring  m_wName;
 	eResourceType m_Type = eResourceType::None;
 
-	ID3D12Resource*                   m_d3d12Resource = nullptr;
-	D3D12_RESOURCE_DESC               m_ResourceDesc = {};
+	ID3D12Resource2*                  m_d3d12Resource = nullptr;
+	D3D12_RESOURCE_DESC1              m_ResourceDesc = {};
 	D3D12_FEATURE_DATA_FORMAT_SUPPORT m_FormatSupport = {};
 
 	ResourceState m_CurrentState = {};

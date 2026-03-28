@@ -19,6 +19,7 @@ namespace vk
 
 static PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR;
 static PFN_vkCmdDrawMeshTasksIndirectEXT vkCmdDrawMeshTasksIndirectEXT;
+static PFN_vkCmdDrawMeshTasksIndirectCountEXT vkCmdDrawMeshTasksIndirectCountEXT;
 
 //-------------------------------------------------------------------------
 // Impl
@@ -32,6 +33,7 @@ public:
 	void Open(VkCommandBufferUsageFlags flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 	void Close();
 
+	void UploadData(const Arc< VulkanBuffer >& pDstBuffer, const void* pData, u32 numElements, u64 elemSizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes);
 	void CopyBuffer(
 		VkBuffer vkDstBuffer,
 		VkBuffer vkSrcBuffer,
@@ -41,36 +43,42 @@ public:
 		VkDeviceSize srcOffset = 0,
 		bool bFlushImmediate = true);
 	void CopyBuffer(
-		Arc< VulkanBuffer > pDstBuffer,
-		Arc< VulkanBuffer > pSrcBuffer,
+		const Arc< VulkanBuffer >& pDstBuffer,
+		const Arc< VulkanBuffer >& pSrcBuffer,
 		VkDeviceSize sizeInBytes,
 		VkPipelineStageFlags2 dstStageMask,
 		VkDeviceSize dstOffset = 0,
 		VkDeviceSize srcOffset = 0,
 		bool bFlushImmediate = true);
 	void CopyBuffer(
-		Arc< VulkanTexture > pDstTexture,
-		Arc< VulkanBuffer > pSrcBuffer,
+		const Arc< VulkanTexture >& pDstTexture,
+		const Arc< VulkanBuffer >& pSrcBuffer,
 		const std::vector< VkBufferImageCopy >& regions,
 		bool bAllSubresources = true);
-	void CopyTexture(Arc< VulkanTexture > pDstTexture, Arc< VulkanTexture > pSrcTexture);
-	void BlitTexture(Arc< VulkanTexture > pDstTexture, Arc< VulkanTexture > pSrcTexture);
-	void GenerateMips(Arc< VulkanTexture > pTexture);
+	void CopyTexture(const Arc< VulkanTexture >& pDstTexture, const Arc< VulkanTexture >& pSrcTexture);
+	void BlitTexture(const Arc< VulkanTexture >& pDstTexture, const Arc< VulkanTexture >& pSrcTexture);
+	void GenerateMips(const Arc< VulkanTexture >& pTexture);
 
-	// todo. unlock other types of barrier
+	void TransitionBarrier(
+		const Arc< VulkanBuffer >& pBuffer,
+		const BarrierState& newState,
+		u64 offsetInBytes,  
+		bool bFlushImmediate = false);
 	void TransitionImageLayout(
-		Arc< VulkanTexture > pTexture,
+		const Arc< VulkanTexture >& pTexture,
 		VkImageLayout newLayout,
 		VkImageAspectFlags aspectMask,
 		bool bFlushImmediate = true,
 		bool bFlatten = false);
 	void TransitionImageLayout(
-		Arc< VulkanTexture > pTexture,
+		const Arc< VulkanTexture >& pTexture,
 		VkImageLayout newLayout,
 		VkImageSubresourceRange subresourceRange,
 		bool bFlushImmediate = true,
 		bool bFlatten = false);
+	void UAVBarrier(const Arc< VulkanBuffer >& pBuffer, bool bFlushImmediate);
 
+	void FillBuffer(const Arc< VulkanBuffer >& pBuffer, u32 value, u64 offsetInBytes);
 	void ClearTexture(
 		Arc< VulkanTexture > pTexture,
 		VkImageLayout newLayout,
@@ -103,7 +111,8 @@ public:
 
 	void Draw(u32 vertexCount, u32 instanceCount = 1, u32 firstVertex = 0, u32 firstInstance = 0);
 	void DrawIndexed(u32 indexCount, u32 instanceCount = 1, u32 firstIndex = 0, i32 vertexOffset = 0, u32 firstInstance = 0);
-	void DrawScene(const VkSceneResource& sceneResource);
+	void DrawMeshTasksIndirect(const Arc< VulkanBuffer >& pArgumentBuffer, u64 offsetInBytes, u32 numDraws, u32 strideInBytes);
+	void DrawMeshTasksIndirectCount(const Arc< VulkanBuffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< VulkanBuffer >& pCountBuffer, u32 numDraws, u32 strideInBytes);
 	void Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ);
 
 	[[nodiscard]]
@@ -112,6 +121,7 @@ public:
 	bool IsFenceComplete(VkFence vkFence) const;
 	void WaitForFence(VkFence vkFence) const;
 	void Flush() const;
+	void FlushBarriers();
 
 	eCommandType GetCommandType() const { return m_CommandType; }
 
@@ -138,7 +148,6 @@ public:
 private:
 	void AddBarrier(const VkBufferMemoryBarrier2& barrier, bool bFlushImmediate);
 	void AddBarrier(const VkImageMemoryBarrier2& barrier, bool bFlushImmediate);
-	void FlushBarriers();
 
 	void BindShaderResources(VkPipelineBindPoint bindPoint, VkPipelineLayout vkPipelineLayout);
 
@@ -161,7 +170,8 @@ private:
 	VkCommandPool        m_vkBelongedPool = VK_NULL_HANDLE;
 	VkCommandBufferLevel m_Level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
-	DynamicBufferAllocator* m_pUniformBufferPool = nullptr;
+	Box< DynamicBufferAllocator > m_pUniformBufferPool;
+	Box< DynamicBufferAllocator > m_pStagingBufferPool;
 
 	VkFence     m_vkRenderCompleteFence      = VK_NULL_HANDLE;
 	VkSemaphore m_vkRenderCompleteSemaphore  = VK_NULL_HANDLE;
@@ -212,9 +222,10 @@ VkCommandContext::Impl::Impl(VkRenderDevice& rd, VkCommandContext& context, VkCo
 
 
 	// **
-	// Create dynamic buffer pools
+	// Create buffer pools
 	// **
-	m_pUniformBufferPool = new DynamicBufferAllocator(m_RenderDevice);
+	//m_pUniformBufferPool = MakeBox< DynamicBufferAllocator >(m_RenderDevice);
+	m_pStagingBufferPool = MakeBox< DynamicBufferAllocator >(m_RenderDevice);
 
 
 	// **
@@ -242,8 +253,6 @@ VkCommandContext::Impl::~Impl()
 {
 	m_Timer.Destroy(m_RenderDevice.vkDevice());
 
-	RELEASE(m_pUniformBufferPool);
-
 	vkDestroySemaphore(m_RenderDevice.vkDevice(), m_vkPresentCompleteSemaphore, nullptr);
 	vkDestroySemaphore(m_RenderDevice.vkDevice(), m_vkRenderCompleteSemaphore, nullptr);
 	vkDestroyFence(m_RenderDevice.vkDevice(), m_vkPresentCompleteFence, nullptr);
@@ -254,6 +263,8 @@ VkCommandContext::Impl::~Impl()
 
 void VkCommandContext::Impl::Open(VkCommandBufferUsageFlags flags)
 {
+	Flush();
+
 	m_LastFrameElapsedTime = m_Timer.GetElapsedTime(m_RenderDevice.vkDevice(), m_RenderDevice.DeviceProps());
 
 	m_CurrentContextIndex = m_RenderDevice.ContextIndex();
@@ -267,7 +278,8 @@ void VkCommandContext::Impl::Open(VkCommandBufferUsageFlags flags)
 	beginInfo.flags = flags;
 	VK_CHECK(vkBeginCommandBuffer(m_vkCommandBuffer, &beginInfo));
 
-	m_pUniformBufferPool->Reset();
+	//m_pUniformBufferPool->Reset();
+	m_pStagingBufferPool->Reset();
 	m_PushAllocations.clear();
 
 	m_pGraphicsPipeline = nullptr;
@@ -282,6 +294,16 @@ void VkCommandContext::Impl::Close()
 
 	FlushBarriers();
 	VK_CHECK(vkEndCommandBuffer(m_vkCommandBuffer));
+}
+
+void VkCommandContext::Impl::UploadData(const Arc< VulkanBuffer >& pDstBuffer, const void* pData, u32 numElements, u64 elemSizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes)
+{
+	u64 sizeInBytes = numElements * elemSizeInBytes;
+
+	auto allocation = m_pStagingBufferPool->Allocate(sizeInBytes);
+	memcpy(allocation.cpuHandle, pData, sizeInBytes);
+
+	CopyBuffer(pDstBuffer, allocation.pBuffer, sizeInBytes, dstStageMask, dstOffsetInBytes, allocation.offsetInBytes, false);
 }
 
 bool VkCommandContext::Impl::IsReady() const
@@ -317,7 +339,7 @@ void VkCommandContext::Impl::CopyBuffer(
 	VkBufferCopy copyRegion = {};
 	copyRegion.srcOffset = srcOffset;
 	copyRegion.dstOffset = dstOffset;
-	copyRegion.size = sizeInBytes;
+	copyRegion.size      = sizeInBytes;
 	vkCmdCopyBuffer(m_vkCommandBuffer, vkSrcBuffer, vkDstBuffer, 1, &copyRegion);
 
 	if (!m_bTransient)
@@ -325,21 +347,21 @@ void VkCommandContext::Impl::CopyBuffer(
 		VkBufferMemoryBarrier2 copyBarrier = {};
 		copyBarrier.sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
 		copyBarrier.srcStageMask        = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-		copyBarrier.srcAccessMask       = VK_ACCESS_TRANSFER_WRITE_BIT;
+		copyBarrier.srcAccessMask       = VK_ACCESS_2_TRANSFER_WRITE_BIT;
 		copyBarrier.dstStageMask        = dstStageMask;
-		copyBarrier.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT;
+		copyBarrier.dstAccessMask       = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
 		copyBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		copyBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		copyBarrier.buffer              = vkDstBuffer;
-		copyBarrier.offset              = 0;
+		copyBarrier.offset              = dstOffset;
 		copyBarrier.size                = sizeInBytes;
 		AddBarrier(copyBarrier, bFlushImmediate);
 	}
 }
 
 void VkCommandContext::Impl::CopyBuffer(
-	Arc< VulkanBuffer > pDstBuffer,
-	Arc< VulkanBuffer > pSrcBuffer,
+	const Arc< VulkanBuffer >& pDstBuffer,
+	const Arc< VulkanBuffer >& pSrcBuffer,
 	VkDeviceSize sizeInBytes,
 	VkPipelineStageFlags2 dstStageMask,
 	VkDeviceSize dstOffset,
@@ -355,9 +377,11 @@ void VkCommandContext::Impl::CopyBuffer(
 		srcOffset,
 		bFlushImmediate
 	);
+
+	pDstBuffer->SetState({ VK_ACCESS_2_SHADER_READ_BIT, dstStageMask });
 }
 
-void VkCommandContext::Impl::CopyBuffer(Arc< VulkanTexture > pDstTexture, Arc< VulkanBuffer > pSrcBuffer, const std::vector< VkBufferImageCopy >& regions, bool bAllSubresources)
+void VkCommandContext::Impl::CopyBuffer(const Arc< VulkanTexture >& pDstTexture, const Arc< VulkanBuffer >& pSrcBuffer, const std::vector< VkBufferImageCopy >& regions, bool bAllSubresources)
 {
 	VkImageSubresourceRange subresourceRange = {};
 	subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -375,7 +399,7 @@ void VkCommandContext::Impl::CopyBuffer(Arc< VulkanTexture > pDstTexture, Arc< V
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, static_cast<u32>(regions.size()), regions.data());
 }
 
-void VkCommandContext::Impl::CopyTexture(Arc< VulkanTexture > pDstTexture, Arc< VulkanTexture > pSrcTexture)
+void VkCommandContext::Impl::CopyTexture(const Arc< VulkanTexture >& pDstTexture, const Arc< VulkanTexture >& pSrcTexture)
 {
 	TransitionImageLayout(
 		pSrcTexture,
@@ -404,7 +428,7 @@ void VkCommandContext::Impl::CopyTexture(Arc< VulkanTexture > pDstTexture, Arc< 
 	vkCmdCopyImage(m_vkCommandBuffer, pSrcTexture->vkImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, pDstTexture->vkImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 }
 
-void VkCommandContext::Impl::BlitTexture(Arc< VulkanTexture > pDstTexture, Arc< VulkanTexture > pSrcTexture)
+void VkCommandContext::Impl::BlitTexture(const Arc< VulkanTexture >& pDstTexture, const Arc< VulkanTexture >& pSrcTexture)
 {
 	VkImageAspectFlags format =
 		pSrcTexture->Desc().format < VK_FORMAT_D16_UNORM ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
@@ -435,7 +459,7 @@ void VkCommandContext::Impl::BlitTexture(Arc< VulkanTexture > pDstTexture, Arc< 
 		VK_FILTER_LINEAR);
 }
 
-void VkCommandContext::Impl::GenerateMips(Arc< VulkanTexture > pTexture)
+void VkCommandContext::Impl::GenerateMips(const Arc< VulkanTexture >& pTexture)
 {
 	// Assume this function is executed right after copy (staging to texture) operation
 	const auto& desc = pTexture->Desc();
@@ -491,8 +515,39 @@ void VkCommandContext::Impl::GenerateMips(Arc< VulkanTexture > pTexture)
 		subresourceRange);
 }
 
+void VkCommandContext::Impl::TransitionBarrier(
+	const Arc< VulkanBuffer >& pBuffer, 
+	const BarrierState& newState,
+	u64 offsetInBytes, 
+	bool bFlushImmediate)
+{
+	if (!pBuffer)
+		return;
+
+	const auto& oldState = pBuffer->GetState().GetSubresourceState();
+	if (oldState == newState)
+		return;
+
+	VkBufferMemoryBarrier2 barrier = {};
+	barrier.sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+
+	barrier.srcStageMask  = oldState.stage;
+	barrier.dstStageMask  = newState.stage;
+	barrier.srcAccessMask = oldState.access;
+	barrier.dstAccessMask = newState.access;
+
+	barrier.buffer = pBuffer->vkBuffer();
+	barrier.offset = offsetInBytes;
+	barrier.size   = VK_WHOLE_SIZE;
+
+	pBuffer->SetState(newState);
+	AddBarrier(barrier, bFlushImmediate);
+}
+
 void VkCommandContext::Impl::TransitionImageLayout(
-	Arc< VulkanTexture > pTexture,
+	const Arc< VulkanTexture >& pTexture,
 	VkImageLayout newLayout,
 	VkImageAspectFlags aspectMask,
 	bool bFlushImmediate,
@@ -505,7 +560,7 @@ void VkCommandContext::Impl::TransitionImageLayout(
 }
 
 void VkCommandContext::Impl::TransitionImageLayout(
-	Arc< VulkanTexture > pTexture,
+	const Arc< VulkanTexture >& pTexture,
 	VkImageLayout newLayout,
 	VkImageSubresourceRange subresourceRange,
 	bool bFlushImmediate,
@@ -513,7 +568,7 @@ void VkCommandContext::Impl::TransitionImageLayout(
 {
 	assert(pTexture);
 
-	VulkanTexture::State oldState = pTexture->GetState().GetSubresourceState(subresourceRange);
+	BarrierState oldState = pTexture->GetState().GetSubresourceState(subresourceRange);
 	if (oldState.layout == newLayout)
 	{
 		return;
@@ -524,9 +579,7 @@ void VkCommandContext::Impl::TransitionImageLayout(
 	imageMemoryBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	imageMemoryBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	imageMemoryBarrier.srcAccessMask       = oldState.access;
-	imageMemoryBarrier.dstAccessMask       = 0;
 	imageMemoryBarrier.srcStageMask        = oldState.stage;
-	imageMemoryBarrier.dstStageMask        = 0;
 	imageMemoryBarrier.oldLayout           = oldState.layout;
 	imageMemoryBarrier.newLayout           = newLayout;
 	imageMemoryBarrier.image               = pTexture->vkImage();
@@ -538,37 +591,37 @@ void VkCommandContext::Impl::TransitionImageLayout(
 	case VK_IMAGE_LAYOUT_GENERAL:
 		// Assume this layout is used for write to image only
 		imageMemoryBarrier.dstStageMask  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-		imageMemoryBarrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+		imageMemoryBarrier.dstAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
 		break;
 
 	case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
 		// Make sure any writes to the image have been finished
 		imageMemoryBarrier.dstStageMask  = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-		imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		imageMemoryBarrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
 		break;
 
 	case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
 		// Make sure any reads from the image have been finished
 		imageMemoryBarrier.dstStageMask  = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-		imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		imageMemoryBarrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
 		break;
 
 	case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
 		// Make sure any writes to the color buffer have been finished
 		imageMemoryBarrier.dstStageMask  = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-		imageMemoryBarrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		imageMemoryBarrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
 		break;
 
 	case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
 		// Make sure any writes to depth/stencil buffer have been finished
 		imageMemoryBarrier.dstStageMask  = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
-		imageMemoryBarrier.dstAccessMask = imageMemoryBarrier.dstAccessMask | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+		imageMemoryBarrier.dstAccessMask = imageMemoryBarrier.dstAccessMask | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 		break;
 
 	case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
 		// Make sure any writes to the image have been finished
 		if (imageMemoryBarrier.srcStageMask & VK_PIPELINE_STAGE_2_HOST_BIT)
-			imageMemoryBarrier.srcAccessMask |= VK_ACCESS_HOST_WRITE_BIT;
+			imageMemoryBarrier.srcAccessMask |= VK_ACCESS_2_HOST_WRITE_BIT;
 		if ((imageMemoryBarrier.srcStageMask & VK_PIPELINE_STAGE_2_COPY_BIT) ||
 			(imageMemoryBarrier.srcStageMask & VK_PIPELINE_STAGE_2_BLIT_BIT) ||
 			(imageMemoryBarrier.srcStageMask & VK_PIPELINE_STAGE_2_RESOLVE_BIT) ||
@@ -576,32 +629,46 @@ void VkCommandContext::Impl::TransitionImageLayout(
 			(imageMemoryBarrier.srcStageMask & VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT) ||
 			(imageMemoryBarrier.srcStageMask & VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR) ||
 			(imageMemoryBarrier.srcStageMask & VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR))
-			imageMemoryBarrier.srcAccessMask |= VK_ACCESS_TRANSFER_WRITE_BIT;
+			imageMemoryBarrier.srcAccessMask |= VK_ACCESS_2_TRANSFER_WRITE_BIT;
 		imageMemoryBarrier.dstStageMask  = IsGraphicsContext() ?
 			VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT : VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-		imageMemoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		imageMemoryBarrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
 		break;
 	default:
 		imageMemoryBarrier.dstStageMask = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
 		break;
 	}
-	
-	VulkanTexture::State newState = 
-	{
-		.access = imageMemoryBarrier.dstAccessMask,
-		.stage  = imageMemoryBarrier.dstStageMask,
-		.layout = newLayout
-	};
-	if (pTexture)
-	{
-		const auto& stateBefore = pTexture->GetState();
-		if (stateBefore.GetSubresourceState(subresourceRange) != newState)
-		{
-			AddBarrier(imageMemoryBarrier, bFlushImmediate);
 
-			pTexture->SetState(newState, subresourceRange);
-		}
-	}
+	BarrierState newState(imageMemoryBarrier.dstAccessMask, imageMemoryBarrier.dstStageMask, newLayout);
+	pTexture->SetState(newState, subresourceRange);
+
+	AddBarrier(imageMemoryBarrier, bFlushImmediate);
+}
+
+void VkCommandContext::Impl::UAVBarrier(const Arc< VulkanBuffer >& pBuffer, bool bFlushImmediate)
+{
+	if (!pBuffer)
+		return;
+
+	VkBufferMemoryBarrier2 barrier = {};
+	barrier.sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+	barrier.srcStageMask        = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+	barrier.srcAccessMask       = VK_ACCESS_2_SHADER_WRITE_BIT;
+	barrier.dstStageMask        = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+	barrier.dstAccessMask       = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.buffer              = pBuffer->vkBuffer();
+	barrier.offset              = 0;
+	barrier.size                = VK_WHOLE_SIZE;
+	pBuffer->SetState({ barrier.dstAccessMask, barrier.dstStageMask });
+
+	AddBarrier(barrier, bFlushImmediate);
+}
+
+void VkCommandContext::Impl::FillBuffer(const Arc< VulkanBuffer >& pBuffer, u32 value, u64 offsetInBytes)
+{
+	vkCmdFillBuffer(m_vkCommandBuffer, pBuffer->vkBuffer(), offsetInBytes, pBuffer->SizeInBytes(), value);
 }
 
 void VkCommandContext::Impl::ClearTexture(
@@ -659,9 +726,9 @@ void VkCommandContext::Impl::SetDynamicUniformBuffer(u32 set, u32 binding, VkDev
 	memcpy(allocation.cpuHandle, pData, sizeInBytes);
 
 	VkDescriptorBufferInfo bufferInfo = {};
-	bufferInfo.buffer = allocation.vkBuffer;
-	bufferInfo.offset = allocation.offset;
-	bufferInfo.range  = allocation.size;
+	bufferInfo.buffer = allocation.pBuffer->vkBuffer();
+	bufferInfo.offset = allocation.offsetInBytes;
+	bufferInfo.range  = allocation.pBuffer->SizeInBytes();
 
 	m_PushAllocations[set].push_back({ binding, bufferInfo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER });
 }
@@ -898,24 +965,26 @@ void VkCommandContext::Impl::DrawIndexed(u32 indexCount, u32 instanceCount, u32 
 	vkCmdDrawIndexed(m_vkCommandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
-void VkCommandContext::Impl::DrawScene(const VkSceneResource& sceneResource)
+void VkCommandContext::Impl::DrawMeshTasksIndirect(const Arc< VulkanBuffer >& pArgumentBuffer, u64 offsetInBytes, u32 numDraws, u32 strideInBytes)
 {
-	vkCmdDrawMeshTasksIndirectEXT = (PFN_vkCmdDrawMeshTasksIndirectEXT)vkGetInstanceProcAddr(m_RenderDevice.vkInstance(), "vkCmdDrawMeshTasksIndirectEXT");
+	if (!vkCmdDrawMeshTasksIndirectEXT)
+		vkCmdDrawMeshTasksIndirectEXT = (PFN_vkCmdDrawMeshTasksIndirectEXT)vkGetInstanceProcAddr(m_RenderDevice.vkInstance(), "vkCmdDrawMeshTasksIndirectEXT");
 
 	FlushBarriers();
 	BindShaderResources(VK_PIPELINE_BIND_POINT_GRAPHICS, m_pGraphicsPipeline->vkPipelineLayout());
 
-	if (m_pGraphicsPipeline->IsMeshPipeline())
-	{
-		const auto& indirectInfo = sceneResource.GetIndirectBufferInfo();
-		vkCmdDrawMeshTasksIndirectEXT(m_vkCommandBuffer, indirectInfo.buffer, offsetof(IndirectCommandData, dispatch), sceneResource.NumMeshes(), sizeof(IndirectCommandData));
-	}
-	else
-	{
-		const auto& indirectInfo = sceneResource.GetIndirectBufferInfo();
-		vkCmdBindIndexBuffer(m_vkCommandBuffer, sceneResource.GetIndexBufferInfo().buffer, 0, VK_INDEX_TYPE_UINT32);
-		vkCmdDrawIndexedIndirect(m_vkCommandBuffer, indirectInfo.buffer, indirectInfo.offset, u32(indirectInfo.range / sizeof(IndirectDrawData)), sizeof(IndirectDrawData));
-	}
+	vkCmdDrawMeshTasksIndirectEXT(m_vkCommandBuffer, pArgumentBuffer->vkBuffer(), offsetInBytes, numDraws, strideInBytes);
+}
+
+void VkCommandContext::Impl::DrawMeshTasksIndirectCount(const Arc< VulkanBuffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< VulkanBuffer >& pCountBuffer, u32 numDraws, u32 strideInBytes)
+{
+	if (!vkCmdDrawMeshTasksIndirectCountEXT)
+		vkCmdDrawMeshTasksIndirectCountEXT = (PFN_vkCmdDrawMeshTasksIndirectCountEXT)vkGetInstanceProcAddr(m_RenderDevice.vkInstance(), "vkCmdDrawMeshTasksIndirectCountEXT");
+
+	FlushBarriers();
+	BindShaderResources(VK_PIPELINE_BIND_POINT_GRAPHICS, m_pGraphicsPipeline->vkPipelineLayout());
+
+	vkCmdDrawMeshTasksIndirectCountEXT(m_vkCommandBuffer, pArgumentBuffer->vkBuffer(), offsetInBytes, pCountBuffer->vkBuffer(), 0, numDraws, strideInBytes);
 }
 
 void VkCommandContext::Impl::Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ)
@@ -1028,6 +1097,11 @@ void VkCommandContext::Close()
 	m_Impl->Close();
 }
 
+void VkCommandContext::UploadData(const Arc< render::Buffer >& pDstBuffer, const void* pData, u32 numElements, u64 elemSizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes)
+{
+	m_Impl->UploadData(StaticCast<VulkanBuffer>(pDstBuffer), pData, numElements, elemSizeInBytes, dstStageMask, dstOffsetInBytes);
+}
+
 void VkCommandContext::CopyBuffer(
 	VkBuffer vkDstBuffer,
 	VkBuffer vkSrcBuffer,
@@ -1041,8 +1115,8 @@ void VkCommandContext::CopyBuffer(
 }
 
 void VkCommandContext::CopyBuffer(
-	Arc< VulkanBuffer > dstBuffer,
-	Arc< VulkanBuffer > srcBuffer,
+	const Arc< VulkanBuffer >& dstBuffer,
+	const Arc< VulkanBuffer >& srcBuffer,
 	VkDeviceSize sizeInBytes,
 	VkPipelineStageFlags2 dstStageMask,
 	VkDeviceSize dstOffset,
@@ -1053,24 +1127,24 @@ void VkCommandContext::CopyBuffer(
 }
 
 void VkCommandContext::CopyBuffer(
-	Arc< VulkanTexture > dstTexture,
-	Arc< VulkanBuffer > srcBuffer, 
+	const Arc< VulkanTexture >& dstTexture,
+	const Arc< VulkanBuffer >& srcBuffer, 
 	const std::vector< VkBufferImageCopy >& regions, 
 	bool bAllSubresources)
 {
 	m_Impl->CopyBuffer(dstTexture, srcBuffer, regions, bAllSubresources);
 }
 
-void VkCommandContext::CopyBuffer(Arc< render::Buffer > pDstBuffer, Arc< render::Buffer > pSrcBuffer, u64 offsetInBytes)
+void VkCommandContext::CopyBuffer(const Arc< render::Buffer >& pDstBuffer, const Arc< render::Buffer >& pSrcBuffer, u64 dstOffsetInBytes, u64 srcOffsetInBytes)
 {
 	auto rhiBufferDst = StaticCast<VulkanBuffer>(pDstBuffer);
 	auto rhiBufferSrc = StaticCast<VulkanBuffer>(pSrcBuffer);
 	assert(rhiBufferDst && rhiBufferSrc);
 
-	m_Impl->CopyBuffer(rhiBufferDst, rhiBufferSrc, (VkDeviceSize)pSrcBuffer->SizeInBytes(), VK_PIPELINE_STAGE_2_TRANSFER_BIT, offsetInBytes);
+	m_Impl->CopyBuffer(rhiBufferDst, rhiBufferSrc, (VkDeviceSize)pSrcBuffer->SizeInBytes(), VK_PIPELINE_STAGE_2_TRANSFER_BIT, dstOffsetInBytes, srcOffsetInBytes);
 }
 
-void VkCommandContext::CopyTexture(Arc< render::Texture > pDstTexture, Arc< render::Texture > pSrcTexture, u64 offsetInBytes)
+void VkCommandContext::CopyTexture(const Arc< render::Texture >& pDstTexture, const Arc< render::Texture >& pSrcTexture, u64 offsetInBytes)
 {
 	UNUSED(offsetInBytes);
 
@@ -1091,19 +1165,55 @@ void VkCommandContext::GenerateMips(Arc< VulkanTexture > texture)
 	m_Impl->GenerateMips(texture);
 }
 
-void VkCommandContext::TransitionBarrier(Arc< render::Texture > texture, render::eTextureLayout newState, u32 subresource, bool bFlushImmediate)
+void VkCommandContext::TransitionBufferToRead(const Arc< render::Buffer >& pBuffer, render::ePipelineStage dstStage, u64 offsetInBytes, bool bFlushImmediate)
+{
+	auto rhiResource = StaticCast<VulkanBuffer>(pBuffer);
+	assert(rhiResource);
+
+	auto vkDstStage = VK_PIPELINE_STAGE2(dstStage);
+
+	auto vkDstAccessFlags = VK_ACCESS_2_SHADER_READ_BIT;
+	if (vkDstStage == VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT)
+	{
+		vkDstAccessFlags = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+	}
+
+	BarrierState barrier = BarrierState(vkDstAccessFlags, vkDstStage);
+	m_Impl->TransitionBarrier(
+		rhiResource, 
+		barrier,
+		offsetInBytes, 
+		bFlushImmediate);
+}
+
+void VkCommandContext::TransitionBufferToWrite(const Arc< render::Buffer >& pBuffer, render::ePipelineStage dstStage, u64 offsetInBytes, bool bFlushImmediate)
+{
+	auto rhiResource = StaticCast<VulkanBuffer>(pBuffer);
+	assert(rhiResource);
+
+	auto vkDstStage = VK_PIPELINE_STAGE2(dstStage);
+
+	BarrierState barrier = BarrierState(VK_ACCESS_2_SHADER_WRITE_BIT, vkDstStage);
+	m_Impl->TransitionBarrier(
+		rhiResource,
+		barrier,
+		offsetInBytes, 
+		bFlushImmediate);
+}
+
+void VkCommandContext::TransitionBarrier(const Arc< render::Texture >& texture, render::eTextureLayout newState, u32 subresource, bool bFlushImmediate)
 {
 	UNUSED(subresource);
 
-	auto rhiTexture = StaticCast<VulkanTexture>(texture);
-	assert(rhiTexture);
+	auto rhiResource = StaticCast<VulkanTexture>(texture);
+	assert(rhiResource);
 
-	TransitionImageLayout(rhiTexture, VK_LAYOUT(newState), texture->IsDepthTexture() ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT, bFlushImmediate);
+	TransitionImageLayout(rhiResource, VK_LAYOUT(newState), texture->IsDepthTexture() ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT, bFlushImmediate);
 }
 
-void VkCommandContext::UAVBarrier(Arc<render::Buffer> pBuffer, bool bFlushImmediate)
+void VkCommandContext::UAVBarrier(const Arc< render::Buffer >& pBuffer, bool bFlushImmediate)
 {
-	// TODO
+	m_Impl->UAVBarrier(StaticCast<VulkanBuffer>(pBuffer), bFlushImmediate);
 }
 
 void VkCommandContext::TransitionImageLayout(
@@ -1126,13 +1236,18 @@ void VkCommandContext::TransitionImageLayout(
 	m_Impl->TransitionImageLayout(texture, newLayout, subresourceRange, bFlushImmediate, bFlatten);
 }
 
-void VkCommandContext::ClearTexture(Arc< render::Texture > pTexture, render::eTextureLayout newLayout)
+void VkCommandContext::ClearBuffer(const Arc< render::Buffer >& pBuffer, u32 value, u64 offsetInBytes)
+{
+	m_Impl->FillBuffer(StaticCast<VulkanBuffer>(pBuffer), value, offsetInBytes);
+}
+
+void VkCommandContext::ClearTexture(const Arc< render::Texture >& pTexture, render::eTextureLayout newLayout)
 {
 	ClearTexture(StaticCast<VulkanTexture>(pTexture), VK_LAYOUT(newLayout));
 }
 
 void VkCommandContext::ClearTexture(
-	Arc< VulkanTexture > texture,
+	const Arc< VulkanTexture >& texture,
 	VkImageLayout newLayout,
 	u32 baseMip, u32 numMips, u32 baseArray, u32 numArrays)
 {
@@ -1286,11 +1401,19 @@ void VkCommandContext::DrawIndexed(u32 indexCount, u32 instanceCount, u32 firstI
 	m_Impl->DrawIndexed(indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
-void VkCommandContext::DrawScene(const render::SceneResource& sceneResource)
+void VkCommandContext::DrawMeshTasksIndirect(const Arc< render::Buffer >& pArgumentBuffer, u64 offsetInBytes, u32 numDraws, u32 strideInBytes)
 {
-	const auto& rhiSceneResource = static_cast<const VkSceneResource&>(sceneResource);
+	const auto& rhiArgBuffer = StaticCast< VulkanBuffer >(pArgumentBuffer);
 
-	m_Impl->DrawScene(rhiSceneResource);
+	m_Impl->DrawMeshTasksIndirect(rhiArgBuffer, offsetInBytes, numDraws, strideInBytes);
+}
+
+void VkCommandContext::DrawMeshTasksIndirectCount(const Arc< render::Buffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< render::Buffer >& pCountBuffer, u32 numDraws, u32 strideInBytes)
+{
+	const auto& rhiArgBuffer   = StaticCast< VulkanBuffer >(pArgumentBuffer);
+	const auto& rhiCountBuffer = StaticCast< VulkanBuffer >(pCountBuffer);
+
+	m_Impl->DrawMeshTasksIndirectCount(rhiArgBuffer, offsetInBytes, rhiCountBuffer, numDraws, strideInBytes);
 }
 
 void VkCommandContext::Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ)
@@ -1321,6 +1444,11 @@ void VkCommandContext::WaitForFence(VkFence vkFence) const
 void VkCommandContext::Flush() const
 {
 	m_Impl->Flush();
+}
+
+void VkCommandContext::FlushBarriers() const
+{
+	m_Impl->FlushBarriers();
 }
 
 eCommandType VkCommandContext::GetCommandType() const

@@ -21,8 +21,8 @@ CommandQueue::CommandQueue(VkRenderDevice& rd, u32 queueIndex, eCommandType type
 	// Create command pool
 	// **
 	VkCommandPoolCreateInfo commandPoolInfo = {};
-	commandPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-	commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; /* reset command buffers individually */
+	commandPoolInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	commandPoolInfo.flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; /* reset command buffers individually */
 	commandPoolInfo.queueFamilyIndex = m_QueueIndex;
 	VK_CHECK(vkCreateCommandPool(m_RenderDevice.vkDevice(), &commandPoolInfo, nullptr, &m_vkCommandPool));
 }
@@ -53,13 +53,11 @@ Arc< VkCommandContext > CommandQueue::Allocate(VkCommandBufferUsageFlags flags, 
 			pContext = m_pAvailableContexts.front();
 			m_pAvailableContexts.pop();
 		}
-		else if (m_pContexts.size() == MAX_FRAMES_IN_FLIGHT) // limit the number of commands to avoid ImGui buffer recreate validation
-		{
-			pContext = m_pAvailableContexts.front();
-			m_pAvailableContexts.pop();
-
-			pContext->Flush();
-		}
+		//else if (m_pContexts.size() == MAX_FRAMES_IN_FLIGHT) // limit the number of commands to avoid ImGui buffer recreate validation
+		//{
+		//	pContext = m_pAvailableContexts.front();
+		//	m_pAvailableContexts.pop();
+		//}
 		else
 		{
 			pContext = MakeArc< VkCommandContext >(m_RenderDevice, m_vkCommandPool, m_CommandType);
@@ -93,7 +91,7 @@ void CommandQueue::ExecuteCommandBuffer(Arc< VkCommandContext > context)
 		auto vkCommandBuffer   = context->vkCommandBuffer();
 		auto vkSignalSemaphore = context->vkRenderCompleteSemaphore();
 
-		VkSubmitInfo submitInfo         = {};
+		VkSubmitInfo submitInfo = {};
 		submitInfo.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submitInfo.waitSemaphoreCount   = 1;
 		submitInfo.pWaitSemaphores      = &vkWaitSemaphore;
@@ -110,13 +108,13 @@ void CommandQueue::ExecuteCommandBuffer(Arc< VkCommandContext > context)
 	{
 		auto vkCommandBuffer = context->vkCommandBuffer();
 
-		VkSubmitInfo submitInfo       = {};
+		VkSubmitInfo submitInfo = {};
 		submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submitInfo.commandBufferCount = 1;
 		submitInfo.pCommandBuffers    = &vkCommandBuffer;
 		VK_CHECK(vkQueueSubmit(m_vkQueue, 1, &submitInfo, context->vkRenderCompleteFence()));
-		context->WaitForFence(context->vkRenderCompleteFence());
-		//VK_CHECK(vkQueueWaitIdle(m_vkQueue));
+		//context->WaitForFence(context->vkRenderCompleteFence());
+		VK_CHECK(vkQueueWaitIdle(m_vkQueue));
 
 		context.reset();
 	}

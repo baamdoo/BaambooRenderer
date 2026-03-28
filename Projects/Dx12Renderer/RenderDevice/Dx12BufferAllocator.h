@@ -1,9 +1,9 @@
 #pragma once
+#include "RenderResource/Dx12Buffer.h"
 
 namespace dx12
 {
 
-class Dx12StructuredBuffer;
 
 //-------------------------------------------------------------------------
 // Dynamic Buffer-Allocator
@@ -19,6 +19,9 @@ public:
 public:
     struct Allocation
     {
+        Arc< Dx12Buffer > pBuffer;
+        u64               offsetInBytes;
+
         u8*                       CPUHandle;
         D3D12_GPU_VIRTUAL_ADDRESS GPUHandle;
     };
@@ -44,13 +47,10 @@ private:
 
     private:
         Dx12RenderDevice& m_RenderDevice;
-        ID3D12Resource*   m_d3d12Resource = nullptr;
 
-        void*                     m_BaseCpuHandle = nullptr;
-        D3D12_GPU_VIRTUAL_ADDRESS m_BaseGpuHandle;
+		Arc< Dx12Buffer > m_pBuffer;
 
-        SIZE_T m_PageSize;
-        SIZE_T m_Offset;
+        SIZE_T m_OffsetInBytes = 0;
     };
 
     Page* RequestPage();
@@ -87,10 +87,10 @@ public:
     };
 
     [[nodiscard]]
-    Allocation Allocate(u64 numElements, u64 elementSizeInBytes = 0);
+    Allocation Allocate(u32 numElements, u64 elementSizeInBytes = 0);
 
     void Reset();
-    void Resize(u64 numElements);
+    void Resize(u32 numElements);
 
     [[nodiscard]]
     u64 GetElementSize() const { return m_ElementSizeInBytes; }
@@ -102,7 +102,7 @@ public:
     Arc< Dx12StructuredBuffer > GetBuffer() const { return m_pBuffer; }
 
 private:
-    void Resize(u64 elementSizeInBytes, u64 numElements);
+    void Resize(u64 elementSizeInBytes, u32 numElements);
 
 private:
     Dx12RenderDevice& m_RenderDevice;

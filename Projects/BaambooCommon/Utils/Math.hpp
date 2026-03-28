@@ -33,7 +33,7 @@ inline float4 Desaturate(float4 color, float desaturation)
 }
 
 template< typename T >
-inline T AlignUp(T size, T alignment)
+inline constexpr T AlignUp(T size, T alignment)
 {
 	return (size + alignment - 1) & ~(alignment - 1);
 }
@@ -47,6 +47,11 @@ template< typename T >
 inline constexpr T RoundUpAndDivide(T Value, size_t Alignment)
 {
 	return (T)((Value + Alignment - 1) / Alignment);
+}
+
+inline float4 NormalizePlane(const float4& plane)
+{
+	return plane / glm::length(float3(plane));
 }
 
 inline float3 SmoothStep(const float3& v1, const float3& v2, float t)

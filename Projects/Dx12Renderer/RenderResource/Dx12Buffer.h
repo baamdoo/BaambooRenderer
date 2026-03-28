@@ -10,7 +10,9 @@ enum class eBufferType
     Vertex,
     Index,
     Constant,
-    Structured
+    Structured,
+    Typed,
+    Raw,
 };
 
 class Dx12Buffer : public render::Buffer, public Dx12Resource
@@ -21,7 +23,7 @@ public:
 
     Dx12Buffer(Dx12RenderDevice& rd, const char* name);
     Dx12Buffer(Dx12RenderDevice& rd, const char* name, CreationInfo&& info, eBufferType type = eBufferType::None);
-    virtual ~Dx12Buffer() = default;
+    virtual ~Dx12Buffer();
 
     virtual void Resize(u64 sizeInBytes, bool bReset = false) override;
 
@@ -33,6 +35,20 @@ public:
     [[nodiscard]]
     u8* GetSystemMemoryAddress() const { return m_pSystemMemory; }
 
+    [[nodiscard]]
+    D3D12_CPU_DESCRIPTOR_HANDLE GetShaderResourceViewCPU() const { return m_SRVAllocation.GetCPUHandle(); }
+    [[nodiscard]]
+    D3D12_CPU_DESCRIPTOR_HANDLE GetUnorderedAccessViewCPU() const { return m_UAVAllocation.GetCPUHandle(); }
+
+    [[nodiscard]]
+    D3D12_GPU_DESCRIPTOR_HANDLE GetShaderResourceViewGPU() const { return m_SRVAllocation.GetGPUHandle(); }
+    [[nodiscard]]
+    D3D12_GPU_DESCRIPTOR_HANDLE GetUnorderedAccessViewGPU() const { return m_UAVAllocation.GetGPUHandle(); }
+
+protected:
+    virtual void CreateViews();
+    void ReleaseViews();
+
 protected:
     eBufferType m_Type = eBufferType::None;
 
@@ -40,6 +56,9 @@ protected:
     u64 m_ElementSize;
     u64 m_BufferSize;
     u8* m_pSystemMemory = nullptr;
+
+    DescriptorAllocation m_SRVAllocation = {};
+    DescriptorAllocation m_UAVAllocation = {};
 };
 
 class Dx12VertexBuffer final : public Dx12Buffer
@@ -87,7 +106,7 @@ public:
     void Upload(const void* pData, u64 sizeInBytes, u64 offsetInBytes = 0u);
 
     [[nodiscard]]
-    D3D12_CPU_DESCRIPTOR_HANDLE GetBufferView() const { return m_CBVAllocation.GetCPUHandle(); }
+    D3D12_CPU_DESCRIPTOR_HANDLE GetConstantBufferViewCPU() const { return m_CBVAllocation.GetCPUHandle(); }
 
 private:
     DescriptorAllocation m_CBVAllocation = {};
@@ -102,14 +121,8 @@ public:
     Dx12StructuredBuffer(Dx12RenderDevice& rd, const char* name, u64 elementSizeInBytes, u32 numElements, RenderFlags additionalUsage = 0);
     virtual ~Dx12StructuredBuffer();
 
-    D3D12_CPU_DESCRIPTOR_HANDLE GetShaderResourceView() const { return m_SRVAllocation.GetCPUHandle(); }
-    D3D12_CPU_DESCRIPTOR_HANDLE GetUnorderedAccessView() const { return m_UAVAllocation.GetCPUHandle(); }
     u32 GetShaderResourceHandle(u32 offset = 0) const { return m_SRVAllocation.Index(offset); }
     u32 GetUnorderedAccessHandle(u32 offset = 0) const { return m_UAVAllocation.Index(offset); }
-
-private:
-    DescriptorAllocation m_SRVAllocation = {};
-    DescriptorAllocation m_UAVAllocation = {};
 };
 
 }

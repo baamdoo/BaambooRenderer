@@ -54,36 +54,6 @@ constexpr u32 COMMON_DESCRIPTORSET_INDEX = 0u;
 
 
 //-------------------------------------------------------------------------
-// Shader Types
-//-------------------------------------------------------------------------
-struct InstanceData
-{
-	u32 vOffset;
-	u32 iOffset;
-	u32 materialID;
-	u32 transformID;
-};
-
-struct IndirectDrawData
-{
-	u32 transformID;
-	u32 materialID;
-
-	u32 vOffset;
-	u32 mCount;
-	u32 mOffset;
-	u32 mvOffset;
-	u32 mtOffset;
-};
-
-struct IndirectCommandData
-{
-	VkDrawIndexedIndirectCommand      draw;
-	VkDrawMeshTasksIndirectCommandEXT dispatch;
-};
-
-
-//-------------------------------------------------------------------------
 // Render Device
 //-------------------------------------------------------------------------
 #include "RenderDevice/VkRenderDevice.h"
@@ -313,6 +283,47 @@ static VkShaderStageFlagBits ConvertToVkShaderStage(render::eShaderStage stage)
 	}
 
 	return VkShaderStageFlagBits(0);
+}
+
+#define VK_PIPELINE_STAGE2(stage) ConvertToVkPipelineStage2(stage)
+static VkPipelineStageFlagBits2 ConvertToVkPipelineStage2(render::ePipelineStage stage)
+{
+	using namespace render;
+	switch (stage)
+	{
+	case ePipelineStage::None                 : return VK_PIPELINE_STAGE_2_NONE;
+	case ePipelineStage::TopPipe              : return VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+	case ePipelineStage::DrawIndirect         : return VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
+	case ePipelineStage::VertexInput          : return VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT;
+	case ePipelineStage::VertexShader         : return VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
+	case ePipelineStage::HullShader           : return VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT;
+	case ePipelineStage::DomainShader         : return VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT;
+	case ePipelineStage::GeometryShader       : return VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT;
+	case ePipelineStage::PixelShader          : return VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+	case ePipelineStage::EarlyFragmentTests   : return VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
+	case ePipelineStage::LateFragmentTests    : return VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+	case ePipelineStage::ColorAttachmentOutput: return VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+	case ePipelineStage::ComputeShader        : return VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+	case ePipelineStage::AllTransfer          : return VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
+	case ePipelineStage::BottomPipe           : return VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+	case ePipelineStage::Host                 : return VK_PIPELINE_STAGE_2_HOST_BIT;
+	case ePipelineStage::Copy                 : return VK_PIPELINE_STAGE_2_COPY_BIT;
+	case ePipelineStage::Resolve              : return VK_PIPELINE_STAGE_2_RESOLVE_BIT;
+	case ePipelineStage::Blit                 : return VK_PIPELINE_STAGE_2_BLIT_BIT;
+	case ePipelineStage::Clear                : return VK_PIPELINE_STAGE_2_CLEAR_BIT;
+
+	case ePipelineStage::ShadingRate               : return VK_PIPELINE_STAGE_2_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR;
+	case ePipelineStage::AccelerationStructureBuild: return VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
+	case ePipelineStage::RayTracingShader          : return VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR;
+
+	case ePipelineStage::TaskShader: return VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT;
+	case ePipelineStage::MeshShader: return VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT;
+
+	default:
+		assert(false && "Invalid pipeline stage bit!"); break;
+	}
+
+	return VK_PIPELINE_STAGE_2_NONE;
 }
 
 #define VK_COMPAREOP(op) ConvertToVkCompareOp(op)

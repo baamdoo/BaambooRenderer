@@ -34,7 +34,7 @@ private:
 	class Dx12RenderDevice* m_pRenderDevice = nullptr;
 	class Dx12SwapChain*    m_pSwapChain    = nullptr;
 
-	u64 m_FrameFenceValue[NUM_FRAMES_IN_FLIGHT] = {};
+	u64 m_FrameFenceValue[MAX_FRAMES_IN_FLIGHT] = {};
 
 	Box< class ImGuiModule > m_pImGuiModule;
 };

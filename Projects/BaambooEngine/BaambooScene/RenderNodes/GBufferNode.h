@@ -15,7 +15,12 @@ public:
 	virtual void Resize(u32 width, u32 height, u32 depth = 1) override;
 
 private:
-	Arc< render::RenderTarget >     m_pRenderTarget;
+	Arc< render::Buffer >       m_DrawIndexBuffer;
+	Arc< render::Buffer >       m_DrawCountBuffer;
+	Arc< render::Buffer >       m_CulledIndirectCommandBuffer;
+	Arc< render::RenderTarget > m_pRenderTarget;
+
+	Box< render::ComputePipeline >  m_pInstanceCullingPSO;
 	Box< render::GraphicsPipeline > m_pGBufferPSO;
 };
 

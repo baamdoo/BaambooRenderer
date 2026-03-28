@@ -5,20 +5,17 @@
 
 cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
-    uint g_TransformIndex;
-    uint g_MaterialIndex;
-
-    uint g_VertexOffset;
-    uint g_MeshletCount;
-    uint g_MeshletOffset;
-    uint g_MeshletVertexOffset;
-    uint g_MeshletTriangleOffset;
+    uint g_DrawID;
 };
 
 static StructuredBuffer< Vertex >  Vertices         = GetResource(g_Vertices.index);
 static StructuredBuffer< Meshlet > Meshlets         = GetResource(g_Meshlets.index);
 static StructuredBuffer< uint >    MeshletVertices  = GetResource(g_MeshletVertices.index);
 static StructuredBuffer< uint >    MeshletTriangles = GetResource(g_MeshletTriangles.index);
+
+static StructuredBuffer< MeshData >      Meshes     = GetResource(g_Meshes.index);
+static StructuredBuffer< InstanceData >  Instances  = GetResource(g_Instances.index);
+static StructuredBuffer< TransformData > Transforms = GetResource(g_Transforms.index);
 
 uint hash(uint a)
 {
@@ -51,10 +48,11 @@ void main(
     out vertices MSOutput vertices[64], 
     out indices uint3 triangles[126])
 {
-    StructuredBuffer< TransformData > Transforms = GetResource(g_Transforms.index);
-    TransformData transform = Transforms[g_TransformIndex];
+    InstanceData  instance  = Instances[g_DrawID];
+    TransformData transform = Transforms[instance.transformID];
+    MeshData      mesh      = Meshes[instance.meshID];
 
-    uint mi = Payload.meshletIndices[Gid.x];
+	uint mi = Payload.meshletIndices[Gid.x]; // mesh.mOffset is already baked into the meshlet indices by TaskShader
     uint ti = GTid.x;
 
     Meshlet meshlet = Meshlets[mi];
@@ -65,7 +63,7 @@ void main(
 
     for (uint i = ti; i < meshlet.vertexCount; i += 32)
     {
-        uint vi = g_VertexOffset + MeshletVertices[g_MeshletVertexOffset + meshlet.vertexOffset + i];
+        uint vi = mesh.vOffset + MeshletVertices[mesh.mvOffset + meshlet.vertexOffset + i];
 
         Vertex vertex = Vertices[vi];
 
@@ -77,7 +75,7 @@ void main(
         vertices[i].color    = float4(color, 1.0);
     }
 
-    uint baseTriByteOffset = g_MeshletTriangleOffset + meshlet.triangleOffset;
+    uint baseTriByteOffset = mesh.mtOffset + meshlet.triangleOffset;
     for (uint i = ti; i < meshlet.triangleCount; i += 32)
     {
         uint tPacked3 = MeshletTriangles[baseTriByteOffset + i];

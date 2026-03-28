@@ -1,16 +1,69 @@
 #pragma once
 #include "MathTypes.h"
 
+struct MeshData
+{
+    u32 vOffset;
+    u32 iOffset;
+
+    u32 mCount;
+    u32 mOffset;
+    u32 mvOffset;
+    u32 mtOffset;
+
+    float3 center;
+    float  radius;
+};
+
+struct InstanceData
+{
+    u32 meshID;
+    u32 transformID;
+    u32 materialID;
+};
+
+struct IndirectCommandData
+{
+    u32 drawID;
+
+    u32 groupCountX;
+    u32 groupCountY;
+    u32 groupCountZ;
+};
+
 struct TransformData
 {
-    mat4 mWorldToView;
-    mat4 mViewToWorld;
+    mat4 mLocalToWorld;
+    mat4 mWorldToLocal;
 };
 
 struct BoneTransformData
 {
     mat4 mBones[MAX_BONES];
 };
+
+
+struct CameraData
+{
+    mat4 mView;
+    mat4 mProj;
+    mat4 mViewProj;
+    mat4 mViewProjInv;
+    mat4 mViewProjUnjittered;
+    mat4 mViewProjUnjitteredPrev;
+
+    float3 position;
+    float  zNear;
+    float  zFar;
+    float3 padding0;
+};
+
+
+struct CullData
+{
+    float4 frustum[6];
+};
+
 
 struct MaterialData
 {
@@ -51,22 +104,6 @@ struct MaterialData
     u32 padding1;
 };
 static_assert(sizeof(MaterialData) == 128);
-
-
-struct CameraData
-{
-    mat4 mView;
-    mat4 mProj;
-    mat4 mViewProj;
-    mat4 mViewProjInv;
-    mat4 mViewProjUnjittered;
-    mat4 mViewProjUnjitteredPrev;
-
-    float3 position;
-    float  zNear;
-    float  zFar;
-    float3 padding0;
-};
 
 
 struct DirectionalLight

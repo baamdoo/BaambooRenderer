@@ -403,12 +403,17 @@ void ShadowMiss(inout ShadowPayload payload)
 [shader("anyhit")]
 void RadianceAnyHit(inout RadiancePayload payload, in BuiltInTriangleIntersectionAttributes attr)
 {
-    StructuredBuffer< InstanceData > InstanceBuffer = GetResource(g_Instances.index);
     uint instanceID = InstanceID();
-    InstanceData instance = InstanceBuffer[instanceID];
+
+    StructuredBuffer< MeshData >     Meshes    = GetResource(g_Meshes.index);
+    StructuredBuffer< InstanceData > Instances = GetResource(g_Instances.index);
+
+    MeshData     mesh     = Meshes[instanceID];
+    InstanceData instance = Instances[instanceID];
+
 
     uint primitiveIndex = PrimitiveIndex();
-    uint indexOffset    = instance.iOffset + (primitiveIndex * 3);
+    uint indexOffset    = mesh.iOffset + (primitiveIndex * 3);
 
     StructuredBuffer< uint > IndexBuffer = GetResource(g_Indices.index);
     uint i0 = IndexBuffer[indexOffset + 0];
@@ -416,9 +421,9 @@ void RadianceAnyHit(inout RadiancePayload payload, in BuiltInTriangleIntersectio
     uint i2 = IndexBuffer[indexOffset + 2];
 
     StructuredBuffer< Vertex > VertexBuffer = GetResource(g_Vertices.index);
-    Vertex v0 = VertexBuffer[instance.vOffset + i0];
-    Vertex v1 = VertexBuffer[instance.vOffset + i1];
-    Vertex v2 = VertexBuffer[instance.vOffset + i2];
+    Vertex v0 = VertexBuffer[mesh.vOffset + i0];
+    Vertex v1 = VertexBuffer[mesh.vOffset + i1];
+    Vertex v2 = VertexBuffer[mesh.vOffset + i2];
 
     StructuredBuffer< MaterialData > MaterialBuffer = GetResource(g_Materials.index);
     MaterialData material = MaterialBuffer[instance.materialID];
@@ -444,11 +449,16 @@ void RadianceAnyHit(inout RadiancePayload payload, in BuiltInTriangleIntersectio
 [shader("anyhit")]
 void ShadowAnyHit(inout ShadowPayload payload, in BuiltInTriangleIntersectionAttributes attr)
 {
+    uint instanceID = InstanceID();
+
+    StructuredBuffer< MeshData >     Meshes    = GetResource(g_Meshes.index);
     StructuredBuffer< InstanceData > Instances = GetResource(g_Instances.index);
-    InstanceData instance = Instances[InstanceID()];
+
+    MeshData     mesh     = Meshes[instanceID];
+    InstanceData instance = Instances[instanceID];
 
     uint primitiveIndex = PrimitiveIndex();
-    uint indexOffset    = instance.iOffset + (primitiveIndex * 3);
+    uint indexOffset    = mesh.iOffset + (primitiveIndex * 3);
 
     StructuredBuffer< uint > IndexBuffer = GetResource(g_Indices.index);
     uint i0 = IndexBuffer[indexOffset + 0];
@@ -456,9 +466,9 @@ void ShadowAnyHit(inout ShadowPayload payload, in BuiltInTriangleIntersectionAtt
     uint i2 = IndexBuffer[indexOffset + 2];
 
     StructuredBuffer< Vertex > VertexBuffer = GetResource(g_Vertices.index);
-    Vertex v0 = VertexBuffer[instance.vOffset + i0];
-    Vertex v1 = VertexBuffer[instance.vOffset + i1];
-    Vertex v2 = VertexBuffer[instance.vOffset + i2];
+    Vertex v0 = VertexBuffer[mesh.vOffset + i0];
+    Vertex v1 = VertexBuffer[mesh.vOffset + i1];
+    Vertex v2 = VertexBuffer[mesh.vOffset + i2];
 
     StructuredBuffer< MaterialData > MaterialBuffer = GetResource(g_Materials.index);
     MaterialData material = MaterialBuffer[instance.materialID];
@@ -505,12 +515,16 @@ void ShadowAnyHit(inout ShadowPayload payload, in BuiltInTriangleIntersectionAtt
 [shader("closesthit")]
 void ClosestHit(inout RadiancePayload payload, in BuiltInTriangleIntersectionAttributes attr)
 {
-    StructuredBuffer< InstanceData > InstanceBuffer = GetResource(g_Instances.index);
     uint instanceID = InstanceID();
-    InstanceData instance = InstanceBuffer[instanceID];
+
+    StructuredBuffer< MeshData >     Meshes    = GetResource(g_Meshes.index);
+    StructuredBuffer< InstanceData > Instances = GetResource(g_Instances.index);
+
+    MeshData     mesh     = Meshes[instanceID];
+    InstanceData instance = Instances[instanceID];
 
     uint primitiveIndex = PrimitiveIndex();
-    uint indexOffset    = instance.iOffset + (primitiveIndex * 3);
+    uint indexOffset    = mesh.iOffset + (primitiveIndex * 3);
 
     StructuredBuffer< uint > IndexBuffer = GetResource(g_Indices.index);
     uint i0 = IndexBuffer[indexOffset + 0];
@@ -518,9 +532,9 @@ void ClosestHit(inout RadiancePayload payload, in BuiltInTriangleIntersectionAtt
     uint i2 = IndexBuffer[indexOffset + 2];
 
     StructuredBuffer< Vertex > VertexBuffer = GetResource(g_Vertices.index);
-    Vertex v0 = VertexBuffer[instance.vOffset + i0];
-    Vertex v1 = VertexBuffer[instance.vOffset + i1];
-    Vertex v2 = VertexBuffer[instance.vOffset + i2];
+    Vertex v0 = VertexBuffer[mesh.vOffset + i0];
+    Vertex v1 = VertexBuffer[mesh.vOffset + i1];
+    Vertex v2 = VertexBuffer[mesh.vOffset + i2];
 
     StructuredBuffer< MaterialData > MaterialBuffer = GetResource(g_Materials.index);
     MaterialData material = MaterialBuffer[instance.materialID];

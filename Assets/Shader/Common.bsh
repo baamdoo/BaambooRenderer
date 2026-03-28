@@ -36,12 +36,22 @@ struct SkinnedVertex
     float weight0, weight1, weight2, weight3;
 };
 
-struct InstanceData
+
+//-------------------------------------------------------------------------
+// Mesh
+//-------------------------------------------------------------------------
+struct MeshData
 {
-	uint vOffset;
+    uint vOffset;
 	uint iOffset;
-	uint materialID;
-	uint transformID;
+
+    uint mCount;
+    uint mOffset;
+    uint mvOffset;
+    uint mtOffset;
+
+    float centerX, centerY, centerZ;
+    float radius;
 };
 
 struct Meshlet
@@ -57,6 +67,38 @@ struct Meshlet
     float coneCutoff;
 };
 
+
+//-------------------------------------------------------------------------
+// Instance
+//-------------------------------------------------------------------------
+struct InstanceData
+{
+	uint meshID;
+	uint transformID;
+	uint materialID;
+};
+
+struct IndirectCommandData
+{
+	uint drawID; // index of the instance to draw [DX12-only]
+
+    uint groupCountX;
+    uint groupCountY;
+    uint groupCountZ;
+};
+
+#ifdef _HLSL
+struct CullData
+{
+	float4 frustum[6];
+};
+
+#elif defined(_GLSL)
+struct CullData
+{
+	vec4 frustum[6];
+};
+#endif
 
 //-------------------------------------------------------------------------
 // Transforms

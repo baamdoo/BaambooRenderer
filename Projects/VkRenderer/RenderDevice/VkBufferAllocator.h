@@ -1,4 +1,5 @@
 #pragma once
+#include "RenderResource/VkBuffer.h"
 
 namespace vk
 {
@@ -13,10 +14,9 @@ class DynamicBufferAllocator
 public:
     struct Allocation
 	{
-        VkBuffer     vkBuffer;
-        VkDeviceSize offset;
-        VkDeviceSize size;
-        void*        cpuHandle;
+        Arc< VulkanBuffer > pBuffer;
+        u64                 offsetInBytes;
+        void*               cpuHandle;
     };
 
     DynamicBufferAllocator(VkRenderDevice& rd, VkDeviceSize pageSize = _1MB);
@@ -44,14 +44,10 @@ private:
     private:
         VkRenderDevice& m_RenderDevice;
 
-        VkBuffer      m_vkBuffer = nullptr;
-        VmaAllocation m_vmaAllocation = VK_NULL_HANDLE;
+        Arc< VulkanUniformBuffer > m_pBuffer;
 
-        void* m_BaseCpuHandle = nullptr;
-
-        u64  m_Offset = 0;
-        u64  m_PageSize = 0;
-        bool m_bActivated = false;
+        u64  m_OffsetInBytes = 0;
+        bool m_bActivated    = false;
     };
 
     Page* RequestPage();
@@ -76,23 +72,23 @@ private:
 class StaticBufferAllocator
 {
 public:
-    StaticBufferAllocator(VkRenderDevice& rd, VkDeviceSize bufferSize = _4MB, VkBufferUsageFlags usage = 0);
+    StaticBufferAllocator(VkRenderDevice& rd, VkDeviceSize bufferSize = _4MB, VkBufferUsageFlags2 usage = 0);
     ~StaticBufferAllocator();
 
     struct Allocation
     {
-        VkBuffer        vkBuffer;
-        u32             offset;
-        VkDeviceSize    size;
-        VkDeviceAddress gpuHandle;
+        Arc< VulkanBuffer > pBuffer;
+        u32                 offset;
+        u64                 sizeInBytes;
+        VkDeviceAddress     gpuHandle;
     };
 
     [[nodiscard]]
     Allocation Allocate(u32 numElements, u64 elementSizeInBytes);
     void Reset();
 
-    [[nodiscard]]
-    VkBuffer vkBuffer() const { return m_vkBuffer; }
+	[[nodiscard]]
+    const Arc< VulkanBuffer >& GetAllocationBuffer() const { return m_pAllocatedBuffer; }
     [[nodiscard]]
     u64 GetAllocatedSize() const { return m_Offset; }
 
@@ -105,17 +101,12 @@ private:
 private:
     VkRenderDevice& m_RenderDevice;
 
-    VkBuffer          m_vkBuffer = nullptr;
-    VmaAllocation     m_vmaAllocation = VK_NULL_HANDLE;
-    VmaAllocationInfo m_AllocationInfo;
+    Arc< VulkanBuffer > m_pAllocatedBuffer;
 
-    VkDeviceAddress m_BaseGpuHandle;
-
-    u64 m_Size      = 0;
     u64 m_Offset    = 0;
     u64 m_Alignment = 0;
 
-    VkBufferUsageFlags m_UsageFlags = 0;
+    VkBufferUsageFlags2 m_UsageFlags = 0;
 };
 
 } // namespace vk

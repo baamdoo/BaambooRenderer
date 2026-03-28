@@ -122,6 +122,14 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, VulkanShader::Sh
 		if (!buffers.empty())
 		{
 			std::string instanceName = compiler.get_name(resource.id);
+			if (instanceName.empty())
+			{
+				const spirv_cross::SPIRType& type = compiler.get_type(resource.base_type_id);
+				if (!type.member_types.empty())
+				{
+					instanceName = compiler.get_member_name(resource.base_type_id, 0);
+				}
+			}
 
 			const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
 			u32 set       = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
@@ -143,6 +151,14 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, VulkanShader::Sh
 		if (!buffers.empty())
 		{
 			std::string instanceName = compiler.get_name(resource.id);
+			if (instanceName.empty())
+			{
+				const spirv_cross::SPIRType& type = compiler.get_type(resource.base_type_id);
+				if (!type.member_types.empty())
+				{
+					instanceName = compiler.get_member_name(resource.base_type_id, 0);
+				}
+			}
 
 			const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
 			u32 set       = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
@@ -160,7 +176,15 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, VulkanShader::Sh
 	for (const auto& resource : resources.sampled_images)
 	{
 		std::string instanceName = compiler.get_name(resource.id);
-		
+		if (instanceName.empty())
+		{
+			const spirv_cross::SPIRType& type = compiler.get_type(resource.base_type_id);
+			if (!type.member_types.empty())
+			{
+				instanceName = compiler.get_member_name(resource.base_type_id, 0);
+			}
+		}
+
 		const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
 		u32 set       = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
 		u32 binding   = compiler.get_decoration(resource.id, spv::DecorationBinding);
@@ -176,6 +200,14 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, VulkanShader::Sh
 	for (const auto& resource : resources.storage_images)
 	{
 		std::string instanceName = compiler.get_name(resource.id);
+		if (instanceName.empty())
+		{
+			const spirv_cross::SPIRType& type = compiler.get_type(resource.base_type_id);
+			if (!type.member_types.empty())
+			{
+				instanceName = compiler.get_member_name(resource.base_type_id, 0);
+			}
+		}
 
 		const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
 		u32 set = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);

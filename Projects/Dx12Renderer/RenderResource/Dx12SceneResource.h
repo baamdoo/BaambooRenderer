@@ -28,7 +28,7 @@ struct Dx12SceneResource : public render::SceneResource
     Dx12SceneResource(Dx12RenderDevice& rd);
     ~Dx12SceneResource();
 
-    virtual void UpdateSceneResources(const SceneRenderView& sceneView) override;
+    virtual void UpdateSceneResources(const SceneRenderView& sceneView, render::CommandContext& context) override;
     virtual void BindSceneResources(render::CommandContext& context) override;
 
     BufferHandle GetOrUpdateVertex(u64 entity, const std::string& filepath, const void* pData, u32 count);
@@ -43,6 +43,8 @@ struct Dx12SceneResource : public render::SceneResource
     Arc< Dx12Texture > GetOrLoadTexture(u64 entity, const std::string& filepath);
     Arc< Dx12Texture > GetTexture(const std::string& filepath);
 
+    void SetCurrentContextIndex(u32 index) { m_ContextIndex = index; }
+
     const Arc< Dx12RootSignature >& GetSceneRootSignature() const { return m_pRootSignature; }
     ID3D12CommandSignature* GetSceneD3D12CommandSignature() const;
 
@@ -53,14 +55,11 @@ struct Dx12SceneResource : public render::SceneResource
     Arc< Dx12StructuredBuffer > GetMeshletBuffer() const;
 
     [[nodiscard]]
-    inline u32 NumMeshes() const { return m_NumMeshes; }
-
-    [[nodiscard]]
     virtual Arc< render::TopLevelAccelerationStructure > GetTLAS() const override;
 
 private:
     void ResetFrameBuffers();
-    void UpdateFrameBuffer(const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator& targetBuffer, D3D12_RESOURCE_STATES stateAfter);
+    void UpdateFrameBuffer(Dx12CommandContext& context, const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator& targetBuffer, const BarrierState& stateAfter);
     void BuildAccelerationStructures();
 
     Dx12RenderDevice& m_RenderDevice;
@@ -69,21 +68,31 @@ private:
     CommandSignature* m_pIndirectDrawSignature     = nullptr;
     CommandSignature* m_pIndirectDispatchSignature = nullptr;
 
-    Box< StaticBufferAllocator > m_pIndirectDataAllocator;
-    Box< StaticBufferAllocator > m_pTransformAllocator;
-    Box< StaticBufferAllocator > m_pMaterialAllocator;
-    Box< StaticBufferAllocator > m_pLightAllocator;
-
     Box< StaticBufferAllocator > m_pVertexAllocator;
     Box< StaticBufferAllocator > m_pIndexAllocator;
-    Box< StaticBufferAllocator > m_pInstanceAllocator;
     Box< StaticBufferAllocator > m_pMeshletAllocator;
     Box< StaticBufferAllocator > m_pMeshletVertexAllocator;
     Box< StaticBufferAllocator > m_pMeshletTriangleAllocator;
 
-    CameraData                m_CameraCache = {};
-    Arc< Dx12ConstantBuffer > m_pCameraBuffer;
-    Arc< Dx12ConstantBuffer > m_pSceneEnvironmentBuffer;
+    struct PerFrameData
+    {
+        Box< StaticBufferAllocator > pMeshDataAllocator;
+        Box< StaticBufferAllocator > pInstanceAllocator;
+
+        Box< StaticBufferAllocator > pTransformAllocator;
+        Box< StaticBufferAllocator > pMaterialAllocator;
+        Box< StaticBufferAllocator > pLightAllocator;
+
+        Arc< Dx12ConstantBuffer > pCameraBuffer;
+        Arc< Dx12ConstantBuffer > pCullBuffer;
+        Arc< Dx12ConstantBuffer > pSceneEnvironmentBuffer;
+
+        void Reset();
+    };
+    std::array< PerFrameData, MAX_FRAMES_IN_FLIGHT > m_FrameData;
+
+    CullData   m_CullData    = {};
+    CameraData m_CameraCache = {};
 
     std::unordered_map< std::string, BufferHandle > m_VertexCache;
     std::unordered_map< std::string, BufferHandle > m_IndexCache;
@@ -96,8 +105,6 @@ private:
     Arc< Dx12TopLevelAS > m_pTLAS;
     std::unordered_map< std::string, Arc< Dx12BottomLevelAS > > m_BLASCache;
     std::vector< Dx12BottomLevelAS* >                           m_PendingBLASBuilds;
-
-    u32 m_NumMeshes = 0;
 };
 
 } // namespace dx12

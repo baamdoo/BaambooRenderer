@@ -59,7 +59,7 @@ void VulkanBuffer::Resize(u64 sizeInBytes, bool bReset)
 	if (bufferInfo.usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
 	{
 		VkBufferDeviceAddressInfo addressInfo = {};
-		addressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+		addressInfo.sType  = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
 		addressInfo.buffer = vkNewBuffer;
 		deviceAddress = vkGetBufferDeviceAddress(m_RenderDevice.vkDevice(), &addressInfo);
 		assert(deviceAddress);
@@ -75,10 +75,10 @@ void VulkanBuffer::Resize(u64 sizeInBytes, bool bReset)
 		vmaDestroyBuffer(m_RenderDevice.vmaAllocator(), m_vkBuffer, m_vmaAllocation);
 	}
 
-	m_vkBuffer                 = vkNewBuffer;
-	m_vmaAllocation            = vmaAllocation;
-	m_AllocationInfo           = allocationInfo;
-	m_DeviceAddress            = deviceAddress;
+	m_vkBuffer       = vkNewBuffer;
+	m_vmaAllocation  = vmaAllocation;
+	m_AllocationInfo = allocationInfo;
+	m_DeviceAddress  = deviceAddress;
 
 	m_CreationInfo.count              = 1;
 	m_CreationInfo.elementSizeInBytes = sizeInBytes;
@@ -104,7 +104,7 @@ VulkanIndexBuffer::VulkanIndexBuffer(VkRenderDevice& rd, const char* name, u32 n
 			.count              = numIndices,
 			.elementSizeInBytes = GetIndexSize(),
 			.bMap               = false,
-			.bufferUsage        = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+			.bufferUsage        = VK_BUFFER_USAGE_2_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT | VK_BUFFER_USAGE_2_INDEX_BUFFER_BIT,
 		})
 {
 }
@@ -113,18 +113,18 @@ VulkanIndexBuffer::VulkanIndexBuffer(VkRenderDevice& rd, const char* name, u32 n
 //-------------------------------------------------------------------------
 // Uniform Buffer
 //-------------------------------------------------------------------------
-Arc< VulkanUniformBuffer > VulkanUniformBuffer::Create(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags usage)
+Arc< VulkanUniformBuffer > VulkanUniformBuffer::Create(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags2 usage)
 {
 	return MakeArc< VulkanUniformBuffer >(rd, name, sizeInBytes, usage);
 }
 
-VulkanUniformBuffer::VulkanUniformBuffer(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage)
+VulkanUniformBuffer::VulkanUniformBuffer(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags2 additionalUsage)
 	: Super(rd, name,
 		{
 			.count              = 1,
 			.elementSizeInBytes = sizeInBytes,
 			.bMap               = true,
-			.bufferUsage        = additionalUsage | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
+			.bufferUsage        = additionalUsage | VK_BUFFER_USAGE_2_UNIFORM_BUFFER_BIT
 		})
 {
 }
@@ -133,19 +133,19 @@ VulkanUniformBuffer::VulkanUniformBuffer(VkRenderDevice& rd, const char* name, u
 //-------------------------------------------------------------------------
 // Storage Buffer
 //-------------------------------------------------------------------------
-Arc< VulkanStorageBuffer > VulkanStorageBuffer::Create(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags usage)
+Arc< VulkanStorageBuffer > VulkanStorageBuffer::Create(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags2 usage)
 {
 	return MakeArc< VulkanStorageBuffer >(rd, name, sizeInBytes, usage);
 }
 
-VulkanStorageBuffer::VulkanStorageBuffer(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage)
+VulkanStorageBuffer::VulkanStorageBuffer(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags2 additionalUsage)
 	: Super(rd, name,
 		{
 			.count              = 1,
 			.elementSizeInBytes = sizeInBytes,
 			.bufferUsage        = additionalUsage
-			                    | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT 
-		                        | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
+			                    | VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT 
+		                        | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT
 		})
 {
 }

@@ -1,5 +1,6 @@
 #include "BaambooPch.h"
 #include "GBufferNode.h"
+
 #include "RenderCommon/RenderDevice.h"
 #include "RenderCommon/CommandContext.h"
 #include "BaambooScene/Scene.h"
@@ -11,6 +12,25 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 	: Super(rd, "GBufferPass")
 {
 	using namespace render;
+
+	m_DrawIndexBuffer = Buffer::Create(rd, "GBufferPass::DrawIndexBuffer",
+		{
+			.count              = _KB(8),
+			.elementSizeInBytes = sizeof(u32),
+			.bufferUsage        = eBufferUsage_Storage
+		});
+	m_DrawCountBuffer = Buffer::Create(rd, "GBufferPass::DrawCountBuffer",
+		{
+			.count              = 1,
+			.elementSizeInBytes = sizeof(u32),
+			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_Indirect | eBufferUsage_TransferDest | eBufferUsage_ShaderDeviceAddress,
+		});
+	m_CulledIndirectCommandBuffer = Buffer::Create(rd, "GBufferPass::CulledIndirectCommandBuffer",
+		{
+			.count              = _KB(8),
+			.elementSizeInBytes = sizeof(IndirectCommandData),
+			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_Indirect
+		});
 
 	auto pAttachment0 =
 		Texture::Create(
@@ -65,6 +85,15 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 		            .AttachTexture(eAttachmentPoint::Color3, pAttachment3)
 		            .AttachTexture(eAttachmentPoint::DepthStencil, pAttachmentDepth).Build();
 
+
+	auto pCS = Shader::Create(m_RenderDevice, "InstanceCullingCS",
+		{
+			.stage    = eShaderStage::Compute,
+			.filename = "InstanceCullingCS"
+		});
+	m_pInstanceCullingPSO = ComputePipeline::Create(m_RenderDevice, "InstanceCullingPSO");
+	m_pInstanceCullingPSO->SetComputeShader(pCS).Build();
+
 	m_pGBufferPSO = GraphicsPipeline::Create(m_RenderDevice, "GBufferPSO");
 	if (!m_RenderDevice.GetDeviceSettings().bMeshShader)
 	{
@@ -116,12 +145,41 @@ void GBufferNode::Apply(render::CommandContext& context, const SceneRenderView& 
 	using namespace render;
 
 	auto& rm = m_RenderDevice.GetResourceManager();
+	auto& sr = rm.GetSceneResource();
+
+	context.ClearBuffer(m_DrawCountBuffer, 0);
+	{
+		context.SetRenderPipeline(m_pInstanceCullingPSO.get());
+		
+		context.TransitionBufferToWrite(m_CulledIndirectCommandBuffer, ePipelineStage::ComputeShader);
+		context.TransitionBufferToWrite(m_DrawCountBuffer, ePipelineStage::ComputeShader);
+		context.TransitionBufferToWrite(m_DrawIndexBuffer, ePipelineStage::ComputeShader);
+
+		struct PushConstant
+		{
+			u32 numInstances;
+		} constant = { sr.NumInstances() };
+		context.SetComputeConstants(sizeof(constant), &constant);
+		context.SetComputeShaderResource("g_IndirectCommands", m_CulledIndirectCommandBuffer);
+		context.SetComputeShaderResource("g_DrawCount", m_DrawCountBuffer);
+		context.SetComputeShaderResource("g_DrawIDs", m_DrawIndexBuffer);
+
+		context.Dispatch1D< 64 >(sr.NumInstances());
+
+		context.TransitionBufferToRead(m_CulledIndirectCommandBuffer, ePipelineStage::DrawIndirect);
+		context.TransitionBufferToRead(m_DrawCountBuffer, ePipelineStage::DrawIndirect);
+		context.TransitionBufferToRead(m_DrawIndexBuffer, ePipelineStage::TaskShader, 0, true);
+	}
+	
 
 	context.BeginRenderPass(m_pRenderTarget);
 	{
 		context.SetRenderPipeline(m_pGBufferPSO.get());
 
-		context.DrawScene(rm.GetSceneResource());
+		context.SetGraphicsShaderResource("g_DrawIDs", m_DrawIndexBuffer);
+
+		context.DrawMeshTasksIndirectCount(m_CulledIndirectCommandBuffer, offsetof(IndirectCommandData, groupCountX), m_DrawCountBuffer, sr.NumInstances(), sizeof(IndirectCommandData));
+		//context.DrawMeshTasksIndirect(sr.GetArgumentBuffer(), offsetof(IndirectCommandData, groupCountX), sr.NumInstances(), sizeof(IndirectCommandData));
 	}
 	context.EndRenderPass();
 

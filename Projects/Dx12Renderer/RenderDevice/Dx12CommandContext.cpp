@@ -16,6 +16,7 @@
 #include "RenderResource/Dx12RenderTarget.h"
 #include "RenderResource/Dx12ShaderBindingTable.h"
 #include "RenderResource/Dx12AccelerationStructure.h"
+#include "Utils/Math.hpp"
 
 namespace dx12
 {
@@ -32,24 +33,37 @@ public:
 	void Open();
 	void Close();
 
-	void TransitionBarrier(Dx12Resource* pResource, D3D12_RESOURCE_STATES stateAfter, u32 subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, bool bFlushImmediate = true);
+	// ---- Barrier ----
+	void TransitionBarrier(Dx12Resource* pResource, const BarrierState& stateAfter, u32 subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, bool bFlushImmediate = true);
 	void UAVBarrier(Dx12Resource* pResource, bool bFlushImmediate = false);
 	void AliasingBarrier(Dx12Resource* pResourceBefore, Dx12Resource* pResourceAfter, bool bFlushImmediate = false);
 
-	void CopyBuffer(const Arc< Dx12Buffer >& pDstBuffer, const Arc< Dx12Buffer >& pSrcBuffer, size_t sizeInBytes, size_t offsetInBytes);
-	void CopyBuffer(ID3D12Resource* d3d12DstBuffer, ID3D12Resource* d3d12SrcBuffer, SIZE_T sizeInBytes, SIZE_T dstOffsetInBytes);
+	// ---- Copy ----
+	void UploadData(const Arc< Dx12Buffer >& pDstBuffer, const void* pData, u32 numElements, u64 elemSizeInBytes, u64 dstOffsetInBytes);
+
+	void CopyBuffer(const Arc< Dx12Buffer >& pDstBuffer, const Arc< Dx12Buffer >& pSrcBuffer, size_t sizeInBytes, SIZE_T dstOffsetInBytes, size_t srcOffsetInBytes);
+	void CopyBuffer(ID3D12Resource2* d3d12DstBuffer, ID3D12Resource2* d3d12SrcBuffer, SIZE_T sizeInBytes, SIZE_T dstOffsetInBytes, SIZE_T srcOffsetInBytes);
 	void CopyTexture(const Arc< Dx12Texture >& pDstTexture, const Arc< Dx12Texture >& pSrcTexture);
 	void ResolveSubresource(Dx12Resource* pDstResource, Dx12Resource* pSrcResource, u32 dstSubresource = 0, u32 srcSubresource = 0);
 
+	// ---- Acceleration Structure ----
 	void BuildBLAS(Dx12BottomLevelAS& pBLAS);
 	void BuildTLAS(Dx12TopLevelAS& pTLAS);
 
-	void SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY primitiveTopology);
-
-	void ClearTexture(const Arc< Dx12Texture >& pTexture, D3D12_RESOURCE_STATES stateAfter);
+	// ---- Clear ----
+	void ClearTexture(const Arc< Dx12Texture >& pTexture, const BarrierState& stateAfter);
 	void ClearRenderTarget(const Arc< Dx12Texture >& pTexture);
 	void ClearDepthStencil(const Arc< Dx12Texture >& pTexture, D3D12_CLEAR_FLAGS clearFlags);
+	void ClearUnorderedAccess(const Arc< Dx12Buffer >& pBuffer, u64 offsetInBytes);
 	void ClearUnorderedAccess(const Arc< Dx12Texture >& pTexture);
+
+	// ---- Pipeline ----
+	void SetRenderPipeline(Dx12GraphicsPipeline* pGraphicsPipelineState);
+	void SetRenderPipeline(Dx12ComputePipeline* pComputePipelineState);
+	void SetRenderPipeline(Dx12RaytracingPipeline* pRaytracingPipelineState);
+
+	// ---- Render Target ----
+	void SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY primitiveTopology);
 
 	void SetViewport(const D3D12_VIEWPORT& viewport);
 	void SetViewports(const std::vector< D3D12_VIEWPORT >& viewports);
@@ -57,14 +71,11 @@ public:
 	void SetScissorRect(const D3D12_RECT& scissorRect);
 	void SetScissorRects(const std::vector< D3D12_RECT >& scissorRects);
 
-	void SetRenderPipeline(Dx12GraphicsPipeline* pGraphicsPipelineState);
-	void SetRenderPipeline(Dx12ComputePipeline* pComputePipelineState);
-	void SetRenderPipeline(Dx12RaytracingPipeline* pRaytracingPipelineState);
-
-	void SetDescriptorHeaps(const std::vector< ID3D12DescriptorHeap* >& d3d12DescriptorHeaps);
-
 	void SetRenderTarget(u32 numRenderTargets, D3D12_CPU_DESCRIPTOR_HANDLE rtv, D3D12_CPU_DESCRIPTOR_HANDLE dsv = D3D12_CPU_DESCRIPTOR_HANDLE());
 	void BeginRenderPass(Arc< Dx12RenderTarget > pRenderTarget);
+
+	// ---- Bindings ----
+	void SetDescriptorHeaps(const std::vector< ID3D12DescriptorHeap* >& d3d12DescriptorHeaps);
 
 	void SetGraphicsRootConstant(u32 rootIdx, u32 srcValue, u32 dstOffset = 0);
 	void SetGraphicsRootConstants(u32 srcSizeInBytes, const void* pSrcData, u32 dstOffsetInBytes = 0);
@@ -106,9 +117,12 @@ public:
 		std::vector< std::pair< std::string, u32 > >&& srcHandles,
 		D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
+	// ---- Draw / Dispatch ----
 	void Draw(u32 vertexCount, u32 instanceCount = 1, u32 startVertex = 0, u32 startInstance = 0);
 	void DrawIndexed(u32 indexCount, u32 instanceCount = 1, u32 startIndex = 0, u32 baseVertex = 0, u32 startInstance = 0);
-	void DrawScene(const Dx12SceneResource& sceneResource);
+	void DrawIndirect(const Arc< Dx12Buffer >& pArgumentBuffer, u64 offsetInBytes, u32 numDraws);
+	void DrawIndirectWithCount(const Arc< Dx12Buffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< Dx12Buffer >& pCountBuffer, u32 numDraws);
+
 	void Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ);
 	void DispatchRays(Dx12ShaderBindingTable& sbt, u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ);
 
@@ -119,8 +133,10 @@ public:
 	double GetLastFrameElapsedTime() const;
 
 private:
-	void AddBarrier(const D3D12_RESOURCE_BARRIER& barrier, bool bFlushImmediate);
-	void FlushResourceBarriers();
+	void AddTextureBarrier(const D3D12_TEXTURE_BARRIER& barrier, bool bFlushImmediate);
+	void AddBufferBarrier(const D3D12_BUFFER_BARRIER& barrier, bool bFlushImmediate);
+	void AddGlobalBarrier(const D3D12_GLOBAL_BARRIER& barrier, bool bFlushImmediate);
+	void FlushBarriers();
 
 	void BindDescriptorHeaps();
 
@@ -138,7 +154,8 @@ private:
 	Dx12RenderDevice& m_RenderDevice;
 	D3D12_COMMAND_LIST_TYPE m_Type = {};
 
-	DynamicBufferAllocator* m_pDynamicBufferAllocator = nullptr;
+	Box< DynamicBufferAllocator > m_pConstantBufferPool;
+	Box< DynamicBufferAllocator > m_pStagingBufferPool;
 
 	ID3D12GraphicsCommandList10* m_d3d12CommandList10    = nullptr;
 	ID3D12CommandAllocator*      m_d3d12CommandAllocator = nullptr;
@@ -154,12 +171,22 @@ private:
 	//Dx12DescriptorHeap*   m_pDescriptorHeaps[NUM_RESOURCE_DESCRIPTOR_TYPE]               = {};
 	//ID3D12DescriptorHeap* m_CurrentDescriptorHeaps[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES] = {};
 
-	u32                    m_NumBarriersToFlush = 0;
-	D3D12_RESOURCE_BARRIER m_ResourceBarriers[MAX_NUM_PENDING_BARRIERS] = {};
+	u32                   m_NumTextureBarriers = 0;
+	D3D12_TEXTURE_BARRIER m_TextureBarriers[MAX_NUM_PENDING_BARRIERS] = {};
+
+	u32                   m_NumBufferBarriers = 0;
+	D3D12_BUFFER_BARRIER  m_BufferBarriers[MAX_NUM_PENDING_BARRIERS] = {};
+
+	u32                   m_NumGlobalBarriers = 0;
+	D3D12_GLOBAL_BARRIER  m_GlobalBarriers[MAX_NUM_PENDING_BARRIERS] = {};
 
 	Dx12Timer m_Timer = {};
 	double m_LastFrameElapsedTime = 0.0;
+
+	static Arc< Dx12Buffer > s_pZeroBuffer;
+	static constexpr SIZE_T ZERO_BUFFER_SIZE = baamboo::math::AlignUp(sizeof(u32), (u64)D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
 };
+Arc< Dx12Buffer > Dx12CommandContext::Impl::s_pZeroBuffer;
 
 Dx12CommandContext::Impl::Impl(Dx12RenderDevice& rd, const Dx12CommandQueue& cq, D3D12_COMMAND_LIST_TYPE type)
 	: m_RenderDevice(rd)
@@ -171,22 +198,40 @@ Dx12CommandContext::Impl::Impl(Dx12RenderDevice& rd, const Dx12CommandQueue& cq,
 	ThrowIfFailed(d3d12Device->CreateCommandList1(
 		0, m_Type, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&m_d3d12CommandList10)));
 
-	m_pDynamicBufferAllocator = new DynamicBufferAllocator(m_RenderDevice);
+	m_pConstantBufferPool = MakeBox< DynamicBufferAllocator >(m_RenderDevice);
+	m_pStagingBufferPool  = MakeBox< DynamicBufferAllocator >(m_RenderDevice);
 
 	// **
 	// Set Gpu Timer
 	// **
 	m_Timer.Init(m_RenderDevice.GetD3D12Device(), cq.GetD3D12CommandQueue(), 2);
+
+
+	// **
+	// Zero Buffer for DrawCount
+	// **
+	if (!s_pZeroBuffer)
+	{
+		auto desc      = CD3DX12_RESOURCE_DESC1::Buffer(ZERO_BUFFER_SIZE);
+		auto heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+
+		s_pZeroBuffer = Dx12Buffer::Create(m_RenderDevice, "ZeroBuffer", 
+			{
+				.count              = 1,
+				.elementSizeInBytes = ZERO_BUFFER_SIZE,
+				.bufferUsage        = render::eBufferUsage_TransferSource
+			});
+	}
 }
 
 Dx12CommandContext::Impl::~Impl()
 {
 	m_Timer.Destroy();
 
-	RELEASE(m_pDynamicBufferAllocator);
-
 	COM_RELEASE(m_d3d12CommandList10);
 	COM_RELEASE(m_d3d12CommandAllocator);
+
+	s_pZeroBuffer.reset();
 }
 
 void Dx12CommandContext::Impl::Open()
@@ -206,7 +251,8 @@ void Dx12CommandContext::Impl::Open()
 
 	if (m_Type != D3D12_COMMAND_LIST_TYPE_COPY)
 	{
-		m_pDynamicBufferAllocator->Reset();
+		m_pConstantBufferPool->Reset();
+		m_pStagingBufferPool->Reset();
 
 		BindDescriptorHeaps();
 
@@ -224,68 +270,148 @@ void Dx12CommandContext::Impl::Close()
 	if (m_Type != D3D12_COMMAND_LIST_TYPE_COPY)
 		m_Timer.End(m_d3d12CommandList10);
 
-	FlushResourceBarriers();
+	FlushBarriers();
 	m_d3d12CommandList10->Close();
 }
 
-void Dx12CommandContext::Impl::TransitionBarrier(Dx12Resource* pResource, D3D12_RESOURCE_STATES stateAfter, u32 subresource, bool bFlushImmediate)
-{
-	if (pResource)
-	{
-		const auto& stateBefore = pResource->GetCurrentState();
-		if (stateBefore.GetSubresourceState(subresource) != stateAfter)
-		{
-			AddBarrier(
-				CD3DX12_RESOURCE_BARRIER::Transition(
-					pResource->GetD3D12Resource(), 
-					stateBefore.GetSubresourceState(subresource), 
-					stateAfter, 
-					subresource
-				), bFlushImmediate
-			);
 
-			pResource->SetCurrentState(stateAfter, subresource);
-		}
+// =========================================================================
+// Impl - Barrier Operations
+// =========================================================================
+void Dx12CommandContext::Impl::TransitionBarrier(Dx12Resource* pResource, const BarrierState& stateAfter, u32 subresource, bool bFlushImmediate)
+{
+	if (!pResource)
+		return;
+
+	const auto& stateBefore = pResource->GetCurrentState().GetSubresourceState(subresource);
+	if (stateBefore == stateAfter)
+	{
+		if (bFlushImmediate)
+			FlushBarriers();
+
+		return;
 	}
+
+	if (pResource->IsTexture())
+	{
+		D3D12_TEXTURE_BARRIER texBarrier = {};
+		texBarrier.SyncBefore   = stateBefore.Sync;
+		texBarrier.SyncAfter    = stateAfter.Sync;
+		texBarrier.AccessBefore = stateBefore.Access;
+		texBarrier.AccessAfter  = stateAfter.Access;
+		texBarrier.LayoutBefore = stateBefore.Layout;
+		texBarrier.LayoutAfter  = stateAfter.Layout;
+		texBarrier.pResource    = pResource->GetD3D12Resource();
+		texBarrier.Subresources = CD3DX12_BARRIER_SUBRESOURCE_RANGE(subresource);
+		texBarrier.Flags        = D3D12_TEXTURE_BARRIER_FLAG_NONE;
+
+		AddTextureBarrier(texBarrier, bFlushImmediate);
+	}
+	else if (pResource->IsBuffer())
+	{
+		D3D12_BUFFER_BARRIER barrier = {};
+		barrier.SyncBefore   = stateBefore.Sync;
+		barrier.SyncAfter    = stateAfter.Sync;
+		barrier.AccessBefore = stateBefore.Access;
+		barrier.AccessAfter  = stateAfter.Access;
+		barrier.pResource    = pResource->GetD3D12Resource();
+		barrier.Offset       = 0;
+		barrier.Size         = UINT64_MAX;
+
+		AddBufferBarrier(barrier, bFlushImmediate);
+	}
+	else
+	{
+		assert(false && "Invalid resource type for barrier");
+	}
+
+	pResource->SetCurrentState(stateAfter, subresource);
 }
 
 void Dx12CommandContext::Impl::UAVBarrier(Dx12Resource* pResource, bool bFlushImmediate)
 {
-	if (pResource)
+	if (!pResource)
+		return;
+
+	if (pResource->IsTexture())
 	{
-		AddBarrier(CD3DX12_RESOURCE_BARRIER::UAV(pResource->GetD3D12Resource()), bFlushImmediate);
+		D3D12_TEXTURE_BARRIER texBarrier = {};
+		texBarrier.SyncBefore   = D3D12_BARRIER_SYNC_ALL_SHADING;
+		texBarrier.SyncAfter    = D3D12_BARRIER_SYNC_ALL_SHADING;
+		texBarrier.AccessBefore = D3D12_BARRIER_ACCESS_UNORDERED_ACCESS;
+		texBarrier.AccessAfter  = D3D12_BARRIER_ACCESS_UNORDERED_ACCESS;
+		texBarrier.LayoutBefore = D3D12_BARRIER_LAYOUT_UNORDERED_ACCESS;
+		texBarrier.LayoutAfter  = D3D12_BARRIER_LAYOUT_UNORDERED_ACCESS;
+		texBarrier.pResource    = pResource->GetD3D12Resource();
+		texBarrier.Subresources = CD3DX12_BARRIER_SUBRESOURCE_RANGE(D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
+		texBarrier.Flags        = D3D12_TEXTURE_BARRIER_FLAG_NONE;
+
+		AddTextureBarrier(texBarrier, bFlushImmediate);
+	}
+	else
+	{
+		D3D12_BUFFER_BARRIER bufBarrier = {};
+		bufBarrier.SyncBefore   = D3D12_BARRIER_SYNC_ALL_SHADING;
+		bufBarrier.SyncAfter    = D3D12_BARRIER_SYNC_ALL_SHADING;
+		bufBarrier.AccessBefore = D3D12_BARRIER_ACCESS_UNORDERED_ACCESS;
+		bufBarrier.AccessAfter  = D3D12_BARRIER_ACCESS_UNORDERED_ACCESS;
+		bufBarrier.pResource    = pResource->GetD3D12Resource();
+		bufBarrier.Offset       = 0;
+		bufBarrier.Size         = UINT64_MAX;
+
+		AddBufferBarrier(bufBarrier, bFlushImmediate);
 	}
 }
 
 void Dx12CommandContext::Impl::AliasingBarrier(Dx12Resource* pResourceBefore, Dx12Resource* pResourceAfter, bool bFlushImmediate)
 {
-	if (pResourceBefore && pResourceAfter)
-	{
-		AddBarrier(
-			CD3DX12_RESOURCE_BARRIER::Aliasing(
-				pResourceBefore->GetD3D12Resource(),
-				pResourceAfter->GetD3D12Resource()
-			), bFlushImmediate
-		);
-	}
+	if (!pResourceBefore || !pResourceAfter)
+		return;
+
+	// Enhanced Barriers: aliasing is expressed as a global barrier with SYNC_ALL and ACCESS_NO_ACCESS on both sides.
+	// The runtime deduces aliasing from the heap overlap.
+	D3D12_GLOBAL_BARRIER globalBarrier = {};
+	globalBarrier.SyncBefore   = D3D12_BARRIER_SYNC_ALL;
+	globalBarrier.SyncAfter    = D3D12_BARRIER_SYNC_ALL;
+	globalBarrier.AccessBefore = D3D12_BARRIER_ACCESS_NO_ACCESS;
+	globalBarrier.AccessAfter  = D3D12_BARRIER_ACCESS_NO_ACCESS;
+
+	AddGlobalBarrier(globalBarrier, bFlushImmediate);
 }
 
-void Dx12CommandContext::Impl::CopyBuffer(const Arc< Dx12Buffer >& pDstBuffer, const Arc< Dx12Buffer >& pSrcBuffer, size_t sizeInBytes, size_t offsetInBytes)
+
+// =========================================================================
+// Impl - Copy Operations
+// =========================================================================
+void Dx12CommandContext::Impl::UploadData(const Arc< Dx12Buffer >& pDstBuffer, const void* pData, u32 numElements, u64 elemSizeInBytes, u64 dstOffsetInBytes)
 {
-	CopyBuffer(pDstBuffer->GetD3D12Resource(), pSrcBuffer->GetD3D12Resource(), sizeInBytes, offsetInBytes);
+	u64 sizeInBytes = numElements * elemSizeInBytes;
+
+	auto allocation = m_pStagingBufferPool->Allocate(sizeInBytes);
+	memcpy(allocation.CPUHandle, pData, sizeInBytes);
+
+	CopyBuffer(pDstBuffer, allocation.pBuffer, sizeInBytes, dstOffsetInBytes, allocation.offsetInBytes);
 }
 
-void Dx12CommandContext::Impl::CopyBuffer(ID3D12Resource* d3d12DstBuffer, ID3D12Resource* d3d12SrcBuffer, SIZE_T sizeInBytes, SIZE_T dstOffsetInBytes)
+void Dx12CommandContext::Impl::CopyBuffer(const Arc< Dx12Buffer >& pDstBuffer, const Arc< Dx12Buffer >& pSrcBuffer, size_t sizeInBytes, size_t dstOffsetInBytes, size_t srcOffsetInBytes)
 {
-	m_d3d12CommandList10->CopyBufferRegion(d3d12DstBuffer, dstOffsetInBytes, d3d12SrcBuffer, 0, sizeInBytes);
+	TransitionBarrier(pDstBuffer.get(), BarrierStates::CopyDest, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, false);
+	TransitionBarrier(pSrcBuffer.get(), BarrierStates::CopySource);
+
+	CopyBuffer(pDstBuffer->GetD3D12Resource(), pSrcBuffer->GetD3D12Resource(), sizeInBytes, dstOffsetInBytes, srcOffsetInBytes);
+}
+
+void Dx12CommandContext::Impl::CopyBuffer(ID3D12Resource2* d3d12DstBuffer, ID3D12Resource2* d3d12SrcBuffer, SIZE_T sizeInBytes, SIZE_T dstOffsetInBytes, SIZE_T srcOffsetInBytes)
+{
+	m_d3d12CommandList10->CopyBufferRegion(d3d12DstBuffer, dstOffsetInBytes, d3d12SrcBuffer, srcOffsetInBytes, sizeInBytes);
 }
 
 void Dx12CommandContext::Impl::CopyTexture(const Arc< Dx12Texture >& pDstTexture, const Arc< Dx12Texture >& pSrcTexture)
 {
-	TransitionBarrier(pDstTexture.get(), D3D12_RESOURCE_STATE_COPY_DEST);
-	TransitionBarrier(pSrcTexture.get(), D3D12_RESOURCE_STATE_COPY_SOURCE);
+	TransitionBarrier(pDstTexture.get(), BarrierStates::CopyDest, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, false);
+	TransitionBarrier(pSrcTexture.get(), BarrierStates::CopySource);
 
-	D3D12_RESOURCE_DESC Desc = pDstTexture->Desc();
+	D3D12_RESOURCE_DESC1 Desc = pDstTexture->Desc();
 	for (u16 i = 0; i < Desc.MipLevels; i++)
 	{
 		D3D12_TEXTURE_COPY_LOCATION	dstLocation = {};
@@ -306,19 +432,23 @@ void Dx12CommandContext::Impl::ResolveSubresource(Dx12Resource* pDstResource, Dx
 {
 	if (pDstResource && pSrcResource)
 	{
-		TransitionBarrier(pDstResource, D3D12_RESOURCE_STATE_RESOLVE_DEST, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, false);
-		TransitionBarrier(pSrcResource, D3D12_RESOURCE_STATE_RESOLVE_SOURCE, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, false);
+		TransitionBarrier(pDstResource, BarrierStates::ResolveDest, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, false);
+		TransitionBarrier(pSrcResource, BarrierStates::ResolveSource, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, false);
 
-		FlushResourceBarriers();
+		FlushBarriers();
 
 		m_d3d12CommandList10->ResolveSubresource(pDstResource->GetD3D12Resource(), dstSubresource,
 			pSrcResource->GetD3D12Resource(), srcSubresource, pDstResource->Desc().Format);
 	}
 }
 
+
+// =========================================================================
+// Impl - Acceleration Structure
+// =========================================================================
 void Dx12CommandContext::Impl::BuildBLAS(Dx12BottomLevelAS& BLAS)
 {
-	FlushResourceBarriers();
+	FlushBarriers();
 
 	const auto& buildInputs = BLAS.GetBuildInputs();
 
@@ -330,15 +460,22 @@ void Dx12CommandContext::Impl::BuildBLAS(Dx12BottomLevelAS& BLAS)
 
 	m_d3d12CommandList10->BuildRaytracingAccelerationStructure(&buildDesc, 0, nullptr);
 
-	D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::UAV(BLAS.GetResultBuffer());
-	m_d3d12CommandList10->ResourceBarrier(1, &barrier);
+	D3D12_BUFFER_BARRIER uavBarrier = {};
+	uavBarrier.SyncBefore   = D3D12_BARRIER_SYNC_BUILD_RAYTRACING_ACCELERATION_STRUCTURE;
+	uavBarrier.SyncAfter    = D3D12_BARRIER_SYNC_RAYTRACING;
+	uavBarrier.AccessBefore = D3D12_BARRIER_ACCESS_RAYTRACING_ACCELERATION_STRUCTURE_WRITE;
+	uavBarrier.AccessAfter  = D3D12_BARRIER_ACCESS_RAYTRACING_ACCELERATION_STRUCTURE_READ;
+	uavBarrier.pResource    = BLAS.GetResultBuffer();
+	uavBarrier.Offset       = 0;
+	uavBarrier.Size         = UINT64_MAX;
+	AddBufferBarrier(uavBarrier, true);
 
 	BLAS.MarkBuilt();
 }
 
 void Dx12CommandContext::Impl::BuildTLAS(Dx12TopLevelAS& TLAS)
 {
-	FlushResourceBarriers();
+	FlushBarriers();
 
 	const auto& buildInputs = TLAS.GetBuildInputs();
 
@@ -350,26 +487,26 @@ void Dx12CommandContext::Impl::BuildTLAS(Dx12TopLevelAS& TLAS)
 
 	m_d3d12CommandList10->BuildRaytracingAccelerationStructure(&buildDesc, 0, nullptr);
 
-	D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::UAV(TLAS.GetResultBuffer());
-	m_d3d12CommandList10->ResourceBarrier(1, &barrier);
+	D3D12_BUFFER_BARRIER uavBarrier = {};
+	uavBarrier.SyncBefore   = D3D12_BARRIER_SYNC_BUILD_RAYTRACING_ACCELERATION_STRUCTURE;
+	uavBarrier.SyncAfter    = D3D12_BARRIER_SYNC_RAYTRACING;
+	uavBarrier.AccessBefore = D3D12_BARRIER_ACCESS_RAYTRACING_ACCELERATION_STRUCTURE_WRITE;
+	uavBarrier.AccessAfter  = D3D12_BARRIER_ACCESS_RAYTRACING_ACCELERATION_STRUCTURE_READ;
+	uavBarrier.pResource    = TLAS.GetResultBuffer();
+	uavBarrier.Offset       = 0;
+	uavBarrier.Size         = UINT64_MAX;
+	AddBufferBarrier(uavBarrier, true);
 
 	TLAS.MarkBuilt();
 }
 
-void Dx12CommandContext::Impl::SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY primitiveTopology)
-{
-	assert(m_pGraphicsPipeline);
 
-	if (m_PrimitiveTopology != primitiveTopology)
-	{
-		m_PrimitiveTopology = primitiveTopology;
-		m_d3d12CommandList10->IASetPrimitiveTopology(m_PrimitiveTopology);
-	}
-}
-
-void Dx12CommandContext::Impl::ClearTexture(const Arc< Dx12Texture >& pTexture, D3D12_RESOURCE_STATES stateAfter)
+// =========================================================================
+// Impl - Clear
+// =========================================================================
+void Dx12CommandContext::Impl::ClearTexture(const Arc< Dx12Texture >& pTexture, const BarrierState& stateAfter)
 {
-	if (stateAfter == D3D12_RESOURCE_STATE_RENDER_TARGET)
+	if (stateAfter.Layout == D3D12_BARRIER_LAYOUT_RENDER_TARGET)
 	{
 		if (pTexture->GetRenderTargetView().ptr == 0)
 		{
@@ -378,16 +515,16 @@ void Dx12CommandContext::Impl::ClearTexture(const Arc< Dx12Texture >& pTexture, 
 
 		ClearRenderTarget(pTexture);
 	}
-	else if (stateAfter == D3D12_RESOURCE_STATE_DEPTH_WRITE)
+	else if (stateAfter.Layout == D3D12_BARRIER_LAYOUT_DEPTH_STENCIL_WRITE)
 	{
-		if (pTexture->GetRenderTargetView().ptr == 0)
+		if (pTexture->GetDepthStencilView().ptr == 0)
 		{
 			__debugbreak();
 		}
 
 		ClearDepthStencil(pTexture, D3D12_CLEAR_FLAG_DEPTH);
 	}
-	else if (stateAfter == D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
+	else if (stateAfter.Layout == D3D12_BARRIER_LAYOUT_UNORDERED_ACCESS)
 	{
 		if (pTexture->GetUnorderedAccessView(0).ptr == 0)
 		{
@@ -401,13 +538,14 @@ void Dx12CommandContext::Impl::ClearTexture(const Arc< Dx12Texture >& pTexture, 
 void Dx12CommandContext::Impl::ClearRenderTarget(const Arc< Dx12Texture >& pTexture)
 {
 	assert(pTexture);
+
 	float clearColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 	if (auto pClearValue = pTexture->GetClearValue())
 	{
 		memcpy(clearColor, pClearValue->Color, sizeof(clearColor));
 	}
 
-	TransitionBarrier(pTexture.get(), D3D12_RESOURCE_STATE_RENDER_TARGET);
+	TransitionBarrier(pTexture.get(), BarrierStates::RenderTarget);
 	m_d3d12CommandList10->ClearRenderTargetView(pTexture->GetRenderTargetView(), clearColor, 0, nullptr);
 }
 
@@ -422,8 +560,18 @@ void Dx12CommandContext::Impl::ClearDepthStencil(const Arc< Dx12Texture >& pText
 		clearStencil = pTexture->GetClearValue()->DepthStencil.Stencil;
 	}
 
-	TransitionBarrier(pTexture.get(), D3D12_RESOURCE_STATE_DEPTH_WRITE);
+	TransitionBarrier(pTexture.get(), BarrierStates::DepthStencilWrite);
 	m_d3d12CommandList10->ClearDepthStencilView(pTexture->GetDepthStencilView(), clearFlags, clearDepth, clearStencil, 0, nullptr);
+}
+
+void Dx12CommandContext::Impl::ClearUnorderedAccess(const Arc< Dx12Buffer >& pBuffer, u64 offsetInBytes)
+{
+	assert(s_pZeroBuffer);
+	assert(pBuffer->SizeInBytes() <= ZERO_BUFFER_SIZE);
+
+	TransitionBarrier(pBuffer.get(), BarrierStates::BufferCopyDest);
+	TransitionBarrier(s_pZeroBuffer.get(), BarrierStates::BufferCopyDest);
+	CopyBuffer(pBuffer, s_pZeroBuffer, pBuffer->SizeInBytes(), offsetInBytes, 0);
 }
 
 void Dx12CommandContext::Impl::ClearUnorderedAccess(const Arc< Dx12Texture >& pTexture)
@@ -439,32 +587,14 @@ void Dx12CommandContext::Impl::ClearUnorderedAccess(const Arc< Dx12Texture >& pT
 	rect.left = 0; rect.bottom = 0;
 	rect.right = static_cast<LONG>(pTexture->GetWidth()); rect.top = static_cast<LONG>(pTexture->GetHeight());
 
-	TransitionBarrier(pTexture.get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+	TransitionBarrier(pTexture.get(), BarrierStates::UnorderedAccess);
 	m_d3d12CommandList10->ClearUnorderedAccessViewFloat(pTexture->GetUnorderedAccessGpuAddress(0), pTexture->GetUnorderedAccessView(0), pTexture->GetD3D12Resource(), clearColor, 1, &rect);
 }
 
-void Dx12CommandContext::Impl::SetViewport(const D3D12_VIEWPORT& viewport)
-{
-	SetViewports({ viewport });
-}
 
-void Dx12CommandContext::Impl::SetViewports(const std::vector< D3D12_VIEWPORT >& viewports)
-{
-	assert(viewports.size() < D3D12_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE);
-	m_d3d12CommandList10->RSSetViewports(static_cast<u32>(viewports.size()), viewports.data());
-}
-
-void Dx12CommandContext::Impl::SetScissorRect(const D3D12_RECT& scissorRect)
-{
-	SetScissorRects({ scissorRect });
-}
-
-void Dx12CommandContext::Impl::SetScissorRects(const std::vector< D3D12_RECT >& scissorRects)
-{
-	assert(scissorRects.size() < D3D12_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE);
-	m_d3d12CommandList10->RSSetScissorRects(static_cast<u32>(scissorRects.size()), scissorRects.data());
-}
-
+// =========================================================================
+// Impl - Render Pipeline
+// =========================================================================
 void Dx12CommandContext::Impl::SetRenderPipeline(Dx12GraphicsPipeline* pGraphicsPipeline)
 {
 	m_pComputePipeline    = nullptr;
@@ -525,9 +655,41 @@ void Dx12CommandContext::Impl::SetRenderPipeline(Dx12RaytracingPipeline* pRaytra
 	}
 }
 
-void Dx12CommandContext::Impl::SetDescriptorHeaps(const std::vector< ID3D12DescriptorHeap* >& d3d12DescriptorHeaps)
+
+// =========================================================================
+// Impl - Render Target
+// =========================================================================
+void Dx12CommandContext::Impl::SetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY primitiveTopology)
 {
-	m_d3d12CommandList10->SetDescriptorHeaps(static_cast<u32>(d3d12DescriptorHeaps.size()), d3d12DescriptorHeaps.data());
+	assert(m_pGraphicsPipeline);
+
+	if (m_PrimitiveTopology != primitiveTopology)
+	{
+		m_PrimitiveTopology = primitiveTopology;
+		m_d3d12CommandList10->IASetPrimitiveTopology(m_PrimitiveTopology);
+	}
+}
+
+void Dx12CommandContext::Impl::SetViewport(const D3D12_VIEWPORT& viewport)
+{
+	SetViewports({ viewport });
+}
+
+void Dx12CommandContext::Impl::SetViewports(const std::vector< D3D12_VIEWPORT >& viewports)
+{
+	assert(viewports.size() < D3D12_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE);
+	m_d3d12CommandList10->RSSetViewports(static_cast<u32>(viewports.size()), viewports.data());
+}
+
+void Dx12CommandContext::Impl::SetScissorRect(const D3D12_RECT& scissorRect)
+{
+	SetScissorRects({ scissorRect });
+}
+
+void Dx12CommandContext::Impl::SetScissorRects(const std::vector< D3D12_RECT >& scissorRects)
+{
+	assert(scissorRects.size() < D3D12_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE);
+	m_d3d12CommandList10->RSSetScissorRects(static_cast<u32>(scissorRects.size()), scissorRects.data());
 }
 
 void Dx12CommandContext::Impl::SetRenderTarget(u32 numRenderTargets, D3D12_CPU_DESCRIPTOR_HANDLE rtv, D3D12_CPU_DESCRIPTOR_HANDLE dsv)
@@ -554,7 +716,7 @@ void Dx12CommandContext::Impl::BeginRenderPass(Arc< Dx12RenderTarget > pRenderTa
 		auto rhiTexture = StaticCast<Dx12Texture>(pTextures[i]);
 		if (rhiTexture)
 		{
-			TransitionBarrier(rhiTexture.get(), D3D12_RESOURCE_STATE_RENDER_TARGET);
+			TransitionBarrier(rhiTexture.get(), BarrierStates::RenderTarget);
 			d3d12RenderTargetDescriptors.push_back(rhiTexture->GetRenderTargetView());
 		}
 	}
@@ -563,7 +725,7 @@ void Dx12CommandContext::Impl::BeginRenderPass(Arc< Dx12RenderTarget > pRenderTa
 	auto rhiDepthTexture = StaticCast<Dx12Texture>(pRenderTarget->Attachment(eAttachmentPoint::DepthStencil));
 	if (rhiDepthTexture)
 	{
-		TransitionBarrier(rhiDepthTexture.get(), D3D12_RESOURCE_STATE_DEPTH_WRITE);
+		TransitionBarrier(rhiDepthTexture.get(), BarrierStates::DepthStencilWrite);
 		depthStencilDescriptor = rhiDepthTexture->GetDepthStencilView();
 	}
 
@@ -577,6 +739,15 @@ void Dx12CommandContext::Impl::BeginRenderPass(Arc< Dx12RenderTarget > pRenderTa
 		FALSE, 
 		d3d12DSV
 	);
+}
+
+
+// =========================================================================
+// Impl - Shader Bindings
+// =========================================================================
+void Dx12CommandContext::Impl::SetDescriptorHeaps(const std::vector< ID3D12DescriptorHeap* >& d3d12DescriptorHeaps)
+{
+	m_d3d12CommandList10->SetDescriptorHeaps(static_cast<u32>(d3d12DescriptorHeaps.size()), d3d12DescriptorHeaps.data());
 }
 
 void Dx12CommandContext::Impl::SetGraphicsRootConstant(u32 rootIdx, u32 srcValue, u32 dstOffset)
@@ -607,13 +778,12 @@ void Dx12CommandContext::Impl::SetComputeRootConstants(u32 srcSizeInBytes, const
 
 void Dx12CommandContext::Impl::SetGraphicsDynamicConstantBuffer(const std::string& name, size_t sizeInBytes, const void* pData)
 {
-	auto allocation = m_pDynamicBufferAllocator->Allocate(sizeInBytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
+	auto allocation = m_pConstantBufferPool->Allocate(sizeInBytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
 	memcpy(allocation.CPUHandle, pData, sizeInBytes);
 
 	auto [_, rootIndex] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
 	if (rootIndex == INVALID_INDEX)
 	{
-		__debugbreak();
 		return;
 	}
 
@@ -622,13 +792,12 @@ void Dx12CommandContext::Impl::SetGraphicsDynamicConstantBuffer(const std::strin
 
 void Dx12CommandContext::Impl::SetComputeDynamicConstantBuffer(const std::string& name, size_t sizeInBytes, const void* pData)
 {
-	auto allocation = m_pDynamicBufferAllocator->Allocate(sizeInBytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
+	auto allocation = m_pConstantBufferPool->Allocate(sizeInBytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
 	memcpy(allocation.CPUHandle, pData, sizeInBytes);
 
 	auto [_, rootIndex] = m_pComputePipeline->GetResourceBindingIndex(name);
 	if (rootIndex == INVALID_INDEX)
 	{
-		__debugbreak();
 		return;
 	}
 
@@ -642,7 +811,6 @@ void Dx12CommandContext::Impl::SetGraphicsConstantBufferView(const std::string& 
 	auto [_, rootIndex] = m_pComputePipeline->GetResourceBindingIndex(name);
 	if (rootIndex == INVALID_INDEX)
 	{
-		__debugbreak();
 		return;
 	}
 
@@ -654,7 +822,6 @@ void Dx12CommandContext::Impl::SetGraphicsShaderResourceView(const std::string& 
 	auto [_, rootIndex] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
 	if (rootIndex == INVALID_INDEX)
 	{
-		__debugbreak();
 		return;
 	}
 
@@ -666,7 +833,6 @@ void Dx12CommandContext::Impl::SetComputeConstantBufferView(const std::string& n
 	auto [_, rootIndex] = m_pComputePipeline->GetResourceBindingIndex(name);
 	if (rootIndex == INVALID_INDEX)
 	{
-		__debugbreak();
 		return;
 	}
 
@@ -678,7 +844,6 @@ void Dx12CommandContext::Impl::SetComputeShaderResourceView(const std::string& n
 	auto [_, rootIndex] = m_pComputePipeline->GetResourceBindingIndex(name);
 	if (rootIndex == INVALID_INDEX)
 	{
-		__debugbreak();
 		return;
 	}
 
@@ -690,7 +855,6 @@ void Dx12CommandContext::Impl::SetComputeUnorderedAccessView(const std::string& 
 	auto [_, rootIndex] = m_pComputePipeline->GetResourceBindingIndex(name);
 	if (rootIndex == INVALID_INDEX)
 	{
-		__debugbreak();
 		return;
 	}
 
@@ -714,7 +878,6 @@ void Dx12CommandContext::Impl::SetAccelerationStructureSRV(const std::string& na
 
 	if (rootIndex == INVALID_INDEX)
 	{
-		__debugbreak();
 		return;
 	}
 
@@ -736,7 +899,7 @@ void Dx12CommandContext::Impl::StageDescriptor(
 {
 	const auto& state = pTexture->GetCurrentState();
 	bool bIsUAV = 
-		(IsComputeContext() || IsRaytracingContext()) && state.GetSubresourceState() == D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+		(IsComputeContext() || IsRaytracingContext()) && state.GetSubresourceState() == BarrierStates::UnorderedAccess;
 
 	if (bIsUAV)
 	{
@@ -755,7 +918,6 @@ void Dx12CommandContext::Impl::StageDescriptor(const std::string& name, u32 heap
 		auto [offset, rootIndex] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
 		if (rootIndex == INVALID_INDEX)
 		{
-			__debugbreak();
 			return;
 		}
 
@@ -766,7 +928,6 @@ void Dx12CommandContext::Impl::StageDescriptor(const std::string& name, u32 heap
 		auto [offset, rootIndex] = m_pComputePipeline->GetResourceBindingIndex(name);
 		if (rootIndex == INVALID_INDEX)
 		{
-			__debugbreak();
 			return;
 		}
 
@@ -777,7 +938,6 @@ void Dx12CommandContext::Impl::StageDescriptor(const std::string& name, u32 heap
 		auto [offset, rootIndex] = m_pRaytracingPipeline->GetResourceBindingIndex(name);
 		if (rootIndex == INVALID_INDEX)
 		{
-			__debugbreak();
 			return;
 		}
 
@@ -795,74 +955,67 @@ void Dx12CommandContext::Impl::StageDescriptors(
 	}
 }
 
+
+// =========================================================================
+// Impl - Draw / Dispatch
+// =========================================================================
 void Dx12CommandContext::Impl::Draw(u32 vertexCount, u32 instanceCount, u32 startVertex, u32 startInstance)
 {
-	FlushResourceBarriers();
+	FlushBarriers();
 
 	m_d3d12CommandList10->DrawInstanced(vertexCount, instanceCount, startVertex, startInstance);
 }
 
 void Dx12CommandContext::Impl::DrawIndexed(u32 indexCount, u32 instanceCount, u32 startIndex, u32 baseVertex, u32 startInstance)
 {
-	FlushResourceBarriers();
+	FlushBarriers();
 
-	m_d3d12CommandList10->DrawIndexedInstanced(indexCount, instanceCount, startIndex, baseVertex, startInstance);
+	m_d3d12CommandList10->DrawIndexedInstanced(indexCount, instanceCount, startIndex, (i32)baseVertex, startInstance);
 }
 
-void Dx12CommandContext::Impl::DrawScene(const Dx12SceneResource& sceneResource)
+void Dx12CommandContext::Impl::DrawIndirect(const Arc< Dx12Buffer >& pArgumentBuffer, u64 offsetInBytes, u32 numDraws)
 {
-	auto pIDB = sceneResource.GetIndirectBuffer();
-	TransitionBarrier(pIDB.get(), D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
+	FlushBarriers();
 
-	FlushResourceBarriers();
-	if (sceneResource.NumMeshes() == 0)
-	{
-		return;
-	}
-
-	m_d3d12CommandList10->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	auto& sr = static_cast<Dx12SceneResource&>(m_RenderDevice.GetResourceManager().GetSceneResource());
 	m_d3d12CommandList10->ExecuteIndirect(
-		sceneResource.GetSceneD3D12CommandSignature(),
-		sceneResource.NumMeshes(),
-		pIDB->GetD3D12Resource(),
-		0,
+		sr.GetSceneD3D12CommandSignature(), 
+		numDraws,
+		pArgumentBuffer->GetD3D12Resource(),
+		offsetInBytes,
 		nullptr,
+		0
+	);
+}
+
+void Dx12CommandContext::Impl::DrawIndirectWithCount(const Arc< Dx12Buffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< Dx12Buffer >& pCountBuffer, u32 numDraws)
+{
+	FlushBarriers();
+
+	auto& sr = static_cast<Dx12SceneResource&>(m_RenderDevice.GetResourceManager().GetSceneResource());
+	m_d3d12CommandList10->ExecuteIndirect(
+		sr.GetSceneD3D12CommandSignature(),
+		numDraws,
+		pArgumentBuffer->GetD3D12Resource(),
+		0,
+		pCountBuffer->GetD3D12Resource(),
 		0
 	);
 }
 
 void Dx12CommandContext::Impl::Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ)
 {
-	FlushResourceBarriers();
+	FlushBarriers();
 
 	m_d3d12CommandList10->Dispatch(numGroupsX, numGroupsY, numGroupsZ);
 }
 
 void Dx12CommandContext::Impl::DispatchRays(Dx12ShaderBindingTable& sbt, u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ)
 {
-	FlushResourceBarriers();
+	FlushBarriers();
 
 	const auto& desc = sbt.GetDispatchRaysDesc(numGroupsX, numGroupsY, numGroupsZ);
 	m_d3d12CommandList10->DispatchRays(&desc);
-}
-
-void Dx12CommandContext::Impl::AddBarrier(const D3D12_RESOURCE_BARRIER& barrier, bool bFlushImmediate)
-{
-	m_ResourceBarriers[m_NumBarriersToFlush++] = barrier;
-
-	if (bFlushImmediate || m_NumBarriersToFlush == MAX_NUM_PENDING_BARRIERS)
-	{
-		FlushResourceBarriers();
-	}
-}
-
-void Dx12CommandContext::Impl::FlushResourceBarriers()
-{
-	if (m_NumBarriersToFlush > 0)
-	{
-		m_d3d12CommandList10->ResourceBarrier(m_NumBarriersToFlush, m_ResourceBarriers);
-		m_NumBarriersToFlush = 0;
-	}
 }
 
 void Dx12CommandContext::Impl::BindDescriptorHeaps()
@@ -877,6 +1030,75 @@ void Dx12CommandContext::Impl::BindDescriptorHeaps()
 double Dx12CommandContext::Impl::GetLastFrameElapsedTime() const
 {
 	return m_LastFrameElapsedTime;
+}
+
+void Dx12CommandContext::Impl::AddTextureBarrier(const D3D12_TEXTURE_BARRIER& barrier, bool bFlushImmediate)
+{
+	m_TextureBarriers[m_NumTextureBarriers++] = barrier;
+
+	if (bFlushImmediate || m_NumTextureBarriers == MAX_NUM_PENDING_BARRIERS)
+	{
+		FlushBarriers();
+	}
+}
+
+void Dx12CommandContext::Impl::AddBufferBarrier(const D3D12_BUFFER_BARRIER& barrier, bool bFlushImmediate)
+{
+	m_BufferBarriers[m_NumBufferBarriers++] = barrier;
+
+	if (bFlushImmediate || m_NumBufferBarriers == MAX_NUM_PENDING_BARRIERS)
+	{
+		FlushBarriers();
+	}
+}
+
+void Dx12CommandContext::Impl::AddGlobalBarrier(const D3D12_GLOBAL_BARRIER& barrier, bool bFlushImmediate)
+{
+	m_GlobalBarriers[m_NumGlobalBarriers++] = barrier;
+
+	if (bFlushImmediate || m_NumGlobalBarriers == MAX_NUM_PENDING_BARRIERS)
+	{
+		FlushBarriers();
+	}
+}
+
+void Dx12CommandContext::Impl::FlushBarriers()
+{
+	u32 numGroups = 0;
+
+	D3D12_BARRIER_GROUP groups[3] = {};
+	if (m_NumTextureBarriers > 0)
+	{
+		auto& group = groups[numGroups++];
+		group.Type             = D3D12_BARRIER_TYPE_TEXTURE;
+		group.NumBarriers      = m_NumTextureBarriers;
+		group.pTextureBarriers = m_TextureBarriers;
+	}
+
+	if (m_NumBufferBarriers > 0)
+	{
+		auto& group = groups[numGroups++];
+		group.Type            = D3D12_BARRIER_TYPE_BUFFER;
+		group.NumBarriers     = m_NumBufferBarriers;
+		group.pBufferBarriers = m_BufferBarriers;
+	}
+
+	if (m_NumGlobalBarriers > 0)
+	{
+		auto& group = groups[numGroups++];
+		group.Type            = D3D12_BARRIER_TYPE_GLOBAL;
+		group.NumBarriers     = m_NumGlobalBarriers;
+		group.pGlobalBarriers = m_GlobalBarriers;
+	}
+
+	if (numGroups > 0)
+	{
+		m_d3d12CommandList10->Barrier(numGroups, groups);
+	}
+
+	m_NumTextureBarriers = 0;
+	m_NumBufferBarriers  = 0;
+	m_NumGlobalBarriers  = 0;
 }
 
 
@@ -898,9 +1120,17 @@ void Dx12CommandContext::Close()
 	m_Impl->Close();
 }
 
-void Dx12CommandContext::ClearTexture(Arc< render::Texture > pTexture, render::eTextureLayout newLayout)
+void Dx12CommandContext::ClearBuffer(const Arc< render::Buffer >& pBuffer, u32 value, u64 offsetInBytes)
 {
-	m_Impl->ClearTexture(StaticCast<Dx12Texture>(pTexture), DX12_RESOURCE_STATE(newLayout, true));
+	UNUSED(value);
+
+	const auto& rhiBuffer = StaticCast<Dx12Buffer>(pBuffer);
+	m_Impl->ClearUnorderedAccess(rhiBuffer, offsetInBytes);
+}
+
+void Dx12CommandContext::ClearTexture(const Arc< render::Texture >& pTexture, render::eTextureLayout newLayout)
+{
+	m_Impl->ClearTexture(StaticCast<Dx12Texture>(pTexture), DX12_BARRIER_STATE(newLayout, true));
 }
 
 void Dx12CommandContext::ClearRenderTarget(const Arc< Dx12Texture >& pTexture)
@@ -913,21 +1143,92 @@ void Dx12CommandContext::ClearDepthStencil(const Arc< Dx12Texture >& pTexture, D
 	m_Impl->ClearDepthStencil(pTexture, clearFlags);
 }
 
-void Dx12CommandContext::CopyBuffer(ID3D12Resource* d3d12DstBuffer, ID3D12Resource* d3d12SrcBuffer, SIZE_T sizeInBytes, SIZE_T dstOffsetInBytes)
+void Dx12CommandContext::TransitionBufferToRead(const Arc< render::Buffer >& pBuffer, render::ePipelineStage dstStage, u64 offsetInBytes, bool bFlushImmediate)
 {
-	m_Impl->CopyBuffer(d3d12DstBuffer, d3d12SrcBuffer, sizeInBytes, dstOffsetInBytes);
+	UNUSED(offsetInBytes);
+
+	auto rhiResource = StaticCast<Dx12Buffer>(pBuffer);
+	assert(rhiResource);
+
+	D3D12_BARRIER_SYNC syncAfter = DX12_BARRIER_SYNC(dstStage);
+
+	D3D12_BARRIER_ACCESS accessAfter = D3D12_BARRIER_ACCESS_SHADER_RESOURCE;
+	if (syncAfter == D3D12_BARRIER_SYNC_EXECUTE_INDIRECT)
+	{
+		accessAfter = D3D12_BARRIER_ACCESS_INDIRECT_ARGUMENT;
+	}
+
+	BarrierState barrier = BarrierState(syncAfter, accessAfter);
+	m_Impl->TransitionBarrier(
+		rhiResource.get(),
+		barrier,
+		D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+		bFlushImmediate
+	);
 }
 
-void Dx12CommandContext::CopyBuffer(Arc< render::Buffer > pDstBuffer, Arc< render::Buffer > pSrcBuffer, u64 offsetInBytes)
+void Dx12CommandContext::TransitionBufferToWrite(const Arc< render::Buffer >& pBuffer, render::ePipelineStage dstStage, u64 offsetInBytes, bool bFlushImmediate)
+{
+	UNUSED(offsetInBytes);
+
+	auto rhiResource = StaticCast<Dx12Buffer>(pBuffer);
+	assert(rhiResource);
+
+	D3D12_BARRIER_SYNC syncAfter = DX12_BARRIER_SYNC(dstStage);
+
+	BarrierState barrier = BarrierState(syncAfter, D3D12_BARRIER_ACCESS_UNORDERED_ACCESS);
+	m_Impl->TransitionBarrier(
+		rhiResource.get(),
+		barrier,
+		D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+		bFlushImmediate
+	);
+}
+
+void Dx12CommandContext::TransitionBarrier(const Arc< render::Texture >& pTexture, render::eTextureLayout newState, u32 subresource, bool bFlushImmediate)
+{
+	auto rhiTexture = StaticCast<Dx12Texture>(pTexture);
+	assert(rhiTexture);
+
+	m_Impl->TransitionBarrier(rhiTexture.get(), DX12_BARRIER_STATE(newState, IsComputeContext() || IsRaytracingContext()), subresource, bFlushImmediate);
+}
+
+void Dx12CommandContext::TransitionBarrier(Dx12Resource* pResource, const BarrierState& stateAfter, u32 subresource, bool bFlushImmediate)
+{
+	m_Impl->TransitionBarrier(pResource, stateAfter, subresource, bFlushImmediate);
+}
+
+void Dx12CommandContext::UAVBarrier(const Arc< render::Buffer >& pBuffer, bool bFlushImmediate)
+{
+	auto dx12Buffer = StaticCast<Dx12Buffer>(pBuffer);
+	m_Impl->UAVBarrier(dx12Buffer.get(), bFlushImmediate);
+}
+
+void Dx12CommandContext::AliasingBarrier(Dx12Resource* pResourceBefore, Dx12Resource* pResourceAfter, bool bFlushImmediate)
+{
+	m_Impl->AliasingBarrier(pResourceBefore, pResourceAfter, bFlushImmediate);
+}
+
+void Dx12CommandContext::UploadData(const Arc< render::Buffer >& pDstBuffer, const void* pData, u32 numElements, u64 elemSizeInBytes, u64 dstOffsetInBytes)
+{
+	m_Impl->UploadData(StaticCast<Dx12Buffer>(pDstBuffer), pData, numElements, elemSizeInBytes, dstOffsetInBytes);
+}
+
+void Dx12CommandContext::CopyBuffer(ID3D12Resource2* d3d12DstBuffer, ID3D12Resource2* d3d12SrcBuffer, SIZE_T sizeInBytes, SIZE_T dstOffsetInBytes, SIZE_T srcOffsetInBytes)
+{
+	m_Impl->CopyBuffer(d3d12DstBuffer, d3d12SrcBuffer, sizeInBytes, dstOffsetInBytes, srcOffsetInBytes);
+}
+
+void Dx12CommandContext::CopyBuffer(const Arc< render::Buffer >& pDstBuffer, const Arc< render::Buffer >& pSrcBuffer, SIZE_T dstOffsetInBytes, SIZE_T srcOffsetInBytes)
 {
 	auto rhiBufferDst = StaticCast<Dx12Buffer>(pDstBuffer);
 	auto rhiBufferSrc = StaticCast<Dx12Buffer>(pSrcBuffer);
 	assert(rhiBufferDst && rhiBufferSrc);
 
-	m_Impl->CopyBuffer(rhiBufferDst, rhiBufferSrc, rhiBufferSrc->SizeInBytes(), offsetInBytes);
+	m_Impl->CopyBuffer(rhiBufferDst, rhiBufferSrc, rhiBufferSrc->SizeInBytes(), dstOffsetInBytes, srcOffsetInBytes);
 }
 
-void Dx12CommandContext::CopyTexture(Arc< render::Texture > pDstTexture, Arc< render::Texture > pSrcTexture, u64 offsetInBytes)
+void Dx12CommandContext::CopyTexture(const Arc< render::Texture >& pDstTexture, const Arc< render::Texture >& pSrcTexture, u64 offsetInBytes)
 {
 	UNUSED(offsetInBytes);
 
@@ -941,30 +1242,6 @@ void Dx12CommandContext::CopyTexture(Arc< render::Texture > pDstTexture, Arc< re
 void Dx12CommandContext::ResolveSubresource(Dx12Resource* pDstResource, Dx12Resource* pSrcResource, u32 dstSubresource, u32 srcSubresource)
 {
 	m_Impl->ResolveSubresource(pDstResource, pSrcResource, dstSubresource, srcSubresource);
-}
-
-void Dx12CommandContext::TransitionBarrier(Arc< render::Texture > pTexture, render::eTextureLayout newState, u32 subresource, bool bFlushImmediate)
-{
-	auto rhiTexture = StaticCast<Dx12Texture>(pTexture);
-	assert(rhiTexture);
-
-	m_Impl->TransitionBarrier(rhiTexture.get(), DX12_RESOURCE_STATE(newState, IsComputeContext() || IsRaytracingContext()), subresource, bFlushImmediate);
-}
-
-void Dx12CommandContext::UAVBarrier(Arc< render::Buffer > pBuffer, bool bFlushImmediate)
-{
-	auto dx12Buffer = StaticCast<Dx12Buffer>(pBuffer);
-	m_Impl->UAVBarrier(dx12Buffer.get(), bFlushImmediate);
-}
-
-void Dx12CommandContext::TransitionBarrier(Dx12Resource* pResource, D3D12_RESOURCE_STATES stateAfter, u32 subresource, bool bFlushImmediate)
-{
-	m_Impl->TransitionBarrier(pResource, stateAfter, subresource, bFlushImmediate);
-}
-
-void Dx12CommandContext::AliasingBarrier(Dx12Resource* pResourceBefore, Dx12Resource* pResourceAfter, bool bFlushImmediate)
-{
-	m_Impl->AliasingBarrier(pResourceBefore, pResourceAfter, bFlushImmediate);
 }
 
 void Dx12CommandContext::BuildBLAS(render::BottomLevelAccelerationStructure& blas)
@@ -1023,6 +1300,20 @@ void Dx12CommandContext::SetGraphicsDynamicUniformBuffer(const std::string& name
 	m_Impl->SetGraphicsDynamicConstantBuffer(name, sizeInBytes, pData);
 }
 
+void Dx12CommandContext::SetComputeShaderResource(const std::string& name, Arc< render::Buffer > pBuffer)
+{
+	auto rhiBuffer = StaticCast<Dx12Buffer>(pBuffer);
+	assert(rhiBuffer);
+
+	const auto& state = rhiBuffer->GetCurrentState();
+	bool bIsUAV = state.GetSubresourceState() == BarrierStates::BufferUnorderedAccess;
+
+	if (bIsUAV)
+		m_Impl->SetComputeUnorderedAccessView(name, rhiBuffer->GpuAddress());
+	else
+		m_Impl->SetComputeShaderResourceView(name, rhiBuffer->GpuAddress());
+}
+
 void Dx12CommandContext::SetComputeShaderResource(const std::string& name, Arc< render::Texture > pTexture, Arc< render::Sampler > pSamplerInCharge)
 {
 	UNUSED(pSamplerInCharge);
@@ -1031,7 +1322,7 @@ void Dx12CommandContext::SetComputeShaderResource(const std::string& name, Arc< 
 	assert(rhiTexture);
 
 	const auto& state = rhiTexture->GetCurrentState();
-	bool bIsUAV = state.GetSubresourceState() == D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+	bool bIsUAV = state.GetSubresourceState() == BarrierStates::NonPixelShaderResource;
 
 	if (bIsUAV)
 		m_Impl->SetComputeUnorderedAccessView(name, rhiTexture->GpuAddress());
@@ -1047,17 +1338,6 @@ void Dx12CommandContext::SetGraphicsShaderResource(const std::string& name, Arc<
 	assert(rhiTexture);
 
 	m_Impl->SetGraphicsShaderResourceView(name, rhiTexture->GpuAddress());
-}
-
-void Dx12CommandContext::SetComputeShaderResource(const std::string& name, Arc< render::Buffer > pBuffer)
-{
-	auto rhiBuffer = StaticCast<Dx12Buffer>(pBuffer);
-	assert(rhiBuffer);
-
-	if (rhiBuffer->GetType() == eBufferType::Structured)
-		m_Impl->SetComputeShaderResourceView(name, StaticCast<Dx12StructuredBuffer>(rhiBuffer)->GpuAddress());
-	else
-		m_Impl->SetComputeConstantBufferView(name, rhiBuffer->GpuAddress());
 }
 
 void Dx12CommandContext::SetGraphicsShaderResource(const std::string& name, Arc< render::Buffer > pBuffer)
@@ -1153,10 +1433,16 @@ void Dx12CommandContext::DrawIndexed(u32 indexCount, u32 instanceCount, u32 firs
 	m_Impl->DrawIndexed(indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
-void Dx12CommandContext::DrawScene(const render::SceneResource& sceneResource)
+void Dx12CommandContext::DrawMeshTasksIndirect(const Arc< render::Buffer >& pArgumentBuffer, u64 offsetInBytes, u32 numDraws, u32 strideInBytes)
 {
-	const auto& rhiSceneResource = static_cast<const Dx12SceneResource&>(sceneResource);
-	m_Impl->DrawScene(rhiSceneResource);
+	UNUSED(strideInBytes);
+	m_Impl->DrawIndirect(StaticCast<Dx12Buffer>(pArgumentBuffer), offsetInBytes, numDraws);
+}
+
+void Dx12CommandContext::DrawMeshTasksIndirectCount(const Arc< render::Buffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< render::Buffer >& pCountBuffer, u32 numDraws, u32 strideInBytes)
+{
+	UNUSED(strideInBytes);
+	m_Impl->DrawIndirectWithCount(StaticCast<Dx12Buffer>(pArgumentBuffer), offsetInBytes, StaticCast<Dx12Buffer>(pCountBuffer), numDraws);
 }
 
 void Dx12CommandContext::Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ)

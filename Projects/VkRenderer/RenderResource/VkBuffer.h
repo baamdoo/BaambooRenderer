@@ -18,6 +18,10 @@ public:
 
     [[nodiscard]]
     inline VkBuffer vkBuffer() const { return m_vkBuffer; }
+    [[nodiscard]]
+    inline VkDeviceAddress DeviceAddress() const { return m_DeviceAddress; }
+    [[nodiscard]]
+    inline void* MappedMemory() const { assert(m_AllocationInfo.pMappedData); return m_AllocationInfo.pMappedData; }
 
     [[nodiscard]]
     inline u64 SizeInBytes() const { return m_CreationInfo.count * m_CreationInfo.elementSizeInBytes; }
@@ -49,21 +53,18 @@ class VulkanUniformBuffer : public VulkanBuffer
 {
 using Super = VulkanBuffer;
 public:
-    static Arc< VulkanUniformBuffer > Create(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags usage = 0);
+    static Arc< VulkanUniformBuffer > Create(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags2 usage = 0);
 
-    VulkanUniformBuffer(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage);
-
-    [[nodiscard]]
-    inline void* MappedMemory() const { assert(m_AllocationInfo.pMappedData); return m_AllocationInfo.pMappedData; }
+    VulkanUniformBuffer(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags2 additionalUsage);
 };
 
 class VulkanStorageBuffer : public VulkanBuffer
 {
 using Super = VulkanBuffer;
 public:
-    static Arc< VulkanStorageBuffer > Create(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags usage = 0);
+    static Arc< VulkanStorageBuffer > Create(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags2 usage = 0);
 
-    VulkanStorageBuffer(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags additionalUsage);
+    VulkanStorageBuffer(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags2 additionalUsage);
 };
 
 }

@@ -79,8 +79,13 @@ float atan2Fast(float y, float x)
     t3 = abs(y) > abs(x) ? (0.5 * PI) - t3 : t3;
     t3 = x < 0 ? PI - t3 : t3;
     t3 = y < 0 ? -t3 : t3;
-
+    
     return t3;
+}
+
+uint roundUpAndDivide(uint value, uint alignment)
+{
+    return (value + alignment - 1) / alignment;
 }
 
 vec3 ReconstructWorldPos(vec2 uv, float depth, mat4 mViewProjInv)

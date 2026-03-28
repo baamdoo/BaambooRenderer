@@ -20,28 +20,39 @@ public:
 	void Open();
 	void Close();
 
-	virtual void ClearTexture(Arc< render::Texture > pTexture, render::eTextureLayout newLayout) override;
+	// ---- Clear ----
+	virtual void ClearBuffer(const Arc< render::Buffer >& pBuffer, u32 value, u64 offsetInBytes = 0) override;
+	virtual void ClearTexture(const Arc< render::Texture >& pTexture, render::eTextureLayout newLayout) override;
 	void ClearRenderTarget(const Arc< Dx12Texture >& pTexture);
 	void ClearDepthStencil(const Arc< Dx12Texture >& pTexture, D3D12_CLEAR_FLAGS clearFlags);
 
-	virtual void TransitionBarrier(Arc< render::Texture > pTexture, render::eTextureLayout newState, u32 subresource = ALL_SUBRESOURCES, bool bFlushImmediate = false) override;
-	virtual void UAVBarrier(Arc< render::Buffer > pBuffer, bool bFlushImmediate) override;
+	// ---- Barrier ----
+	virtual void TransitionBufferToRead(const Arc< render::Buffer >& pBuffer, render::ePipelineStage dstStage, u64 offsetInBytes = 0, bool bFlushImmediate = false) override;
+	virtual void TransitionBufferToWrite(const Arc< render::Buffer >& pBuffer, render::ePipelineStage dstStage, u64 offsetInBytes = 0, bool bFlushImmediate = false) override;
+	virtual void TransitionBarrier(const Arc< render::Texture >& pTexture, render::eTextureLayout newState, u32 subresource = ALL_SUBRESOURCES, bool bFlushImmediate = false) override;
+	virtual void UAVBarrier(const Arc< render::Buffer >& pBuffer, bool bFlushImmediate) override;
 
-	void TransitionBarrier(Dx12Resource* pResource, D3D12_RESOURCE_STATES stateAfter, u32 subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, bool bFlushImmediate = true);
+	void TransitionBarrier(Dx12Resource* pResource, const struct BarrierState& stateAfter, u32 subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, bool bFlushImmediate = true);
 	void AliasingBarrier(Dx12Resource* pResourceBefore, Dx12Resource* pResourceAfter, bool bFlushImmediate = false);
 
-	void CopyBuffer(ID3D12Resource* d3d12DstBuffer, ID3D12Resource* d3d12SrcBuffer, SIZE_T sizeInBytes, SIZE_T dstOffsetInBytes);
-	virtual void CopyBuffer(Arc< render::Buffer > pDstBuffer, Arc< render::Buffer > pSrcBuffer, u64 offsetInBytes = 0) override;
-	virtual void CopyTexture(Arc< render::Texture > pDstTexture, Arc< render::Texture > pSrcTexture, u64 offsetInBytes = 0) override;
+	// ---- Copy ----
+	void UploadData(const Arc< render::Buffer >& pDstBuffer, const void* pData, u32 numElements, u64 elemSizeInBytes, u64 dstOffsetInBytes);
+
+	virtual void CopyBuffer(const Arc< render::Buffer >& pDstBuffer, const Arc< render::Buffer >& pSrcBuffer, SIZE_T dstOffsetInBytes = 0, SIZE_T srcOffsetInBytes = 0) override;
+	virtual void CopyTexture(const Arc< render::Texture >& pDstTexture, const Arc< render::Texture >& pSrcTexture, u64 offsetInBytes = 0) override;
+	void CopyBuffer(ID3D12Resource2* d3d12DstBuffer, ID3D12Resource2* d3d12SrcBuffer, SIZE_T sizeInBytes, SIZE_T dstOffsetInBytes, SIZE_T srcOffsetInBytes);
 	void ResolveSubresource(Dx12Resource* pDstResource, Dx12Resource* pSrcResource, u32 dstSubresource = 0, u32 srcSubresource = 0);
 
+	// ---- Acceleration Structure ----
 	virtual void BuildBLAS(render::BottomLevelAccelerationStructure& blas) override;
 	virtual void BuildTLAS(render::TopLevelAccelerationStructure& tlas) override;
 
+	// ---- Pipeline ----
 	virtual void SetRenderPipeline(render::ComputePipeline* pRenderPipeline) override;
 	virtual void SetRenderPipeline(render::GraphicsPipeline* pRenderPipeline) override;
 	virtual void SetRenderPipeline(render::RaytracingPipeline* pRenderPipeline) override;
 
+	// ---- Bindings ----
 	virtual void SetComputeConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) override;
 	virtual void SetGraphicsConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) override;
 
@@ -68,13 +79,17 @@ public:
 
 	void SetDescriptorHeaps(const std::vector< ID3D12DescriptorHeap* >& d3d12DescriptorHeaps);
 
+	// ---- Render Target ----
 	void SetRenderTarget(u32 numRenderTargets, D3D12_CPU_DESCRIPTOR_HANDLE rtv, D3D12_CPU_DESCRIPTOR_HANDLE dsv = D3D12_CPU_DESCRIPTOR_HANDLE());
 	virtual void BeginRenderPass(Arc< render::RenderTarget > pRenderTarget) override;
 	virtual void EndRenderPass() override {}
 
+	// ---- Draw / Dispatch ----
 	virtual void Draw(u32 vertexCount, u32 instanceCount = 1, u32 firstVertex = 0, u32 firstInstance = 0) override;
 	virtual void DrawIndexed(u32 indexCount, u32 instanceCount = 1, u32 firstIndex = 0, i32 vertexOffset = 0, u32 firstInstance = 0) override;
-	virtual void DrawScene(const render::SceneResource& sceneResource) override;
+	virtual void DrawMeshTasksIndirect(const Arc< render::Buffer >& pArgumentBuffer, u64 offsetInBytes, u32 numDraws, u32 strideInBytes) override;
+	virtual void DrawMeshTasksIndirectCount(const Arc< render::Buffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< render::Buffer >& pCountBuffer, u32 numDraws, u32 strideInBytes) override;
+
 	virtual void Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ) override;
 	virtual void DispatchRays(render::ShaderBindingTable& sbt, u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ = 1) override;
 

@@ -19,68 +19,6 @@ enum class eResourceType : u8
     TLAS,
 };
 
-class BAAMBOO_API Resource : public ArcBase
-{
-public:
-    Resource(const char* name, eResourceType type)
-        : m_Name(name), m_Type(type) {}
-    virtual ~Resource() = default;
-
-protected:
-    std::string   m_Name;
-    eResourceType m_Type;
-};
-
-
-//-------------------------------------------------------------------------
-// Buffer
-//-------------------------------------------------------------------------
-enum 
-{
-    eBufferUsage_TransferSource      = 0x00000001,
-    eBufferUsage_TransferDest        = 0x00000002,
-    eBufferUsage_UniformTexel        = 0x00000004,
-    eBufferUsage_StorageTexel        = 0x00000008,
-    eBufferUsage_Uniform             = 0x00000010,
-    eBufferUsage_Storage             = 0x00000020,
-    eBufferUsage_Index               = 0x00000040,
-    eBufferUsage_Vertex              = 0x00000080,
-    eBufferUsage_Indirect            = 0x00000100,
-    eBufferUsage_ShaderDeviceAddress = 0x00020000,
-};
-
-class BAAMBOO_API Buffer : public Resource
-{
-using Super = Resource;
-public:
-    struct CreationInfo
-    {
-        u32  count              = 0;
-        u64  elementSizeInBytes = 0;
-        bool bMap               = false;
-
-        RenderFlags bufferUsage = 0;
-    };
-
-    static Arc< Buffer > Create(RenderDevice& rd, const char* name, CreationInfo&& desc);
-    static Arc< Buffer > CreateEmpty(RenderDevice& rd, const char* name);
-
-    Buffer(const char* name);
-    Buffer(const char* name, CreationInfo&& info);
-    virtual ~Buffer() = default;
-
-    virtual void Resize(u64 sizeInBytes, bool bReset = false) = 0;
-
-    virtual u64 SizeInBytes() const { return 0; }
-
-public:
-    CreationInfo m_CreationInfo = {};
-};
-
-
-//-------------------------------------------------------------------------
-// Texture
-//-------------------------------------------------------------------------
 enum class eFormat
 {
     UNKNOWN,
@@ -146,6 +84,70 @@ enum class eFormat
     D16_UNORM,
 };
 
+class BAAMBOO_API Resource : public ArcBase
+{
+public:
+    Resource(const char* name, eResourceType type)
+        : m_Name(name), m_Type(type) {}
+    virtual ~Resource() = default;
+
+protected:
+    std::string   m_Name;
+    eResourceType m_Type;
+};
+
+
+//-------------------------------------------------------------------------
+// Buffer
+//-------------------------------------------------------------------------
+enum 
+{
+    eBufferUsage_TransferSource      = 0x00000001,
+    eBufferUsage_TransferDest        = 0x00000002,
+    eBufferUsage_UniformTexel        = 0x00000004,
+    eBufferUsage_StorageTexel        = 0x00000008,
+    eBufferUsage_Uniform             = 0x00000010,
+    eBufferUsage_Storage             = 0x00000020,
+    eBufferUsage_Index               = 0x00000040,
+    eBufferUsage_Vertex              = 0x00000080,
+    eBufferUsage_Indirect            = 0x00000100,
+    eBufferUsage_ShaderDeviceAddress = 0x00020000,
+};
+
+class BAAMBOO_API Buffer : public Resource
+{
+using Super = Resource;
+public:
+    struct CreationInfo
+    {
+        u32  count              = 0;
+        u64  elementSizeInBytes = 0;
+        bool bMap               = false;
+
+        RenderFlags bufferUsage = 0;
+
+		eFormat format = eFormat::UNKNOWN;
+    };
+
+    static Arc< Buffer > Create(RenderDevice& rd, const char* name, CreationInfo&& desc);
+    static Arc< Buffer > CreateEmpty(RenderDevice& rd, const char* name);
+
+    Buffer(const char* name);
+    Buffer(const char* name, CreationInfo&& info);
+    virtual ~Buffer() = default;
+
+    virtual void Resize(u64 sizeInBytes, bool bReset = false) = 0;
+
+    virtual u64 SizeInBytes() const { return 0; }
+
+public:
+    CreationInfo m_CreationInfo = {};
+};
+
+
+//-------------------------------------------------------------------------
+// Texture
+//-------------------------------------------------------------------------
 enum class eImageType
 {
     Texture1D   = 0,
@@ -604,6 +606,37 @@ protected:
 //-------------------------------------------------------------------------
 // Pipelines
 //-------------------------------------------------------------------------
+enum ePipelineStage : u64
+{
+    None                  = 0ULL,
+    TopPipe               = 0x00000001ULL,
+    DrawIndirect          = 0x00000002ULL,
+    VertexInput           = 0x00000004ULL,
+    VertexShader          = 0x00000008ULL,
+    HullShader            = 0x00000010ULL,
+    DomainShader          = 0x00000020ULL,
+    GeometryShader        = 0x00000040ULL,
+    PixelShader           = 0x00000080ULL,
+    EarlyFragmentTests    = 0x00000100ULL,
+    LateFragmentTests     = 0x00000200ULL,
+    ColorAttachmentOutput = 0x00000400ULL,
+    ComputeShader         = 0x00000800ULL,
+    AllTransfer           = 0x00001000ULL,
+    BottomPipe            = 0x00002000ULL,
+    Host                  = 0x00004000ULL,
+    Copy                  = 0x100000000ULL,
+    Resolve               = 0x200000000ULL,
+    Blit                  = 0x400000000ULL,
+    Clear                 = 0x800000000ULL,
+
+    ShadingRate                = 0x00400000ULL,
+    AccelerationStructureBuild = 0x02000000ULL,
+    RayTracingShader           = 0x00200000ULL,
+
+    TaskShader = 0x00080000ULL,
+	MeshShader = 0x00100000ULL
+};
+
 enum class ePrimitiveTopology
 {
     Point     = 0,
@@ -822,10 +855,18 @@ class BAAMBOO_API SceneResource
 public:
     virtual ~SceneResource() = default;
 
-    virtual void UpdateSceneResources(const SceneRenderView& renderView) = 0;
+    virtual void UpdateSceneResources(const SceneRenderView& renderView, class CommandContext& context) = 0;
     virtual void BindSceneResources(class CommandContext& context) = 0;
 
+    virtual const Arc< Buffer >& GetArgumentBuffer() const { return nullptr; }
     virtual Arc< TopLevelAccelerationStructure > GetTLAS() const { return nullptr; }
+
+    [[nodiscard]]
+    u32 NumInstances() const { return m_NumInstances; }
+
+protected:
+    u32 m_ContextIndex = 0;
+    u32 m_NumInstances = 0;
 };
 
 

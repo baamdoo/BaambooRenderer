@@ -1,15 +1,33 @@
 #pragma once
 #include <chrono>
+using namespace std::chrono;
 
 class Timer
 {
 public:
-    Timer();
+    Timer() : m_ElapsedTime(0.0), m_TotalTime(0.0)
+    {
+        m_TimePoint0 = std::chrono::high_resolution_clock::now();
+	}
     ~Timer() = default;
 
-    void Tick();
+    void Tick()
+    {
+        m_TimePoint1 = high_resolution_clock::now();
+        duration< double, std::nano > delta = m_TimePoint1 - m_TimePoint0;
 
-    void Reset();
+        m_TimePoint0  = m_TimePoint1;
+        m_ElapsedTime = delta.count();
+
+        m_TotalTime += m_ElapsedTime;
+    }
+
+    void Reset()
+    {
+        m_TimePoint0  = high_resolution_clock::now();
+        m_ElapsedTime = 0.0;
+        m_TotalTime   = 0.0;
+    }
 
     inline double GetDeltaSeconds() const { return m_ElapsedTime * 1e-9; }
     inline double GetDeltaMilliseconds() const { return m_ElapsedTime * 1e-6; }
