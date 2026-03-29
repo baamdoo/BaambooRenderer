@@ -210,6 +210,27 @@ void Engine::Release()
 	ImGui::Destroy();
 }
 
+void Engine::ApplyScriptBehaviors(float dt)
+{
+	if (m_pScene == nullptr)
+		return;
+
+	m_pScene->Registry().view< TransformComponent, ScriptComponent >().each([this, dt](auto id, auto& transformComponent, auto& scriptComponent)
+		{
+			if (scriptComponent.bMove)
+			{
+				transformComponent.transform.position += scriptComponent.moveVelocity * dt;
+				m_pScene->Registry().patch< TransformComponent >(id, [](auto&) {});
+			}
+
+			if (scriptComponent.bRotate)
+			{
+				transformComponent.transform.Rotate(scriptComponent.rotationVelocity.y * dt, scriptComponent.rotationVelocity.x * dt, scriptComponent.rotationVelocity.z * dt);
+				m_pScene->Registry().patch< TransformComponent >(id, [](auto&) {});
+			}
+		});
+}
+
 void Engine::GameLoop(float dt)
 {
 	ProcessInput();
@@ -219,6 +240,7 @@ void Engine::GameLoop(float dt)
 
 	std::lock_guard< std::mutex > lock(m_ImGuiMutex);
 
+	ApplyScriptBehaviors(dt);
 	m_pScene->Update(dt, *m_pCamera);
 
 	auto renderView = m_pScene->RenderView(*m_pCamera, float2(m_pWindow->Width(), m_pWindow->Height()), m_Frame, m_pRendererBackend->GetDevice()->GetDeviceSettings());
@@ -364,14 +386,59 @@ void Engine::DrawUI()
 			}
 		}
 
-		m_pScene->Registry().view< TagComponent, TransformComponent >().each([this](auto id, auto& tagComponent, auto& transformComponent)
+		auto rootView = m_pScene->Registry().view< TagComponent, TransformComponent, RootComponent >();
+		std::vector< entt::entity > rootEntities;
+		rootEntities.reserve(rootView.size_hint());
+		rootView.each([&rootEntities](auto id, auto&, auto&) { rootEntities.push_back(id); });
+
+		constexpr static u32 MAX_ENTITY_COUNT_ON_PANEL = 10;
+		const int rootCount = static_cast< int >(rootEntities.size());
+		if (rootCount > MAX_ENTITY_COUNT_ON_PANEL)
+		{
+			ImGuiListClipper clipper;
+			clipper.Begin(rootCount);
+			while (clipper.Step())
 			{
-				if (transformComponent.hierarchy.parent == entt::null)
+				for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
 				{
+					auto id = rootEntities[i];
 					auto entity = Entity(m_pScene, id);
-					DrawEntityNode(entity);
+					const auto& tag = m_pScene->Registry().get< TagComponent >(id).tag;
+
+					ImGui::PushID((int)(u32)id);
+
+					bool bSelected = (ImGui::SelectedEntity == entity);
+					if (ImGui::Selectable(tag.c_str(), bSelected))
+						ImGui::SelectedEntity = entity;
+
+					if (ImGui::BeginDragDropSource())
+					{
+						ImGui::SetDragDropPayload("ENTITY_HIERARCHY", &id, sizeof(entt::entity));
+						ImGui::Text("Moving Entity %d", (int)id);
+						ImGui::EndDragDropSource();
+					}
+
+					if (ImGui::BeginDragDropTarget())
+					{
+						if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ENTITY_HIERARCHY"))
+						{
+							entt::entity droppedEntity = *(entt::entity*)payload->Data;
+							entity.AttachChild(droppedEntity);
+						}
+						ImGui::EndDragDropTarget();
+					}
+
+					ImGui::PopID();
 				}
-			});
+			}
+		}
+		else
+		{
+			for (auto id : rootEntities)
+			{
+				DrawEntityNode(Entity(m_pScene, id));
+			}
+		}
 
 		ImVec2 availRegion = ImGui::GetContentRegionAvail();
 		ImGui::InvisibleButton("EmptyAreaDropTarget", ImVec2(availRegion.x, availRegion.y > 50 ? availRegion.y : 50));
@@ -1114,24 +1181,6 @@ void Engine::DrawUI()
 		ImGui::End();
 	}
 
-	// apply script behaviour
-	float dt = static_cast<float>(renderElapsedCpu_ms);
-	m_pScene->Registry().view< TransformComponent, ScriptComponent >().each([this, dt](auto id, auto& transformComponent, auto& scriptComponent)
-		{
-			if (scriptComponent.bMove)
-			{
-				transformComponent.transform.position += scriptComponent.moveVelocity * dt;
-
-				m_pScene->Registry().patch< TransformComponent >(id, [](auto&) {});
-			}
-
-			if (scriptComponent.bRotate)
-			{
-				transformComponent.transform.Rotate(scriptComponent.rotationVelocity.y * dt, scriptComponent.rotationVelocity.x * dt, scriptComponent.rotationVelocity.z * dt);
-
-				m_pScene->Registry().patch< TransformComponent >(id, [](auto&) {});
-			}
-		});
 
 
 	// **
@@ -1149,7 +1198,15 @@ void Engine::DrawUI()
 				}
 			}
 
-			for (auto& entry : fs::directory_iterator(m_CurrentDirectory))
+			if (m_CurrentDirectory != m_CachedBrowserPath)
+			{
+				m_CachedDirectoryEntries.clear();
+				for (auto& entry : fs::directory_iterator(m_CurrentDirectory))
+					m_CachedDirectoryEntries.push_back(entry);
+				m_CachedBrowserPath = m_CurrentDirectory;
+			}
+
+			for (auto& entry : m_CachedDirectoryEntries)
 			{
 				const auto& path = entry.path();
 				auto relativePath = fs::relative(entry.path(), ASSET_PATH);
@@ -1305,11 +1362,12 @@ void Engine::DrawEntityNode(Entity entity)
 	auto& hierarchy = registry.get< TransformComponent >(entity).hierarchy;
 
 	ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow;
-	if (ImGui::SelectedEntity == entity) 
+	if (ImGui::SelectedEntity == entity)
 		flags |= ImGuiTreeNodeFlags_Selected;
-	if (hierarchy.firstChild == entt::null) 
+	if (hierarchy.firstChild == entt::null)
 		flags |= ImGuiTreeNodeFlags_Leaf;
 
+	ImGui::SetNextItemOpen(false, ImGuiCond_Once);
 	auto id = entity.ID();
 	bool bOpen = ImGui::TreeNodeEx((void*)(u64)id, flags, "%s", tag.c_str());
 

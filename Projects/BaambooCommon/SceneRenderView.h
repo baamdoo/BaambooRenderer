@@ -27,6 +27,7 @@ struct TransformRenderView
 	u64 id;
 
 	mat4 mWorld;
+	mat4 mWorldInverse;
 };
 
 struct CameraRenderView

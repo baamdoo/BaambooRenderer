@@ -68,12 +68,19 @@ Arc< Dx12Texture > CombineTextures(Dx12RenderDevice& rd, const char* name, Arc< 
 
 void Dx12SceneResource::PerFrameData::Reset()
 {
-    pMeshDataAllocator->Reset();
-    pInstanceAllocator->Reset();
+    bInitialized = true;
 
-    pTransformAllocator->Reset();
-    pMaterialAllocator->Reset();
-    pLightAllocator->Reset();
+    if (pMeshDataAllocator)
+        pMeshDataAllocator->Reset();
+    if (pInstanceAllocator)
+        pInstanceAllocator->Reset();
+
+    if (pTransformAllocator)
+        pTransformAllocator->Reset();
+    if (pMaterialAllocator)
+        pMaterialAllocator->Reset();
+    if (pLightAllocator)
+        pLightAllocator->Reset();
 }
 
 Dx12SceneResource::Dx12SceneResource(Dx12RenderDevice& rd)
@@ -145,12 +152,68 @@ Dx12SceneResource::~Dx12SceneResource()
     RELEASE(m_pIndirectDispatchSignature);
 }
 
+void Dx12SceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneView, Dx12CommandContext& ctx)
+{
+    auto ApplyJittering = [viewport = sceneView.viewport](const mat4& m_, float2 jitter)
+        {
+            mat4 m = m_;
+            m[2][0] += (jitter.x * 2.0f - 1.0f) / viewport.x;
+            m[2][1] += (jitter.y * 2.0f - 1.0f) / viewport.y;
+            return m;
+        };
+
+    CameraData camera = {};
+    camera.mView = sceneView.camera.mView;
+    camera.mProj = sceneView.postProcess.effectBits & (1 << ePostProcess::AntiAliasing) ?
+        ApplyJittering(sceneView.camera.mProj, baamboo::math::GetHaltonSequence((u32)sceneView.frame)) : sceneView.camera.mProj;
+    camera.mViewProj               = camera.mProj * camera.mView;
+    camera.mViewProjInv            = glm::inverse(camera.mViewProj);
+    camera.mViewProjUnjittered     = sceneView.camera.mProj * camera.mView;
+    camera.mViewProjUnjitteredPrev =
+        m_CameraCache.mViewProjUnjittered == glm::identity< mat4 >() ? camera.mViewProjUnjittered : m_CameraCache.mViewProjUnjittered;
+    camera.position = sceneView.camera.pos;
+    camera.zNear    = sceneView.camera.zNear;
+    camera.zFar     = sceneView.camera.zFar;
+    m_CameraCache   = std::move(camera);
+    memcpy(m_FrameData[m_ContextIndex].pCameraBuffer->GetSystemMemoryAddress(), &m_CameraCache, sizeof(m_CameraCache));
+
+    mat4 mViewProjectionT = glm::transpose(m_CameraCache.mViewProjUnjittered);
+
+    m_CullData = {};
+    m_CullData.frustum[0] = baamboo::math::NormalizePlane(mViewProjectionT[3] + mViewProjectionT[0]); // w + x < 0
+    m_CullData.frustum[1] = baamboo::math::NormalizePlane(mViewProjectionT[3] - mViewProjectionT[0]); // w - x < 0
+    m_CullData.frustum[2] = baamboo::math::NormalizePlane(mViewProjectionT[3] + mViewProjectionT[1]); // w + y < 0
+    m_CullData.frustum[3] = baamboo::math::NormalizePlane(mViewProjectionT[3] - mViewProjectionT[1]); // w - y < 0
+    m_CullData.frustum[4] = baamboo::math::NormalizePlane(mViewProjectionT[3] - mViewProjectionT[2]); // w - z < 0 (reversed-z)
+    m_CullData.frustum[5] = float4();                                                                 // z < 0 (reversed-z, infinite far plane)
+    memcpy(m_FrameData[m_ContextIndex].pCullBuffer->GetSystemMemoryAddress(), &m_CullData, sizeof(CullData));
+
+    SceneEnvironmentData sceneEnvironmentData =
+    {
+        .atmosphere = sceneView.atmosphere.data,
+        .cloud      = sceneView.cloud.data
+    };
+    memcpy(m_FrameData[m_ContextIndex].pSceneEnvironmentBuffer->GetSystemMemoryAddress(), &sceneEnvironmentData, sizeof(sceneEnvironmentData));
+}
+
 void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, render::CommandContext& context)
 {
     using namespace render;
 
     auto& rm  = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
     auto& ctx = static_cast<Dx12CommandContext&>(context);
+    if (sceneView.pEntityDirtyMarks != nullptr)
+    {
+        for (auto& frameData : m_FrameData)
+        {
+            frameData.bInitialized = false;
+        }
+    }
+    else if (m_FrameData[m_ContextIndex].bInitialized)
+    {
+        UpdateCameraAndEnvironment(sceneView, ctx);
+        return;
+    }
 
     ResetFrameBuffers();
 
@@ -160,7 +223,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
     {
         TransformData transform = {};
         transform.mLocalToWorld = transformView.mWorld;
-        //transform.mWorldToLocal = glm::inverse(transformView.mWorld);
+        transform.mWorldToLocal = transformView.mWorldInverse;
         transforms.push_back(transform);
     }
     UpdateFrameBuffer(ctx, transforms.data(), (u32)transforms.size(), sizeof(TransformData), *m_FrameData[m_ContextIndex].pTransformAllocator, BarrierStates::ShaderResource);
@@ -436,7 +499,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
                 auto& transformView = sceneView.transforms[data.transform];
 
                 auto blasIter = m_BLASCache.find(meshView.tag);
-                if (blasIter == m_BLASCache.end() || !blasIter->second->IsBuilt())
+                if (blasIter == m_BLASCache.end())
                     continue;
 
                 const mat4& m = transformView.mWorld;
@@ -464,47 +527,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
     UpdateFrameBuffer(ctx, instances.data(), (u32)instances.size(), sizeof(InstanceData), *m_FrameData[m_ContextIndex].pInstanceAllocator, BarrierStates::ShaderResource);
     UpdateFrameBuffer(ctx, &sceneView.light, 1, sizeof(LightData), *m_FrameData[m_ContextIndex].pLightAllocator, BarrierStates::PixelShaderResource);
 
-    auto ApplyJittering = [viewport = sceneView.viewport](const mat4& m_, float2 jitter)
-        {
-            mat4 m = m_;
-            m[2][0] += (jitter.x * 2.0f - 1.0f) / viewport.x;
-            m[2][1] += (jitter.y * 2.0f - 1.0f) / viewport.y;
-
-            return m;
-        };
-
-    CameraData camera = {};
-    camera.mView = sceneView.camera.mView;
-    camera.mProj = sceneView.postProcess.effectBits & (1 << ePostProcess::AntiAliasing) ?
-        ApplyJittering(sceneView.camera.mProj, baamboo::math::GetHaltonSequence((u32)sceneView.frame)) : sceneView.camera.mProj;
-    camera.mViewProj               = camera.mProj * camera.mView;
-    camera.mViewProjInv            = glm::inverse(camera.mViewProj);
-    camera.mViewProjUnjittered     = sceneView.camera.mProj * camera.mView;
-    camera.mViewProjUnjitteredPrev =
-        m_CameraCache.mViewProjUnjittered == glm::identity< mat4 >() ? camera.mViewProjUnjittered : m_CameraCache.mViewProjUnjittered;
-    camera.position = sceneView.camera.pos;
-    camera.zNear    = sceneView.camera.zNear;
-    camera.zFar     = sceneView.camera.zFar;
-    m_CameraCache   = std::move(camera);
-    memcpy(m_FrameData[m_ContextIndex].pCameraBuffer->GetSystemMemoryAddress(), &m_CameraCache, sizeof(m_CameraCache));
-
-    mat4 mViewProjectionT = glm::transpose(m_CameraCache.mViewProjUnjittered);
-
-    m_CullData = {};
-    m_CullData.frustum[0] = baamboo::math::NormalizePlane(mViewProjectionT[3] + mViewProjectionT[0]); // w + x < 0
-    m_CullData.frustum[1] = baamboo::math::NormalizePlane(mViewProjectionT[3] - mViewProjectionT[0]); // w - x < 0
-    m_CullData.frustum[2] = baamboo::math::NormalizePlane(mViewProjectionT[3] + mViewProjectionT[1]); // w + y < 0
-    m_CullData.frustum[3] = baamboo::math::NormalizePlane(mViewProjectionT[3] - mViewProjectionT[1]); // w - y < 0
-    m_CullData.frustum[4] = baamboo::math::NormalizePlane(mViewProjectionT[3] - mViewProjectionT[2]); // w - z < 0 (reversed-z)
-    m_CullData.frustum[5] = float4();                                                                 // z < 0 (reversed-z, infinite far plane) 
-    memcpy(m_FrameData[m_ContextIndex].pCullBuffer->GetSystemMemoryAddress(), &m_CullData, sizeof(CullData));
-
-    SceneEnvironmentData sceneEnvironmentData =
-    {
-        .atmosphere = sceneView.atmosphere.data,
-        .cloud      = sceneView.cloud.data
-    };
-    memcpy(m_FrameData[m_ContextIndex].pSceneEnvironmentBuffer->GetSystemMemoryAddress(), &sceneEnvironmentData, sizeof(sceneEnvironmentData));
+    UpdateCameraAndEnvironment(sceneView, ctx);
 }
 
 void Dx12SceneResource::BindSceneResources(render::CommandContext& context)
@@ -581,7 +604,7 @@ BufferHandle Dx12SceneResource::GetOrUpdateVertex(u64 entity, const std::string&
     rm.UploadData(allocation.pBuffer, pData, allocation.sizeInBytes, allocation.offsetInBytes, BarrierStates::NonPixelShaderResource);
 
     BufferHandle handle = {};
-    handle.gpuHandle          = allocation.pBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
+    handle.gpuHandle          = allocation.gpuHandle;
     handle.elementSizeInBytes = m_pVertexAllocator->GetElementSize();
     handle.offset             = u32(allocation.offsetInBytes / handle.elementSizeInBytes);
     handle.count              = count;
@@ -604,7 +627,7 @@ BufferHandle Dx12SceneResource::GetOrUpdateIndex(u64 entity, const std::string& 
     rm.UploadData(allocation.pBuffer, pData, allocation.sizeInBytes, allocation.offsetInBytes, BarrierStates::NonPixelShaderResource);
 
     BufferHandle handle = {};
-    handle.gpuHandle          = allocation.pBuffer->GetD3D12Resource()->GetGPUVirtualAddress();
+    handle.gpuHandle          = allocation.gpuHandle;
     handle.elementSizeInBytes = m_pIndexAllocator->GetElementSize();
     handle.offset             = u32(allocation.offsetInBytes / handle.elementSizeInBytes);
     handle.count              = count;
@@ -688,10 +711,10 @@ Arc< Dx12BottomLevelAS > Dx12SceneResource::GetOrCreateBLAS(const std::string& t
     auto pBLAS = Dx12BottomLevelAS::Create(m_RenderDevice, tag.c_str());
 
     render::GeometryDesc geom = {};
-    geom.vertexBufferAddress = vHandle.gpuHandle + (vHandle.offset * vHandle.elementSizeInBytes);
+    geom.vertexBufferAddress = vHandle.gpuHandle;
     geom.vertexCount         = vHandle.count;
     geom.vertexStride        = static_cast<u32>(vHandle.elementSizeInBytes);
-    geom.indexBufferAddress  = iHandle.gpuHandle + (iHandle.offset * iHandle.elementSizeInBytes);
+    geom.indexBufferAddress  = iHandle.gpuHandle;
     geom.indexCount          = iHandle.count;
     geom.geometryFlags       = render::eGeometryFlag_Opaque;
     pBLAS->AddGeometry(geom);

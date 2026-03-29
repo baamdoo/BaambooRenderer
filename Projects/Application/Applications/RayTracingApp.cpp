@@ -18,6 +18,7 @@ using namespace baamboo;
 void RayTracingApp::Initialize(eRendererAPI api)
 {
 	m_DeviceSettings.bRaytracing = true;
+	m_DeviceSettings.bMeshShader = true;
 
 	Super::Initialize(api);
 
@@ -190,7 +191,6 @@ void RayTracingApp::ConfigureSceneObjects()
 		tc4.transform.position = float3(0.0f, 5.0f, 0.0f);
 
 		auto entity3 = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
-		entity3.AttachComponent< MaterialComponent >();
 		auto& tc3 = entity3.GetComponent< TransformComponent >();
 		tc3.transform.position = float3(0.0f, -5.0f, 0.0f);
 		tc3.transform.scale = float3(10.0f, 1.0f, 10.0f);

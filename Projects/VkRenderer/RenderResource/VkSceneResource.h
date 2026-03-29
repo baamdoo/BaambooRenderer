@@ -59,6 +59,7 @@ struct VkSceneResource : public render::SceneResource
 private:
     void ResetFrameBuffers();
     void UpdateFrameBuffer(VkCommandContext& context, const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator& targetBuffer, VkPipelineStageFlags2 dstStageMask);
+    void UpdateCameraAndEnvironment(const SceneRenderView& sceneView, VkCommandContext& ctx);
 
 private:
     VkRenderDevice& m_RenderDevice;
@@ -90,6 +91,8 @@ private:
         Arc< VulkanUniformBuffer > pCameraBuffer;
         Arc< VulkanUniformBuffer > pCullBuffer;
         Arc< VulkanUniformBuffer > pSceneEnvironmentBuffer;
+
+        bool bInitialized = false;
 
         void Reset();
     };

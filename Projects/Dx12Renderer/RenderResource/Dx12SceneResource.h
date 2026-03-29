@@ -61,6 +61,7 @@ private:
     void ResetFrameBuffers();
     void UpdateFrameBuffer(Dx12CommandContext& context, const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator& targetBuffer, const BarrierState& stateAfter);
     void BuildAccelerationStructures();
+    void UpdateCameraAndEnvironment(const SceneRenderView& sceneView, Dx12CommandContext& ctx);
 
     Dx12RenderDevice& m_RenderDevice;
 
@@ -86,6 +87,8 @@ private:
         Arc< Dx12ConstantBuffer > pCameraBuffer;
         Arc< Dx12ConstantBuffer > pCullBuffer;
         Arc< Dx12ConstantBuffer > pSceneEnvironmentBuffer;
+
+        bool bInitialized = false;
 
         void Reset();
     };

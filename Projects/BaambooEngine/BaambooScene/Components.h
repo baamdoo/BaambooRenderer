@@ -8,6 +8,11 @@
 
 
 //-------------------------------------------------------------------------
+// RootComponent(core) : Marks entities with no parent for fast root query
+//-------------------------------------------------------------------------
+struct RootComponent {};
+
+//-------------------------------------------------------------------------
 // TagComponent(core) : Determines whether to expose in UI panel
 //-------------------------------------------------------------------------
 struct TagComponent
@@ -25,6 +30,7 @@ struct TransformComponent
 	{
 		entt::entity parent{ entt::null };
 		entt::entity firstChild{ entt::null };
+		entt::entity lastChild{ entt::null };
 		entt::entity prevSibling{ entt::null };
 		entt::entity nextSibling{ entt::null };
 		int depth{ 0 };
@@ -210,7 +216,7 @@ struct LightComponent
 	float  temperatureK = 0.0f;
 	union
 	{
-		float illuminanceLux; // directional: lux (lm/m©÷)
+		float illuminanceLux; // directional: lux (lm/mï¿½ï¿½)
 		float luminousFluxLm; // point/spot: lumens
 	};
 

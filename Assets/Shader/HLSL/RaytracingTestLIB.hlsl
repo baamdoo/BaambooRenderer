@@ -408,8 +408,8 @@ void RadianceAnyHit(inout RadiancePayload payload, in BuiltInTriangleIntersectio
     StructuredBuffer< MeshData >     Meshes    = GetResource(g_Meshes.index);
     StructuredBuffer< InstanceData > Instances = GetResource(g_Instances.index);
 
-    MeshData     mesh     = Meshes[instanceID];
     InstanceData instance = Instances[instanceID];
+    MeshData     mesh     = Meshes[instance.meshID];
 
 
     uint primitiveIndex = PrimitiveIndex();
@@ -454,8 +454,8 @@ void ShadowAnyHit(inout ShadowPayload payload, in BuiltInTriangleIntersectionAtt
     StructuredBuffer< MeshData >     Meshes    = GetResource(g_Meshes.index);
     StructuredBuffer< InstanceData > Instances = GetResource(g_Instances.index);
 
-    MeshData     mesh     = Meshes[instanceID];
     InstanceData instance = Instances[instanceID];
+    MeshData     mesh     = Meshes[instance.meshID];
 
     uint primitiveIndex = PrimitiveIndex();
     uint indexOffset    = mesh.iOffset + (primitiveIndex * 3);
@@ -520,8 +520,8 @@ void ClosestHit(inout RadiancePayload payload, in BuiltInTriangleIntersectionAtt
     StructuredBuffer< MeshData >     Meshes    = GetResource(g_Meshes.index);
     StructuredBuffer< InstanceData > Instances = GetResource(g_Instances.index);
 
-    MeshData     mesh     = Meshes[instanceID];
     InstanceData instance = Instances[instanceID];
+    MeshData     mesh     = Meshes[instance.meshID];
 
     uint primitiveIndex = PrimitiveIndex();
     uint indexOffset    = mesh.iOffset + (primitiveIndex * 3);

@@ -12,6 +12,8 @@
 #include "Utils/Math.hpp"
 
 #include <queue>
+#include <numeric>
+#include <execution>
 #include <glm/gtx/matrix_decompose.hpp>
 
 namespace baamboo
@@ -61,9 +63,7 @@ Entity Scene::CreateEntity(const std::string& tag)
 
 void Scene::RemoveEntity(Entity entity)
 {
-	printf("remove entity_%d\n", entity.id());
-
-	//OnEntityRemoved(entity);
+	printf("Remove entity%d\n", entity.id());
 
 	if (entity.GetComponent< TransformComponent >().hierarchy.parent != entt::null)
 		m_pTransformSystem->DetachChild(entity.ID());
@@ -73,11 +73,12 @@ void Scene::RemoveEntity(Entity entity)
 	{
 		auto childEntity = Entity(this, child);
 		auto& transformComponent = childEntity.GetComponent< TransformComponent >();
-		transformComponent.hierarchy.parent = entt::null;
 
 		RemoveEntity(childEntity);
 		child = transformComponent.hierarchy.nextSibling;
 	}
+
+	//OnEntityRemoved(entity);
 
 	m_Registry.destroy(entity.ID());
 	m_EntityDirtyMasks.erase(entity.id());
@@ -259,69 +260,50 @@ void Scene::Update(f32 dt, const EditorCamera& edCamera)
 
 	s_SceneRunningTime += dt;
 
-	m_NumDirtyEntities = 0;
 	for (auto entity : m_pTransformSystem->UpdateRenderData(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
-		if (dirtyMarks == 0)
-			m_NumDirtyEntities++;
-
 		dirtyMarks |= (1 << eComponentType::CTransform);
 	}
 
 	for (auto entity : m_pStaticMeshSystem->UpdateRenderData(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
-		if (dirtyMarks == 0)
-			m_NumDirtyEntities++;
-
 		dirtyMarks |= (1 << eComponentType::CStaticMesh);
 	}
 
 	for (auto entity : m_pSkyLightSystem->UpdateRenderData(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
-		if (dirtyMarks == 0)
-			m_NumDirtyEntities++;
-
 		dirtyMarks |= (1 << eComponentType::CSkyLight);
 	}
 
 	for (auto entity : m_pAtmosphereSystem->UpdateRenderData(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
-		if (dirtyMarks == 0)
-			m_NumDirtyEntities++;
-
 		dirtyMarks |= (1 << eComponentType::CAtmosphere);
 	}
 
 	for (auto entity : m_pCloudSystem->UpdateRenderData(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
-		if (dirtyMarks == 0)
-			m_NumDirtyEntities++;
-
 		dirtyMarks |= (1 << eComponentType::CCloud);
 	}
 
 	for (auto entity : m_pLocalLightSystem->UpdateRenderData(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
-		if (dirtyMarks == 0)
-			m_NumDirtyEntities++;
-
 		dirtyMarks |= (1 << eComponentType::CLocalLight);
 	}
 
 	for (auto entity : m_pPostProcessSystem->UpdateRenderData(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
-		if (dirtyMarks == 0)
-			m_NumDirtyEntities++;
-
 		dirtyMarks |= (1 << eComponentType::CPostProcess);
 	}
+
+	auto valuesView = m_EntityDirtyMasks | std::views::values;
+	m_bDirtyMarks = std::reduce(std::execution::par, valuesView.begin(), valuesView.end(), 0ULL) > 0;
 }
 
 void Scene::OnWindowResized(u32 width, u32 height)
@@ -341,7 +323,7 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport,
 	view.rg = m_RenderGraph.GetRenderNodes();
 
 	view.pSceneMutex       = &m_SceneMutex;
-	view.pEntityDirtyMarks = (m_NumDirtyEntities > 0) ? &m_EntityDirtyMasks : nullptr;
+	view.pEntityDirtyMarks = m_bDirtyMarks ? &m_EntityDirtyMasks : nullptr;
 
 	view.camera.mView              = edCamera.GetView();
 	view.camera.mProj              = edCamera.GetProj();

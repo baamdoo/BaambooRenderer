@@ -127,7 +127,7 @@ private:
 
 	RenderGraph m_RenderGraph;
 
-	u32 m_NumDirtyEntities = 0;
+	bool m_bDirtyMarks = false;
 
 	// animations
 	std::unordered_map< u32, MeshData >      m_MeshData;

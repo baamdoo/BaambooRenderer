@@ -48,3 +48,7 @@ Output
 *.cap
 packages/
 packages.config
+
+# Contexts
+.claude/
+CLAUDE.md

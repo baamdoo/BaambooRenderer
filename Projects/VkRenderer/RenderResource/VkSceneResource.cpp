@@ -102,17 +102,19 @@ Arc< VulkanTexture > CombineTextures(VkRenderDevice& rd, const char* name, Arc< 
 
 void VkSceneResource::PerFrameData::Reset()
 {
+	bInitialized = true;
+
+	if (pMeshDataAllocator)
+		pMeshDataAllocator->Reset();
+	if (pInstanceAllocator)
+
+		pInstanceAllocator->Reset();
 	if (pTransformAllocator) 
 		pTransformAllocator->Reset();
 	if (pMaterialAllocator) 
 		pMaterialAllocator->Reset();
 	if (pLightAllocator) 
 		pLightAllocator->Reset();
-
-	if (pMeshDataAllocator) 
-		pMeshDataAllocator->Reset();
-	if (pInstanceAllocator) 
-		pInstanceAllocator->Reset();
 	/*if (pIndirectCommandAllocator) 
 		pIndirectCommandAllocator->Reset();*/
 }
@@ -243,10 +245,87 @@ VkSceneResource::~VkSceneResource()
 	RELEASE(s_CombineTexturesPipeline);
 }
 
+void VkSceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneView, VkCommandContext& ctx)
+{
+	auto ApplyJittering = [viewport = sceneView.viewport](const mat4& m_, float2 jitter)
+		{
+			mat4 m = m_;
+			m[2][0] += (jitter.x * 2.0f - 1.0f) / viewport.x;
+			m[2][1] += (jitter.y * 2.0f - 1.0f) / viewport.y;
+			return m;
+		};
+
+	CameraData camera = {};
+	camera.mView = sceneView.camera.mView;
+	camera.mProj = ApplyRhiNDC((sceneView.postProcess.effectBits & (1 << ePostProcess::AntiAliasing) ?
+		ApplyJittering(sceneView.camera.mProj, baamboo::math::GetHaltonSequence((u32)sceneView.frame)) : sceneView.camera.mProj), eRendererAPI::Vulkan);
+	camera.mViewProj               = camera.mProj * camera.mView;
+	camera.mViewProjInv            = glm::inverse(camera.mViewProj);
+	camera.mViewProjUnjittered     = ApplyRhiNDC(sceneView.camera.mProj, eRendererAPI::Vulkan) * camera.mView;
+	camera.mViewProjUnjitteredPrev =
+		m_CameraCache.mViewProjUnjittered == glm::identity< mat4 >() ? camera.mViewProjUnjittered : m_CameraCache.mViewProjUnjittered;
+	camera.position = sceneView.camera.pos;
+	camera.zNear    = sceneView.camera.zNear;
+	camera.zFar     = sceneView.camera.zFar;
+
+	m_CameraCache = std::move(camera);
+	memcpy(m_FrameData[m_ContextIndex].pCameraBuffer->MappedMemory(), &m_CameraCache, sizeof(CameraData));
+
+	mat4 mViewProjectionT = glm::transpose(m_CameraCache.mViewProjUnjittered);
+
+	m_CullData = {};
+	m_CullData.frustum[0] = baamboo::math::NormalizePlane(mViewProjectionT[3] + mViewProjectionT[0]); // w + x < 0
+	m_CullData.frustum[1] = baamboo::math::NormalizePlane(mViewProjectionT[3] - mViewProjectionT[0]); // w - x < 0
+	m_CullData.frustum[2] = baamboo::math::NormalizePlane(mViewProjectionT[3] + mViewProjectionT[1]); // w + y < 0
+	m_CullData.frustum[3] = baamboo::math::NormalizePlane(mViewProjectionT[3] - mViewProjectionT[1]); // w - y < 0
+	m_CullData.frustum[4] = baamboo::math::NormalizePlane(mViewProjectionT[3] - mViewProjectionT[2]); // w - z < 0 (reversed-z)
+	m_CullData.frustum[5] = float4();                                                                 // z < 0 (reversed-z, infinite far plane)
+	memcpy(m_FrameData[m_ContextIndex].pCullBuffer->MappedMemory(), &m_CullData, sizeof(CullData));
+
+	SceneEnvironmentData sceneEnvironmentData =
+	{
+		.atmosphere = sceneView.atmosphere.data,
+		.cloud      = sceneView.cloud.data
+	};
+	memcpy(m_FrameData[m_ContextIndex].pSceneEnvironmentBuffer->MappedMemory(), &sceneEnvironmentData, sizeof(SceneEnvironmentData));
+
+	// Re-stage descriptors (imageInfos retains last full-update's textures; per-frame allocators retain their data)
+	u32 variableDescCounts[] = { static_cast<u32>(imageInfos.size()) };
+	auto& descriptorSet = m_pDescriptorPool->AllocateSet(m_vkSetLayout, variableDescCounts);
+	descriptorSet.StageDescriptor({ m_FrameData[m_ContextIndex].pCameraBuffer->vkBuffer(), 0, m_FrameData[m_ContextIndex].pCameraBuffer->SizeInBytes() }, eCommonSetBindingIndex_Camera, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+	descriptorSet.StageDescriptor({ m_FrameData[m_ContextIndex].pCullBuffer->vkBuffer(), 0, m_FrameData[m_ContextIndex].pCullBuffer->SizeInBytes() }, eCommonSetBindingIndex_Cull, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+	descriptorSet.StageDescriptor({ m_FrameData[m_ContextIndex].pSceneEnvironmentBuffer->vkBuffer(), 0, m_FrameData[m_ContextIndex].pSceneEnvironmentBuffer->SizeInBytes() }, eCommonSetBindingIndex_Environment, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+
+	descriptorSet.StageDescriptors(imageInfos, eCommonSetBindingIndex_SceneTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+	descriptorSet.StageDescriptor(m_pVertexAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Vertex, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+	descriptorSet.StageDescriptor(m_pMeshletAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Meshlet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+	descriptorSet.StageDescriptor(m_pMeshletVertexAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_MeshletVertex, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+	descriptorSet.StageDescriptor(m_pMeshletTriangleAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_MeshletTriangle, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+
+	descriptorSet.StageDescriptor(m_FrameData[m_ContextIndex].pMeshDataAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_MeshData, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+	descriptorSet.StageDescriptor(m_FrameData[m_ContextIndex].pInstanceAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Instance, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+	descriptorSet.StageDescriptor(m_FrameData[m_ContextIndex].pTransformAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Transform, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+
+	descriptorSet.StageDescriptor(m_FrameData[m_ContextIndex].pMaterialAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Material, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+	descriptorSet.StageDescriptor(m_FrameData[m_ContextIndex].pLightAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Light, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+}
+
 void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, render::CommandContext& context)
 {
 	auto& rm  = static_cast<VkResourceManager&>(m_RenderDevice.GetResourceManager());
 	auto& ctx = static_cast<VkCommandContext&>(context);
+	if (sceneView.pEntityDirtyMarks != nullptr)
+	{
+		for (auto& frameData : m_FrameData)
+		{
+			frameData.bInitialized = false;
+		}
+	}
+	else if (m_FrameData[m_ContextIndex].bInitialized)
+	{
+		UpdateCameraAndEnvironment(sceneView, ctx);
+		return;
+	}
 
 	ResetFrameBuffers();
 
@@ -256,7 +335,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 	{
 		TransformData transform = {};
 		transform.mLocalToWorld = transformView.mWorld;
-		//transform.mWorldToLocal = glm::inverse(transformView.mWorld);
+		transform.mWorldToLocal = transformView.mWorldInverse;
 		transforms.push_back(transform);
 	}
 	UpdateFrameBuffer(ctx, transforms.data(), (u32)transforms.size(), sizeof(TransformData), *m_FrameData[m_ContextIndex].pTransformAllocator, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
@@ -517,67 +596,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 	UpdateFrameBuffer(ctx, &sceneView.light, 1, sizeof(LightData), *m_FrameData[m_ContextIndex].pLightAllocator, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 	ctx.FlushBarriers();
 
-	static auto ApplyJittering = [viewport = sceneView.viewport](const mat4& m_, float2 jitter)
-		{
-			mat4 m = m_;
-			m[2][0] += (jitter.x * 2.0f - 1.0f) / viewport.x;
-			m[2][1] += (jitter.y * 2.0f - 1.0f) / viewport.y;
-
-			return m;
-		};
-
-	CameraData camera = {};
-	camera.mView = sceneView.camera.mView;
-	camera.mProj = ApplyRhiNDC((sceneView.postProcess.effectBits & (1 << ePostProcess::AntiAliasing) ?
-		ApplyJittering(sceneView.camera.mProj, baamboo::math::GetHaltonSequence((u32)sceneView.frame)) : sceneView.camera.mProj), eRendererAPI::Vulkan);
-	camera.mViewProj               = camera.mProj * camera.mView;
-	camera.mViewProjInv            = glm::inverse(camera.mViewProj);
-	camera.mViewProjUnjittered     = ApplyRhiNDC(sceneView.camera.mProj, eRendererAPI::Vulkan) * camera.mView;
-	camera.mViewProjUnjitteredPrev =
-		m_CameraCache.mViewProjUnjittered == glm::identity< mat4 >() ? camera.mViewProjUnjittered : m_CameraCache.mViewProjUnjittered;
-	camera.position = sceneView.camera.pos;
-	camera.zNear    = sceneView.camera.zNear;
-	camera.zFar     = sceneView.camera.zFar;
-
-	m_CameraCache = std::move(camera);
-	memcpy(m_FrameData[m_ContextIndex].pCameraBuffer->MappedMemory(), &m_CameraCache, sizeof(CameraData));
-
-	mat4 mViewProjectionT = glm::transpose(m_CameraCache.mViewProjUnjittered);
-
-	m_CullData = {};
-	m_CullData.frustum[0] = baamboo::math::NormalizePlane(mViewProjectionT[3] + mViewProjectionT[0]); // w + x < 0
-	m_CullData.frustum[1] = baamboo::math::NormalizePlane(mViewProjectionT[3] - mViewProjectionT[0]); // w - x < 0
-	m_CullData.frustum[2] = baamboo::math::NormalizePlane(mViewProjectionT[3] + mViewProjectionT[1]); // w + y < 0
-	m_CullData.frustum[3] = baamboo::math::NormalizePlane(mViewProjectionT[3] - mViewProjectionT[1]); // w - y < 0
-	m_CullData.frustum[4] = baamboo::math::NormalizePlane(mViewProjectionT[3] - mViewProjectionT[2]); // w - z < 0 (reversed-z)
-	m_CullData.frustum[5] = float4();                                                                 // z < 0 (reversed-z, infinite far plane) 
-	memcpy(m_FrameData[m_ContextIndex].pCullBuffer->MappedMemory(), &m_CullData, sizeof(CullData));
-
-	SceneEnvironmentData sceneEnvironmentData = 
-	{
-		.atmosphere = sceneView.atmosphere.data,
-		.cloud      = sceneView.cloud.data
-	};
-	memcpy(m_FrameData[m_ContextIndex].pSceneEnvironmentBuffer->MappedMemory(), &sceneEnvironmentData, sizeof(SceneEnvironmentData));
-
-	u32 variableDescCounts[] = { static_cast<u32>(imageInfos.size()) };
-	auto& descriptorSet = m_pDescriptorPool->AllocateSet(m_vkSetLayout, variableDescCounts);
-	descriptorSet.StageDescriptor({ m_FrameData[m_ContextIndex].pCameraBuffer->vkBuffer(), 0, m_FrameData[m_ContextIndex].pCameraBuffer->SizeInBytes() }, eCommonSetBindingIndex_Camera, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-	descriptorSet.StageDescriptor({ m_FrameData[m_ContextIndex].pCullBuffer->vkBuffer(), 0, m_FrameData[m_ContextIndex].pCullBuffer->SizeInBytes() }, eCommonSetBindingIndex_Cull, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-	descriptorSet.StageDescriptor({ m_FrameData[m_ContextIndex].pSceneEnvironmentBuffer->vkBuffer(), 0, m_FrameData[m_ContextIndex].pSceneEnvironmentBuffer->SizeInBytes() }, eCommonSetBindingIndex_Environment, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-	
-	descriptorSet.StageDescriptors(imageInfos, eCommonSetBindingIndex_SceneTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-	descriptorSet.StageDescriptor(m_pVertexAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Vertex, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-	descriptorSet.StageDescriptor(m_pMeshletAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Meshlet, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-	descriptorSet.StageDescriptor(m_pMeshletVertexAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_MeshletVertex, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-	descriptorSet.StageDescriptor(m_pMeshletTriangleAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_MeshletTriangle, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-
-	descriptorSet.StageDescriptor(m_FrameData[m_ContextIndex].pMeshDataAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_MeshData, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-	descriptorSet.StageDescriptor(m_FrameData[m_ContextIndex].pInstanceAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Instance, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-	descriptorSet.StageDescriptor(m_FrameData[m_ContextIndex].pTransformAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Transform, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-
-	descriptorSet.StageDescriptor(m_FrameData[m_ContextIndex].pMaterialAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Material, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-	descriptorSet.StageDescriptor(m_FrameData[m_ContextIndex].pLightAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Light, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+	UpdateCameraAndEnvironment(sceneView, ctx);
 }
 
 void VkSceneResource::BindSceneResources(render::CommandContext& context)

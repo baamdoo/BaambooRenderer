@@ -44,6 +44,7 @@ protected:
 	virtual void DrawUI();
 	virtual void DrawEntityNode(Entity entity);
 
+	virtual void ApplyScriptBehaviors(float dt);
 	virtual void ProcessInput();
 
 protected:
@@ -75,6 +76,9 @@ private:
 	// mutex for sync between writing entity-components data in render-thread and reading(view-each) in game-thread
 	std::mutex m_ImGuiMutex;
 	fs::path   m_CurrentDirectory;
+
+	std::vector<fs::directory_entry> m_CachedDirectoryEntries;
+	fs::path                         m_CachedBrowserPath;
 	friend void ImGui::DrawUI(baamboo::Engine& engine);
 };
 

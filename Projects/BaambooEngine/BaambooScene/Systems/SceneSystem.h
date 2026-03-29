@@ -72,8 +72,8 @@ protected:
 protected:
     entt::registry& m_Registry;
 
-    std::unordered_set< entt::entity > m_DirtyEntities;
-    std::unordered_set< entt::entity > m_ExpiredEntities;
+    entt::dense_set< entt::entity > m_DirtyEntities;
+    entt::dense_set< entt::entity > m_ExpiredEntities;
 
 private:
     template< typename TDependency >

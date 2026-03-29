@@ -29,12 +29,18 @@ private:
 	virtual void MarkDirty(entt::entity entity) override;
 
 	void UpdateWorldTransform(entt::entity entity);
+	void RebuildHierarchyOrder();
 
 private:
 	std::vector< mat4 > m_mWorlds;
 	FreeList<>          m_IndexAllocator;
 
 	std::unordered_map< u64, TransformRenderView > m_RenderData;
+
+	// DFS pre-order traversal cache — rebuilt only on structural hierarchy changes
+	std::vector< entt::entity >             m_HierarchyOrder;
+	std::unordered_map< entt::entity, u32 > m_HierarchyPosition;
+	bool                                    m_bHierarchyDirty = true;
 };
 
 } // namespace baamboo
