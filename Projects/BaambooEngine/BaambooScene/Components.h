@@ -72,6 +72,7 @@ inline std::string_view GetCameraTypeString(CameraComponent::eType type)
 //-------------------------------------------------------------------------
 struct StaticMeshComponent
 {
+	std::string tag;
 	std::string path;
 
 	BoundingBox    aabb;
@@ -79,16 +80,21 @@ struct StaticMeshComponent
 
 	Vertex* pVertices   = nullptr;
 	u32     numVertices = 0;
-	Index*  pIndices    = nullptr;
-	u32     numIndices  = 0;
 
-	// Meshlets
-	Meshlet* pMeshlets           = nullptr;
-	u32      numMeshlets         = 0;
-	u32*     pMeshletVertices    = nullptr;
-	u32      numMeshletVertices  = 0;
-	u32*     pMeshletTriangles   = nullptr;
-	u32      numMeshletTriangles = 0;
+	struct 
+	{
+		Index*  pIndices    = nullptr;
+		u32     numIndices  = 0;
+
+		// Meshlets
+		Meshlet* pMeshlets           = nullptr;
+		u32      numMeshlets         = 0;
+		u32*     pMeshletVertices    = nullptr;
+		u32      numMeshletVertices  = 0;
+		u32*     pMeshletTriangles   = nullptr;
+		u32      numMeshletTriangles = 0;
+	} lods[LOD_COUNT];
+	u8 maxLOD;
 };
 
 //-------------------------------------------------------------------------

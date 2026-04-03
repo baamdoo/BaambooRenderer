@@ -257,9 +257,10 @@ void BistroApp::ConfigureSceneObjects()
 		descriptor.rendererAPI       = s_RendererAPI;
 		descriptor.bWindingCW        = true;
 		descriptor.bGenerateMeshlets = true;
+		descriptor.numLODs			 = 8;
 
 		srand(42);
-		const u32 meshCount = 1000;
+		const u32 meshCount = 10;
 		for (u32 i = 0; i < meshCount; ++i)
 		{
 			auto entity = m_pScene->ImportModel(MODEL_PATH.append("kitten.obj"), descriptor);

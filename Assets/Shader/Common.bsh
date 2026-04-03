@@ -40,18 +40,26 @@ struct SkinnedVertex
 //-------------------------------------------------------------------------
 // Mesh
 //-------------------------------------------------------------------------
-struct MeshData
+#define LOD_COUNT 8u
+struct MeshLOD
 {
-    uint vOffset;
 	uint iOffset;
 
     uint mCount;
     uint mOffset;
     uint mvOffset;
     uint mtOffset;
+};
 
+struct MeshData
+{
+    uint vOffset;
+	
     float centerX, centerY, centerZ;
     float radius;
+
+	uint    maxLOD;
+	MeshLOD lods[LOD_COUNT];
 };
 
 struct Meshlet
@@ -91,12 +99,18 @@ struct IndirectCommandData
 struct CullData
 {
 	float4 frustum[6];
+
+	float lodNear;
+	float lodFar;
 };
 
 #elif defined(_GLSL)
 struct CullData
 {
 	vec4 frustum[6];
+
+	float lodNear;
+	float lodFar;
 };
 #endif
 

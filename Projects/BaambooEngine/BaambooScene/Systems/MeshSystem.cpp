@@ -54,19 +54,24 @@ std::vector< u64 > StaticMeshSystem::UpdateRenderData(const EditorCamera& edCame
 
         auto& meshComponent = m_Registry.get< StaticMeshComponent >(entity);
         entry.mesh.id  = id;
-        entry.mesh.tag = meshComponent.path;
+        entry.mesh.tag = meshComponent.tag;
         
         entry.mesh.vData  = meshComponent.pVertices;
         entry.mesh.vCount = meshComponent.numVertices;
-        entry.mesh.iData  = meshComponent.pIndices;
-        entry.mesh.iCount = meshComponent.numIndices;
 
-        entry.mesh.mData   = meshComponent.pMeshlets;
-        entry.mesh.mCount  = meshComponent.numMeshlets;
-        entry.mesh.mvData  = meshComponent.pMeshletVertices;
-        entry.mesh.mvCount = meshComponent.numMeshletVertices;
-        entry.mesh.mtData  = meshComponent.pMeshletTriangles;
-        entry.mesh.mtCount = meshComponent.numMeshletTriangles;
+		entry.mesh.maxLOD = meshComponent.maxLOD;
+        for (u8 i = 0; i <= meshComponent.maxLOD; ++i)
+        {
+            entry.mesh.lods[i].iData  = meshComponent.lods[i].pIndices;
+            entry.mesh.lods[i].iCount = meshComponent.lods[i].numIndices;
+
+            entry.mesh.lods[i].mData   = meshComponent.lods[i].pMeshlets;
+            entry.mesh.lods[i].mCount  = meshComponent.lods[i].numMeshlets;
+            entry.mesh.lods[i].mvData  = meshComponent.lods[i].pMeshletVertices;
+            entry.mesh.lods[i].mvCount = meshComponent.lods[i].numMeshletVertices;
+            entry.mesh.lods[i].mtData  = meshComponent.lods[i].pMeshletTriangles;
+            entry.mesh.lods[i].mtCount = meshComponent.lods[i].numMeshletTriangles;
+        }
 
         entry.mesh.aabb   = meshComponent.aabb;
         entry.mesh.sphere = meshComponent.sphere;

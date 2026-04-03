@@ -201,6 +201,14 @@ float3 RayPlaneIntersection(float3 rayOrigin, float3 rayDir, float4 plane)
     return rayOrigin + t * rayDir;
 }
 
+uint CalculateLODLevel(float3 cameraPos, float3 objectPos, float objectRadius, float2 lodRange, uint maxLOD)
+{
+    float distance    = length(cameraPos - objectPos) - objectRadius;
+    float lodDistance = pow(((distance - lodRange.x) / (lodRange.y - lodRange.x)), 2.0);
+
+    return clamp(uint(lodDistance * float(maxLOD) + 0.5), 0u, maxLOD);
+}
+
 
 // --- Temporal --- //
 // Convert RGB to YCoCg color space for better neighborhood clamping

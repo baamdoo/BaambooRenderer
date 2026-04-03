@@ -16,6 +16,14 @@ enum class eRendererAPI;
 namespace baamboo
 {
 
+struct MeshLODData
+{
+	std::vector< Index >   indices;
+	std::vector< Meshlet > meshlets;
+	std::vector< u32 >     meshletVertices;
+	std::vector< u32 >     meshletTriangles; // three u8s packed in u32
+};
+
 struct MeshData
 {
 	std::string name;
@@ -26,7 +34,8 @@ struct MeshData
 
 	std::vector< Vertex >          vertices;
 	std::vector< VertexP3U2N3T3S > skinnedVertices;
-	std::vector< Index >           indices;
+
+	std::vector< MeshLODData > lods;
 
 	// material
 	u32 materialIndex = 0;
@@ -35,10 +44,6 @@ struct MeshData
 	std::vector< u32 >    boneIndices;
 	std::vector< float4 > boneWeights;
 	bool bHasSkinnedData = false;
-
-	std::vector< Meshlet > meshlets;
-	std::vector< u32 >     meshletVertices;
-	std::vector< u32 >     meshletTriangles; // three u8s packed in u32
 
 	inline u32 GetVertexCount() const
 	{
@@ -103,6 +108,8 @@ struct MeshDescriptor
 	bool bOptimize         = false;
 	bool bWindingCW        = false;
 	bool bGenerateMeshlets = false;
+	
+	u8 numLODs = 1;
 };
 
 struct ModelNode
@@ -146,7 +153,8 @@ private:
 	void ProcessBoneWeights(aiMesh* mesh, MeshData& meshData);
 	AnimationClip ProcessAnimationClip(aiAnimation* animation);
 
-	void GenerateMeshlets(MeshData& meshData, bool bOptimizeVertexCache);
+	// Reference: https://github.com/zeux/meshoptimizer
+	void GenerateMeshlets(MeshData& meshData, u8 lodLevel);
 
 	std::string GetTextureFilename(aiMaterial* mat, aiTextureType type);
 

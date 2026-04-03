@@ -53,15 +53,19 @@ struct StaticMeshRenderView
 	const void* vData;
 	u32         vCount;
 
-	const void* iData;
-	u32         iCount;
+	struct
+	{
+		const void* iData;
+		u32         iCount;
 
-	const void* mData;
-	u32         mCount;
-	const void* mvData;
-	u32         mvCount;
-	const void* mtData;
-	u32         mtCount;
+		const void* mData;
+		u32         mCount;
+		const void* mvData;
+		u32         mvCount;
+		const void* mtData;
+		u32         mtCount;
+	} lods[LOD_COUNT];
+	u8 maxLOD;
 };
 
 struct MaterialRenderView

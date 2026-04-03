@@ -13,6 +13,8 @@
 #define PI_MUL(num)   (PI * num)
 #define PI_DIV(denom) (PI / denom)
 
+#define LOD_COUNT 8
+
 constexpr u32 MAX_BONES_PER_VERTEX = 4;
 constexpr u32 MAX_BONES = 128;
 

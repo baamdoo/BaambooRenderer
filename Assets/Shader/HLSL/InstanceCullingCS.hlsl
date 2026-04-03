@@ -39,6 +39,8 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
     float4 center = mul(transform.mLocalToWorld, float4(mesh.centerX, mesh.centerY, mesh.centerZ, 1.0));
     float  radius = mesh.radius * maxScale;
 
+    uint lod = CalculateLODLevel(g_Camera.posWORLD, center.xyz, radius, float2(g_CullData.lodNear, g_CullData.lodFar), mesh.maxLOD);
+
     bool bVisible = true;
     for (int i = 0; i < 5; ++i)
         bVisible = bVisible && dot(g_CullData.frustum[i], center) + radius > 0.0;
@@ -51,7 +53,7 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
 
         g_IndirectCommands[outID].drawID = instanceID;
 
-        g_IndirectCommands[outID].groupCountX = roundUpAndDivide(mesh.mCount, 32u);
+        g_IndirectCommands[outID].groupCountX = roundUpAndDivide(mesh.lods[lod].mCount, 32u);
         g_IndirectCommands[outID].groupCountY = 1;
         g_IndirectCommands[outID].groupCountZ = 1;
     }

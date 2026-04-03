@@ -53,11 +53,11 @@ Arc< VkCommandContext > CommandQueue::Allocate(VkCommandBufferUsageFlags flags, 
 			pContext = m_pAvailableContexts.front();
 			m_pAvailableContexts.pop();
 		}
-		//else if (m_pContexts.size() == MAX_FRAMES_IN_FLIGHT) // limit the number of commands to avoid ImGui buffer recreate validation
-		//{
-		//	pContext = m_pAvailableContexts.front();
-		//	m_pAvailableContexts.pop();
-		//}
+		else if (m_pContexts.size() == MAX_FRAMES_IN_FLIGHT) // limit the number of commands to avoid ImGui buffer recreate validation
+		{
+			pContext = m_pAvailableContexts.front();
+			m_pAvailableContexts.pop();
+		}
 		else
 		{
 			pContext = MakeArc< VkCommandContext >(m_RenderDevice, m_vkCommandPool, m_CommandType);

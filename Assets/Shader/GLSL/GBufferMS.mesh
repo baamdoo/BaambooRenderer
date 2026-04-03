@@ -22,6 +22,7 @@ uint hash(uint a)
 struct TaskPayload 
 {
 	uint drawID;
+	uint lodLevel;
     uint meshletIndices[32];
 };
 taskPayloadSharedEXT TaskPayload Payload;
@@ -36,7 +37,7 @@ void main()
 	MeshData      mesh      = g_Meshes[instance.meshID];
 	TransformData transform = g_TransformBuffer.transforms[instance.transformID];
 
-	uint mi = Payload.meshletIndices[gl_WorkGroupID.x]; // + mesh.mOffset - This addition is already handled in TaskShader
+	uint mi = Payload.meshletIndices[gl_WorkGroupID.x]; // + mesh.lods[Payload.lodLevel].mOffset - This addition is already handled in TaskShader
 	uint ti = gl_LocalInvocationID.x;
 
 	Meshlet meshlet = g_MeshletBuffer.meshlets[mi];
@@ -47,7 +48,7 @@ void main()
 
 	for (uint i = ti; i < meshlet.vertexCount; i += gl_WorkGroupSize.x)
 	{
-		uint vi = g_MeshletVertexBuffer.meshletVertices[meshlet.vertexOffset + mesh.mvOffset + i];
+		uint vi = g_MeshletVertexBuffer.meshletVertices[meshlet.vertexOffset + mesh.lods[Payload.lodLevel].mvOffset + i];
 	
 		Vertex vertex = g_VertexBuffer.vertices[vi + mesh.vOffset];
 	
@@ -61,7 +62,7 @@ void main()
 		outColor[i] = vec4(color, 1.0);
 	}
 	
-	uint baseTriOffset = meshlet.triangleOffset + mesh.mtOffset; 
+	uint baseTriOffset = meshlet.triangleOffset + mesh.lods[Payload.lodLevel].mtOffset; 
 	for (uint i = ti; i < meshlet.triangleCount; i += gl_WorkGroupSize.x)
 	{
 		uint tPacked3 = g_MeshletTriangleBuffer.meshletTriangles[baseTriOffset + i];

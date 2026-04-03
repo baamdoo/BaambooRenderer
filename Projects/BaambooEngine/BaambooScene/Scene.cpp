@@ -133,27 +133,33 @@ Entity Scene::ImportModel(Entity parentEntity, const fs::path& filepath, MeshDes
 				{
 					// static mesh
 					auto& meshComponent = entity.AttachComponent< StaticMeshComponent >();
-					meshComponent.path  = filepath.string();
+					meshComponent.tag  = meshData.name;
+					meshComponent.path = filepath.string();
 
 					meshComponent.aabb   = meshData.aabb;
 					meshComponent.sphere = BoundingSphere(meshData.aabb);
 
 					meshComponent.numVertices = static_cast<u32>(meshData.vertices.size());
-					meshComponent.numIndices  = static_cast<u32>(meshData.indices.size());
 					meshComponent.pVertices   = const_cast<Vertex*>(meshData.vertices.data());
-					if (meshComponent.numIndices > 0)
-						meshComponent.pIndices = const_cast<Index*>(meshData.indices.data());
 
-					meshComponent.numMeshlets = static_cast<u32>(meshData.meshlets.size());
-					if (meshComponent.numMeshlets > 0)
+					meshComponent.maxLOD = static_cast<u8>(meshData.lods.size() - 1);
+					for (u8 i = 0; i <= meshComponent.maxLOD; i++)
 					{
-						meshComponent.pMeshlets = const_cast<Meshlet*>(meshData.meshlets.data());
-						
-						meshComponent.numMeshletVertices = static_cast<u32>(meshData.meshletVertices.size());
-						meshComponent.pMeshletVertices   = const_cast<u32*>(meshData.meshletVertices.data());
+						meshComponent.lods[i].numIndices = static_cast<u32>(meshData.lods[i].indices.size());
+						if (meshComponent.lods[i].numIndices > 0)
+							meshComponent.lods[i].pIndices = const_cast<Index*>(meshData.lods[i].indices.data());
 
-						meshComponent.numMeshletTriangles = static_cast<u32>(meshData.meshletTriangles.size());
-						meshComponent.pMeshletTriangles   = const_cast<u32*>(meshData.meshletTriangles.data());
+						meshComponent.lods[i].numMeshlets = static_cast<u32>(meshData.lods[i].meshlets.size());
+						if (meshComponent.lods[i].numMeshlets > 0)
+						{
+							meshComponent.lods[i].pMeshlets = const_cast<Meshlet*>(meshData.lods[i].meshlets.data());
+
+							meshComponent.lods[i].numMeshletVertices = static_cast<u32>(meshData.lods[i].meshletVertices.size());
+							meshComponent.lods[i].pMeshletVertices   = const_cast<u32*>(meshData.lods[i].meshletVertices.data());
+
+							meshComponent.lods[i].numMeshletTriangles = static_cast<u32>(meshData.lods[i].meshletTriangles.size());
+							meshComponent.lods[i].pMeshletTriangles   = const_cast<u32*>(meshData.lods[i].meshletTriangles.data());
+						}
 					}
 				}
 

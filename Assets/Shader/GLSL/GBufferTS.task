@@ -8,6 +8,7 @@
 #define _CULL
 #define _TRANSFORM
 #include "DescriptorCommon.hg"
+#include "HelperFunctions.hg"
 
 
 layout(set = 1, binding = 0) readonly buffer DrawIDBuffer 
@@ -19,6 +20,7 @@ layout(set = 1, binding = 0) readonly buffer DrawIDBuffer
 struct TaskPayload 
 {
 	uint drawID;
+	uint lodLevel;
     uint meshletIndices[32];
 };
 taskPayloadSharedEXT TaskPayload Payload;
@@ -35,20 +37,25 @@ void main()
 
 	InstanceData  instance  = g_Instances[drawID];
 	MeshData      mesh      = g_Meshes[instance.meshID];
+	TransformData transform = g_TransformBuffer.transforms[instance.transformID];
+
+	float scaleX   = length(transform.mLocalToWorld[0].xyz);
+	float scaleY   = length(transform.mLocalToWorld[1].xyz);
+	float scaleZ   = length(transform.mLocalToWorld[2].xyz);
+	float maxScale = max(scaleX, max(scaleY, scaleZ));
+
+	vec4  center = transform.mLocalToWorld * vec4(mesh.centerX, mesh.centerY, mesh.centerZ, 1.0);
+    float radius = mesh.radius * maxScale;
+
+	uint lod = CalculateLODLevel(g_Camera.posWORLD, center.xyz, radius, vec2(g_CullData.lodNear, g_CullData.lodFar), mesh.maxLOD);
 
 	uint ti = gl_LocalInvocationID.x;
-	uint mi = gl_GlobalInvocationID.x + mesh.mOffset;
+	uint mi = gl_GlobalInvocationID.x + mesh.lods[lod].mOffset;
 
 	bool accept = false;
-	if (gl_GlobalInvocationID.x < mesh.mCount)
+	if (gl_GlobalInvocationID.x < mesh.lods[lod].mCount)
 	{
-		Meshlet       meshlet   = g_MeshletBuffer.meshlets[mi];
-		TransformData transform = g_TransformBuffer.transforms[instance.transformID];
-
-		float scaleX   = length(transform.mLocalToWorld[0].xyz);
-		float scaleY   = length(transform.mLocalToWorld[1].xyz);
-		float scaleZ   = length(transform.mLocalToWorld[2].xyz);
-		float maxScale = max(scaleX, max(scaleY, scaleZ));
+		Meshlet meshlet = g_MeshletBuffer.meshlets[mi];
 
 		vec3 coneAxisWORLD     = normalize((transform.mLocalToWorld * vec4(meshlet.coneAxisX, meshlet.coneAxisY, meshlet.coneAxisZ, 0.0)).xyz);
 		vec3 sphereBoundsWORLD = (transform.mLocalToWorld * vec4(meshlet.centerX, meshlet.centerY, meshlet.centerZ, 1.0)).xyz;
@@ -67,7 +74,8 @@ void main()
 
 	if (ti == 0)
 	{
-		Payload.drawID = drawID;
+		Payload.drawID   = drawID;
+		Payload.lodLevel = lod;
 		EmitMeshTasksEXT(numMeshlets, 1, 1);
 	}
 }

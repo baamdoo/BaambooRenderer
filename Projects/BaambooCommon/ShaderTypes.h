@@ -1,18 +1,25 @@
 #pragma once
 #include "MathTypes.h"
 
-struct MeshData
+struct MeshLOD
 {
-    u32 vOffset;
     u32 iOffset;
 
     u32 mCount;
     u32 mOffset;
     u32 mvOffset;
     u32 mtOffset;
+};
+
+struct MeshData
+{
+    u32 vOffset;
 
     float3 center;
     float  radius;
+
+    u32     maxLOD;
+    MeshLOD lods[LOD_COUNT];
 };
 
 struct InstanceData
@@ -62,6 +69,9 @@ struct CameraData
 struct CullData
 {
     float4 frustum[6];
+
+    float lodNear;
+    float lodFar;
 };
 
 

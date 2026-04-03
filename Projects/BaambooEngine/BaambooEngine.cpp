@@ -549,7 +549,7 @@ void Engine::DrawUI()
 					auto& component = ImGui::SelectedEntity.GetComponent< StaticMeshComponent >();
 
 					if (ImGui::Button("Mesh")) ImGui::ContentBrowserSetup = eContentButton_Mesh;
-					ImGui::SameLine(); ImGui::Text(component.path.c_str());
+					ImGui::SameLine(); ImGui::Text(component.tag.c_str());
 				}
 
 				if (ImGui::SelectedEntity.HasAll< MaterialComponent >())

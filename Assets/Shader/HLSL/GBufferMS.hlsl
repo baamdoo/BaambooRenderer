@@ -30,6 +30,7 @@ uint hash(uint a)
 
 struct AmplificationPayload
 {
+    uint lod;
     uint meshletIndices[32];
 };
 
@@ -63,7 +64,7 @@ void main(
 
     for (uint i = ti; i < meshlet.vertexCount; i += 32)
     {
-        uint vi = mesh.vOffset + MeshletVertices[mesh.mvOffset + meshlet.vertexOffset + i];
+        uint vi = mesh.vOffset + MeshletVertices[mesh.lods[Payload.lod].mvOffset + meshlet.vertexOffset + i];
 
         Vertex vertex = Vertices[vi];
 
@@ -75,7 +76,7 @@ void main(
         vertices[i].color    = float4(color, 1.0);
     }
 
-    uint baseTriByteOffset = mesh.mtOffset + meshlet.triangleOffset;
+    uint baseTriByteOffset = mesh.lods[Payload.lod].mtOffset + meshlet.triangleOffset;
     for (uint i = ti; i < meshlet.triangleCount; i += 32)
     {
         uint tPacked3 = MeshletTriangles[baseTriByteOffset + i];

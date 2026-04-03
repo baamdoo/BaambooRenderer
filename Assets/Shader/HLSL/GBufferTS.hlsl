@@ -1,7 +1,9 @@
 #define _CAMERA
 #define _TRANSFORM
 #define _MESH
+#define _CULL
 #include "Common.hlsli"
+#include "HelperFunctions.hlsli"
 
 cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
@@ -21,30 +23,41 @@ bool ConeCull(float4 cone, float4 sphere, float3 viewPos)
 
 struct AmplificationPayload
 {
+    uint lodLevel;
 	uint meshletIndices[32];
 };
 
-groupshared AmplificationPayload PayloadData;
+groupshared AmplificationPayload Payload;
 
 [numthreads(32, 1, 1)]
 void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
 {
-	InstanceData instance = Instances[g_DrawID];
-	MeshData     mesh     = Meshes[instance.meshID];
+	InstanceData  instance  = Instances[g_DrawID];
+	MeshData      mesh      = Meshes[instance.meshID];
+    TransformData transform = Transforms[instance.transformID];
 
-    uint mi = mesh.mOffset + Gid.x;
+    float scaleX = length(transform.mLocalToWorld[0].xyz);
+    float scaleY = length(transform.mLocalToWorld[1].xyz);
+    float scaleZ = length(transform.mLocalToWorld[2].xyz);
+    float maxScale = max(scaleX, max(scaleY, scaleZ));
+
+    float4 center = mul(transform.mLocalToWorld, float4(mesh.centerX, mesh.centerY, mesh.centerZ, 1.0));
+    float  radius = mesh.radius * maxScale;
+
+    uint lod = CalculateLODLevel(g_Camera.posWORLD, center.xyz, radius, float2(g_CullData.lodNear, g_CullData.lodFar), mesh.maxLOD);
+
+    uint mi = mesh.lods[lod].mOffset + Gid.x;
     uint ti = GTid.x;
 
-    bool accept = false;
-    if (Gid.x < mesh.mCount)
+    if (ti == 0)
     {
-        Meshlet       meshlet   = Meshlets[mi];
-        TransformData transform = Transforms[instance.transformID];
+        Payload.lodLevel = lod;
+    }
 
-        float scaleX   = length(transform.mLocalToWorld[0].xyz);
-        float scaleY   = length(transform.mLocalToWorld[1].xyz);
-        float scaleZ   = length(transform.mLocalToWorld[2].xyz);
-        float maxScale = max(scaleX, max(scaleY, scaleZ));
+    bool accept = false;
+    if (Gid.x < mesh.lods[lod].mCount)
+    {
+        Meshlet meshlet = Meshlets[mi];
 
         float3 coneAxisWORLD     = normalize((mul(transform.mLocalToWorld, float4(meshlet.coneAxisX, meshlet.coneAxisY, meshlet.coneAxisZ, 0.0))).xyz);
         float3 sphereBoundsWORLD = (mul(transform.mLocalToWorld, float4(meshlet.centerX, meshlet.centerY, meshlet.centerZ, 1.0))).xyz;
@@ -55,8 +68,8 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
     uint payloadIndex = WavePrefixCountBits(accept);
 
     if (accept)
-        PayloadData.meshletIndices[payloadIndex] = mi;
+        Payload.meshletIndices[payloadIndex] = mi;
 
     uint numMeshlets = WaveActiveCountBits(accept);
-	DispatchMesh(numMeshlets, 1, 1, PayloadData);
+	DispatchMesh(numMeshlets, 1, 1, Payload);
 }

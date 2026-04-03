@@ -280,6 +280,9 @@ void VkSceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneVie
 	m_CullData.frustum[3] = baamboo::math::NormalizePlane(mViewProjectionT[3] - mViewProjectionT[1]); // w - y < 0
 	m_CullData.frustum[4] = baamboo::math::NormalizePlane(mViewProjectionT[3] - mViewProjectionT[2]); // w - z < 0 (reversed-z)
 	m_CullData.frustum[5] = float4();                                                                 // z < 0 (reversed-z, infinite far plane)
+
+	m_CullData.lodNear = 0.0f;
+	m_CullData.lodFar  = sceneView.camera.maxVisibleDistance * 0.2f;
 	memcpy(m_FrameData[m_ContextIndex].pCullBuffer->MappedMemory(), &m_CullData, sizeof(CullData));
 
 	SceneEnvironmentData sceneEnvironmentData =
@@ -542,19 +545,25 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 	for (const auto& meshView : sceneView.meshes)
 	{
 		auto vHandle  = GetOrUpdateVertex(meshView.id, meshView.tag, meshView.vData, meshView.vCount);
-		auto iHandle  = GetOrUpdateIndex(meshView.id, meshView.tag, meshView.iData, meshView.iCount);
-		auto mHandle  = GetOrUpdateMeshlets(meshView.id, meshView.tag, meshView.mData, meshView.mCount);
-		auto mvHandle = GetOrUpdateMeshletVertices(meshView.id, meshView.tag, meshView.mvData, meshView.mvCount);
-		auto mtHandle = GetOrUpdateMeshletTriangles(meshView.id, meshView.tag, meshView.mtData, meshView.mtCount);
 
 		MeshData mesh = {};
 		mesh.vOffset = vHandle.offset;
-		mesh.iOffset = iHandle.offset;
+		mesh.maxLOD  = meshView.maxLOD;
 
-		mesh.mCount   = mHandle.count;
-		mesh.mOffset  = mHandle.offset;
-		mesh.mvOffset = mvHandle.offset;
-		mesh.mtOffset = mtHandle.offset;
+		for (u8 i = 0; i <= meshView.maxLOD; ++i)
+		{
+			std::string tag = meshView.tag + "_LOD" + std::to_string(i);
+
+			auto iHandle  = GetOrUpdateIndex(meshView.id, tag, meshView.lods[i].iData, meshView.lods[i].iCount);
+			auto mHandle  = GetOrUpdateMeshlets(meshView.id, tag, meshView.lods[i].mData, meshView.lods[i].mCount);
+			auto mvHandle = GetOrUpdateMeshletVertices(meshView.id, tag, meshView.lods[i].mvData, meshView.lods[i].mvCount);
+			auto mtHandle = GetOrUpdateMeshletTriangles(meshView.id, tag, meshView.lods[i].mtData, meshView.lods[i].mtCount);
+
+			mesh.lods[i].mCount   = mHandle.count;
+			mesh.lods[i].mOffset  = mHandle.offset;
+			mesh.lods[i].mvOffset = mvHandle.offset;
+			mesh.lods[i].mtOffset = mtHandle.offset;
+		}
 
 		mesh.center = meshView.sphere.Center();
 		mesh.radius = meshView.sphere.Radius();

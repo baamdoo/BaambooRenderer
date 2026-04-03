@@ -56,7 +56,8 @@ public:
 	float zNear = 0.1f;
 	float zFar  = 1000.0f;
 	float fov   = 45.0f;
-	float maxVisibleDistance = 100.0f;
+
+	float maxVisibleDistance = 10'000.0f; // 10km
 
 private:
 	CameraController& m_Controller;

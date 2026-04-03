@@ -196,19 +196,23 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
         }
     }
 
+    assert(descriptor.numLODs > 0 && descriptor.numLODs <= LOD_COUNT);
+    meshData.lods.reserve(descriptor.numLODs);
+    meshData.lods.emplace_back(MeshLODData());
+
     // indices
-	meshData.indices.reserve(mesh->mNumFaces * 3);
+	meshData.lods[0].indices.reserve(mesh->mNumFaces * 3LL);
 	for (u32 i = 0; i < mesh->mNumFaces; i++)
 	{
 		aiFace face = mesh->mFaces[i];
 		for (u32 j = 0; j < face.mNumIndices; j++)
-			meshData.indices.push_back(face.mIndices[j]);
+			meshData.lods[0].indices.push_back(face.mIndices[j]);
 	}
 
 	// **
 	// Process materials
 	// **
-    if (mesh->mMaterialIndex >= 0 && mesh->mMaterialIndex < scene->mNumMaterials)
+    if (mesh->mMaterialIndex != INVALID_INDEX && mesh->mMaterialIndex < scene->mNumMaterials)
     {
         meshData.materialIndex = mesh->mMaterialIndex;
 
@@ -292,9 +296,63 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
         }
     }
 
-    if (descriptor.bGenerateMeshlets)
+    size_t vertexSize  = meshData.VertexSize();
+    size_t vertexCount = meshData.GetVertexCount();
+    size_t indexCount  = meshData.lods[0].indices.size();
+    if (descriptor.bOptimize)
     {
-        GenerateMeshlets(meshData, descriptor.bOptimize);
+        meshopt_optimizeVertexFetch(meshData.vertices.data(), meshData.lods[0].indices.data(), indexCount, meshData.vertices.data(), vertexCount, sizeof(Vertex));
+    }
+
+    u8 lod = 0;
+    while (lod < descriptor.numLODs)
+    {
+        if (lod > 0)
+        {
+            MeshLODData& lodData = meshData.lods.emplace_back();
+
+            float  simplifyError = 0.0f;
+            size_t targetIndexCount = (size_t(double(indexCount) * 0.6) / 3) * 3;
+
+            lodData.indices.resize(indexCount);
+            size_t nextIndexCount = meshopt_simplify(
+                lodData.indices.data(),
+                meshData.lods[lod - 1].indices.data(),
+                indexCount,
+                static_cast<const float*>(meshData.GetVertexData()),
+                vertexCount,
+                vertexSize,
+                targetIndexCount,
+                1e-1f,         // target error threshold
+                0,             // options (0 = default)
+                &simplifyError
+            );
+
+            if (nextIndexCount == 0 || nextIndexCount == lodData.indices.size())
+            {
+                meshData.lods.pop_back();
+                break;
+            }
+
+            if (nextIndexCount >= size_t(double(lodData.indices.size()) * 0.85))
+            {
+                meshData.lods.pop_back();
+                break;
+            }
+
+            indexCount = nextIndexCount;
+            lodData.indices.resize(indexCount);
+        }
+
+        if (descriptor.bGenerateMeshlets)
+        {
+            GenerateMeshlets(meshData, lod);
+        }
+
+        if (descriptor.bOptimize && !meshData.bHasSkinnedData)
+            meshopt_optimizeVertexCache(meshData.lods[lod].indices.data(), meshData.lods[lod].indices.data(), indexCount, vertexCount);
+
+        lod++;
     }
 
 	currentNode->meshIndices.push_back(static_cast<u32>(m_Meshes.size()));
@@ -525,33 +583,27 @@ AnimationClip ModelLoader::ProcessAnimationClip(aiAnimation* animation)
 }
 
 // Reference: https://github.com/zeux/meshoptimizer
-void ModelLoader::GenerateMeshlets(MeshData& meshData, bool bOptimizeVertexCache)
+void ModelLoader::GenerateMeshlets(MeshData& meshData, u8 lodLevel)
 {
     const size_t maxVertices  = 64;
     const size_t maxTriangles = 124;
     const float  coneWeight   = 0.0f;
 
     size_t vertexCount = meshData.GetVertexCount();
-    size_t indexCount  = meshData.indices.size();
+    size_t indexCount  = meshData.lods[lodLevel].indices.size();
 
-    if (bOptimizeVertexCache)
-    {
-        meshopt_optimizeVertexCache(meshData.indices.data(), meshData.indices.data(), indexCount, vertexCount);
-        meshopt_optimizeVertexFetch(meshData.vertices.data(), meshData.indices.data(), indexCount, meshData.vertices.data(), vertexCount, sizeof(Vertex));
-    }
-    
-    size_t maxMeshlets = meshopt_buildMeshletsBound(meshData.indices.size(), maxVertices, maxTriangles);
+    size_t maxMeshlets = meshopt_buildMeshletsBound(meshData.lods[lodLevel].indices.size(), maxVertices, maxTriangles);
     std::vector< meshopt_Meshlet > meshlets(maxMeshlets);
 
     std::vector< u8 > meshletTrianglesUnpacked;
 	meshletTrianglesUnpacked.resize(maxMeshlets * maxTriangles * 3);
-    meshData.meshletVertices.resize(maxMeshlets * maxVertices);
+    meshData.lods[lodLevel].meshletVertices.resize(maxMeshlets * maxVertices);
 
     size_t numMeshlets = meshopt_buildMeshlets(
         meshlets.data(),
-        meshData.meshletVertices.data(),
+        meshData.lods[lodLevel].meshletVertices.data(),
         meshletTrianglesUnpacked.data(),
-        meshData.indices.data(),
+        meshData.lods[lodLevel].indices.data(),
         indexCount,
         static_cast<const float*>(meshData.GetVertexData()),
         vertexCount,
@@ -562,19 +614,19 @@ void ModelLoader::GenerateMeshlets(MeshData& meshData, bool bOptimizeVertexCache
     );
 
     const meshopt_Meshlet& last = meshlets[numMeshlets - 1];
-    meshData.meshletVertices.resize(last.vertex_offset + last.vertex_count);
+    meshData.lods[lodLevel].meshletVertices.resize(last.vertex_offset + last.vertex_count);
     meshletTrianglesUnpacked.resize(last.triangle_offset + last.triangle_count * 3);
 
-    meshData.meshletTriangles.clear();
-    meshData.meshletTriangles.reserve(numMeshlets * maxTriangles);
+    meshData.lods[lodLevel].meshletTriangles.clear();
+    meshData.lods[lodLevel].meshletTriangles.reserve(numMeshlets * maxTriangles);
 
-    meshData.meshlets.reserve(numMeshlets);
+    meshData.lods[lodLevel].meshlets.reserve(numMeshlets);
     for (size_t i = 0; i < numMeshlets; ++i)
     {
         const meshopt_Meshlet& m = meshlets[i];
 
         meshopt_Bounds bounds = meshopt_computeMeshletBounds(
-            &meshData.meshletVertices[m.vertex_offset],
+            &meshData.lods[lodLevel].meshletVertices[m.vertex_offset],
             &meshletTrianglesUnpacked[m.triangle_offset],
             m.triangle_count,
             static_cast<const float*>(meshData.GetVertexData()),
@@ -586,7 +638,7 @@ void ModelLoader::GenerateMeshlets(MeshData& meshData, bool bOptimizeVertexCache
         newMeshlet.vertexCount    = m.vertex_count;
         newMeshlet.vertexOffset   = m.vertex_offset;
         newMeshlet.triangleCount  = m.triangle_count;
-        newMeshlet.triangleOffset = static_cast<u32>(meshData.meshletTriangles.size());
+        newMeshlet.triangleOffset = static_cast<u32>(meshData.lods[lodLevel].meshletTriangles.size());
 
         newMeshlet.center     = float3(bounds.center[0], bounds.center[1], bounds.center[2]);
         newMeshlet.radius     = bounds.radius;
@@ -599,9 +651,9 @@ void ModelLoader::GenerateMeshlets(MeshData& meshData, bool bOptimizeVertexCache
             u8 t1 = meshletTrianglesUnpacked[m.triangle_offset + t * 3 + 1];
             u8 t2 = meshletTrianglesUnpacked[m.triangle_offset + t * 3 + 2];
 
-            meshData.meshletTriangles.push_back(u32((t2 << 16) | (t1 << 8) | (t0)));
+            meshData.lods[lodLevel].meshletTriangles.push_back(u32((t2 << 16) | (t1 << 8) | (t0)));
         }
-        meshData.meshlets.push_back(newMeshlet);
+        meshData.lods[lodLevel].meshlets.push_back(newMeshlet);
     }
 }
 
