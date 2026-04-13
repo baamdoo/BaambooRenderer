@@ -131,6 +131,18 @@ Arc< VulkanSampler > VulkanSampler::CreateLinearClampCmp(VkRenderDevice& rd, con
         });
 }
 
+Arc< VulkanSampler > VulkanSampler::CreatePointClampMin(VkRenderDevice& rd, const char* name)
+{
+    return Create(rd, name,
+        {
+            .filter        = eFilterMode::Point,
+            .mipmapMode    = eMipmapMode::Nearest,
+            .addressMode   = eAddressMode::ClampEdge,
+            .maxAnisotropy = 0.0f,
+            .reductionMode = eReductionMode::Min
+        });
+}
+
 VulkanSampler::VulkanSampler(VkRenderDevice& rd, const char* name, CreationInfo&& info)
     : render::Sampler(name, std::move(info))
     , VulkanResource(rd, name)
@@ -149,6 +161,18 @@ VulkanSampler::VulkanSampler(VkRenderDevice& rd, const char* name, CreationInfo&
 	createInfo.minLod           = m_CreationInfo.minLod;
 	createInfo.maxLod           = m_CreationInfo.maxLod;
 	createInfo.borderColor      = VK_SAMPLER_BORDERCOLOR(m_CreationInfo.borderColor);
+
+	// Chain reduction mode (MIN/MAX) if not standard (Vulkan 1.2 core)
+	VkSamplerReductionModeCreateInfo reductionInfo = {};
+	if (m_CreationInfo.reductionMode != eReductionMode::Standard)
+	{
+		reductionInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO;
+		reductionInfo.reductionMode = (m_CreationInfo.reductionMode == eReductionMode::Min)
+			? VK_SAMPLER_REDUCTION_MODE_MIN
+			: VK_SAMPLER_REDUCTION_MODE_MAX;
+		createInfo.pNext = &reductionInfo;
+	}
+
 	VK_CHECK(vkCreateSampler(m_RenderDevice.vkDevice(), &createInfo, nullptr, &m_vkSampler));
 
     SetDeviceObjectName((u64)m_vkSampler, VK_OBJECT_TYPE_SAMPLER);

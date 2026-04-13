@@ -260,7 +260,7 @@ void BistroApp::ConfigureSceneObjects()
 		descriptor.numLODs			 = 8;
 
 		srand(42);
-		const u32 meshCount = 10;
+		const u32 meshCount = 8100;
 		for (u32 i = 0; i < meshCount; ++i)
 		{
 			auto entity = m_pScene->ImportModel(MODEL_PATH.append("kitten.obj"), descriptor);

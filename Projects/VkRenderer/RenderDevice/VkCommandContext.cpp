@@ -90,16 +90,17 @@ public:
 	void SetPushConstants(u32 sizeInBytes, const void* pData, VkShaderStageFlags stages, u32 offsetInBytes = 0);
 	void SetDynamicUniformBuffer(u32 set, u32 binding, VkDeviceSize sizeInBytes, const void* pData);
 	
-	void SetComputeShaderResource(const std::string& name, Arc< VulkanTexture > pTexture, Arc< VulkanSampler > samplerInCharge);
-	void SetGraphicsShaderResource(const std::string& name, Arc< VulkanTexture > pTexture, Arc< VulkanSampler > samplerInCharge);
 	void SetComputeShaderResource(const std::string& name, Arc< VulkanBuffer > pBuffer);
 	void SetGraphicsShaderResource(const std::string& name, Arc< VulkanBuffer > pBuffer);
+	void SetComputeShaderResource(const std::string& name, Arc< VulkanTexture > pTexture, Arc< VulkanSampler > samplerInCharge);
+	void SetGraphicsShaderResource(const std::string& name, Arc< VulkanTexture > pTexture, Arc< VulkanSampler > samplerInCharge);
 	 
-	void StageDescriptor(const std::string& name, Arc< VulkanTexture > pTexture, Arc< VulkanSampler > pSamplerInCharge, u32 offset = 0);
 	void StageDescriptor(const std::string& name, Arc< VulkanBuffer > pBuffer, u32 offset = 0);
+	void StageDescriptor(const std::string& name, Arc< VulkanTexture > pTexture, Arc< VulkanSampler > pSamplerInCharge, u32 offset = 0);
+	void StageDescriptorMip(const std::string& name, Arc< VulkanTexture > pTexture, u32 mipLevel, Arc< VulkanSampler > pSamplerInCharge = nullptr);
 
-	void PushDescriptor(u32 set, u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType);
 	void PushDescriptor(u32 set, u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType);
+	void PushDescriptor(u32 set, u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType);
 
 	void SetRenderPipeline(VulkanGraphicsPipeline* pRenderPipeline);
 	void SetRenderPipeline(VulkanComputePipeline* pRenderPipeline);
@@ -113,6 +114,7 @@ public:
 	void DrawIndexed(u32 indexCount, u32 instanceCount = 1, u32 firstIndex = 0, i32 vertexOffset = 0, u32 firstInstance = 0);
 	void DrawMeshTasksIndirect(const Arc< VulkanBuffer >& pArgumentBuffer, u64 offsetInBytes, u32 numDraws, u32 strideInBytes);
 	void DrawMeshTasksIndirectCount(const Arc< VulkanBuffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< VulkanBuffer >& pCountBuffer, u32 numDraws, u32 strideInBytes);
+
 	void Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ);
 
 	[[nodiscard]]
@@ -733,6 +735,36 @@ void VkCommandContext::Impl::SetDynamicUniformBuffer(u32 set, u32 binding, VkDev
 	m_PushAllocations[set].push_back({ binding, bufferInfo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER });
 }
 
+void VkCommandContext::Impl::SetComputeShaderResource(const std::string& name, Arc< VulkanBuffer > pBuffer)
+{
+	assert(IsComputeContext());
+	auto [set, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
+
+	PushDescriptor(
+		set,
+		binding,
+		{
+			.buffer = pBuffer->vkBuffer(),
+			.offset = 0,
+			.range  = pBuffer->SizeInBytes()
+		}, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+}
+
+void VkCommandContext::Impl::SetGraphicsShaderResource(const std::string& name, Arc< VulkanBuffer > pBuffer)
+{
+	assert(IsGraphicsContext());
+	auto [set, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
+
+	PushDescriptor(
+		set,
+		binding,
+		{
+			.buffer = pBuffer->vkBuffer(),
+			.offset = 0,
+			.range  = pBuffer->SizeInBytes()
+		}, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+}
+
 void VkCommandContext::Impl::SetComputeShaderResource(const std::string& name, Arc< VulkanTexture > pTexture, Arc< VulkanSampler > pSamplerInCharge)
 {
 	assert(IsComputeContext());
@@ -771,34 +803,38 @@ void VkCommandContext::Impl::SetGraphicsShaderResource(const std::string& name, 
 		}, descType);
 }
 
-void VkCommandContext::Impl::SetComputeShaderResource(const std::string& name, Arc< VulkanBuffer > pBuffer)
+void VkCommandContext::Impl::StageDescriptor(const std::string& name, Arc< VulkanBuffer > pBuffer, u32 offset)
 {
-	assert(IsComputeContext());
-	auto [set, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
+	if (IsGraphicsContext())
+	{
+		auto [set, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
 
-	PushDescriptor(
-		set,
-		binding,
-		{
-			.buffer = pBuffer->vkBuffer(),
-			.offset = 0,
-			.range  = pBuffer->SizeInBytes()
-		}, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-}
+		PushDescriptor(
+			set,
+			binding,
+			{
+				.buffer = pBuffer->vkBuffer(),
+				.offset = offset,
+				.range  = pBuffer->SizeInBytes()
+			}, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+	}
+	else if (IsComputeContext())
+	{
+		auto [set, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
 
-void VkCommandContext::Impl::SetGraphicsShaderResource(const std::string& name, Arc< VulkanBuffer > pBuffer)
-{
-	assert(IsGraphicsContext());
-	auto [set, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
-
-	PushDescriptor(
-		set,
-		binding,
-		{
-			.buffer = pBuffer->vkBuffer(),
-			.offset = 0,
-			.range  = pBuffer->SizeInBytes()
-		}, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+		PushDescriptor(
+			set,
+			binding,
+			{
+				.buffer = pBuffer->vkBuffer(),
+				.offset = offset,
+				.range  = pBuffer->SizeInBytes()
+			}, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+	}
+	else
+	{
+		assert(false && "No pipeline is set!");
+	}
 }
 
 void VkCommandContext::Impl::StageDescriptor(const std::string& name, Arc< VulkanTexture > pTexture, Arc< VulkanSampler > pSamplerInCharge, u32 offset)
@@ -854,48 +890,53 @@ void VkCommandContext::Impl::StageDescriptor(const std::string& name, Arc< Vulka
 	}
 }
 
-void VkCommandContext::Impl::StageDescriptor(const std::string& name, Arc< VulkanBuffer > pBuffer, u32 offset)
+void VkCommandContext::Impl::StageDescriptorMip(const std::string& name, Arc< VulkanTexture > pTexture, u32 mipLevel, Arc< VulkanSampler > pSamplerInCharge)
 {
-	if (IsGraphicsContext())
-	{
-		auto [set, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
-
-		PushDescriptor(
-			set,
-			binding,
-			{
-				.buffer = pBuffer->vkBuffer(),
-				.offset = offset,
-				.range  = pBuffer->SizeInBytes()
-			}, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-	}
-	else if (IsComputeContext())
-	{
-		auto [set, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
-
-		PushDescriptor(
-			set,
-			binding,
-			{
-				.buffer = pBuffer->vkBuffer(),
-				.offset = offset,
-				.range  = pBuffer->SizeInBytes()
-			}, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-	}
+	std::pair< u32, u32 > bindingPair;
+	if (IsComputeContext())
+		bindingPair = m_pComputePipeline->GetResourceBindingIndex(name);
+	else if (IsGraphicsContext())
+		bindingPair = m_pGraphicsPipeline->GetResourceBindingIndex(name);
 	else
 	{
 		assert(false && "No pipeline is set!");
+		return;
 	}
-}
 
-void VkCommandContext::Impl::PushDescriptor(u32 set, u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType)
-{
-	m_PushAllocations[set].push_back({ binding, imageInfo, descriptorType });
+	auto [set, binding] = bindingPair;
+
+	// With sampler: bind per-mip view as SRV (ShaderReadOnly) — for reading a specific mip
+	// Without sampler: bind per-mip view as UAV (General) — for writing a specific mip
+	if (pSamplerInCharge)
+	{
+		PushDescriptor(
+			set, binding,
+			{
+				.sampler     = pSamplerInCharge->vkSampler(),
+				.imageView   = pTexture->vkMipView(mipLevel),
+				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+			}, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+	}
+	else
+	{
+		PushDescriptor(
+			set, binding,
+			{
+				.sampler     = VK_NULL_HANDLE,
+				.imageView   = pTexture->vkMipView(mipLevel),
+				.imageLayout = VK_IMAGE_LAYOUT_GENERAL
+			}, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+	}
 }
 
 void VkCommandContext::Impl::PushDescriptor(u32 set, u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType)
 {
 	m_PushAllocations[set].push_back({ binding, bufferInfo, descriptorType });
+}
+
+void VkCommandContext::Impl::PushDescriptor(u32 set, u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType)
+{
+	m_PushAllocations[set].push_back({ binding, imageInfo, descriptorType });
 }
 
 void VkCommandContext::Impl::SetRenderPipeline(VulkanGraphicsPipeline* pRenderPipeline)
@@ -1203,12 +1244,27 @@ void VkCommandContext::TransitionBufferToWrite(const Arc< render::Buffer >& pBuf
 
 void VkCommandContext::TransitionBarrier(const Arc< render::Texture >& texture, render::eTextureLayout newState, u32 subresource, bool bFlushImmediate)
 {
-	UNUSED(subresource);
-
 	auto rhiResource = StaticCast<VulkanTexture>(texture);
 	assert(rhiResource);
 
-	TransitionImageLayout(rhiResource, VK_LAYOUT(newState), texture->IsDepthTexture() ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT, bFlushImmediate);
+	VkImageAspectFlags aspectMask = texture->IsDepthTexture() ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+
+	if (subresource == ALL_SUBRESOURCES)
+	{
+		TransitionImageLayout(rhiResource, VK_LAYOUT(newState), aspectMask, bFlushImmediate);
+	}
+	else
+	{
+		// Per-mip transition: subresource is treated as a mip level index
+		VkImageSubresourceRange range = {};
+		range.aspectMask     = aspectMask;
+		range.baseMipLevel   = subresource;
+		range.levelCount     = 1;
+		range.baseArrayLayer = 0;
+		range.layerCount     = VK_REMAINING_ARRAY_LAYERS;
+
+		m_Impl->TransitionImageLayout(rhiResource, VK_LAYOUT(newState), range, bFlushImmediate);
+	}
 }
 
 void VkCommandContext::UAVBarrier(const Arc< render::Buffer >& pBuffer, bool bFlushImmediate)
@@ -1325,6 +1381,14 @@ void VkCommandContext::StageDescriptor(const std::string& name, Arc< render::Tex
 	assert(rhiTexture);
 
 	m_Impl->StageDescriptor(name, rhiTexture, StaticCast<VulkanSampler>(samplerInCharge), offset);
+}
+
+void VkCommandContext::StageDescriptorMip(const std::string& name, Arc< render::Texture > texture, u32 mipLevel, Arc< render::Sampler > samplerInCharge)
+{
+	auto rhiTexture = StaticCast<VulkanTexture>(texture);
+	assert(rhiTexture);
+
+	m_Impl->StageDescriptorMip(name, rhiTexture, mipLevel, StaticCast<VulkanSampler>(samplerInCharge));
 }
 
 void VkCommandContext::PushDescriptor(u32 set, u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType)

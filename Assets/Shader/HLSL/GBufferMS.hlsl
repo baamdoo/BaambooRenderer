@@ -59,7 +59,7 @@ void main(
     Meshlet meshlet = Meshlets[mi];
     SetMeshOutputCounts(meshlet.vertexCount, meshlet.triangleCount);
 
-    uint mhash = hash(mi);
+    uint mhash = hash(g_DrawID);
     float3 color = float3(float(mhash & 255), float((mhash >> 8) & 255), float((mhash >> 16) & 255)) / 255.0;
 
     for (uint i = ti; i < meshlet.vertexCount; i += 32)

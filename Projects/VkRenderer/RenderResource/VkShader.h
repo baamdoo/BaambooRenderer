@@ -19,6 +19,10 @@ public:
 	{
 		std::vector< VkPushConstantRange >                       pushConstants;
 		std::unordered_map< u32, std::vector< DescriptorInfo > > descriptors;
+
+		u32 localSizeX = 0;
+		u32 localSizeY = 0;
+		u32 localSizeZ = 0;
 	};
 
 	static Arc< VulkanShader > Create(VkRenderDevice& rd, const char* name, CreationInfo&& info);

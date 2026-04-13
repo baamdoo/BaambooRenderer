@@ -60,8 +60,8 @@ VkImageCreateInfo GetVkImageCreateInfo(const render::Texture::CreationInfo& info
 	desc.imageType     = info.imageType == eImageType::TextureCube ? VK_IMAGE_TYPE_2D : static_cast<VkImageType>(info.imageType);
 	desc.format        = VK_FORMAT(info.format);
 	desc.extent        = { info.resolution.x, info.resolution.y, info.resolution.z };
-	desc.mipLevels     = info.bGenerateMips ?
-		baamboo::math::CalculateMipCount(info.resolution.x, info.resolution.y, 1) : 1;
+	desc.mipLevels     = info.mipLevels > 0 ? info.mipLevels :
+		info.bGenerateMips ? static_cast<u32>(std::floor(std::log2(std::max(info.resolution.x, info.resolution.y)))) + 1 : 1;
 	desc.arrayLayers   = info.arrayLayers;
 	desc.samples       = GetSampleCount(info.sampleCount);
 	desc.tiling        = VK_IMAGE_TILING_OPTIMAL;
@@ -177,6 +177,40 @@ VkImageViewCreateInfo VulkanTexture::GetViewDesc(const VkImageCreateInfo& imageI
 	return imageViewInfo;
 }
 
+void VulkanTexture::CreatePerMipViews()
+{
+	using namespace render;
+
+	bool bHasStorage = (m_Desc.usage & VK_IMAGE_USAGE_STORAGE_BIT) != 0;
+	if (!bHasStorage || m_Desc.mipLevels <= 1)
+		return;
+
+	m_vkPerMipViews.resize(m_Desc.mipLevels, VK_NULL_HANDLE);
+	for (u32 mip = 0; mip < m_Desc.mipLevels; ++mip)
+	{
+		VkImageViewCreateInfo viewInfo{};
+		viewInfo.sType      = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		viewInfo.image      = m_vkImage;
+		viewInfo.viewType   = VK_IMAGE_VIEW_TYPE_2D;
+		viewInfo.format     = m_Desc.format;
+		viewInfo.components = { VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A };
+		viewInfo.subresourceRange.aspectMask     = m_AspectFlags;
+		viewInfo.subresourceRange.baseMipLevel   = mip;
+		viewInfo.subresourceRange.levelCount     = 1;
+		viewInfo.subresourceRange.baseArrayLayer = 0;
+		viewInfo.subresourceRange.layerCount     = 1;
+
+		VK_CHECK(vkCreateImageView(m_RenderDevice.vkDevice(), &viewInfo, nullptr, &m_vkPerMipViews[mip]));
+	}
+}
+
+VkImageView VulkanTexture::vkMipView(u32 mipLevel) const
+{
+	if (mipLevel < m_vkPerMipViews.size())
+		return m_vkPerMipViews[mipLevel];
+	return m_vkImageView;
+}
+
 VkImageView VulkanTexture::vkView() const
 {
 	auto layout = GetState().GetSubresourceState().layout;
@@ -228,11 +262,16 @@ VulkanTexture::VulkanTexture(VkRenderDevice& rd, const char* name, CreationInfo&
 	, VulkanResource(rd, name)
 {
 	CreateImageAndView(m_CreationInfo);
+	CreatePerMipViews();
 	SetDeviceObjectName((u64)m_vkImage, VK_OBJECT_TYPE_IMAGE);
 }
 
 VulkanTexture::~VulkanTexture()
 {
+	for (auto view : m_vkPerMipViews)
+		vkDestroyImageView(m_RenderDevice.vkDevice(), view, nullptr);
+	m_vkPerMipViews.clear();
+
 	vkDestroyImageView(m_RenderDevice.vkDevice(), m_vkImageView, nullptr);
 	if (m_vkImageSRV)
 		vkDestroyImageView(m_RenderDevice.vkDevice(), m_vkImageSRV, nullptr);
@@ -257,13 +296,18 @@ void VulkanTexture::Resize(u32 width, u32 height, u32 depth)
 {
 	assert(m_vkImage && m_vkImageView);
 
+	for (auto view : m_vkPerMipViews)
+		vkDestroyImageView(m_RenderDevice.vkDevice(), view, nullptr);
+	m_vkPerMipViews.clear();
+
 	vkDestroyImageView(m_RenderDevice.vkDevice(), m_vkImageView, nullptr);
 	if (m_vmaAllocation)
 		vmaDestroyImage(m_RenderDevice.vmaAllocator(), m_vkImage, m_vmaAllocation);
 
 	m_CreationInfo.resolution = { width, height, depth };
 	CreateImageAndView(m_CreationInfo);
-	
+	CreatePerMipViews();
+
 	SetState({ 0, 0, m_Desc.initialLayout });
 }
 

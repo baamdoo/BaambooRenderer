@@ -116,6 +116,30 @@ Arc< Sampler > Sampler::CreateLinearClampCmp(RenderDevice& rd, const char* name)
 		});
 }
 
+Arc< Sampler > Sampler::CreatePointClampMin(RenderDevice& rd, const char* name)
+{
+	return Create(rd, name,
+		{
+			.filter        = eFilterMode::Point,
+			.mipmapMode    = eMipmapMode::Nearest,
+			.addressMode   = eAddressMode::ClampEdge,
+			.maxAnisotropy = 0.0f,
+			.reductionMode = eReductionMode::Min
+		});
+}
+
+Arc< Sampler > Sampler::CreateLinearClampMin(RenderDevice& rd, const char* name)
+{
+	return Create(rd, name,
+		{
+			.filter        = eFilterMode::Linear,
+			.mipmapMode    = eMipmapMode::Nearest,
+			.addressMode   = eAddressMode::ClampEdge,
+			.maxAnisotropy = 0.0f,
+			.reductionMode = eReductionMode::Min
+		});
+}
+
 Sampler::Sampler(const char* name, CreationInfo&& info)
 	: Super(name, eResourceType::Sampler)
 	, m_CreationInfo(std::move(info))

@@ -272,6 +272,7 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 			physicalDevice12Features.descriptorBindingSampledImageUpdateAfterBind  = VK_TRUE;
 			physicalDevice12Features.descriptorBindingPartiallyBound               = VK_TRUE;
 			physicalDevice12Features.descriptorBindingVariableDescriptorCount      = VK_TRUE;
+			physicalDevice12Features.samplerFilterMinmax                           = VK_TRUE; // HiZ MIN reduction sampler
 		}
 
 		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_DescriptorIndexing))

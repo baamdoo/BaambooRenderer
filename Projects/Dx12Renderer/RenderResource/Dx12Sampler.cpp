@@ -6,9 +6,28 @@ namespace dx12
 
 using namespace render;
 
-#define DX12_SAMPLER_FILTER(filter, mode) ConvertToDx12SamplerMipMapFilter(filter, mode)
-D3D12_FILTER ConvertToDx12SamplerMipMapFilter(eFilterMode filter, eMipmapMode mode)
+#define DX12_SAMPLER_FILTER(filter, mode, reduction) ConvertToDx12SamplerMipMapFilter(filter, mode, reduction)
+D3D12_FILTER ConvertToDx12SamplerMipMapFilter(eFilterMode filter, eMipmapMode mode, eReductionMode reduction)
 {
+    if (reduction == eReductionMode::Min)
+    {
+        switch (filter)
+        {
+        case eFilterMode::Point:  return D3D12_FILTER_MINIMUM_MIN_MAG_MIP_POINT;
+        case eFilterMode::Linear: return D3D12_FILTER_MINIMUM_MIN_MAG_MIP_LINEAR;
+        default: break;
+        }
+    }
+    else if (reduction == eReductionMode::Max)
+    {
+        switch (filter)
+        {
+        case eFilterMode::Point:  return D3D12_FILTER_MAXIMUM_MIN_MAG_MIP_POINT;
+        case eFilterMode::Linear: return D3D12_FILTER_MAXIMUM_MIN_MAG_MIP_LINEAR;
+        default: break;
+        }
+    }
+
     switch (filter)
     {
     case eFilterMode::Point:
@@ -21,7 +40,7 @@ D3D12_FILTER ConvertToDx12SamplerMipMapFilter(eFilterMode filter, eMipmapMode mo
     default:
         assert(false && "Invalid filter mode!"); break;
     }
-    
+
     return D3D12_FILTER_MIN_MAG_MIP_POINT;
 }
 
@@ -140,12 +159,24 @@ Arc< Dx12Sampler > Dx12Sampler::CreateLinearClampCmp(Dx12RenderDevice& rd, const
         });
 }
 
+Arc< Dx12Sampler > Dx12Sampler::CreatePointClampMin(Dx12RenderDevice& rd, const char* name)
+{
+    return Create(rd, name,
+        {
+            .filter        = eFilterMode::Point,
+            .mipmapMode    = eMipmapMode::Nearest,
+            .addressMode   = eAddressMode::ClampEdge,
+            .maxAnisotropy = 0.0f,
+            .reductionMode = eReductionMode::Min
+        });
+}
+
 Dx12Sampler::Dx12Sampler(Dx12RenderDevice& rd, const char* name, CreationInfo&& info)
 	: render::Sampler(name, std::move(info))
     , Dx12Resource(rd, name, eResourceType::Sampler)
 {
 	D3D12_SAMPLER_DESC desc = {};
-	desc.Filter         = DX12_SAMPLER_FILTER(m_CreationInfo.filter, m_CreationInfo.mipmapMode);
+	desc.Filter         = DX12_SAMPLER_FILTER(m_CreationInfo.filter, m_CreationInfo.mipmapMode, m_CreationInfo.reductionMode);
 	desc.MipLODBias     = m_CreationInfo.mipLodBias;
 	desc.MaxAnisotropy  = static_cast<UINT>(m_CreationInfo.maxAnisotropy);
 	desc.ComparisonFunc = DX12_SAMPLER_COMPAREOP(m_CreationInfo.compareOp);

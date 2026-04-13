@@ -61,7 +61,7 @@ struct ResourceState
 	}
 
 	[[nodiscard]]
-	bool HasDivergentSubresources() const { return !SubresourceStates.empty(); }
+	bool HasIndividualSubresources() const { return !SubresourceStates.empty(); }
 
 	BarrierState State = {};
 

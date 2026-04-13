@@ -131,6 +131,8 @@ enum class eSamplerIndex
 	AnisotropicWrap = 5,
 
 	ShadowCmpLessEqual = 6,
+	PointClampMin      = 7,
+	LinearClampMin     = 8,
 
 	MaxIndex,
 };

@@ -204,6 +204,7 @@ public:
         float depthClearValue   = 1.0f;
         u8    stencilClearValue = 0;
 
+        u32  mipLevels     = 0; // 0 = auto (1 if !bGenerateMips, full chain if bGenerateMips)
         u32  arrayLayers   = 1;
         u32  sampleCount   = 1;
         bool bFlipY        = false;
@@ -222,6 +223,7 @@ public:
     u32 Width() const { return m_CreationInfo.resolution.x; }
     u32 Height() const { return m_CreationInfo.resolution.y; }
     u32 Depth() const { return m_CreationInfo.resolution.z; }
+    virtual u32 MipLevels() const = 0;
 
     virtual bool IsDepthTexture() const;
 
@@ -277,6 +279,13 @@ enum class eBorderColor
     OpaqueWhite_Int        = 5,
 };
 
+enum class eReductionMode
+{
+    Standard = 0,   // Weighted average (normal filtering)
+    Min      = 1,   // Minimum of sampled values
+    Max      = 2,   // Maximum of sampled values
+};
+
 DLLEXPORT_TEMPLATE template class BAAMBOO_API Arc< Sampler >;
 class BAAMBOO_API Sampler : public Resource
 {
@@ -289,10 +298,11 @@ public:
         eAddressMode addressMode   = eAddressMode::Wrap;
         f32          mipLodBias    = 0.0f;
         f32          maxAnisotropy = 16.0f;
-        eCompareOp   compareOp     = eCompareOp::Never;
-        f32          minLod        = 0.0f;
-        f32          maxLod        = LOD_CLAMP_NONE;
-        eBorderColor borderColor   = eBorderColor::TransparentBlack_Float;
+        eCompareOp     compareOp     = eCompareOp::Never;
+        f32            minLod        = 0.0f;
+        f32            maxLod        = LOD_CLAMP_NONE;
+        eBorderColor   borderColor   = eBorderColor::TransparentBlack_Float;
+        eReductionMode reductionMode = eReductionMode::Standard;
     };
 
     static Arc< Sampler > Create(RenderDevice& rd, const char* name, CreationInfo&& info);
@@ -302,6 +312,8 @@ public:
     static Arc< Sampler > CreatePointRepeat(RenderDevice& rd, const char* name = "PointRepeat");
     static Arc< Sampler > CreatePointClamp(RenderDevice& rd, const char* name = "PointClamp");
     static Arc< Sampler > CreateLinearClampCmp(RenderDevice& rd, const char* name = "Shadow");
+    static Arc< Sampler > CreatePointClampMin(RenderDevice& rd, const char* name = "PointClampMin");
+    static Arc< Sampler > CreateLinearClampMin(RenderDevice& rd, const char* name = "LinearClampMin");
 
     Sampler(const char* name, CreationInfo&& info);
     virtual ~Sampler() = default;

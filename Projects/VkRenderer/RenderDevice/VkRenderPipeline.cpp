@@ -849,8 +849,12 @@ void VulkanComputePipeline::Build()
 	i32 maxSet = -1;
 	std::unordered_map< u32, std::unordered_map< u32, VkDescriptorSetLayoutBinding > > descriptorSetLayoutBindingMap;
 
-	// vs
+	// cs
 	const auto& csReflection = vkCS->Reflection();
+	m_LocalSizeX = csReflection.localSizeX;
+	m_LocalSizeY = csReflection.localSizeY;
+	m_LocalSizeZ = csReflection.localSizeZ;
+
 	for (const auto& [set, infos] : csReflection.descriptors)
 	{
 		for (const auto& info : infos)

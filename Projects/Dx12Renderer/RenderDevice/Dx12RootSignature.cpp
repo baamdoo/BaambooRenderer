@@ -138,6 +138,45 @@ namespace StaticSamplerPresets
         .RegisterSpace    = 0,
         .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
     };
+
+    // Point-clamp with MIN reduction for HiZ occlusion culling.
+    // Returns the minimum sampled value at the requested mip level.
+    constexpr D3D12_STATIC_SAMPLER_DESC PointClampMin
+    {
+        .Filter           = D3D12_FILTER_MINIMUM_MIN_MAG_MIP_POINT,
+        .AddressU         = D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+        .AddressV         = D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+        .AddressW         = D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+        .MipLODBias       = 0.0f,
+        .MaxAnisotropy    = 1,
+        .ComparisonFunc   = D3D12_COMPARISON_FUNC_NEVER,
+        .BorderColor      = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
+        .MinLOD           = 0.0f,
+        .MaxLOD           = D3D12_FLOAT32_MAX,
+        .ShaderRegister   = static_cast<u32>(eSamplerIndex::PointClampMin),
+        .RegisterSpace    = 0,
+        .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
+    };
+
+    // Linear-clamp with MIN reduction for HiZ occlusion testing.
+    // SampleLevel returns min of the 2x2 bilinear footprint at the requested
+    // mip level, handling texel-boundary straddling without extra samples.
+    constexpr D3D12_STATIC_SAMPLER_DESC LinearClampMin
+    {
+        .Filter           = D3D12_FILTER_MINIMUM_MIN_MAG_MIP_LINEAR,
+        .AddressU         = D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+        .AddressV         = D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+        .AddressW         = D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+        .MipLODBias       = 0.0f,
+        .MaxAnisotropy    = 1,
+        .ComparisonFunc   = D3D12_COMPARISON_FUNC_NEVER,
+        .BorderColor      = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
+        .MinLOD           = 0.0f,
+        .MaxLOD           = D3D12_FLOAT32_MAX,
+        .ShaderRegister   = static_cast<u32>(eSamplerIndex::LinearClampMin),
+        .RegisterSpace    = 0,
+        .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
+    };
 }
 static D3D12_STATIC_SAMPLER_DESC s_StaticSamplerPresets[static_cast<u32>(eSamplerIndex::MaxIndex)];
 
@@ -155,6 +194,8 @@ Dx12RootSignature::Dx12RootSignature(Dx12RenderDevice& rd, const std::string& na
 	s_StaticSamplerPresets[static_cast<u32>(eSamplerIndex::TrilinearWrap)]      = StaticSamplerPresets::TrilinearWrap;
 	s_StaticSamplerPresets[static_cast<u32>(eSamplerIndex::AnisotropicWrap)]    = StaticSamplerPresets::AnisotropicWrap;
 	s_StaticSamplerPresets[static_cast<u32>(eSamplerIndex::ShadowCmpLessEqual)] = StaticSamplerPresets::ShadowCmpLessEqual;
+	s_StaticSamplerPresets[static_cast<u32>(eSamplerIndex::PointClampMin)]      = StaticSamplerPresets::PointClampMin;
+	s_StaticSamplerPresets[static_cast<u32>(eSamplerIndex::LinearClampMin)]     = StaticSamplerPresets::LinearClampMin;
 }
 
 Dx12RootSignature::~Dx12RootSignature()

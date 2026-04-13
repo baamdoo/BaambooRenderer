@@ -52,6 +52,8 @@ struct FrameData
 	Arc< render::Sampler > pPointWrap;
 	Arc< render::Sampler > pLinearClamp;
 	Arc< render::Sampler > pLinearWrap;
+	Arc< render::Sampler > pPointClampMin;  // POINT + MIN reduction
+	Arc< render::Sampler > pLinearClampMin; // LINEAR + MIN reduction for HiZ occlusion testing (niagara-style)
 };
 inline FrameData g_FrameData = {};
 

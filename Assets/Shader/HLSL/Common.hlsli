@@ -145,6 +145,8 @@ CloudData GetCloudData()
 #define SAMPLER_INDEX_TILINEAR_WRAP    s4
 #define SAMPLER_INDEX_ANISOTROPIC_WRAP s5
 #define SAMPLER_INDEX_CMP_LESS_EQUAL   s6
+#define SAMPLER_INDEX_POINT_CLAMP_MIN  s7
+#define SAMPLER_INDEX_LINEAR_CLAMP_MIN s8
 
 SamplerState g_LinearClampSampler      : register(SAMPLER_INDEX_LINEAR_CLAMP);
 SamplerState g_LinearWrapSampler       : register(SAMPLER_INDEX_LINEAR_WRAP);
@@ -153,5 +155,7 @@ SamplerState g_PointWrapSampler        : register(SAMPLER_INDEX_POINT_WRAP);
 SamplerState g_TrilinearWrapSampler    : register(SAMPLER_INDEX_TILINEAR_WRAP);
 SamplerState g_AnisotropicWrapSampler  : register(SAMPLER_INDEX_ANISOTROPIC_WRAP);
 SamplerState g_CompareLessEqualSampler : register(SAMPLER_INDEX_CMP_LESS_EQUAL);
+SamplerState g_PointClampMinSampler    : register(SAMPLER_INDEX_POINT_CLAMP_MIN);
+SamplerState g_LinearClampMinSampler   : register(SAMPLER_INDEX_LINEAR_CLAMP_MIN);
 
 #endif // _HLSL_COMMON_HEADER

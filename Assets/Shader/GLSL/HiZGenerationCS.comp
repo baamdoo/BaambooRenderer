@@ -1,0 +1,158 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#extension GL_KHR_shader_subgroup_quad : require
+
+// Hi-Z pyramid generation via AMD FidelityFX SPD (Single Pass Downsampler).
+//
+// The Hi-Z pyramid is sized to previousPow2(window) so every SPD reduction
+// step is exactly 2x2. Because mip 0 is smaller than the depth buffer,
+// CopyDepthToMip0 samples the depth buffer through a MIN reduction sampler
+// at scaled UV coordinates; SPD then reads from mip 0 (not the depth buffer)
+// and produces mips 1+ with exact 2x2 reductions.
+
+layout(push_constant) uniform PushConstants
+{
+    uint mip0Width;    // Hi-Z mip 0 width  (= previousPow2(windowWidth))
+    uint mip0Height;   // Hi-Z mip 0 height (= previousPow2(windowHeight))
+    uint spdMipCount;
+    uint numWorkGroups;
+} g_Push;
+
+
+layout(set = 1, binding = 0) coherent buffer SPDCounterBuffer
+{
+    uint counter;
+} g_SPDCounter;
+
+
+layout(set = 1, binding = 1) uniform sampler2D g_DepthSrc;
+layout(set = 1, binding = 2, r32f) uniform image2D g_MipUAV0;
+// Hi-Z mips 1-5 (SPD mips 0-4, write-only)
+layout(set = 1, binding = 3, r32f)  writeonly uniform image2D g_MipUAV1;
+layout(set = 1, binding = 4, r32f)  writeonly uniform image2D g_MipUAV2;
+layout(set = 1, binding = 5, r32f)  writeonly uniform image2D g_MipUAV3;
+layout(set = 1, binding = 6, r32f)  writeonly uniform image2D g_MipUAV4;
+layout(set = 1, binding = 7, r32f)  writeonly uniform image2D g_MipUAV5;
+layout(set = 1, binding = 8, r32f)  coherent uniform image2D g_MipUAV6;   // Hi-Z mip 6 (SPD mip 5, globally coherent -- read+write for SPD global phase)
+layout(set = 1, binding = 9, r32f)  writeonly uniform image2D g_MipUAV7;
+layout(set = 1, binding = 10, r32f) writeonly uniform image2D g_MipUAV8;
+layout(set = 1, binding = 11, r32f) writeonly uniform image2D g_MipUAV9;
+layout(set = 1, binding = 12, r32f) writeonly uniform image2D g_MipUAV10;
+layout(set = 1, binding = 13, r32f) writeonly uniform image2D g_MipUAV11;
+layout(set = 1, binding = 14, r32f) writeonly uniform image2D g_MipUAV12;
+
+#define SPD_SINGLE_CHANNEL
+#include "SpdCommon.hg"
+
+// ============================================================================
+// Helper: write to a Hi-Z mip UAV by index
+// ============================================================================
+void SpdStoreHiZMip(ASU2 p, float value, uint hiZMip)
+{
+    switch (hiZMip)
+    {
+        case  1: imageStore(g_MipUAV1,  ivec2(p), vec4(value)); break;
+        case  2: imageStore(g_MipUAV2,  ivec2(p), vec4(value)); break;
+        case  3: imageStore(g_MipUAV3,  ivec2(p), vec4(value)); break;
+        case  4: imageStore(g_MipUAV4,  ivec2(p), vec4(value)); break;
+        case  5: imageStore(g_MipUAV5,  ivec2(p), vec4(value)); break;
+        case  7: imageStore(g_MipUAV7,  ivec2(p), vec4(value)); break;
+        case  8: imageStore(g_MipUAV8,  ivec2(p), vec4(value)); break;
+        case  9: imageStore(g_MipUAV9,  ivec2(p), vec4(value)); break;
+        case 10: imageStore(g_MipUAV10, ivec2(p), vec4(value)); break;
+        case 11: imageStore(g_MipUAV11, ivec2(p), vec4(value)); break;
+        case 12: imageStore(g_MipUAV12, ivec2(p), vec4(value)); break;
+    }
+}
+
+// ============================================================================
+// Per-effect callback: load source texel (Hi-Z mip 0).
+// SPD's "source" is Hi-Z mip 0 -- not the depth buffer -- so that every SPD
+// reduction step is an exact 2x2. Mip 0 was populated by CopyDepthToMip0
+// earlier in main() via a scaled, min-reduction sample of the depth buffer.
+// ============================================================================
+AF4 SpdLoadSourceImage(ASU2 p, AU1 slice)
+{
+    return AF4(imageLoad(g_MipUAV0, ivec2(p)).r, 0, 0, 0);
+}
+
+// ============================================================================
+// Per-effect callback: load from globally coherent mip (SPD mip 5 = Hi-Z mip 6)
+// ============================================================================
+AF4 SpdLoad(ASU2 p, AU1 slice)
+{
+    return AF4(imageLoad(g_MipUAV6, ivec2(p)).r, 0, 0, 0);
+}
+
+// ============================================================================
+// Per-effect callback: store to output mip
+//   SPD mip N -> Hi-Z mip N+1
+// ============================================================================
+void SpdStore(ASU2 p, AF4 value, AU1 mip, AU1 slice)
+{
+    if (mip == 5)
+    {
+        imageStore(g_MipUAV6, ivec2(p), vec4(value.x));
+    }
+    else
+    {
+        SpdStoreHiZMip(p, value.x, mip + 1);
+    }
+}
+
+// ============================================================================
+// Per-effect callback: 2x2 min reduction for reversed-Z Hi-Z
+// ============================================================================
+AF4 SpdReduce4(AF4 v0, AF4 v1, AF4 v2, AF4 v3)
+{
+    return AF4(min(min(v0.x, v1.x), min(v2.x, v3.x)), 0, 0, 0);
+}
+
+#include "../FidelityFX/ffx_spd.h"
+
+
+void CopyDepthToMip0(uvec2 workGroupID, uint localIndex)
+{
+    uvec2 tileBase  = workGroupID * 64u;
+    uint  lx        = localIndex % 16u;
+    uint  ly        = localIndex / 16u;
+    uvec2 blockBase = tileBase + uvec2(lx * 4u, ly * 4u);
+
+    vec2 invMip0 = vec2(1.0 / float(g_Push.mip0Width), 1.0 / float(g_Push.mip0Height));
+
+    for (uint dy = 0u; dy < 4u; dy++)
+    {
+        for (uint dx = 0u; dx < 4u; dx++)
+        {
+            uvec2 coord = blockBase + uvec2(dx, dy);
+            if (coord.x < g_Push.mip0Width && coord.y < g_Push.mip0Height)
+            {
+                vec2 uv = (vec2(coord) + 0.5) * invMip0;
+
+                float depth = textureLod(g_DepthSrc, uv, 0.0).r;
+                imageStore(g_MipUAV0, ivec2(coord), vec4(depth));
+            }
+        }
+    }
+}
+
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+    // Step 1: Populate Hi-Z mip 0 from the depth buffer (conservative downsample).
+    CopyDepthToMip0(gl_WorkGroupID.xy, gl_LocalInvocationIndex);
+
+    // Ensure mip 0 image writes are visible to SPD's source reads in this workgroup.
+    memoryBarrierImage();
+    barrier();
+
+    // Step 2: SPD generates Hi-Z mips 1+ from mip 0 (single pass, exact 2x2 reductions).
+    SpdDownsample(
+        AU2(gl_WorkGroupID.xy),
+        AU1(gl_LocalInvocationIndex),
+        AU1(g_Push.spdMipCount),
+        AU1(g_Push.numWorkGroups),
+        AU1(0)  // slice = 0 (Texture2D, not array)
+    );
+}

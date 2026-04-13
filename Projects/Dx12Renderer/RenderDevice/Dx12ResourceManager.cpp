@@ -68,6 +68,8 @@ Dx12ResourceManager::Dx12ResourceManager(Dx12RenderDevice& rd)
     m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(eSamplerIndex::TrilinearWrap));
     m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(eSamplerIndex::AnisotropicWrap));
     m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(eSamplerIndex::ShadowCmpLessEqual));
+    m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(eSamplerIndex::PointClampMin));
+    m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(eSamplerIndex::LinearClampMin));
 
     m_pGlobalRootSignature->Build();
 }

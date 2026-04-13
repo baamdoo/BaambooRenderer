@@ -14,6 +14,7 @@ public:
     static Arc< Dx12Sampler > CreatePointRepeat(Dx12RenderDevice& rd, const char* name = "PointRepeat");
     static Arc< Dx12Sampler > CreatePointClamp(Dx12RenderDevice& rd, const char* name = "PointClamp");
     static Arc< Dx12Sampler > CreateLinearClampCmp(Dx12RenderDevice& rd, const char* name = "Shadow");
+    static Arc< Dx12Sampler > CreatePointClampMin(Dx12RenderDevice& rd, const char* name = "PointClampMin");
 
     Dx12Sampler(Dx12RenderDevice& rd, const char* name, CreationInfo&& info);
     virtual ~Dx12Sampler();

@@ -73,6 +73,7 @@ public:
 
 	virtual void StageDescriptor(const std::string& name, Arc< render::Buffer > pBuffer, u32 offset = 0) override;
 	virtual void StageDescriptor(const std::string& name, Arc< render::Texture > pTexture, Arc< render::Sampler > pSamplerInCharge, u32 offset = 0) override;
+	virtual void StageDescriptorMip(const std::string& name, Arc< render::Texture > pTexture, u32 mipLevel, Arc< render::Sampler > samplerInCharge = nullptr) override;
 	void StageDescriptors(
 		std::vector< std::pair< std::string, u32 > > && srcHandles,
 		D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);

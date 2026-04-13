@@ -14,6 +14,7 @@ public:
     static Arc< VulkanSampler > CreatePointRepeat(VkRenderDevice& device, const char* name = "PointRepeat");
     static Arc< VulkanSampler > CreatePointClamp(VkRenderDevice& device, const char* name = "PointClamp");
     static Arc< VulkanSampler > CreateLinearClampCmp(VkRenderDevice& device, const char* name = "Shadow");
+    static Arc< VulkanSampler > CreatePointClampMin(VkRenderDevice& device, const char* name = "PointClampMin");
 
     VulkanSampler(VkRenderDevice& rd, const char* name, CreationInfo&& info);
     virtual ~VulkanSampler();

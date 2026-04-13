@@ -7,64 +7,106 @@
 #define _TRANSFORM
 #include "DescriptorCommon.hg"
 #include "HelperFunctions.hg"
+#include "OcclusionCulling.hg"
 
-layout(set = 1, binding = 0) writeonly buffer OutputCommandBuffer 
+
+#define PHASE1_CULL  0u
+#define PHASE2_CULL  1u
+
+layout(set = 1, binding = 0) writeonly buffer OutputCommandBuffer
 {
     IndirectCommandData g_IndirectCommands[];
 };
 
-layout(set = 1, binding = 1) writeonly buffer DrawIDBuffer 
+layout(set = 1, binding = 1) writeonly buffer DrawIDBuffer
 {
     uint g_DrawIDs[];
 };
 
-layout(set = 1, binding = 2) buffer CountBuffer 
+layout(set = 1, binding = 2) buffer CountBuffer
 {
     uint g_DrawCount;
 };
 
+layout(set = 1, binding = 3) buffer VisibilityBuffer
+{
+    uint g_VisibilityBuffer[];
+};
+
+layout(set = 1, binding = 4) uniform sampler2D g_HiZTexture;
+
 layout(push_constant) uniform PushConstants
 {
     uint numInstances;
+    uint cullingPhase;
+    uint hiZMipCount;
+    uint hiZWidth;
+    uint hiZHeight;
 } g_Push;
 
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 void main()
 {
-    uint threadID   = gl_LocalInvocationID.x;
-	uint instanceID = gl_GlobalInvocationID.x;
+    uint instanceID = gl_GlobalInvocationID.x;
     if (instanceID >= g_Push.numInstances)
     {
         return;
     }
-    
+
+    // --- Phase 1: only render instances visible last frame (read-only) ---
+    if (g_Push.cullingPhase == PHASE1_CULL && g_VisibilityBuffer[instanceID] == 0u)
+    {
+        return; // Not visible last frame — Phase 2 will catch it
+    }
+
     InstanceData  instance  = g_Instances[instanceID];
     MeshData      mesh      = g_Meshes[instance.meshID];
-	TransformData transform = g_TransformBuffer.transforms[instance.transformID];
+    TransformData transform = g_TransformBuffer.transforms[instance.transformID];
 
     float scaleX   = length(transform.mLocalToWorld[0].xyz);
-	float scaleY   = length(transform.mLocalToWorld[1].xyz);
-	float scaleZ   = length(transform.mLocalToWorld[2].xyz);
-	float maxScale = max(scaleX, max(scaleY, scaleZ));
+    float scaleY   = length(transform.mLocalToWorld[1].xyz);
+    float scaleZ   = length(transform.mLocalToWorld[2].xyz);
+    float maxScale = max(scaleX, max(scaleY, scaleZ));
 
     vec4  center = transform.mLocalToWorld * vec4(mesh.centerX, mesh.centerY, mesh.centerZ, 1.0);
     float radius = mesh.radius * maxScale;
 
     uint lod = CalculateLODLevel(g_Camera.posWORLD, center.xyz, radius, vec2(g_CullData.lodNear, g_CullData.lodFar), mesh.maxLOD);
 
+    // --- Frustum culling ---
     bool bVisible = true;
     for (int i = 0; i < 5; ++i)
         bVisible = bVisible && dot(g_CullData.frustum[i], center) + radius > 0.0;
 
-    if (bVisible)
+    // --- Occlusion culling (Phase 2 only — Phase 1 skips HZB) ---
+    uint prevVisibility = g_VisibilityBuffer[instanceID];
+    if (bVisible && g_Push.cullingPhase == PHASE2_CULL)
+    {
+        bool bOccluded = IsOccluded(
+            center.xyz,
+            radius,
+            g_Camera.mView,
+            g_Camera.mProj[0][0],
+            g_Camera.mProj[1][1],
+            g_Camera.zNear,
+            g_HiZTexture,
+            float(g_Push.hiZWidth),
+            float(g_Push.hiZHeight));
+        bVisible = bVisible && !bOccluded;
+
+        g_VisibilityBuffer[instanceID] = bVisible ? 1u : 0u; // Update visibility bit for next frame (Phase 1 read)
+    }
+
+    // --- Emit draw (Phase 1 survivors, or Phase 2 newly visible) ---
+    if (bVisible && (g_Push.cullingPhase == PHASE1_CULL || prevVisibility == 0u))
     {
         uint outID = atomicAdd(g_DrawCount, 1);
 
         g_IndirectCommands[outID].groupCountX = roundUpAndDivide(mesh.lods[lod].mCount, 32u);
         g_IndirectCommands[outID].groupCountY = 1;
         g_IndirectCommands[outID].groupCountZ = 1;
-
+        
         g_DrawIDs[outID] = instanceID;
     }
 }

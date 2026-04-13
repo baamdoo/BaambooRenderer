@@ -346,10 +346,10 @@ Dx12Texture::Dx12Texture(Dx12RenderDevice& rd, const char* name, CreationInfo&& 
         {
             .desc = 
                 m_CreationInfo.imageType == render::eImageType::Texture1D ?
-                    CD3DX12_RESOURCE_DESC1::Tex1D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, static_cast<UINT16>(m_CreationInfo.arrayLayers), m_CreationInfo.bGenerateMips ? 0 : 1, ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)) :
+                    CD3DX12_RESOURCE_DESC1::Tex1D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, static_cast<UINT16>(m_CreationInfo.arrayLayers), m_CreationInfo.mipLevels > 0 ? static_cast<UINT16>(m_CreationInfo.mipLevels) : (m_CreationInfo.bGenerateMips ? 0 : 1), ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)) :
                 m_CreationInfo.imageType == render::eImageType::Texture3D ?
-                    CD3DX12_RESOURCE_DESC1::Tex3D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, m_CreationInfo.resolution.y, static_cast<UINT16>(m_CreationInfo.resolution.z), m_CreationInfo.bGenerateMips ? 0 : 1, ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)) :
-                    CD3DX12_RESOURCE_DESC1::Tex2D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, m_CreationInfo.resolution.y, static_cast<UINT16>(m_CreationInfo.arrayLayers), m_CreationInfo.bGenerateMips ? 0 : 1, m_CreationInfo.sampleCount, 0, ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)),
+                    CD3DX12_RESOURCE_DESC1::Tex3D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, m_CreationInfo.resolution.y, static_cast<UINT16>(m_CreationInfo.resolution.z), m_CreationInfo.mipLevels > 0 ? static_cast<UINT16>(m_CreationInfo.mipLevels) : (m_CreationInfo.bGenerateMips ? 0 : 1), ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)) :
+                    CD3DX12_RESOURCE_DESC1::Tex2D(DX12_FORMAT(m_CreationInfo.format), m_CreationInfo.resolution.x, m_CreationInfo.resolution.y, static_cast<UINT16>(m_CreationInfo.arrayLayers), m_CreationInfo.mipLevels > 0 ? static_cast<UINT16>(m_CreationInfo.mipLevels) : (m_CreationInfo.bGenerateMips ? 0 : 1), m_CreationInfo.sampleCount, 0, ConvertToDx12ResourceFlags(m_CreationInfo.imageUsage)),
             .initialLayout = ConvertToInitialBarrierLayout(m_CreationInfo.imageUsage),
             .clearValue    = IsDepthTexture() == false ? 
                 D3D12_CLEAR_VALUE
@@ -418,7 +418,16 @@ void Dx12Texture::Resize(u32 width, u32 height, u32 depthOrArraySize)
         desc.Width            = std::max(width, 1u);
         desc.Height           = std::max(height, 1u);
         desc.DepthOrArraySize = static_cast<u16>(depthOrArraySize);
-        desc.MipLevels        = desc.SampleDesc.Count > 1 ? 1 : m_ResourceDesc.MipLevels;
+
+        // Recalculate mip count when bGenerateMips was used (auto-mip).
+        // Passing 0 lets DX12 auto-calculate the full chain for the new dimensions.
+        // Explicit mipLevels (> 0) are preserved as-is.
+        if (desc.SampleDesc.Count > 1)
+            desc.MipLevels = 1;
+        else if (m_CreationInfo.bGenerateMips && m_CreationInfo.mipLevels == 0)
+            desc.MipLevels = 0;
+        else
+            desc.MipLevels = m_ResourceDesc.MipLevels;
         
         Reset();
 

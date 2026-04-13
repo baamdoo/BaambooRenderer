@@ -111,6 +111,11 @@ public:
 		const std::string& name,
 		Arc< Dx12Texture > pTexture,
 		D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	void StageDescriptorMip(
+		const std::string& name,
+		Arc< Dx12Texture > pTexture,
+		u32 mipLevel,
+		D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
 	void StageDescriptor(const std::string& name, u32 heapIdx, D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	void StageDescriptors(
@@ -184,7 +189,7 @@ private:
 	double m_LastFrameElapsedTime = 0.0;
 
 	static Arc< Dx12Buffer > s_pZeroBuffer;
-	static constexpr SIZE_T ZERO_BUFFER_SIZE = baamboo::math::AlignUp(sizeof(u32), (u64)D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
+	static constexpr SIZE_T ZERO_BUFFER_SIZE = 4096; // 4KB — enough for most clear operations in a single copy
 };
 Arc< Dx12Buffer > Dx12CommandContext::Impl::s_pZeroBuffer;
 
@@ -282,6 +287,39 @@ void Dx12CommandContext::Impl::TransitionBarrier(Dx12Resource* pResource, const 
 {
 	if (!pResource)
 		return;
+
+	// If the resource has individual subresource states and the transition is for all subresources, 
+	// we need to emit separate barriers for each subresource that has a different state.
+	if (pResource->IsTexture() &&
+		pResource->GetCurrentState().HasIndividualSubresources() &&
+		subresource == D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES)
+	{
+		for (const auto& [sub, subState] : pResource->GetCurrentState())
+		{
+			if (subState == stateAfter)
+				continue;
+
+			D3D12_TEXTURE_BARRIER texBarrier = {};
+			texBarrier.SyncBefore   = subState.Sync;
+			texBarrier.SyncAfter    = stateAfter.Sync;
+			texBarrier.AccessBefore = subState.Access;
+			texBarrier.AccessAfter  = stateAfter.Access;
+			texBarrier.LayoutBefore = subState.Layout;
+			texBarrier.LayoutAfter  = stateAfter.Layout;
+			texBarrier.pResource    = pResource->GetD3D12Resource();
+			texBarrier.Subresources = CD3DX12_BARRIER_SUBRESOURCE_RANGE(sub);
+			texBarrier.Flags        = D3D12_TEXTURE_BARRIER_FLAG_NONE;
+
+			AddTextureBarrier(texBarrier, false);
+		}
+
+		pResource->SetCurrentState(stateAfter, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
+
+		if (bFlushImmediate)
+			FlushBarriers();
+
+		return;
+	}
 
 	const auto& stateBefore = pResource->GetCurrentState().GetSubresourceState(subresource);
 	if (stateBefore == stateAfter)
@@ -567,11 +605,21 @@ void Dx12CommandContext::Impl::ClearDepthStencil(const Arc< Dx12Texture >& pText
 void Dx12CommandContext::Impl::ClearUnorderedAccess(const Arc< Dx12Buffer >& pBuffer, u64 offsetInBytes)
 {
 	assert(s_pZeroBuffer);
-	assert(pBuffer->SizeInBytes() <= ZERO_BUFFER_SIZE);
 
 	TransitionBarrier(pBuffer.get(), BarrierStates::BufferCopyDest);
-	TransitionBarrier(s_pZeroBuffer.get(), BarrierStates::BufferCopyDest);
-	CopyBuffer(pBuffer, s_pZeroBuffer, pBuffer->SizeInBytes(), offsetInBytes, 0);
+	TransitionBarrier(s_pZeroBuffer.get(), BarrierStates::BufferCopySource);
+
+	// Copy in chunks for buffers larger than the zero buffer
+	u64 remaining = pBuffer->SizeInBytes() - offsetInBytes;
+	u64 dstOffset = offsetInBytes;
+	while (remaining > 0)
+	{
+		u64 chunkSize = std::min(remaining, static_cast<u64>(ZERO_BUFFER_SIZE));
+
+		CopyBuffer(pBuffer, s_pZeroBuffer, chunkSize, dstOffset, 0);
+		dstOffset += chunkSize;
+		remaining -= chunkSize;
+	}
 }
 
 void Dx12CommandContext::Impl::ClearUnorderedAccess(const Arc< Dx12Texture >& pTexture)
@@ -885,11 +933,17 @@ void Dx12CommandContext::Impl::SetAccelerationStructureSRV(const std::string& na
 }
 
 void Dx12CommandContext::Impl::StageDescriptor(
-	const std::string& name, 
-	Arc< Dx12StructuredBuffer > pBuffer, 
+	const std::string& name,
+	Arc< Dx12StructuredBuffer > pBuffer,
 	D3D12_DESCRIPTOR_HEAP_TYPE heapType)
 {
-	StageDescriptor(name, pBuffer->GetShaderResourceHandle(), heapType);
+	const auto& state = pBuffer->GetCurrentState();
+	bool bIsUAV = state.GetSubresourceState() == BarrierStates::BufferUnorderedAccess;
+
+	if (bIsUAV)
+		StageDescriptor(name, pBuffer->GetUnorderedAccessHandle(), heapType);
+	else
+		StageDescriptor(name, pBuffer->GetShaderResourceHandle(), heapType);
 }
 
 void Dx12CommandContext::Impl::StageDescriptor(
@@ -909,6 +963,15 @@ void Dx12CommandContext::Impl::StageDescriptor(
 	{
 		StageDescriptor(name, pTexture->GetShaderResourceHandle(), heapType);
 	}
+}
+
+void Dx12CommandContext::Impl::StageDescriptorMip(
+	const std::string& name,
+	Arc< Dx12Texture > pTexture,
+	u32 mipLevel,
+	D3D12_DESCRIPTOR_HEAP_TYPE heapType)
+{
+	StageDescriptor(name, pTexture->GetUnorderedAccessHandle(mipLevel), heapType);
 }
 
 void Dx12CommandContext::Impl::StageDescriptor(const std::string& name, u32 heapIdx, D3D12_DESCRIPTOR_HEAP_TYPE heapType)
@@ -1396,6 +1459,21 @@ void Dx12CommandContext::StageDescriptor(const std::string& name, Arc< render::T
 	assert(rhiTexture);
 
 	m_Impl->StageDescriptor(name, rhiTexture);
+}
+
+void Dx12CommandContext::StageDescriptorMip(const std::string& name, Arc< render::Texture > pTexture, u32 mipLevel, Arc< render::Sampler > pSamplerInCharge)
+{
+	UNUSED(pSamplerInCharge);
+
+	auto rhiTexture = StaticCast<Dx12Texture>(pTexture);
+	assert(rhiTexture);
+
+	// With sampler: SRV read of a specific mip.
+	// Without sampler: UAV write via per-mip UAV descriptor.
+	if (pSamplerInCharge)
+		m_Impl->StageDescriptor(name, rhiTexture);
+	else
+		m_Impl->StageDescriptorMip(name, rhiTexture, mipLevel);
 }
 
 void Dx12CommandContext::StageDescriptors(std::vector< std::pair< std::string, u32 > >&& srcHandles, D3D12_DESCRIPTOR_HEAP_TYPE heapType)

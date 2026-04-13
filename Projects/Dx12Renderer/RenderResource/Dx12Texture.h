@@ -17,6 +17,7 @@ public:
     virtual void Reset() override;
     virtual void SetD3D12Resource(ID3D12Resource2* d3d12Resource, const BarrierState& initialState = BarrierStates::Common) override;
     void Resize(u32 width, u32 height, u32 depthOrArraySize = 1);
+    virtual u32 MipLevels() const override { return m_ResourceDesc.MipLevels; }
 
     void CreateShaderResourceView(const D3D12_SHADER_RESOURCE_VIEW_DESC& desc);
 

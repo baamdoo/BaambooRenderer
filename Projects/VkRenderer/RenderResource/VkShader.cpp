@@ -64,7 +64,7 @@ std::vector< char > ReadSpirv(std::string_view filepath)
 	std::ifstream file(filepath.data(), std::ios::ate | std::ios::binary);
 
 	if (!file.is_open()) {
-		throw std::runtime_error("failed to open file!");
+		throw std::runtime_error("failed to open file " + std::string(filepath) + "!");
 	}
 
 	std::streamsize fileSize = (std::streamsize)file.tellg();
@@ -111,6 +111,10 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, VulkanShader::Sh
 
 	VkShaderStageFlagBits stage = stageConverter(executionModel);
 	spirv_cross::ShaderResources resources = compiler.get_shader_resources();
+	
+	reflection.localSizeX = compiler.get_execution_mode_argument(spv::ExecutionModeLocalSize, 0);
+	reflection.localSizeY = compiler.get_execution_mode_argument(spv::ExecutionModeLocalSize, 1);
+	reflection.localSizeZ = compiler.get_execution_mode_argument(spv::ExecutionModeLocalSize, 2);
 
 
 	// **

@@ -21,6 +21,9 @@ void Dx12RenderTarget::ClearTexture(Dx12CommandContext& context, render::eAttach
     {
         if (m_pAttachments[i] && (attachmentPoint == eAttachmentPoint::All || eAttachmentPoint(i) == attachmentPoint))
         {
+            // Skip clearing attachments marked for loading (preserve existing content)
+            if (m_bLoadAttachmentBits & (1 << i))
+                continue;
             context.ClearRenderTarget(StaticCast<Dx12Texture>(m_pAttachments[i]));
         }
     }
@@ -29,9 +32,13 @@ void Dx12RenderTarget::ClearTexture(Dx12CommandContext& context, render::eAttach
     {
         if (auto pDepthTex = StaticCast<Dx12Texture>(m_pAttachments[eAttachmentPoint::DepthStencil]))
         {
+            // Skip clearing depth if marked for loading
+            if (m_bLoadAttachmentBits & (1 << eAttachmentPoint::DepthStencil))
+                return;
+
             const auto& desc = pDepthTex->Desc();
 
-            const D3D12_CLEAR_FLAGS flags = (desc.Format == DXGI_FORMAT_D32_FLOAT || desc.Format == DXGI_FORMAT_D16_UNORM) ? 
+            const D3D12_CLEAR_FLAGS flags = (desc.Format == DXGI_FORMAT_D32_FLOAT || desc.Format == DXGI_FORMAT_D16_UNORM) ?
                 D3D12_CLEAR_FLAG_DEPTH : D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL;
             context.ClearDepthStencil(pDepthTex, flags);
         }

@@ -123,6 +123,13 @@ public:
 	[[nodiscard]]
 	inline VkPipelineLayout vkPipelineLayout() const { return m_vkPipelineLayout; }
 
+	[[nodiscard]]
+	inline u32 LocalSizeX() const { return m_LocalSizeX; }
+	[[nodiscard]]
+	inline u32 LocalSizeY() const { return m_LocalSizeY; }
+	[[nodiscard]]
+	inline u32 LocalSizeZ() const { return m_LocalSizeZ; }
+
 private:
 	VkRenderDevice& m_RenderDevice;
 
@@ -131,6 +138,10 @@ private:
 	std::vector< VkDescriptorSetLayout > m_vkSetLayouts;
 
 	std::unordered_map< u32, DescriptorSet& > m_DescriptorTable;
+
+	u32 m_LocalSizeX = 0;
+	u32 m_LocalSizeY = 0;
+	u32 m_LocalSizeZ = 0;
 };
 
 } // namespace vk

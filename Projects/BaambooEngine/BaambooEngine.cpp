@@ -131,10 +131,12 @@ void Engine::Initialize(eRendererAPI eApi)
 
 	g_FrameData.componentMarker = 0;
 
-	g_FrameData.pPointClamp  = render::Sampler::CreatePointClamp(*pDevice);
-	g_FrameData.pPointWrap   = render::Sampler::CreatePointRepeat(*pDevice);
-	g_FrameData.pLinearClamp = render::Sampler::CreateLinearClamp(*pDevice);
-	g_FrameData.pLinearWrap  = render::Sampler::CreateLinearRepeat(*pDevice);
+	g_FrameData.pPointClamp    = render::Sampler::CreatePointClamp(*pDevice);
+	g_FrameData.pPointWrap     = render::Sampler::CreatePointRepeat(*pDevice);
+	g_FrameData.pLinearClamp   = render::Sampler::CreateLinearClamp(*pDevice);
+	g_FrameData.pLinearWrap    = render::Sampler::CreateLinearRepeat(*pDevice);
+	g_FrameData.pPointClampMin  = render::Sampler::CreatePointClampMin(*pDevice);
+	g_FrameData.pLinearClampMin = render::Sampler::CreateLinearClampMin(*pDevice);
 }
 
 i32 Engine::Run()
@@ -201,6 +203,8 @@ void Engine::Release()
 	RELEASE(m_pScene);
 	RELEASE(m_pWindow);
 
+	g_FrameData.pLinearClampMin.reset();
+	g_FrameData.pPointClampMin.reset();
 	g_FrameData.pLinearWrap.reset();
 	g_FrameData.pLinearClamp.reset();
 	g_FrameData.pPointClamp.reset();

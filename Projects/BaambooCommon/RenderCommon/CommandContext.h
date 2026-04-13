@@ -77,6 +77,7 @@ public:
 
     virtual void StageDescriptor(const std::string&, Arc< Buffer > buffer, u32 offset = 0) = 0;
     virtual void StageDescriptor(const std::string&, Arc< Texture > texture, Arc< Sampler > samplerInCharge = nullptr, u32 offset = 0) = 0;
+    virtual void StageDescriptorMip(const std::string&, Arc< Texture > texture, u32 mipLevel, Arc< Sampler > samplerInCharge = nullptr) = 0;
 
     // === Draw Commands ===
     virtual void Draw(u32 vertexCount, u32 instanceCount = 1, u32 firstVertex = 0, u32 firstInstance = 0) = 0;

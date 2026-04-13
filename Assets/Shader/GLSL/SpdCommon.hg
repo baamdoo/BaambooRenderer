@@ -1,0 +1,89 @@
+#ifndef _SPD_COMMON_HG
+#define _SPD_COMMON_HG
+
+// Reusable SPD (Single Pass Downsampler) integration layer for GLSL.
+//
+// Implements the 5 callbacks that are identical across all SPD effects:
+//   SpdLoadIntermediate, SpdStoreIntermediate,
+//   SpdIncreaseAtomicCounter, SpdGetAtomicCounter, SpdResetAtomicCounter
+//
+// Before including this header, the per-effect shader MUST:
+//   1. Declare: coherent buffer SPDCounterBuffer { uint counter; } g_SPDCounter;
+//   2. Optionally #define SPD_SINGLE_CHANNEL for single-channel effects (e.g., Hi-Z)
+//
+// After including this header, the per-effect shader MUST:
+//   1. Define 4 per-effect callbacks: SpdLoadSourceImage, SpdLoad, SpdStore, SpdReduce4
+//   2. #include "../FidelityFX/ffx_spd.h"  (the SPD algorithm, NOT included here)
+//   3. Define the compute entry point calling SpdDownsample()
+
+// FidelityFX type aliases (AF4, AU1, ASU2, etc.)
+#define A_GPU
+#define A_GLSL
+#include "../FidelityFX/ffx_a.h"
+
+// ============================================================================
+// LDS (shared memory) declarations
+// ============================================================================
+#ifdef SPD_SINGLE_CHANNEL
+shared AF1 spdIntermediateR[16][16];
+#else
+shared AF1 spdIntermediateR[16][16];
+shared AF1 spdIntermediateG[16][16];
+shared AF1 spdIntermediateB[16][16];
+shared AF1 spdIntermediateA[16][16];
+#endif
+
+shared AU1 spdCounter;
+
+// ============================================================================
+// Common callback: LDS load
+// ============================================================================
+AF4 SpdLoadIntermediate(AU1 x, AU1 y)
+{
+#ifdef SPD_SINGLE_CHANNEL
+    return AF4(spdIntermediateR[x][y], 0, 0, 0);
+#else
+    return AF4(spdIntermediateR[x][y], spdIntermediateG[x][y],
+               spdIntermediateB[x][y], spdIntermediateA[x][y]);
+#endif
+}
+
+// ============================================================================
+// Common callback: LDS store
+// ============================================================================
+void SpdStoreIntermediate(AU1 x, AU1 y, AF4 value)
+{
+    spdIntermediateR[x][y] = value.x;
+#ifndef SPD_SINGLE_CHANNEL
+    spdIntermediateG[x][y] = value.y;
+    spdIntermediateB[x][y] = value.z;
+    spdIntermediateA[x][y] = value.w;
+#endif
+}
+
+// ============================================================================
+// Common callback: atomic counter increment
+//   Requires g_SPDCounter (coherent buffer) from per-effect shader.
+// ============================================================================
+void SpdIncreaseAtomicCounter(AU1 slice)
+{
+    spdCounter = atomicAdd(g_SPDCounter.counter, 1);
+}
+
+// ============================================================================
+// Common callback: read atomic counter
+// ============================================================================
+AU1 SpdGetAtomicCounter()
+{
+    return spdCounter;
+}
+
+// ============================================================================
+// Common callback: reset atomic counter to 0
+// ============================================================================
+void SpdResetAtomicCounter(AU1 slice)
+{
+    g_SPDCounter.counter = 0;
+}
+
+#endif // _SPD_COMMON_HG

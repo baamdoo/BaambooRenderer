@@ -29,12 +29,6 @@ VulkanRenderTarget& VulkanRenderTarget::AttachTexture(render::eAttachmentPoint a
     return *this;
 }
 
-VulkanRenderTarget& VulkanRenderTarget::SetLoadAttachment(render::eAttachmentPoint attachmentPoint)
-{
-	m_bLoadAttachmentBits |= (1 << attachmentPoint);
-    return *this;
-}
-
 void VulkanRenderTarget::Build()
 {
 	using namespace render;
@@ -54,17 +48,20 @@ void VulkanRenderTarget::Build()
 		if (!tex)
 			continue;
 
+		bool bLoad = (m_bLoadAttachmentBits & (1 << i)) != 0;
+
 		VkAttachmentDescription attachmentDesc = {};
 		attachmentDesc.format         = tex->Desc().format;
 		attachmentDesc.samples        = tex->Desc().samples;
-		// VK_ATTACHMENT_LOAD_OP_DONT_CARE: appropriate if all pixels are sure to be replaced. since it is cost-effective than clear op. but remains clear for safety.
-		attachmentDesc.loadOp         = (m_bLoadAttachmentBits & i) ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
+		attachmentDesc.loadOp         = bLoad ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
 		attachmentDesc.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
 		attachmentDesc.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		attachmentDesc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		attachmentDesc.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
-		attachmentDesc.finalLayout    = 
+		attachmentDesc.finalLayout    =
 			tex->Desc().usage & VK_IMAGE_USAGE_SAMPLED_BIT ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		// LOAD requires the actual current layout so content is preserved during transition;
+		// CLEAR can use UNDEFINED since content is discarded anyway.
+		attachmentDesc.initialLayout  = bLoad ? attachmentDesc.finalLayout : VK_IMAGE_LAYOUT_UNDEFINED;
 		attachmentDescs.push_back(attachmentDesc);
 
 		colorReferences.push_back(
@@ -88,20 +85,19 @@ void VulkanRenderTarget::Build()
 		auto pTex = StaticCast<VulkanTexture>(m_pAttachments[eAttachmentPoint::DepthStencil]);
 		if (pTex)
 		{
-			//const bool bIsDepthOnly = IsDepthOnly();
+			bool bLoadDepth = (m_bLoadAttachmentBits & (1 << eAttachmentPoint::DepthStencil)) != 0;
 
 			VkAttachmentDescription attachmentDesc = {};
 			attachmentDesc.format         = pTex->Desc().format;
 			attachmentDesc.samples        = VK_SAMPLE_COUNT_1_BIT;
-			attachmentDesc.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
-			//attachmentDesc.loadOp = bIsDepthOnly ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+			attachmentDesc.loadOp         = bLoadDepth ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
 			attachmentDesc.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
-			attachmentDesc.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_CLEAR;
+			attachmentDesc.stencilLoadOp  = bLoadDepth ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
 			attachmentDesc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-			attachmentDesc.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
-			//attachmentDesc.initialLayout = bIsDepthOnly ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 			attachmentDesc.finalLayout    = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			//attachmentDesc.finalLayout    = bIsDepthOnly ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+			// LOAD: preserve content by specifying the actual current layout.
+			// CLEAR: UNDEFINED is fine since content is discarded.
+			attachmentDesc.initialLayout  = bLoadDepth ? attachmentDesc.finalLayout : VK_IMAGE_LAYOUT_UNDEFINED;
 			attachmentDescs.push_back(attachmentDesc);
 
 			depthReference.attachment = static_cast<u32>(attachmentDescs.size()) - 1;

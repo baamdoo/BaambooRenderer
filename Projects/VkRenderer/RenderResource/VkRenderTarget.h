@@ -10,7 +10,6 @@ public:
     ~VulkanRenderTarget();
 
     VulkanRenderTarget& AttachTexture(render::eAttachmentPoint attachmentPoint, Arc< render::Texture > tex);
-    VulkanRenderTarget& SetLoadAttachment(render::eAttachmentPoint attachmentPoint);
     virtual void Build() override;
 
     virtual void Resize(u32 width, u32 height, u32 depth) override;
@@ -40,11 +39,7 @@ private:
     VkFramebuffer         m_vkFramebuffer = VK_NULL_HANDLE;
     VkRenderPassBeginInfo m_BeginInfo = {};
 
-    std::vector< VkClearValue >         m_ClearValues;
-    VkAttachmentDescription             m_AttachmentDesc;
-
-    u32 m_NumColors = 0;
-    u32 m_bLoadAttachmentBits = 0;
+    std::vector< VkClearValue > m_ClearValues;
 };
 
 } // namespace vk

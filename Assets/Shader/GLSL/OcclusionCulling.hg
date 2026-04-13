@@ -1,0 +1,65 @@
+#ifndef _GLSL_OCCLUSION_CULLING_HEADER
+#define _GLSL_OCCLUSION_CULLING_HEADER
+
+// Sphere-vs-HiZ occlusion test for reversed-Z depth (0=far, 1=near).
+//
+// Uses Mara/McGuire 2013 tight AABB projection for correct screen-space
+// bounds regardless of aspect ratio. The HiZ sampler must use MIN
+// reduction mode so that a single textureLod returns the conservative
+// minimum depth within the sampled region.
+
+bool IsOccluded(vec3      centerWS,
+                float     radius,
+                mat4      view,
+                float     P00,
+                float     P11,
+                float     zNear,
+                sampler2D hiZ,
+                float     pyramidWidth,
+                float     pyramidHeight)
+{
+    // --- 1. Transform to view space (positive Z = forward, left-handed) ---
+    vec3 c = (view * vec4(centerWS, 1.0)).xyz;
+
+    // Behind or intersecting near plane: conservatively visible
+    if (c.z < radius + zNear)
+        return false;
+
+    // --- 2. Mara/McGuire 2013: tight AABB of projected sphere ---
+    vec3  cr   = c * radius;
+    float czr2 = c.z * c.z - radius * radius;
+
+    float vx   = sqrt(c.x * c.x + czr2);
+    float minx = (vx * c.x - cr.z) / (vx * c.z + cr.x);
+    float maxx = (vx * c.x + cr.z) / (vx * c.z - cr.x);
+
+    float vy   = sqrt(c.y * c.y + czr2);
+    float miny = (vy * c.y - cr.z) / (vy * c.z + cr.y);
+    float maxy = (vy * c.y + cr.z) / (vy * c.z - cr.y);
+
+    // --- 3. Project to UV [0,1] ---
+    vec4 aabb = vec4(minx * P00, miny * P11, maxx * P00, maxy * P11);
+    aabb = aabb * 0.5 + 0.5;
+
+    // Ensure correct min/max ordering (needed when P11 < 0, e.g. Vulkan Y-flip)
+    vec2 bMin = min(aabb.xy, aabb.zw);
+    vec2 bMax = max(aabb.xy, aabb.zw);
+    bMin = clamp(bMin, 0.0, 1.0);
+    bMax = clamp(bMax, 0.0, 1.0);
+
+    // --- 4. Select HiZ mip level ---
+    float width  = (bMax.x - bMin.x) * pyramidWidth;
+    float height = (bMax.y - bMin.y) * pyramidHeight;
+    float level  = ceil(log2(max(max(width, height), 1.0)));
+
+    // --- 5. Sample HiZ (MIN reduction sampler → single sample is conservative) ---
+    float depth = textureLod(hiZ, (bMin + bMax) * 0.5, level).x;
+
+    // --- 6. Depth test (reversed-Z: near=1, far=0) ---
+    float depthSphere = zNear / (c.z - radius);
+
+    // Occluded if sphere's nearest depth < HiZ minimum (farther in reversed-Z)
+    return depthSphere < depth;
+}
+
+#endif // _GLSL_OCCLUSION_CULLING_HEADER
