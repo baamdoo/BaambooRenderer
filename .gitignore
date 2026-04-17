@@ -50,5 +50,11 @@ packages/
 packages.config
 
 # Contexts
+Docs/
+shrimp_data/
 .claude/
 CLAUDE.md
+.env
+.mcp.json
+.shrimp_rules.md
+.cgcignore.md

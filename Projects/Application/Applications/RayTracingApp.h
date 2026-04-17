@@ -1,6 +1,8 @@
 #pragma once
 #include "BaambooEngine.h"
 
+namespace baamboo { class PathTracerNode; }
+
 class RayTracingApp : public baamboo::Engine
 {
 using Super = baamboo::Engine;

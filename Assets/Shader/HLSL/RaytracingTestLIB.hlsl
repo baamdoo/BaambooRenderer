@@ -3,7 +3,7 @@
 #define _LIGHT
 #define _MATERIAL
 #include "BxDf.hlsli"
-#include "HelperFunctions.hlsli"
+#include "Sampling.hlsli"
 
 cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
@@ -64,13 +64,6 @@ float3 HitWorldPosition()
 float3 OffsetRay(float3 p, float3 n)
 {
     return p + n * 0.001;
-}
-
-uint PCGHash(uint input)
-{
-    uint state = input * 747796405u + 2891336453u;
-    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
-    return (word >> 22u) ^ word;
 }
 
 BxDF::MaterialParams ReadMaterial(MaterialData material, float2 uv)
@@ -342,10 +335,10 @@ void RayGen()
 {
     RWTexture2D< float4 > Output = GetResource(g_Output.index);
 
-    uint2 launchIndex = DispatchRaysIndex().xy;
-    uint2 launchDim   = DispatchRaysDimensions().xy;
+    uint2 rayIndex      = DispatchRaysIndex().xy;
+    uint2 rayDimensions = DispatchRaysDimensions().xy;
 
-    float2 uv = (float2(launchIndex) + 0.5) / float2(launchDim);
+    float2 uv = (float2(rayIndex) + 0.5) / float2(rayDimensions);
 
     float3 target    = ReconstructWorldPos(uv, 0.0, g_Camera.mViewProjInv); // reversed-Z
     float3 rayDir    = normalize(target.xyz - g_Camera.posWORLD);
@@ -358,7 +351,6 @@ void RayGen()
     ray.TMax      = g_Camera.zFar;
 
     RadiancePayload payload = { float3(0.0, 0.0, 0.0), 0.0, 0 };
-
     TraceRay(
         g_Scene,
         RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
@@ -370,7 +362,7 @@ void RayGen()
         payload
     );
 
-    Output[launchIndex] = float4(payload.radiance, 1.0);
+    Output[rayIndex] = float4(payload.radiance, 1.0);
 }
 
 

@@ -8,6 +8,7 @@
 #include "BaambooScene/Components.h"
 #include "BaambooScene/RenderNodes/SkyboxNode.h"
 #include "BaambooScene/RenderNodes/RaytracingNode.h"
+#include "BaambooScene/RenderNodes/PathTracerNode.h"
 #include "BaambooScene/RenderNodes/PostProcessNode.h"
 
 #include <imgui/imgui.h>
@@ -163,12 +164,18 @@ bool RayTracingApp::LoadScene()
 void RayTracingApp::DrawUI()
 {
 	Super::DrawUI();
+
+	for (auto& node : m_pScene->GetRenderNodes())
+	{
+		if (node)
+			node->DrawUI();
+	}
 }
 
 void RayTracingApp::ConfigureRenderGraph()
 {
 	m_pScene->AddRenderNode(MakeArc< StaticSkyboxNode >(*m_pRendererBackend->GetDevice()));
-	m_pScene->AddRenderNode(MakeArc< RaytracingTestNode >(*m_pRendererBackend->GetDevice()));
+	m_pScene->AddRenderNode(MakeArc< PathTracerNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< PostProcessNode >(*m_pRendererBackend->GetDevice()));
 }
 

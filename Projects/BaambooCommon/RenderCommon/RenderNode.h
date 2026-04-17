@@ -16,6 +16,7 @@ public:
     virtual ~RenderNode() = default;
 
     virtual void Apply(CommandContext& context, const SceneRenderView& renderView) = 0;
+    virtual void DrawUI() {}
 
     virtual void Resize(u32 width, u32 height, u32 depth = 1) { UNUSED(width); UNUSED(height); UNUSED(depth); }
 
