@@ -18,7 +18,12 @@ public:
 
     struct Settings
     {
-        u32 samplesPerFrame = 16;
+        u32 samplesPerFrame = 1;
+
+        u32 maxDepth = 8;
+
+        bool bEnableRussianRoulette = true;
+        u32  rrMinDepth             = 2;
 
         bool bFurnaceMode = false;
 

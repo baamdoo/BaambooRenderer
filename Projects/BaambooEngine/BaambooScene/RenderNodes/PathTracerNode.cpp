@@ -45,28 +45,20 @@ PathTracerNode::PathTracerNode(render::RenderDevice& rd)
                 }))
           .SetRayGenerationShader("RayGen")
           .AddMissShader("PrimaryMiss")
-          .AddMissShader("SkyMiss")
           .AddHitGroup(
               {
                   .hitGroupName           = "PrimaryHitGroup",
                   .closestHitShaderExport = "ClosestHit_Primary",
               })
-          .AddHitGroup(
-              {
-                  .hitGroupName       = "SkyHitGroup",
-                  .anyHitShaderExport = "SkyAnyHit",
-              })
-          .SetMaxPayloadSize(sizeof(float) * 3)       // PrimaryPayload = float3
-          .SetMaxAttributeSize(sizeof(float) * 2)     // BuiltInTriangleIntersectionAttributes
-          .SetMaxRecursionDepth(2)
+          .SetMaxPayloadSize(sizeof(float) * 16)
+          .SetMaxAttributeSize(sizeof(float) * 2)
+          .SetMaxRecursionDepth(1) // iterative walk in RayGen
           .Build();
 
     m_pSBT = ShaderBindingTable::Create(m_RenderDevice, "PathTracerSBT");
     m_pSBT->SetRayGenerationRecord(m_pPSO->GetShaderIdentifier("RayGen"), nullptr, 0)
           .AddMissRecord("PrimaryMiss", m_pPSO->GetShaderIdentifier("PrimaryMiss"))
-          .AddMissRecord("SkyMiss",     m_pPSO->GetShaderIdentifier("SkyMiss"))
           .AddHitGroupRecord("PrimaryHitGroup", m_pPSO->GetShaderIdentifier("PrimaryHitGroup"))
-          .AddHitGroupRecord("SkyHitGroup",     m_pPSO->GetShaderIdentifier("SkyHitGroup"))
           .Build();
 
     m_PrevWidth  = m_RenderDevice.WindowWidth();
@@ -77,8 +69,6 @@ bool PathTracerNode::HasViewChanged(const SceneRenderView& renderView) const
 {
     const mat4 curViewProj = renderView.camera.mProj * renderView.camera.mView;
 
-    // Compare element-wise. We exit early as soon as we find a diff to
-    // avoid wasting cycles on the common case of "something moved".
     const float* a = &m_PrevViewProj[0][0];
     const float* b = &curViewProj[0][0];
     for (int i = 0; i < 16; ++i)
@@ -90,8 +80,6 @@ bool PathTracerNode::HasViewChanged(const SceneRenderView& renderView) const
         }
     }
 
-    // Also treat a resolution change as "view changed" — the texel
-    // grid is different and the old accum is meaningless.
     const u32 w = m_RenderDevice.WindowWidth();
     const u32 h = m_RenderDevice.WindowHeight();
     if (w != m_PrevWidth || h != m_PrevHeight)
@@ -134,11 +122,15 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
     context.TransitionBarrier(m_pDisplay,     eTextureLayout::General);
     context.TransitionBarrier(m_pAccumBuffer, eTextureLayout::General);
 
+    // Layout must match the `PushConstants` cbuffer in PathTracerLIB.hlsl.
     struct PushConstants
     {
         u32   frameIndex;
         u32   accumReset;
         u32   numSamples;
+        u32   maxDepth;
+        u32   enableRR;
+        u32   rrMinDepth;
         u32   furnaceMode;
         float furnaceLenvR;
         float furnaceLenvG;
@@ -148,6 +140,9 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
     pc.frameIndex   = static_cast<u32>(renderView.frame);
     pc.accumReset   = bResetThisFrame ? 1u : 0u;
     pc.numSamples   = settings.samplesPerFrame;
+    pc.maxDepth     = settings.maxDepth;
+    pc.enableRR     = settings.bEnableRussianRoulette ? 1u : 0u;
+    pc.rrMinDepth   = settings.rrMinDepth;
     pc.furnaceMode  = settings.bFurnaceMode ? 1u : 0u;
     pc.furnaceLenvR = settings.furnaceLenv.x;
     pc.furnaceLenvG = settings.furnaceLenv.y;
@@ -174,11 +169,31 @@ void PathTracerNode::DrawUI()
     {
         auto& s = settings;
 
-        int spp = static_cast<int>(s.samplesPerFrame);
-        if (ImGui::SliderInt("Samples / frame", &spp, 1, 256))
+        int paths = static_cast<int>(s.samplesPerFrame);
+        if (ImGui::SliderInt("Paths / frame", &paths, 1, 16))
         {
-            s.samplesPerFrame = static_cast<u32>(spp);
+            s.samplesPerFrame = static_cast<u32>(paths);
             s.bRequestReset = true;
+        }
+
+        int depth = static_cast<int>(s.maxDepth);
+        if (ImGui::SliderInt("Max Depth", &depth, 1, 64))
+        {
+            s.maxDepth = static_cast<u32>(depth);
+            s.bRequestReset = true;
+        }
+
+        if (ImGui::Checkbox("Russian Roulette", &s.bEnableRussianRoulette))
+            s.bRequestReset = true;
+
+        if (s.bEnableRussianRoulette)
+        {
+            int rrMin = static_cast<int>(s.rrMinDepth);
+            if (ImGui::SliderInt("RR Min Depth", &rrMin, 0, 4))
+            {
+                s.rrMinDepth = static_cast<u32>(rrMin);
+                s.bRequestReset = true;
+            }
         }
 
         if (ImGui::SliderFloat("Test Albedo (rho)", &s.testAlbedo, 0.0f, 1.0f))
@@ -205,12 +220,6 @@ void PathTracerNode::DrawUI()
             {
                 s.bRequestReset = true;
             }
-
-            ImGui::TextWrapped(
-                "Expected: a rho=1 surface reads back as L_env exactly. "
-                "A rho=0.5 surface reads back as 0.5*L_env. "
-                "A rho=0 surface reads back as 0. "
-                "Sweep rho with the three quick-set buttons above.");
         }
 
         ImGui::Separator();

@@ -193,14 +193,33 @@ void RayTracingApp::ConfigureSceneObjects()
 		auto entity = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
 		entity.AttachComponent< ScriptComponent >();
 
-		auto entity4 = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
-		auto& tc4 = entity4.GetComponent< TransformComponent >();
-		tc4.transform.position = float3(0.0f, 5.0f, 0.0f);
+		const float3 scaleFloor = float3(10.0f,  1.0f, 10.0f);
+		const float3 scaleSide  = float3( 1.0f, 10.0f, 10.0f);
+		const float3 scaleEnd   = float3(10.0f, 10.0f,  1.0f);
 
-		auto entity3 = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
-		auto& tc3 = entity3.GetComponent< TransformComponent >();
-		tc3.transform.position = float3(0.0f, -5.0f, 0.0f);
-		tc3.transform.scale = float3(10.0f, 1.0f, 10.0f);
+		auto floor = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
+		floor.GetComponent< TransformComponent >().transform.position = float3(0.0f, -5.0f, 0.0f);
+		floor.GetComponent< TransformComponent >().transform.scale    = scaleFloor;
+
+		auto ceiling = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
+		ceiling.GetComponent< TransformComponent >().transform.position = float3(0.0f, 5.0f, 0.0f);
+		ceiling.GetComponent< TransformComponent >().transform.scale    = scaleFloor;
+
+		auto leftWall = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
+		leftWall.GetComponent< TransformComponent >().transform.position = float3(-10.0f, 0.0f, 0.0f);
+		leftWall.GetComponent< TransformComponent >().transform.scale    = scaleSide;
+
+		auto rightWall = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
+		rightWall.GetComponent< TransformComponent >().transform.position = float3(10.0f, 0.0f, 0.0f);
+		rightWall.GetComponent< TransformComponent >().transform.scale    = scaleSide;
+
+		auto backWall = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
+		backWall.GetComponent< TransformComponent >().transform.position = float3(0.0f, 0.0f, 10.0f);
+		backWall.GetComponent< TransformComponent >().transform.scale    = scaleEnd;
+
+		auto frontWall = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
+		frontWall.GetComponent< TransformComponent >().transform.position = float3(0.0f, 0.0f, -10.0f);
+		frontWall.GetComponent< TransformComponent >().transform.scale    = scaleEnd;
 	}
 	// environment
 	{
