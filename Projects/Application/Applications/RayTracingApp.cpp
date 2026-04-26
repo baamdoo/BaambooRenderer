@@ -193,9 +193,9 @@ void RayTracingApp::ConfigureSceneObjects()
 		auto entity = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
 		entity.AttachComponent< ScriptComponent >();
 
-		const float3 scaleFloor = float3(10.0f,  1.0f, 10.0f);
-		const float3 scaleSide  = float3( 1.0f, 10.0f, 10.0f);
-		const float3 scaleEnd   = float3(10.0f, 10.0f,  1.0f);
+		const float3 scaleFloor = float3(10.0f,  0.4f, 10.0f);
+		const float3 scaleSide  = float3( 0.4f, 10.0f, 10.0f);
+		const float3 scaleEnd   = float3(10.0f, 10.0f,  0.4f);
 
 		auto floor = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
 		floor.GetComponent< TransformComponent >().transform.position = float3(0.0f, -5.0f, 0.0f);
@@ -220,6 +220,14 @@ void RayTracingApp::ConfigureSceneObjects()
 		auto frontWall = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
 		frontWall.GetComponent< TransformComponent >().transform.position = float3(0.0f, 0.0f, -10.0f);
 		frontWall.GetComponent< TransformComponent >().transform.scale    = scaleEnd;
+
+		auto areaLight = m_pScene->CreateEntity("AreaLight");
+		auto& areaXform = areaLight.GetComponent< TransformComponent >().transform;
+		areaXform.position = float3(0.0f, 4.5f, 0.0f);
+		auto& areaLC = areaLight.AttachComponent< LightComponent >();
+		areaLC.SetDefaultArea();
+		areaLC.color          = float3(1.0f, 1.0f, 1.0f);
+		areaLC.luminousFluxLm = 50.0f;
 	}
 	// environment
 	{

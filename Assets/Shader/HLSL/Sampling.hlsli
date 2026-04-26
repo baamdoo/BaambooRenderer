@@ -220,10 +220,6 @@ void BuildONB(float3 n, out float3 t, out float3 b)
     // We rely on HLSL's "1.0f copied with n.z's sign" semantics here.
     const float sign = (n.z >= 0.0) ? 1.0 : -1.0;
 
-    // `a` and `h` are Duff et al.'s auxiliary scalars. They are chosen
-    // specifically so that the formula below is accurate even when n is
-    // nearly aligned with ±z (the classic failure mode of the naive
-    // cross-product construction).
     const float a = -1.0 / (sign + n.z);
     const float h = n.x * n.y * a;
 
@@ -252,12 +248,130 @@ float3 SphericalToCartesian(float cosTheta, float sinTheta, float phi)
 void SampleHemisphere_Uniform(float2 u, out float3 dir, out float pdf)
 {
     const float phi = 2 * PI * u.y;
-    
+
     const float cosTheta = u.x;
     const float sinTheta = safeSqrt(1 - cosTheta * cosTheta);
-    
+
     dir = SphericalToCartesian(cosTheta, sinTheta, phi);
     pdf = 1 / (2 * PI); // uniform pdf
+}
+
+void SampleHemisphere_Cosine(float2 u, out float3 dir, out float pdf)
+{
+    const float phi = 2 * PI * u.y;
+
+    const float sinTheta = safeSqrt(u.x);
+    const float cosTheta = safeSqrt(1 - u.x);
+
+    dir = SphericalToCartesian(cosTheta, sinTheta, phi);
+    pdf = cosTheta / PI; // cosine-weighted pdf
+}
+
+
+// ───────────────────────────────────────────────────────────────────
+// Area / Sphere light surface samplers
+// ───────────────────────────────────────────────────────────────────
+void SampleAreaLight(float2 u, AreaLight light, out float3 y, out float3 normalAtY, out float pdfA)
+{
+    float3 position  = float3(light.posX,     light.posY,     light.posZ);
+    float3 tangent   = float3(light.tangentX, light.tangentY, light.tangentZ);
+    float3 normal    = float3(light.normalX,  light.normalY,  light.normalZ);
+    float3 bitangent = cross(tangent, normal);
+
+    float2 s = u * 2.0 - 1.0;
+
+    y         = position + (s.x * light.halfWidth) * tangent
+                         + (s.y * light.halfHeight) * bitangent;
+    normalAtY = normal;
+    pdfA      = 1.0 / (4.0 * light.halfWidth * light.halfHeight);
+}
+
+void SampleSphereLight(float2 u, SphereLight light, out float3 y, out float3 normalAtY, out float pdfA)
+{
+    float3 position = float3(light.posX, light.posY, light.posZ);
+
+    float cosTheta = 1.0 - 2.0 * u.x;
+    float sinTheta = safeSqrt(1.0 - cosTheta * cosTheta);
+    float phi      = 2.0 * PI * u.y;
+
+    float3 dir = float3(sinTheta * cos(phi),
+                        sinTheta * sin(phi),
+                        cosTheta);
+
+    y         = position + light.radius * dir;
+    normalAtY = dir; // sphere outward normal at the surface point
+    pdfA      = 1.0 / (4.0 * PI * light.radius * light.radius);
+}
+
+
+// ───────────────────────────────────────────────────────────────────
+// Analytic light ray-intersection
+// ───────────────────────────────────────────────────────────────────
+bool IntersectRayAreaLight(float3 origin, float3 dir, AreaLight light, out float tHit, out float3 normalAtHit)
+{
+    float3 lpos    = float3(light.posX,     light.posY,     light.posZ);
+    float3 ltan    = float3(light.tangentX, light.tangentY, light.tangentZ);
+    float3 lnorm   = float3(light.normalX,  light.normalY,  light.normalZ);
+    float3 lbitan  = cross(ltan, lnorm);
+
+    // Single-sided: ray must approach from the front hemisphere
+    // (i.e. dot(lnorm, -dir) > 0  =>  dot(lnorm, dir) < 0).
+    float denom = dot(lnorm, dir);
+    if (denom >= -1e-6) { tHit = -1.0; normalAtHit = float3(0, 0, 0); return false; }
+
+    // Plane intersection: t = dot(lpos - origin, lnorm) / dot(lnorm, dir).
+    float t = dot(lpos - origin, lnorm) / denom;
+    if (t <= 0.001) { tHit = -1.0; normalAtHit = float3(0, 0, 0); return false; }
+
+    // Bounds check in the rectangle's tangent / bitangent frame.
+    float3 p = origin + t * dir;
+    float3 d = p - lpos;
+    float  u = dot(d, ltan);
+    float  v = dot(d, lbitan);
+    if (abs(u) > light.halfWidth || abs(v) > light.halfHeight)
+    {
+        tHit = -1.0; normalAtHit = float3(0, 0, 0); return false;
+    }
+
+    tHit        = t;
+    normalAtHit = lnorm;
+    return true;
+}
+
+bool IntersectRaySphereLight(float3 origin, float3 dir, SphereLight light, out float tHit, out float3 normalAtHit)
+{
+    float3 c  = float3(light.posX, light.posY, light.posZ);
+    float3 oc = origin - c;
+    float  b  = dot(oc, dir);                              // half-b form
+    float  cc = dot(oc, oc) - light.radius * light.radius;
+    float  disc = b * b - cc;
+    if (disc < 0.0) { tHit = -1.0; normalAtHit = float3(0, 0, 0); return false; }
+
+    float s = sqrt(disc);
+    float t = -b - s;              // entry point (front face for external rays)
+    if (t <= 0.001) t = -b + s;    // origin inside the sphere -> exit point
+    if (t <= 0.001) { tHit = -1.0; normalAtHit = float3(0, 0, 0); return false; }
+
+    float3 p = origin + t * dir;
+    tHit        = t;
+    normalAtHit = normalize(p - c);
+    return true;
+}
+
+
+// ───────────────────────────────────────────────────────────────────
+// BSDF pdf evaluator for cross-evaluation
+// ───────────────────────────────────────────────────────────────────
+float EvaluateBSDFPdf(float3 dir, float3 n, uint strategy)
+{
+    float c = dot(dir, n);
+    if (c <= 0.0) 
+        return 0.0;
+
+    if (strategy == 1u)
+        return c / PI;
+    else
+        return 1.0 / (2.0 * PI);
 }
 
 

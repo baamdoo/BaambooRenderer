@@ -843,13 +843,26 @@ void Dx12CommandContext::Impl::SetComputeDynamicConstantBuffer(const std::string
 	auto allocation = m_pConstantBufferPool->Allocate(sizeInBytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
 	memcpy(allocation.CPUHandle, pData, sizeInBytes);
 
-	auto [_, rootIndex] = m_pComputePipeline->GetResourceBindingIndex(name);
-	if (rootIndex == INVALID_INDEX)
+	if (m_pComputePipeline)
 	{
-		return;
-	}
+		auto [_, rootIndex] = m_pComputePipeline->GetResourceBindingIndex(name);
+		if (rootIndex == INVALID_INDEX)
+		{
+			return;
+		}
 
-	m_d3d12CommandList10->SetComputeRootConstantBufferView(rootIndex, allocation.GPUHandle);
+		m_d3d12CommandList10->SetComputeRootConstantBufferView(rootIndex, allocation.GPUHandle);
+	}
+	else if (m_pRaytracingPipeline)
+	{
+		auto [_, rootIndex] = m_pRaytracingPipeline->GetResourceBindingIndex(name);
+		if (rootIndex == INVALID_INDEX)
+		{
+			return;
+		}
+
+		m_d3d12CommandList10->SetComputeRootConstantBufferView(rootIndex, allocation.GPUHandle);
+	}
 }
 
 void Dx12CommandContext::Impl::SetGraphicsConstantBufferView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle)

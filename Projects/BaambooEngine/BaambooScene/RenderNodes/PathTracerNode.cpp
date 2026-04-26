@@ -45,10 +45,16 @@ PathTracerNode::PathTracerNode(render::RenderDevice& rd)
                 }))
           .SetRayGenerationShader("RayGen")
           .AddMissShader("PrimaryMiss")
+          .AddMissShader("ShadowMiss")
           .AddHitGroup(
               {
                   .hitGroupName           = "PrimaryHitGroup",
                   .closestHitShaderExport = "ClosestHit_Primary",
+              })
+          .AddHitGroup(
+              {
+                  .hitGroupName       = "ShadowHitGroup",
+                  .anyHitShaderExport = "AnyHit_Shadow",
               })
           .SetMaxPayloadSize(sizeof(float) * 16)
           .SetMaxAttributeSize(sizeof(float) * 2)
@@ -57,8 +63,10 @@ PathTracerNode::PathTracerNode(render::RenderDevice& rd)
 
     m_pSBT = ShaderBindingTable::Create(m_RenderDevice, "PathTracerSBT");
     m_pSBT->SetRayGenerationRecord(m_pPSO->GetShaderIdentifier("RayGen"), nullptr, 0)
-          .AddMissRecord("PrimaryMiss", m_pPSO->GetShaderIdentifier("PrimaryMiss"))
+          .AddMissRecord("PrimaryMiss",       m_pPSO->GetShaderIdentifier("PrimaryMiss"))
+          .AddMissRecord("ShadowMiss",        m_pPSO->GetShaderIdentifier("ShadowMiss"))
           .AddHitGroupRecord("PrimaryHitGroup", m_pPSO->GetShaderIdentifier("PrimaryHitGroup"))
+          .AddHitGroupRecord("ShadowHitGroup",  m_pPSO->GetShaderIdentifier("ShadowHitGroup"))
           .Build();
 
     m_PrevWidth  = m_RenderDevice.WindowWidth();
@@ -122,34 +130,57 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
     context.TransitionBarrier(m_pDisplay,     eTextureLayout::General);
     context.TransitionBarrier(m_pAccumBuffer, eTextureLayout::General);
 
-    // Layout must match the `PushConstants` cbuffer in PathTracerLIB.hlsl.
     struct PushConstants
     {
-        u32   frameIndex;
-        u32   accumReset;
-        u32   numSamples;
+        u32 frameIndex;
+        u32 accumReset;
+        u32 numSamples;
+    } pc;
+    pc.frameIndex = static_cast<u32>(renderView.frame);
+    pc.accumReset = bResetThisFrame ? 1u : 0u;
+    pc.numSamples = settings.samplesPerFrame;
+
+    struct PathTracerSettings
+    {
         u32   maxDepth;
         u32   enableRR;
         u32   rrMinDepth;
+        u32   samplingStrategy;
+
         u32   furnaceMode;
+        float testAlbedo;
+        u32   neeEnable;
+        u32   _pad0;
+
         float furnaceLenvR;
         float furnaceLenvG;
         float furnaceLenvB;
-        float testAlbedo;
-    } pc;
-    pc.frameIndex   = static_cast<u32>(renderView.frame);
-    pc.accumReset   = bResetThisFrame ? 1u : 0u;
-    pc.numSamples   = settings.samplesPerFrame;
-    pc.maxDepth     = settings.maxDepth;
-    pc.enableRR     = settings.bEnableRussianRoulette ? 1u : 0u;
-    pc.rrMinDepth   = settings.rrMinDepth;
-    pc.furnaceMode  = settings.bFurnaceMode ? 1u : 0u;
-    pc.furnaceLenvR = settings.furnaceLenv.x;
-    pc.furnaceLenvG = settings.furnaceLenv.y;
-    pc.furnaceLenvB = settings.furnaceLenv.z;
-    pc.testAlbedo   = settings.testAlbedo;
+        float _pad1;
+
+        u32   misEnable;
+        u32   misHeuristic;
+        u32   misForceWeight;
+        u32   _pad2;
+    } cb;
+    cb.maxDepth         = settings.maxDepth;
+    cb.enableRR         = settings.bEnableRussianRoulette ? 1u : 0u;
+    cb.rrMinDepth       = settings.rrMinDepth;
+    cb.samplingStrategy = static_cast<u32>(settings.samplingStrategy);
+    cb.furnaceMode      = settings.bFurnaceMode ? 1u : 0u;
+    cb.testAlbedo       = settings.testAlbedo;
+    cb.neeEnable        = settings.bEnableNEE ? 1u : 0u;
+    cb._pad0            = 0u;
+    cb.furnaceLenvR     = settings.furnaceLenv.x;
+    cb.furnaceLenvG     = settings.furnaceLenv.y;
+    cb.furnaceLenvB     = settings.furnaceLenv.z;
+    cb._pad1            = 0.0f;
+    cb.misEnable        = settings.bEnableMIS ? 1u : 0u;
+    cb.misHeuristic     = static_cast<u32>(settings.misHeuristic);
+    cb.misForceWeight   = static_cast<u32>(settings.misForceWeight);
+    cb._pad2            = 0u;
 
     context.SetComputeConstants(sizeof(pc), &pc);
+    context.SetComputeDynamicUniformBuffer("g_Settings", cb);
     context.SetAccelerationStructure("g_Scene", *pTLAS);
 
     context.StageDescriptor("g_Skybox",      pSkyboxLUT);
@@ -183,6 +214,14 @@ void PathTracerNode::DrawUI()
             s.bRequestReset = true;
         }
 
+        const char* samplerNames[] = { "Uniform Hemisphere", "Cosine-Weighted" };
+        int currentSampler = static_cast<int>(s.samplingStrategy);
+        if (ImGui::Combo("Sampling", &currentSampler, samplerNames, IM_ARRAYSIZE(samplerNames)))
+        {
+            s.samplingStrategy = static_cast<eSamplingStrategy>(currentSampler);
+            s.bRequestReset    = true;
+        }
+
         if (ImGui::Checkbox("Russian Roulette", &s.bEnableRussianRoulette))
             s.bRequestReset = true;
 
@@ -206,6 +245,45 @@ void PathTracerNode::DrawUI()
         if (ImGui::SmallButton("0.5")) { s.testAlbedo = 0.5f; s.bRequestReset = true; }
         ImGui::SameLine();
         if (ImGui::SmallButton("0.0")) { s.testAlbedo = 0.0f; s.bRequestReset = true; }
+
+        ImGui::Separator();
+        ImGui::TextUnformatted("Next Event Estimation (NEE)");
+
+        if (ImGui::Checkbox("Enable NEE", &s.bEnableNEE))
+            s.bRequestReset = true;
+
+        ImGui::TextDisabled("With MIS off, BSDF random walks miss analytic lights -- only NEE reaches them.");
+        ImGui::TextDisabled("With MIS on,  BSDF samples that hit a light contribute too.");
+
+        ImGui::Separator();
+        ImGui::TextUnformatted("Multiple Importance Sampling (MIS)");
+
+        if (ImGui::Checkbox("Enable MIS (BSDF + NEE)", &s.bEnableMIS))
+            s.bRequestReset = true;
+
+        if (s.bEnableMIS)
+        {
+            const char* heuristics[] = { "Balance", "Power(beta=2)" };
+            int h = static_cast<int>(s.misHeuristic);
+            if (ImGui::Combo("Heuristic", &h, heuristics, IM_ARRAYSIZE(heuristics)))
+            {
+                s.misHeuristic  = static_cast<eMisHeuristic>(h);
+                s.bRequestReset = true;
+            }
+
+            const char* forces[] = {
+                "Off (use heuristic)",
+                "Force w_NEE=1 (NEE-only)",
+                "Force w_NEE=0 (BSDF-only)",
+                "Force w_NEE=0.5 (avg)"
+            };
+            int fw = static_cast<int>(s.misForceWeight);
+            if (ImGui::Combo("Force Weight (debug)", &fw, forces, IM_ARRAYSIZE(forces)))
+            {
+                s.misForceWeight = static_cast<eMisForceWeight>(fw);
+                s.bRequestReset  = true;
+            }
+        }
 
         ImGui::Separator();
         ImGui::TextUnformatted("Furnace Test");

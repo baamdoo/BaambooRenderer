@@ -1,7 +1,21 @@
 #define _CAMERA
 #define _MESH
+#define _MATERIAL
+#define _LIGHT
 #include "Common.hlsli"
 #include "Sampling.hlsli"
+
+
+// ───────────────────────────────────────────────────────────────────
+// Ray type indexing (Phase 3 NEE)
+// ───────────────────────────────────────────────────────────────────
+// SBT layout: hit groups and miss shaders are added in this order, so
+// the indices below also serve as the SBT record indices the engine
+// hands out. If a future phase inserts a new ray type, bump these
+// constants in lockstep with PathTracerNode's PSO/SBT build.
+#define RAY_TYPE_PRIMARY 0
+#define RAY_TYPE_SHADOW  1
+#define NUM_RAY_TYPES    2
 
 
 // ───────────────────────────────────────────────────────────────────
@@ -9,22 +23,39 @@
 // ───────────────────────────────────────────────────────────────────
 cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
-    uint  g_FrameIndex;        // monotonically increasing frame counter (RNG seed)
-    uint  g_AccumReset;        // 1 = overwrite accum with current sample; 0 = add
-    uint  g_NumSamples;        // paths per pixel this frame (Phase 1 baseline: 1)
-    uint  g_MaxDepth;          // path length cap (Phase 1 Step 1.4)
-    uint  g_EnableRR;          // 1 = Russian Roulette on (Step 1.9)
-    uint  g_RRMinDepth;        // bounces before RR may fire (Step 1.9)
-    uint  g_FurnaceMode;       // 1 = ignore skybox, use constant L_env; 0 = real sky
-    float g_FurnaceLenvR;      // channel-specific constant sky radiance (furnace)
-    float g_FurnaceLenvG;
-    float g_FurnaceLenvB;
-    float g_TestAlbedo;        // Phase 1 constant Lambertian reflectance (ρ)
+    uint g_FrameIndex; // monotonically increasing frame counter (RNG seed)
+    uint g_AccumReset; // 1 = overwrite accum with current sample; 0 = add
+    uint g_NumSamples; // paths per pixel this frame
 };
 
 ConstantBuffer< DescriptorHeapIndex > g_Skybox      : register(b1, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_AccumBuffer : register(b2, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_Display     : register(b3, ROOT_CONSTANT_SPACE);
+
+struct PathTracerSettings
+{
+    uint  maxDepth;          // path length cap
+    uint  enableRR;          // 1 = Russian Roulette on
+    uint  rrMinDepth;        // bounces before RR may fire
+    uint  samplingStrategy;  // 0 = uniform hemisphere, 1 = cosine-weighted
+
+    uint  furnaceMode;       // 1 = ignore skybox, use constant L_env; 0 = real sky
+    float testAlbedo;        // constant Lambertian reflectance (rho) for furnace tests
+    uint  neeEnable;         // 1 = perform NEE per bounce, 0 = BSDF only
+    uint  _pad0;
+
+    float furnaceLenvR;      // constant sky radiance (furnace mode)
+    float furnaceLenvG;
+    float furnaceLenvB;
+    float _pad1;
+
+    // Phase 4 MIS controls (Step 4.3).
+    uint  misEnable;         // 1 = MIS on, 0 = Phase 3 NEE-only behavior
+    uint  misHeuristic;      // 0 = balance, 1 = power(beta=2)
+    uint  misForceWeight;    // 0 = heuristic, 1 = w_NEE=1, 2 = w_NEE=0, 3 = w_NEE=0.5
+    uint  _pad2;
+};
+ConstantBuffer< PathTracerSettings > g_Settings : register(b0, space1);
 
 RaytracingAccelerationStructure g_Scene : register(t0, space1);
 
@@ -44,6 +75,11 @@ struct HitPayload
     float  _pad2;
 };
 
+struct ShadowPayload
+{
+    uint visible;
+};
+
 
 // ───────────────────────────────────────────────────────────────────
 // Helpers
@@ -60,13 +96,100 @@ float3 OffsetRay(float3 p, float3 n)
 
 float3 EvaluateSkyRadiance(float3 dir)
 {
-    if (g_FurnaceMode != 0)
+    if (g_Settings.furnaceMode != 0)
     {
-        return float3(g_FurnaceLenvR, g_FurnaceLenvG, g_FurnaceLenvB);
+        return float3(g_Settings.furnaceLenvR, g_Settings.furnaceLenvG, g_Settings.furnaceLenvB);
     }
 
     TextureCube< float3 > Skybox = GetResource(g_Skybox.index);
     return Skybox.SampleLevel(g_LinearClampSampler, dir, 0);
+}
+
+int IntersectClosestAnalyticLight(float3 origin, float3 dir, float tMax,
+                                  out float tHit, out float3 normalAtHit,
+                                  out float3 emissionAtHit)
+{
+    int    bestIdx = -1;
+    float  bestT   = tMax;
+    float3 bestN   = float3(0, 0, 0);
+    float3 bestE   = float3(0, 0, 0);
+
+    [loop] for (uint i = 0; i < g_Lights.numAreas; ++i)
+    {
+        float t; float3 n;
+        if (IntersectRayAreaLight(origin, dir, g_Lights.areas[i], t, n) && t < bestT)
+        {
+            bestT   = t;
+            bestN   = n;
+            bestIdx = (int)i;
+            bestE   = float3(g_Lights.areas[i].colorR,
+                             g_Lights.areas[i].colorG,
+                             g_Lights.areas[i].colorB) * g_Lights.areas[i].luminousFluxLm;
+        }
+    }
+
+    [loop] for (uint j = 0; j < g_Lights.numSpheres; ++j)
+    {
+        float t; float3 n;
+        if (IntersectRaySphereLight(origin, dir, g_Lights.spheres[j], t, n) && t < bestT)
+        {
+            bestT   = t;
+            bestN   = n;
+            bestIdx = (int)(g_Lights.numAreas + j);
+            bestE   = float3(g_Lights.spheres[j].colorR,
+                             g_Lights.spheres[j].colorG,
+                             g_Lights.spheres[j].colorB) * g_Lights.spheres[j].luminousFluxLm;
+        }
+    }
+
+    tHit          = bestT;
+    normalAtHit   = bestN;
+    emissionAtHit = bestE;
+    return bestIdx;
+}
+
+float LightAreaPdf(int lightIdx)
+{
+    if (lightIdx < (int)g_Lights.numAreas)
+    {
+        AreaLight L = g_Lights.areas[lightIdx];
+        return 1.0 / (4.0 * L.halfWidth * L.halfHeight);
+    }
+    else
+    {
+        SphereLight L = g_Lights.spheres[lightIdx - g_Lights.numAreas];
+        return 1.0 / (4.0 * PI * L.radius * L.radius);
+    }
+}
+
+
+// ───────────────────────────────────────────────────────────────────
+// Shadow ray helper (Phase 3 NEE)
+// ───────────────────────────────────────────────────────────────────
+uint TraceShadowRay(float3 origin, float3 dir, float tMax)
+{
+    ShadowPayload sp;
+    sp.visible = 0u;
+
+    RayDesc r;
+    r.Origin    = origin;
+    r.Direction = dir;
+    r.TMin      = 0.001;
+    r.TMax      = tMax;
+
+    TraceRay(
+        g_Scene,
+        RAY_FLAG_FORCE_NON_OPAQUE
+            | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH
+            | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
+        0xFF,
+        RAY_TYPE_SHADOW,    // RayContributionToHitGroupIndex
+        NUM_RAY_TYPES,      // MultiplierForGeometryContributionToHitGroupIndex
+        1,                  // MissShaderIndex (ShadowMiss)
+        r,
+        sp);
+
+    return sp.visible;
 }
 
 
@@ -88,8 +211,8 @@ void RayGen()
     float3 primaryDir    = normalize(target - g_Camera.posWORLD);
     float3 primaryOrigin = g_Camera.posWORLD;
 
-    uint N_PATHS = max(g_NumSamples, 1u);
-    uint D_MAX   = max(g_MaxDepth,   1u);
+    uint N_PATHS = max(g_NumSamples,        1u);
+    uint D_MAX   = max(g_Settings.maxDepth, 1u);
 
     float3 Lsum = float3(0, 0, 0);
     for (uint pathIdx = 0; pathIdx < N_PATHS; ++pathIdx)
@@ -100,6 +223,8 @@ void RayGen()
         float3 β = float3(1, 1, 1);
         float3 L = float3(0, 0, 0);
         
+        float prevPdfBSDF = 0.0;
+
         RayDesc ray;
         ray.Origin    = primaryOrigin;
         ray.Direction = primaryDir;
@@ -111,22 +236,148 @@ void RayGen()
             HitPayload hp = (HitPayload)0;
             TraceRay(
                 g_Scene,
-                RAY_FLAG_NONE, 
+                RAY_FLAG_NONE,
                 0xFF,
-                0,
-                1,
-                0,
+                RAY_TYPE_PRIMARY,    // RayContributionToHitGroupIndex
+                NUM_RAY_TYPES,       // MultiplierForGeometryContributionToHitGroupIndex
+                0,                   // MissShaderIndex (PrimaryMiss)
                 ray,
                 hp);
             
-            if (hp.hitKind == 0)
+            // ─────────────────────────────────────────────────────────────
+            // Analytic light intersection
+            // ─────────────────────────────────────────────────────────────
+            int    lightIdx = -1;
+            float  lightT;
+            float3 lightN;
+            float3 lightE;
+            if (depth == 0u || g_Settings.misEnable != 0u)
+            {
+                float geomT = (hp.hitKind == 1u)
+                              ? length(hp.position - ray.Origin)
+                              : FLT_MAX;
+                lightIdx = IntersectClosestAnalyticLight(
+                              ray.Origin, ray.Direction, geomT,
+                              lightT, lightN, lightE);
+            }
+
+            // Case A: BSDF random walk hit a light.
+            if (lightIdx >= 0)
+            {
+                if (depth == 0u)
+                {
+                    // Camera sees a light directly. NEE has not yet fired at primary ray.
+                    L += β * lightE;
+                }
+                else if (g_Settings.misEnable != 0u)
+                {
+                    float r       = lightT;
+                    float cosY    = dot(lightN, -ray.Direction);
+                    float pdfA    = LightAreaPdf(lightIdx);
+                    float pickPdf = 1.0 / float(g_Lights.numAreas + g_Lights.numSpheres);
+                    
+                    float pdfNEE  = pickPdf * pdfA * r * r / cosY; // solid-angle pdf of NEE
+                    float pdfBSDF = prevPdfBSDF;
+                    
+                    float wNEE;
+                    if (g_Settings.misEnable == 0u)
+                        wNEE = 1.0;
+                    else if (g_Settings.misForceWeight == 1u)
+                        wNEE = 1.0;
+                    else if (g_Settings.misForceWeight == 2u)
+                        wNEE = 0.0;
+                    else if (g_Settings.misForceWeight == 3u)
+                        wNEE = 0.5;
+                    else
+                        wNEE = g_Settings.misHeuristic == 1 ?
+                                pdfNEE * pdfNEE / (pdfNEE * pdfNEE + pdfBSDF * pdfBSDF) :
+                                pdfNEE / (pdfNEE + pdfBSDF);
+                    
+                    float wBSDF = 1.0 - wNEE;
+                        
+                    L += β * wBSDF * lightE;
+                }
+                
+                break; // terminate path if bsdf ray hits the light source
+            }
+
+            // Case B: ray missed every geometry / light -> sky.
+            if (hp.hitKind == 0u)
             {
                 L += β * EvaluateSkyRadiance(ray.Direction);
                 break;
             }
-            
+
+            // Case C: ordinary surface hit.
             L += β * hp.emission;
-            
+
+            // ===================== NEE ======================
+            if (g_Settings.neeEnable != 0u)
+            {
+                uint numAreas   = g_Lights.numAreas;
+                uint numSpheres = g_Lights.numSpheres;
+                uint numLights  = numAreas + numSpheres;
+
+                if (numLights > 0u)
+                {
+                    float pickXi  = NextFloat(rng);
+                    float pickPdf = 1.0 / (float)numLights;
+
+                    float3 y;
+                    float3 normalY;
+                    float  pdfA;
+                    float3 emission;
+                    uint  lightIdx = min((uint)(pickXi * (float)numLights), numLights - 1u);
+                    if (lightIdx < numAreas)
+                    {
+                        AreaLight light = g_Lights.areas[lightIdx];
+                        
+                        float2 uLight = NextFloat2(rng);
+                        SampleAreaLight(uLight, light, y, normalY, pdfA);
+                        emission = float3(light.colorR, light.colorG, light.colorB) * light.luminousFluxLm;
+                    }
+                    else
+                    {
+                        SphereLight light = g_Lights.spheres[lightIdx - numAreas];
+                        
+                        float2 uLight = NextFloat2(rng);
+                        SampleSphereLight(uLight, light, y, normalY, pdfA);
+                        emission = float3(light.colorR, light.colorG, light.colorB) * light.luminousFluxLm;
+                    }
+                    pdfA *= pickPdf; // Consider the probability choosing a certain light
+
+                    float3 toLight = y - hp.position;
+                    float  r       = length(toLight);
+                    float3 dir     = toLight / r;
+
+                    float cosX = dot(hp.normal, dir);
+                    float cosY = dot(normalY, -dir);
+                    if (cosX > 0.0 && cosY > 0.0)
+                    {
+                        float pdfNEE = pdfA * r * r / cosY;     // solid-angle pdf of NEE
+                        uint  visible  = TraceShadowRay(OffsetRay(hp.position, hp.normal), dir, r - 0.001);
+                        
+                        float pdfBSDF = EvaluateBSDFPdf(dir, hp.normal, g_Settings.samplingStrategy);
+                        float wNEE;
+                        if (g_Settings.misEnable == 0u)
+                            wNEE = 1.0;
+                        else if (g_Settings.misForceWeight == 1u)
+                            wNEE = 1.0;
+                        else if (g_Settings.misForceWeight == 2u)
+                            wNEE = 0.0;
+                        else if (g_Settings.misForceWeight == 3u)
+                            wNEE = 0.5;
+                        else
+                            wNEE = g_Settings.misHeuristic == 1 ?
+                                pdfNEE * pdfNEE / (pdfNEE * pdfNEE + pdfBSDF * pdfBSDF) :
+                                pdfNEE / (pdfNEE + pdfBSDF);
+                        
+                        L += β * wNEE * (hp.albedo / PI) * cosX * emission * (float)visible / pdfNEE;
+                    }
+                }
+            }
+            // ============================================================================
+
             float3 T, B;
             BuildONB(hp.normal, T, B);
             float3x3 TBN = float3x3(T, B, hp.normal);
@@ -135,7 +386,10 @@ void RayGen()
 
             float3 dirT;
             float  pdf;
-            SampleHemisphere_Uniform(u, dirT, pdf);
+            if (g_Settings.samplingStrategy == 1u)
+                SampleHemisphere_Cosine(u, dirT, pdf);
+            else
+                SampleHemisphere_Uniform(u, dirT, pdf);
 
             float3 dirW = mul(dirT, TBN);
 
@@ -148,6 +402,7 @@ void RayGen()
             }
 
             β *= brdf * cosTheta / pdf;
+            prevPdfBSDF = pdf;
 
             ray.Origin    = OffsetRay(hp.position, hp.normal);
             ray.Direction = dirW;
@@ -155,7 +410,7 @@ void RayGen()
             ray.TMax      = g_Camera.zFar;
 
             // ===================== Russian-Roulette =====================
-            if (g_EnableRR != 0u && depth >= g_RRMinDepth)
+            if (g_Settings.enableRR != 0u && depth >= g_Settings.rrMinDepth)
             {
                 float qSurvive = clamp(max(β.r, max(β.g, β.b)), 0.0, 0.95);
                 float q  = 1.0 - qSurvive;
@@ -209,12 +464,27 @@ void PrimaryMiss(inout HitPayload hp)
 
 
 // ───────────────────────────────────────────────────────────────────
+// Shadow Miss / AnyHit
+// ───────────────────────────────────────────────────────────────────
+[shader("miss")]
+void ShadowMiss(inout ShadowPayload sp)
+{
+    sp.visible = 1u;
+}
+
+[shader("anyhit")]
+void AnyHit_Shadow(inout ShadowPayload sp, in BuiltInTriangleIntersectionAttributes attr)
+{
+    AcceptHitAndEndSearch();
+}
+
+
+// ───────────────────────────────────────────────────────────────────
 // Primary Closest Hit — report only surface info to RayGen
 // ───────────────────────────────────────────────────────────────────
 [shader("closesthit")]
 void ClosestHit_Primary(inout HitPayload hp, in BuiltInTriangleIntersectionAttributes attr)
 {
-    // --- Vertex unpacking (unchanged from Phase 1 original) ----------
     StructuredBuffer< MeshData >     Meshes      = GetResource(g_Meshes.index);
     StructuredBuffer< InstanceData > Instances   = GetResource(g_Instances.index);
     StructuredBuffer< uint >         IndexBuffer = GetResource(g_Indices.index);
@@ -248,9 +518,14 @@ void ClosestHit_Primary(inout HitPayload hp, in BuiltInTriangleIntersectionAttri
     if (dot(nWorld, WorldRayDirection()) > 0.0)
         nWorld = -nWorld;
 
+    // --- Material emission ----------------------------------
+    StructuredBuffer< MaterialData > Materials = GetResource(g_Materials.index);
+    MaterialData mat = Materials[instance.materialID];
+    float3 emission  = float3(mat.tintR, mat.tintG, mat.tintB) * mat.emissivePower;
+
     hp.hitKind  = 1u;
     hp.position = HitWorldPosition();
     hp.normal   = nWorld;
-    hp.albedo   = float3(g_TestAlbedo, g_TestAlbedo, g_TestAlbedo);   // Phase 1 placeholder
-    hp.emission = float3(0, 0, 0);                                    // real emission in Phase 5+
+    hp.albedo   = float3(g_Settings.testAlbedo, g_Settings.testAlbedo, g_Settings.testAlbedo);
+    hp.emission = emission;
 }

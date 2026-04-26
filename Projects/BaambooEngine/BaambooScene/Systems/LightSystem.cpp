@@ -139,6 +139,8 @@ std::vector< u64 > LocalLightSystem::UpdateRenderData(const EditorCamera& edCame
 
     m_PointLights.clear();
     m_SpotLights.clear();
+    m_AreaLights.clear();
+    m_SphereLights.clear();
 
     m_Registry.view< TransformComponent, LightComponent >().each([this, &markedEntities](auto entity, auto& transformComponent, auto& lightComponent)
         {
@@ -183,6 +185,50 @@ std::vector< u64 > LocalLightSystem::UpdateRenderData(const EditorCamera& edCame
                     }
                     break;
 
+                case eLightType::Area:
+                    if (m_AreaLights.size() < MAX_AREA_LIGHT)
+                    {
+                        const float3 colX = float3(mWorld[0]);
+                        const float3 colY = float3(mWorld[1]);
+                        const float3 colZ = float3(mWorld[2]);
+                        const float  sX   = glm::length(colX);
+                        const float  sY   = glm::length(colY);
+                        const float  sZ   = glm::length(colZ);
+
+                        AreaLight light;
+                        light.position       = position;
+                        light.tangent        = (sX > 0.0f) ? colX / sX : float3(1, 0, 0);
+                        light.normal         = (sY > 0.0f) ? -colY / sY : float3(0, -1, 0);
+                        light.halfWidth      = 0.5f * sX;
+                        light.halfHeight     = 0.5f * sZ;
+                        light.color          = lightComponent.color;
+                        light.luminousFluxLm = lightComponent.luminousFluxLm;
+                        light.temperatureK   = lightComponent.temperatureK;
+                        UNUSED(colZ);
+
+                        m_AreaLights.push_back(light);
+                    }
+                    break;
+
+                case eLightType::Sphere:
+                    if (m_SphereLights.size() < MAX_SPHERE_LIGHT)
+                    {
+                        const float sX = glm::length(float3(mWorld[0]));
+                        const float sY = glm::length(float3(mWorld[1]));
+                        const float sZ = glm::length(float3(mWorld[2]));
+                        const float maxScale = std::max({ sX, sY, sZ });
+
+                        SphereLight light;
+                        light.position       = position;
+                        light.radius         = lightComponent.radiusM * maxScale;
+                        light.color          = lightComponent.color;
+                        light.luminousFluxLm = lightComponent.luminousFluxLm;
+                        light.temperatureK   = lightComponent.temperatureK;
+
+                        m_SphereLights.push_back(light);
+                    }
+                    break;
+
                 default:
                     break;
                 }
@@ -207,6 +253,18 @@ void LocalLightSystem::CollectRenderData(SceneRenderView& outView) const
     for (u32 i = 0; i < outView.light.numSpots; ++i)
     {
         outView.light.spots[i] = m_SpotLights[i];
+    }
+
+    outView.light.numAreas = static_cast<u32>(m_AreaLights.size());
+    for (u32 i = 0; i < outView.light.numAreas; ++i)
+    {
+        outView.light.areas[i] = m_AreaLights[i];
+    }
+
+    outView.light.numSpheres = static_cast<u32>(m_SphereLights.size());
+    for (u32 i = 0; i < outView.light.numSpheres; ++i)
+    {
+        outView.light.spheres[i] = m_SphereLights[i];
     }
 }
 

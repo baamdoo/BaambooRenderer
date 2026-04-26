@@ -304,6 +304,8 @@ void Engine::RenderLoop()
 
 				if (m_pRendererBackend->GetDevice()->GetDeviceSettings().bDrawUI)
 				{
+					assert(renderView.pSceneMutex);
+					std::lock_guard< std::mutex > lock(*renderView.pSceneMutex);
 					ImGui::DrawUI(*this);
 				}
 
@@ -594,7 +596,7 @@ void Engine::DrawUI()
 							if (ImGui::CollapsingHeader("Emission"))
 							{
 								ImGui::Text("EmissivePower");
-								bMark |= ImGui::DragFloat("##EmissivePower", &component.emissivePower, 0.01f, 0.0f, 10.0f, "%.2f");
+								bMark |= ImGui::DragFloat("##EmissivePower", &component.emissivePower, 0.01f, 0.0f, 100.0f, "%.2f");
 
 								if (ImGui::Button("EmissionTex")) ImGui::ContentBrowserSetup = eContentButton_Emission;
 								ImGui::SameLine(); ImGui::Text(component.emissionTex.c_str());
@@ -661,7 +663,7 @@ void Engine::DrawUI()
 				{
 					auto& component = ImGui::SelectedEntity.GetComponent< LightComponent >();
 
-					const char* lightTypes[] = { "Directional", "Point", "Spot" };
+					const char* lightTypes[] = { "Directional", "Point", "Spot", "Area", "Sphere" };
 					int currentType = (int)component.type;
 					if (ImGui::Combo("Type", &currentType, lightTypes, IM_ARRAYSIZE(lightTypes)))
 					{
@@ -678,7 +680,15 @@ void Engine::DrawUI()
 						case eLightType::Spot:
 							component.SetDefaultSpot();
 							break;
+						case eLightType::Area:
+							component.SetDefaultArea();
+							break;
+						case eLightType::Sphere:
+							component.SetDefaultSphere();
+							break;
 						}
+
+						bMark = true;
 					}
 
 					bMark |= ImGui::ColorEdit3("Color", &component.color.x);
@@ -725,7 +735,7 @@ void Engine::DrawUI()
 					}
 					case eLightType::Spot:
 					{
-						bMark |= ImGui::DragFloat("Power (lumens)", &component.luminousFluxLm, 10.0f, 0.0f, 10000.0f, "%.0f");
+						bMark |= ImGui::DragFloat("Power (lm)", &component.luminousFluxLm, 10.0f, 0.0f, 10000.0f, "%.0f");
 						bMark |= ImGui::DragFloat("Source Radius (m)", &component.radiusM, 0.001f, 0.001f, 1.0f, "%.3f");
 
 						float innerAngle = glm::degrees(component.innerConeAngleRad);
@@ -750,6 +760,29 @@ void Engine::DrawUI()
 
 							bMark = true;
 						}
+						break;
+					}
+
+					case eLightType::Area:
+					{
+						bMark |= ImGui::DragFloat("Power (lm)", &component.luminousFluxLm, 1.0f, 0.0f, 10000.0f, "%.0f");
+						if (ImGui::IsItemHovered())
+						{
+							ImGui::BeginTooltip();
+							ImGui::EndTooltip();
+						}
+						break;
+					}
+
+					case eLightType::Sphere:
+					{
+						bMark |= ImGui::DragFloat("Power (lm)", &component.luminousFluxLm, 1.0f, 0.0f, 10000.0f, "%.0f");
+						if (ImGui::IsItemHovered())
+						{
+							ImGui::BeginTooltip();
+							ImGui::EndTooltip();
+						}
+						bMark |= ImGui::DragFloat("Source Radius (m)", &component.radiusM, 0.001f, 0.001f, 100.0f, "%.3f");
 						break;
 					}
 

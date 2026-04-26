@@ -211,7 +211,9 @@ enum class eLightType
 {
 	Directional,
 	Point,
-	Spot
+	Spot,
+	Area,    // rectangle emitter, transform-driven (position / orientation / scale = halfExtents)
+	Sphere   // sphere emitter, transform.position = center, radiusM = radius
 };
 
 struct LightComponent
@@ -222,12 +224,12 @@ struct LightComponent
 	float  temperatureK = 0.0f;
 	union
 	{
-		float illuminanceLux; // directional: lux (lm/m��)
-		float luminousFluxLm; // point/spot: lumens
+		float illuminanceLux; // directional: lux (lm/m^2)
+		float luminousFluxLm; // point/spot/area/sphere: lumens
 	};
 
-	float radiusM          = 0.01f;
-	float angularRadiusRad = 0.00465f;
+	float radiusM          = 0.01f;     // point/spot: bulb radius; sphere: emitter radius
+	float angularRadiusRad = 0.00465f;  // directional
 
 	// spot light
 	float innerConeAngleRad = PI_DIV(4.0f);
@@ -269,6 +271,28 @@ struct LightComponent
 
 		innerConeAngleRad = PI_DIV(4.0f);
 		outerConeAngleRad = PI_DIV(3.0f);
+	}
+
+	void SetDefaultArea()
+	{
+		type = eLightType::Area;
+
+		temperatureK = 6500.0f;
+		color        = float3(1.0f, 1.0f, 1.0f);
+
+		luminousFluxLm = 50.0f;
+	}
+
+	void SetDefaultSphere()
+	{
+		type = eLightType::Sphere;
+
+		temperatureK = 5000.0f;
+		color        = float3(1.0f, 1.0f, 1.0f);
+
+		luminousFluxLm = 100.0f;
+
+		radiusM  = 0.5f;
 	}
 };
 

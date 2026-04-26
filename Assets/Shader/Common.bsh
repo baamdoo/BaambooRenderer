@@ -221,19 +221,48 @@ struct SpotLight
 	float padding0, padding1;
 };
 
+struct AreaLight
+{
+	float posX, posY, posZ;
+	float halfWidth;
+	float normalX, normalY, normalZ;
+	float halfHeight;
+	float tangentX, tangentY, tangentZ;
+	float luminousFluxLm;
+	float colorR, colorG, colorB;
+	float temperatureK;
+};
+
+struct SphereLight
+{
+	float posX, posY, posZ;
+	float radius;
+	float colorR, colorG, colorB;
+	float luminousFluxLm;
+	float temperatureK;
+	float padding0, padding1, padding2;
+};
+
 #define MAX_DIRECTIONAL_LIGHT 2
 #define MAX_POINT_LIGHT       512
 #define MAX_SPOT_LIGHT        32
+#define MAX_AREA_LIGHT        16
+#define MAX_SPHERE_LIGHT      16
 struct LightingData
 {
 	DirectionalLight directionals[MAX_DIRECTIONAL_LIGHT];
 	PointLight       points[MAX_POINT_LIGHT];
 	SpotLight        spots[MAX_SPOT_LIGHT];
+	AreaLight        areas[MAX_AREA_LIGHT];
+	SphereLight      spheres[MAX_SPHERE_LIGHT];
 
 	uint  numDirectionals;
 	uint  numPoints;
 	uint  numSpots;
-	float padding0;
+	uint  numAreas;
+
+	uint  numSpheres;
+	float padding0, padding1, padding2;
 
 	float ambientColorR, ambientColorG, ambientColorB;
 	float ambientIntensity;

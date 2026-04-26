@@ -143,25 +143,56 @@ struct SpotLight
     float3 direction;
     float  radiusM;
     float3 color;
-    float  innerConeAngleRad; 
+    float  innerConeAngleRad;
     float  outerConeAngleRad;
     float  temperatureK;
     float2 padding;
 };
 
+struct AreaLight
+{
+    float3 position;
+    float  halfWidth;
+    float3 normal;
+    float  halfHeight;
+    float3 tangent;
+    float  luminousFluxLm;
+    float3 color;
+    float  temperatureK;
+};
+
+struct SphereLight
+{
+    float3 position;
+    float  radius;
+    float3 color;
+    float  luminousFluxLm;
+    float  temperatureK;
+    float3 padding;
+};
+
 #define MAX_DIRECTIONAL_LIGHT 2
 #define MAX_POINT_LIGHT       512
 #define MAX_SPOT_LIGHT        32
+#define MAX_AREA_LIGHT        16
+#define MAX_SPHERE_LIGHT      16
 struct LightData
 {
     DirectionalLight directionals[MAX_DIRECTIONAL_LIGHT];
     PointLight       points[MAX_POINT_LIGHT];
     SpotLight        spots[MAX_SPOT_LIGHT];
+    AreaLight        areas[MAX_AREA_LIGHT];
+    SphereLight      spheres[MAX_SPHERE_LIGHT];
 
     u32   numDirectionals;
     u32   numPoints;
     u32   numSpots;
+    u32   numAreas;
+
+    u32   numSpheres;
     float padding0;
+    float padding1;
+    float padding2;
 
     float3 ambientColor;
     float  ambientIntensity;
