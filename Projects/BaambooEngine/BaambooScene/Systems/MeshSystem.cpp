@@ -71,6 +71,8 @@ std::vector< u64 > StaticMeshSystem::UpdateRenderData(const EditorCamera& edCame
             entry.mesh.lods[i].mvCount = meshComponent.lods[i].numMeshletVertices;
             entry.mesh.lods[i].mtData  = meshComponent.lods[i].pMeshletTriangles;
             entry.mesh.lods[i].mtCount = meshComponent.lods[i].numMeshletTriangles;
+
+            entry.mesh.lods[i].simplifyError = meshComponent.lods[i].simplifyError;
         }
 
         entry.mesh.aabb   = meshComponent.aabb;

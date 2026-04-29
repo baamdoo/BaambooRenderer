@@ -45,7 +45,7 @@ void Dx12ShaderBindingTable::Build()
 	);
 
 	m_pSBTBuffer->Reset();
-	u8* pAddress = m_pSBTBuffer->GetSystemMemoryAddress();
+	u8* pAddress = (u8*)m_pSBTBuffer->MappedMemory();
 
 	// Upload ray-generation section
 	{
@@ -59,7 +59,7 @@ void Dx12ShaderBindingTable::Build()
 			UploadShaderRecord(pAddress, record);
 			pAddress += m_MissStride;
 		}
-		pAddress = m_pSBTBuffer->GetSystemMemoryAddress() + m_RayGenSize + m_MissSize;
+		pAddress = (u8*)m_pSBTBuffer->MappedMemory() + m_RayGenSize + m_MissSize;
 	}
 	// Upload hit-group section
 	{

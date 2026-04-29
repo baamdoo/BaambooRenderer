@@ -80,7 +80,7 @@ DynamicBufferAllocator::Page::Page(Dx12RenderDevice& rd, size_t sizeInBytes)
 		{
 			.count              = 1,
 			.elementSizeInBytes = sizeInBytes,
-			.bMap               = true,
+			.mapDirection       = 1,
 			.bufferUsage        = render::eBufferUsage_TransferSource
 		});
 }
@@ -104,7 +104,7 @@ DynamicBufferAllocator::Allocation DynamicBufferAllocator::Page::Allocate(size_t
 	Allocation allocation;
 	allocation.pBuffer       = m_pBuffer;
 	allocation.offsetInBytes = m_OffsetInBytes;
-	allocation.CPUHandle     = static_cast<u8*>(m_pBuffer->GetSystemMemoryAddress()) + m_OffsetInBytes;
+	allocation.CPUHandle     = static_cast<u8*>(m_pBuffer->MappedMemory()) + m_OffsetInBytes;
 	allocation.GPUHandle     = m_pBuffer->GetD3D12Resource()->GetGPUVirtualAddress() + m_OffsetInBytes;
 
 	m_OffsetInBytes += alignedSize;

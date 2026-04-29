@@ -137,6 +137,10 @@ public:
 
 	double GetLastFrameElapsedTime() const;
 
+	void BeginGpuMarker(const char* name, bool bWithStats);
+	void EndGpuMarker();
+	const std::vector< render::GpuProfileEntry >& GetLastFrameProfile() const;
+
 private:
 	void AddTextureBarrier(const D3D12_TEXTURE_BARRIER& barrier, bool bFlushImmediate);
 	void AddBufferBarrier(const D3D12_BUFFER_BARRIER& barrier, bool bFlushImmediate);
@@ -186,7 +190,6 @@ private:
 	D3D12_GLOBAL_BARRIER  m_GlobalBarriers[MAX_NUM_PENDING_BARRIERS] = {};
 
 	Dx12Timer m_Timer = {};
-	double m_LastFrameElapsedTime = 0.0;
 
 	static Arc< Dx12Buffer > s_pZeroBuffer;
 	static constexpr SIZE_T ZERO_BUFFER_SIZE = 4096; // 4KB — enough for most clear operations in a single copy
@@ -207,9 +210,9 @@ Dx12CommandContext::Impl::Impl(Dx12RenderDevice& rd, const Dx12CommandQueue& cq,
 	m_pStagingBufferPool  = MakeBox< DynamicBufferAllocator >(m_RenderDevice);
 
 	// **
-	// Set Gpu Timer
+	// Set Gpu Timer (multi-scope profiler)
 	// **
-	m_Timer.Init(m_RenderDevice.GetD3D12Device(), cq.GetD3D12CommandQueue(), 2);
+	m_Timer.Init(m_RenderDevice.GetD3D12Device(), cq.GetD3D12CommandQueue(), 128);
 
 
 	// **
@@ -241,9 +244,6 @@ Dx12CommandContext::Impl::~Impl()
 
 void Dx12CommandContext::Impl::Open()
 {
-	if (m_Type != D3D12_COMMAND_LIST_TYPE_COPY)
-		m_LastFrameElapsedTime = m_Timer.GetElapsedTime();
-
 	m_pGraphicsPipeline   = nullptr;
 	m_pComputePipeline    = nullptr;
 	m_pRaytracingPipeline = nullptr;
@@ -264,16 +264,16 @@ void Dx12CommandContext::Impl::Open()
 		auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
 		m_d3d12CommandList10->SetComputeRootSignature(rm.GetGlobalRootSignature()->GetD3D12RootSignature());
 		m_d3d12CommandList10->SetGraphicsRootSignature(rm.GetGlobalRootSignature()->GetD3D12RootSignature());
-	}
 
-	if (m_Type != D3D12_COMMAND_LIST_TYPE_COPY)
-		m_Timer.Start(m_d3d12CommandList10);
+		// Reads previous frame's resolved timestamps and opens the implicit "Frame" scope.
+		m_Timer.BeginFrame(m_d3d12CommandList10);
+	}
 }
 
 void Dx12CommandContext::Impl::Close()
 {
 	if (m_Type != D3D12_COMMAND_LIST_TYPE_COPY)
-		m_Timer.End(m_d3d12CommandList10);
+		m_Timer.EndFrame(m_d3d12CommandList10); // closes "Frame" + ResolveQueryData
 
 	FlushBarriers();
 	m_d3d12CommandList10->Close();
@@ -288,8 +288,6 @@ void Dx12CommandContext::Impl::TransitionBarrier(Dx12Resource* pResource, const 
 	if (!pResource)
 		return;
 
-	// If the resource has individual subresource states and the transition is for all subresources, 
-	// we need to emit separate barriers for each subresource that has a different state.
 	if (pResource->IsTexture() &&
 		pResource->GetCurrentState().HasIndividualSubresources() &&
 		subresource == D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES)
@@ -433,8 +431,10 @@ void Dx12CommandContext::Impl::UploadData(const Arc< Dx12Buffer >& pDstBuffer, c
 
 void Dx12CommandContext::Impl::CopyBuffer(const Arc< Dx12Buffer >& pDstBuffer, const Arc< Dx12Buffer >& pSrcBuffer, size_t sizeInBytes, size_t dstOffsetInBytes, size_t srcOffsetInBytes)
 {
-	TransitionBarrier(pDstBuffer.get(), BarrierStates::CopyDest, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, false);
-	TransitionBarrier(pSrcBuffer.get(), BarrierStates::CopySource);
+	if (!pDstBuffer->IsMapped())
+		TransitionBarrier(pDstBuffer.get(), BarrierStates::CopyDest);
+	if (!pSrcBuffer->IsMapped())
+		TransitionBarrier(pSrcBuffer.get(), BarrierStates::CopySource);
 
 	CopyBuffer(pDstBuffer->GetD3D12Resource(), pSrcBuffer->GetD3D12Resource(), sizeInBytes, dstOffsetInBytes, srcOffsetInBytes);
 }
@@ -808,7 +808,7 @@ void Dx12CommandContext::Impl::SetGraphicsRootConstants(u32 srcSizeInBytes, cons
 	u32 size      = srcSizeInBytes / 4;
 	u32 dstOffset = dstOffsetInBytes / 4;
 
-	m_d3d12CommandList10->SetGraphicsRoot32BitConstants(0, size, pSrcData, dstOffset);
+	m_d3d12CommandList10->SetGraphicsRoot32BitConstants(1, size, pSrcData, dstOffset);
 }
 
 void Dx12CommandContext::Impl::SetComputeRootConstant(u32 rootIdx, u32 srcValue, u32 dstOffset)
@@ -821,7 +821,7 @@ void Dx12CommandContext::Impl::SetComputeRootConstants(u32 srcSizeInBytes, const
 	u32 size      = srcSizeInBytes / 4;
 	u32 dstOffset = dstOffsetInBytes / 4;
 
-	m_d3d12CommandList10->SetComputeRoot32BitConstants(0, size, pSrcData, dstOffset);
+	m_d3d12CommandList10->SetComputeRoot32BitConstants(1, size, pSrcData, dstOffset);
 }
 
 void Dx12CommandContext::Impl::SetGraphicsDynamicConstantBuffer(const std::string& name, size_t sizeInBytes, const void* pData)
@@ -951,7 +951,7 @@ void Dx12CommandContext::Impl::StageDescriptor(
 	D3D12_DESCRIPTOR_HEAP_TYPE heapType)
 {
 	const auto& state = pBuffer->GetCurrentState();
-	bool bIsUAV = state.GetSubresourceState() == BarrierStates::BufferUnorderedAccess;
+	bool bIsUAV = state.GetSubresourceState().Access & D3D12_BARRIER_ACCESS_UNORDERED_ACCESS;
 
 	if (bIsUAV)
 		StageDescriptor(name, pBuffer->GetUnorderedAccessHandle(), heapType);
@@ -1105,7 +1105,26 @@ void Dx12CommandContext::Impl::BindDescriptorHeaps()
 
 double Dx12CommandContext::Impl::GetLastFrameElapsedTime() const
 {
-	return m_LastFrameElapsedTime;
+	return m_Timer.GetLastFrameTotalNs();
+}
+
+void Dx12CommandContext::Impl::BeginGpuMarker(const char* name, bool bWithStats)
+{
+	if (m_Type == D3D12_COMMAND_LIST_TYPE_COPY)
+		return;
+	m_Timer.BeginMarker(m_d3d12CommandList10, name, bWithStats);
+}
+
+void Dx12CommandContext::Impl::EndGpuMarker()
+{
+	if (m_Type == D3D12_COMMAND_LIST_TYPE_COPY)
+		return;
+	m_Timer.EndMarker(m_d3d12CommandList10);
+}
+
+const std::vector< render::GpuProfileEntry >& Dx12CommandContext::Impl::GetLastFrameProfile() const
+{
+	return m_Timer.GetLastFrameProfile();
 }
 
 void Dx12CommandContext::Impl::AddTextureBarrier(const D3D12_TEXTURE_BARRIER& barrier, bool bFlushImmediate)
@@ -1233,6 +1252,10 @@ void Dx12CommandContext::TransitionBufferToRead(const Arc< render::Buffer >& pBu
 	{
 		accessAfter = D3D12_BARRIER_ACCESS_INDIRECT_ARGUMENT;
 	}
+	else if (syncAfter == D3D12_BARRIER_SYNC_COPY)
+	{
+		accessAfter = D3D12_BARRIER_ACCESS_COPY_SOURCE;
+	}
 
 	BarrierState barrier = BarrierState(syncAfter, accessAfter);
 	m_Impl->TransitionBarrier(
@@ -1252,7 +1275,7 @@ void Dx12CommandContext::TransitionBufferToWrite(const Arc< render::Buffer >& pB
 
 	D3D12_BARRIER_SYNC syncAfter = DX12_BARRIER_SYNC(dstStage);
 
-	BarrierState barrier = BarrierState(syncAfter, D3D12_BARRIER_ACCESS_UNORDERED_ACCESS);
+	BarrierState barrier = BarrierState(syncAfter, D3D12_BARRIER_ACCESS_UNORDERED_ACCESS | D3D12_BARRIER_ACCESS_SHADER_RESOURCE);
 	m_Impl->TransitionBarrier(
 		rhiResource.get(),
 		barrier,
@@ -1302,6 +1325,15 @@ void Dx12CommandContext::CopyBuffer(const Arc< render::Buffer >& pDstBuffer, con
 	assert(rhiBufferDst && rhiBufferSrc);
 
 	m_Impl->CopyBuffer(rhiBufferDst, rhiBufferSrc, rhiBufferSrc->SizeInBytes(), dstOffsetInBytes, srcOffsetInBytes);
+}
+
+void Dx12CommandContext::CopyBufferRegion(const Arc< render::Buffer >& pDstBuffer, const Arc< render::Buffer >& pSrcBuffer, u64 sizeInBytes, u64 dstOffsetInBytes, u64 srcOffsetInBytes)
+{
+	auto rhiBufferDst = StaticCast<Dx12Buffer>(pDstBuffer);
+	auto rhiBufferSrc = StaticCast<Dx12Buffer>(pSrcBuffer);
+	assert(rhiBufferDst && rhiBufferSrc);
+
+	m_Impl->CopyBuffer(rhiBufferDst, rhiBufferSrc, sizeInBytes, dstOffsetInBytes, srcOffsetInBytes);
 }
 
 void Dx12CommandContext::CopyTexture(const Arc< render::Texture >& pDstTexture, const Arc< render::Texture >& pSrcTexture, u64 offsetInBytes)
@@ -1354,6 +1386,14 @@ void Dx12CommandContext::SetRenderPipeline(render::RaytracingPipeline* pRenderPi
 	assert(rhiRenderPipeline);
 
 	m_Impl->SetRenderPipeline(rhiRenderPipeline);
+}
+
+void Dx12CommandContext::SetConstants(u32 sizeInBytes, const void* pData, render::eShaderStage stage, u32 offsetInBytes)
+{
+	if (stage & render::eShaderStage::Compute)
+		m_Impl->SetComputeRootConstants(sizeInBytes, pData, offsetInBytes);
+	else
+		m_Impl->SetGraphicsRootConstants(sizeInBytes, pData, offsetInBytes);
 }
 
 void Dx12CommandContext::SetComputeConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes)
@@ -1550,6 +1590,21 @@ void Dx12CommandContext::DispatchRays(render::ShaderBindingTable& sbt, u32 numGr
 double Dx12CommandContext::GetLastFrameElapsedTime() const
 {
 	return m_Impl->GetLastFrameElapsedTime();
+}
+
+void Dx12CommandContext::BeginGpuMarker(const char* name, bool bWithStats)
+{
+	m_Impl->BeginGpuMarker(name, bWithStats);
+}
+
+void Dx12CommandContext::EndGpuMarker()
+{
+	m_Impl->EndGpuMarker();
+}
+
+const std::vector< render::GpuProfileEntry >& Dx12CommandContext::GetLastFrameProfile() const
+{
+	return m_Impl->GetLastFrameProfile();
 }
 
 bool Dx12CommandContext::IsComputeContext() const

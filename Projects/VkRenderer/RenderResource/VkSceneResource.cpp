@@ -281,8 +281,8 @@ void VkSceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneVie
 	m_CullData.frustum[4] = baamboo::math::NormalizePlane(mViewProjectionT[3] - mViewProjectionT[2]); // w - z < 0 (reversed-z)
 	m_CullData.frustum[5] = float4();                                                                 // z < 0 (reversed-z, infinite far plane)
 
-	m_CullData.lodNear = 0.0f;
-	m_CullData.lodFar  = sceneView.camera.maxVisibleDistance * 0.2f;
+	m_CullData.sseThresholdPx = sceneView.sseThresholdPx;
+	m_CullData.viewportHeight = sceneView.viewport.y;
 	memcpy(m_FrameData[m_ContextIndex].pCullBuffer->MappedMemory(), &m_CullData, sizeof(CullData));
 
 	SceneEnvironmentData sceneEnvironmentData =
@@ -341,7 +341,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 		transform.mWorldToLocal = transformView.mWorldInverse;
 		transforms.push_back(transform);
 	}
-	UpdateFrameBuffer(ctx, transforms.data(), (u32)transforms.size(), sizeof(TransformData), *m_FrameData[m_ContextIndex].pTransformAllocator, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	UpdateFrameBuffer(ctx, transforms.data(), (u32)transforms.size(), sizeof(TransformData), *m_FrameData[m_ContextIndex].pTransformAllocator, VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 
 	imageInfos.clear();
 	imageInfos.push_back({ m_pDefaultSampler->vkSampler(), StaticCast<VulkanTexture>(rm.GetFlatWhiteTexture())->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
@@ -544,7 +544,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 	std::vector< MeshData > meshes;
 	for (const auto& meshView : sceneView.meshes)
 	{
-		auto vHandle  = GetOrUpdateVertex(meshView.id, meshView.tag, meshView.vData, meshView.vCount);
+		auto vHandle = GetOrUpdateVertex(meshView.id, meshView.tag, meshView.vData, meshView.vCount);
 
 		MeshData mesh = {};
 		mesh.vOffset = vHandle.offset;
@@ -563,6 +563,8 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 			mesh.lods[i].mOffset  = mHandle.offset;
 			mesh.lods[i].mvOffset = mvHandle.offset;
 			mesh.lods[i].mtOffset = mtHandle.offset;
+
+			mesh.lods[i].simplifyError = meshView.lods[i].simplifyError;
 		}
 
 		mesh.center = meshView.sphere.Center();
@@ -570,8 +572,9 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 
 		meshes.push_back(mesh);
 	}
-	UpdateFrameBuffer(ctx, meshes.data(), (u32)meshes.size(), sizeof(MeshData), *m_FrameData[m_ContextIndex].pMeshDataAllocator, VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	UpdateFrameBuffer(ctx, meshes.data(), (u32)meshes.size(), sizeof(MeshData), *m_FrameData[m_ContextIndex].pMeshDataAllocator, VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 
+	u32 meshletVisibilityCursor = 0;
 	std::vector< InstanceData > instances;
 	for (auto& [id, data] : sceneView.draws)
 	{
@@ -593,14 +596,22 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 					assert(data.material < sceneView.materials.size());
 					instance.materialID = data.material;
 				}
+
+				instance.visOffset = meshletVisibilityCursor;
+
+				u32 maxLodMeshletCount = 0;
+				for (u8 i = 0; i <= meshView.maxLOD; ++i)
+					maxLodMeshletCount = std::max(maxLodMeshletCount, meshes[data.mesh].lods[i].mCount);
+				meshletVisibilityCursor += maxLodMeshletCount;
 			}
 			instances.push_back(instance);
 
 			m_NumInstances++;
 		}
 	}
-	UpdateFrameBuffer(ctx, instances.data(), (u32)instances.size(), sizeof(InstanceData), *m_FrameData[m_ContextIndex].pInstanceAllocator, VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
-	//UpdateFrameBuffer(ctx, indirects.data(), (u32)indirects.size(), sizeof(IndirectCommandData), *m_FrameData[m_ContextIndex].pIndirectCommandAllocator, VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	m_NumMeshletVisibilitySlots = meshletVisibilityCursor;
+	UpdateFrameBuffer(ctx, instances.data(), (u32)instances.size(), sizeof(InstanceData), *m_FrameData[m_ContextIndex].pInstanceAllocator, VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
+	//UpdateFrameBuffer(ctx, indirects.data(), (u32)indirects.size(), sizeof(IndirectCommandData), *m_FrameData[m_ContextIndex].pIndirectCommandAllocator, VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 
 	UpdateFrameBuffer(ctx, &sceneView.light, 1, sizeof(LightData), *m_FrameData[m_ContextIndex].pLightAllocator, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 	ctx.FlushBarriers();
@@ -702,7 +713,7 @@ BufferHandle VkSceneResource::GetOrUpdateMeshlets(u64 entity, const std::string&
 	u64 sizeInBytes = sizeof(Meshlet) * count;
 
 	auto allocation = m_pMeshletAllocator->Allocate(count, sizeof(Meshlet));
-	rm.UploadData(allocation.pBuffer, pData, sizeInBytes, VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT, allocation.offset * sizeof(Meshlet));
+	rm.UploadData(allocation.pBuffer, pData, sizeInBytes, VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT, allocation.offset * sizeof(Meshlet));
 
 	BufferHandle handle = {};
 	handle.vkBuffer           = allocation.pBuffer->vkBuffer();
@@ -786,7 +797,8 @@ Arc< VulkanTexture > VkSceneResource::GetTexture(const std::string& filepath)
 
 void VkSceneResource::ResetFrameBuffers()
 {
-	m_NumInstances = 0;
+	m_NumInstances              = 0;
+	m_NumMeshletVisibilitySlots = 0;
 
 	m_FrameData[m_ContextIndex].Reset();
 }
@@ -797,7 +809,8 @@ void VkSceneResource::UpdateFrameBuffer(VkCommandContext& context, const void* p
 		return;
 
 	auto allocation = targetBuffer.Allocate(count, elementSizeInBytes);
-	context.UploadData(allocation.pBuffer, pData, count, elementSizeInBytes, dstStageMask, allocation.offset);
+	context.UploadData(allocation.pBuffer, pData, count, elementSizeInBytes, allocation.offset);
+	context.TransitionBufferToRead(allocation.pBuffer, dstStageMask, allocation.offset, true);
 }
 
 VkDescriptorSet VkSceneResource::GetSceneDescriptorSet() const

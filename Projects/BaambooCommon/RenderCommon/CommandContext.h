@@ -4,6 +4,56 @@
 namespace render
 {
 
+// =========================================================================
+// GpuPipelineStats
+// =========================================================================
+struct GpuPipelineStats
+{
+    u64  iaPrimitives         = 0;     // input-assembler primitives (graphics VS-pipeline only)
+    u64  vsInvocations        = 0;     // vertex shader invocations (VS-pipeline)
+    u64  clippingInvocations  = 0;     // primitives submitted to clipping (post VS/MS)
+    u64  clippingPrimitives   = 0;     // primitives that survived clipping (rasterized)
+    u64  fsInvocations        = 0;     // fragment shader invocations
+    u64  csInvocations        = 0;     // compute shader invocations (compute dispatches)
+    u64  taskInvocations      = 0;     // task (amplification) shader invocations — mesh pipeline
+    u64  meshInvocations      = 0;     // mesh shader invocations — mesh pipeline
+    bool bHasMeshCounters     = false; // task/mesh invocations are real (not always-zero)
+};
+
+// =========================================================================
+// GPU Profiling
+// =========================================================================
+struct GpuProfileEntry
+{
+    const char*      name;              // caller-owned string (string literal lifetime recommended)
+    u32              depth;             // 0 = top-level (typically the implicit "Frame" scope)
+    double           elapsedMs;         // wall-clock GPU time for this scope
+    bool             bHasStats = false; // true if pipeline statistics were collected for this scope
+    GpuPipelineStats stats     = {};    // zero when !bHasStats
+};
+
+inline u32 GetGpuMarkerColor(const char* name)
+{
+    if (!name || !name[0]) return 0xFF808080u; // gray
+
+    // Simple prefix match. Not exhaustive — covers common pass categories.
+    auto starts = [name](const char* prefix)
+    {
+        size_t i = 0;
+        while (prefix[i] && name[i] && prefix[i] == name[i]) ++i;
+        return prefix[i] == '\0';
+    };
+
+    if (starts("Frame"))                                     return 0xFFCCCCFFu; // light blue
+    if (starts("Cull") || starts("Phase1Cull") || starts("Phase2Cull")) return 0xFF6060FFu; // red
+    if (starts("Draw") || starts("GBuffer") || starts("Phase1Draw") || starts("Phase2Draw")) return 0xFF60FF60u; // green
+    if (starts("Build") || starts("HiZ") || starts("Pyramid")) return 0xFF60FFFFu; // yellow
+    if (starts("TAA")  || starts("Tone")  || starts("Sharp")) return 0xFFFF80FFu; // magenta
+    if (starts("Atmosphere") || starts("Cloud") || starts("Sky")) return 0xFFFF8060u; // cyan-ish
+    return 0xFF808080u; // gray
+}
+
+
 enum class eResourceState
 {
     Common                  = 0,
@@ -28,6 +78,7 @@ public:
 
     // === Resource Operations ===
     virtual void CopyBuffer(const Arc< Buffer >& pDstBuffer, const Arc< Buffer >& pSrcBuffer, u64 dstOffsetInBytes = 0, u64 srcOffsetInBytes = 0) = 0;
+    virtual void CopyBufferRegion(const Arc< Buffer >& pDstBuffer, const Arc< Buffer >& pSrcBuffer, u64 sizeInBytes, u64 dstOffsetInBytes = 0, u64 srcOffsetInBytes = 0) = 0;
     virtual void CopyTexture(const Arc< Texture >& pDstTexture, const Arc< Texture >& pSrcTexture, u64 offsetInBytes = 0) = 0;
 
     virtual void ClearBuffer(const Arc< Buffer >& pBuffer, u32 value, u64 offsetInBytes = 0) = 0;
@@ -37,7 +88,7 @@ public:
     virtual void TransitionBufferToRead(const Arc< Buffer >& pBuffer, render::ePipelineStage dstStage, u64 offsetInBytes = 0, bool bFlushImmediate = false) = 0;
     virtual void TransitionBufferToWrite(const Arc< Buffer >& pBuffer, render::ePipelineStage dstStage, u64 offsetInBytes = 0, bool bFlushImmediate = false) = 0;
     virtual void TransitionBarrier(const Arc< Texture >& pTexture, eTextureLayout newState, u32 subresource = ALL_SUBRESOURCES, bool flushImmediate = false) = 0;
-    virtual void UAVBarrier(const Arc< Buffer >& pBuffer, bool bFlushImmediate) = 0;
+    virtual void UAVBarrier(const Arc< Buffer >& pBuffer, bool bFlushImmediate = false) = 0;
 
     // === Render Target ===
     virtual void BeginRenderPass(Arc< RenderTarget > renderTarget) = 0;
@@ -52,6 +103,7 @@ public:
     virtual void SetRenderPipeline(GraphicsPipeline* pPipeline) = 0;
     virtual void SetRenderPipeline(render::RaytracingPipeline* pRenderPipeline) = 0;
 
+    virtual void SetConstants(u32 sizeInBytes, const void* pData, eShaderStage stage, u32 offsetInBytes = 0) = 0;
     virtual void SetComputeConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) = 0;
     virtual void SetGraphicsConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) = 0;
 
@@ -116,6 +168,12 @@ public:
         Dispatch(numGroupsX, numGroupsY, numGroupsZ);
     }
 
+    // === GPU Profiling Markers ===
+    virtual void BeginGpuMarker(const char* name, bool bWithStats = false) = 0;
+    virtual void EndGpuMarker() = 0;
+
+    virtual const std::vector< GpuProfileEntry >& GetLastFrameProfile() const = 0;
+
     virtual double GetLastFrameElapsedTime() const = 0;
 
 private:
@@ -126,4 +184,23 @@ private:
     }
 };
 
+// =========================================================================
+// GpuScope — RAII helper for paired BeginGpuMarker / EndGpuMarker calls.
+// =========================================================================
+class GpuScope
+{
+public:
+    GpuScope(CommandContext& ctx, const char* name, bool bWithStats = false) : m_Ctx(ctx) { m_Ctx.BeginGpuMarker(name, bWithStats); }
+    ~GpuScope() { m_Ctx.EndGpuMarker(); }
+    GpuScope(const GpuScope&) = delete;
+    GpuScope& operator=(const GpuScope&) = delete;
+private:
+    CommandContext& m_Ctx;
+};
+
 }
+
+#define BAAMBOO_GPU_SCOPE_CONCAT_INNER_(a, b) a##b
+#define BAAMBOO_GPU_SCOPE_CONCAT_(a, b) BAAMBOO_GPU_SCOPE_CONCAT_INNER_(a, b)
+#define BAAMBOO_GPU_SCOPE(ctx, name)       ::render::GpuScope BAAMBOO_GPU_SCOPE_CONCAT_(_gpu_scope_, __LINE__)((ctx), name, false)
+#define BAAMBOO_GPU_SCOPE_STATS(ctx, name) ::render::GpuScope BAAMBOO_GPU_SCOPE_CONCAT_(_gpu_scope_, __LINE__)((ctx), name, true)

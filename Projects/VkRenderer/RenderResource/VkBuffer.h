@@ -21,7 +21,7 @@ public:
     [[nodiscard]]
     inline VkDeviceAddress DeviceAddress() const { return m_DeviceAddress; }
     [[nodiscard]]
-    inline void* MappedMemory() const { assert(m_AllocationInfo.pMappedData); return m_AllocationInfo.pMappedData; }
+    virtual void* MappedMemory() const override { return m_AllocationInfo.pMappedData; }
 
     [[nodiscard]]
     inline u64 SizeInBytes() const { return m_CreationInfo.count * m_CreationInfo.elementSizeInBytes; }

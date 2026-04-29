@@ -332,7 +332,7 @@ void VulkanGraphicsPipeline::Build()
 		i32 maxSet = -1;
 		std::unordered_map< u32, std::unordered_map< u32, VkDescriptorSetLayoutBinding > > descriptorSetLayoutBindingMap;
 
-		// vs
+		// ms
 		const auto& msReflection = ms->Reflection();
 		for (const auto& [set, infos] : msReflection.descriptors)
 		{
@@ -346,6 +346,31 @@ void VulkanGraphicsPipeline::Build()
 				descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
 
 				m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
+			}
+
+			maxSet = maxSet < (i32)set ? (i32)set : maxSet;
+		}
+
+		const auto& fsReflection = ps->Reflection();
+		for (const auto& [set, infos] : fsReflection.descriptors)
+		{
+			for (const auto& info : infos)
+			{
+				if (descriptorSetLayoutBindingMap[set].contains(info.binding))
+				{
+					descriptorSetLayoutBindingMap[set][info.binding].stageFlags |= VK_SHADER_STAGE_FRAGMENT_BIT;
+				}
+				else
+				{
+					VkDescriptorSetLayoutBinding layoutBinding = {};
+					layoutBinding.binding         = info.binding;
+					layoutBinding.descriptorCount = 1;
+					layoutBinding.descriptorType  = info.descriptorType;
+					layoutBinding.stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+					descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
+
+					m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
+				}
 			}
 
 			maxSet = maxSet < (i32)set ? (i32)set : maxSet;
@@ -422,7 +447,9 @@ void VulkanGraphicsPipeline::Build()
 		// Push constants
 		// **
 		const auto& msResourceInfo = ms->Reflection();
+		const auto& psResourceInfo = ps->Reflection();
 		pushConstants.append_range(msResourceInfo.pushConstants);
+		pushConstants.append_range(psResourceInfo.pushConstants);
 		if (ts)
 		{
 			const auto& reflection = ts->Reflection();
@@ -676,6 +703,30 @@ void VulkanGraphicsPipeline::Build()
 		{
 			const auto& reflection = ds->Reflection();
 			pushConstants.append_range(reflection.pushConstants);
+		}
+	}
+
+
+	// **
+	// PushConstants
+	// **
+	if (pushConstants.size() > 1)
+	{
+		std::unordered_map< u64, VkShaderStageFlags > merged;
+		for (const auto& r : pushConstants)
+		{
+			u64 key = (static_cast<u64>(r.offset) << 32) | static_cast<u64>(r.size);
+			merged[key] |= r.stageFlags;
+		}
+		pushConstants.clear();
+		pushConstants.reserve(merged.size());
+		for (const auto& [key, flags] : merged)
+		{
+			VkPushConstantRange r = {};
+			r.stageFlags = flags;
+			r.offset     = static_cast<u32>(key >> 32);
+			r.size       = static_cast<u32>(key & 0xFFFFFFFFu);
+			pushConstants.push_back(r);
 		}
 	}
 

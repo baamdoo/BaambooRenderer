@@ -64,6 +64,8 @@ struct StaticMeshRenderView
 		u32         mvCount;
 		const void* mtData;
 		u32         mtCount;
+
+		float simplifyError; // for lod scale
 	} lods[LOD_COUNT];
 	u8 maxLOD;
 };
@@ -201,6 +203,8 @@ struct SceneRenderView
 	u64   frame;
 
 	float2 viewport;
+
+	float sseThresholdPx; // for lod selection in culling and mesh shader
 
 	std::vector< Arc< render::RenderNode > > rg;
 

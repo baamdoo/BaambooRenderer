@@ -51,6 +51,7 @@ public:
 	inline VkPhysicalDevice vkPhysicalDevice() const { return m_vkPhysicalDevice; }
 	inline const VkPhysicalDeviceProperties& DeviceProps() const { return m_PhysicalDeviceProperties; }
 	inline const VkPhysicalDeviceMaintenance3Properties& DeviceMaintenance3Props() const { return m_PhysicalDeviceMaintenance3Properties; }
+	inline const VkPhysicalDeviceFeatures& DeviceFeatures() const { return m_PhysicalDeviceFeatures; }
 
 	CommandQueue& GetQueue(eCommandType cmdType) const;
 	inline CommandQueue& GraphicsQueue() const { return *m_pGraphicsQueue; }
@@ -78,6 +79,7 @@ private:
 	VkPhysicalDevice			           m_vkPhysicalDevice = VK_NULL_HANDLE;
 	VkPhysicalDeviceProperties	           m_PhysicalDeviceProperties;
 	VkPhysicalDeviceMaintenance3Properties m_PhysicalDeviceMaintenance3Properties;
+	VkPhysicalDeviceFeatures               m_PhysicalDeviceFeatures = {};
 
 	VkDevice m_vkDevice = VK_NULL_HANDLE;
 

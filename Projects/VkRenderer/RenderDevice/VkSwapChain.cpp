@@ -76,21 +76,25 @@ SwapChain::~SwapChain()
 
 u32 SwapChain::AcquireNextImage(VkSemaphore vkPresentCompleteSemaphore)
 {
-	if (m_bHasMaintenance && fnAcquireNextImage2) 
+	if (m_bHasMaintenance && fnAcquireNextImage2)
 	{
-		VkResult result = 
+		VkResult result =
 			vkAcquireNextImageKHR(m_RenderDevice.vkDevice(), m_vkSwapChain, UINT_MAX, vkPresentCompleteSemaphore, VK_NULL_HANDLE, &m_ImageIndex);
-		if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) 
+		if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
 		{
 			ResizeViewport();
 			return AcquireNextImage(vkPresentCompleteSemaphore);
 		}
 		VK_CHECK(result);
 	}
-	else 
+	else
 	{
 		assert(false);
 	}
+
+	// Reset tracked state for the acquired image. Layout is set to UNDEFINED
+	// since we discard the previous frame's contents on the next transition.
+	m_BackBuffers[m_ImageIndex]->SetState(BarrierState(0, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_IMAGE_LAYOUT_UNDEFINED));
 
 	return m_ImageIndex;
 }

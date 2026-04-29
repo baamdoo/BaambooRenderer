@@ -14,6 +14,19 @@
 
 #define UNUSED(expr) (void)(expr)
 
+// =============================================================================
+// Profiling level
+//   0  — All stat counters compiled out. Only the always-on instance draw
+//       count survives. Cheapest path.
+//   1  — Per-phase meshlet + triangle counters.
+//   2+ — Reserved for future per-stage timings / breakdowns.
+//
+// IMPORTANT: keep this in sync with PROFILING_LEVEL in Assets/Shader/Common.bsh
+// =============================================================================
+#ifndef PROFILING_LEVEL
+#define PROFILING_LEVEL 1
+#endif
+
 #define _KB(x) (x * 1024)
 #define _MB(x) (x * 1024 * 1024)
 
@@ -53,6 +66,8 @@ using RenderFlags = uint64_t;
 #define REMAINING_MIP_LEVELS   (~0U)
 #define REMAINING_ARRAY_LAYERS (~0U)
 #define ALL_SUBRESOURCES       (0xFFFFFFFF)
+
+constexpr unsigned MAX_FRAMES_IN_FLIGHT = 3;
 
 
 //-------------------------------------------------------------------------

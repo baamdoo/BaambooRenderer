@@ -175,7 +175,7 @@ void Dx12SceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneV
     camera.zNear    = sceneView.camera.zNear;
     camera.zFar     = sceneView.camera.zFar;
     m_CameraCache   = std::move(camera);
-    memcpy(m_FrameData[m_ContextIndex].pCameraBuffer->GetSystemMemoryAddress(), &m_CameraCache, sizeof(m_CameraCache));
+    memcpy(m_FrameData[m_ContextIndex].pCameraBuffer->MappedMemory(), &m_CameraCache, sizeof(m_CameraCache));
 
     mat4 mViewProjectionT = glm::transpose(m_CameraCache.mViewProjUnjittered);
 
@@ -187,16 +187,16 @@ void Dx12SceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneV
     m_CullData.frustum[4] = baamboo::math::NormalizePlane(mViewProjectionT[3] - mViewProjectionT[2]); // w - z < 0 (reversed-z)
     m_CullData.frustum[5] = float4();                                                                 // z < 0 (reversed-z, infinite far plane)
 
-    m_CullData.lodNear = 0.0f;
-    m_CullData.lodFar  = sceneView.camera.maxVisibleDistance * 0.2f;
-    memcpy(m_FrameData[m_ContextIndex].pCullBuffer->GetSystemMemoryAddress(), &m_CullData, sizeof(CullData));
+    m_CullData.sseThresholdPx = sceneView.sseThresholdPx;
+    m_CullData.viewportHeight = sceneView.viewport.y;
+    memcpy(m_FrameData[m_ContextIndex].pCullBuffer->MappedMemory(), &m_CullData, sizeof(CullData));
 
     SceneEnvironmentData sceneEnvironmentData =
     {
         .atmosphere = sceneView.atmosphere.data,
         .cloud      = sceneView.cloud.data
     };
-    memcpy(m_FrameData[m_ContextIndex].pSceneEnvironmentBuffer->GetSystemMemoryAddress(), &sceneEnvironmentData, sizeof(sceneEnvironmentData));
+    memcpy(m_FrameData[m_ContextIndex].pSceneEnvironmentBuffer->MappedMemory(), &sceneEnvironmentData, sizeof(sceneEnvironmentData));
 }
 
 void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, render::CommandContext& context)
@@ -456,6 +456,8 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
             mesh.lods[i].mOffset  = mHandle.offset;
             mesh.lods[i].mvOffset = mvHandle.offset;
             mesh.lods[i].mtOffset = mtHandle.offset;
+
+            mesh.lods[i].simplifyError = meshView.lods[i].simplifyError;
         }
 
         mesh.center = meshView.sphere.Center();
@@ -502,6 +504,14 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
                     assert(data.material < sceneView.materials.size());
                     instance.materialID = data.material;
                 }
+
+                instance.visOffset = m_NumMeshletVisibilitySlots;
+
+                u32 maxLodMeshletCount = 0;
+                for (u8 i = 0; i <= meshView.maxLOD; ++i)
+                    maxLodMeshletCount = std::max(maxLodMeshletCount, meshes[data.mesh].lods[i].mCount);
+                m_NumMeshletVisibilitySlots += maxLodMeshletCount;
+
                 instances.push_back(instance);
 
                 m_NumInstances++;
@@ -832,7 +842,8 @@ Arc< render::TopLevelAccelerationStructure > Dx12SceneResource::GetTLAS() const
 
 void Dx12SceneResource::ResetFrameBuffers()
 {
-    m_NumInstances = 0;
+    m_NumInstances              = 0;
+    m_NumMeshletVisibilitySlots = 0;
 
     m_FrameData[m_ContextIndex].Reset();
 

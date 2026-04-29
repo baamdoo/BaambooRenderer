@@ -32,8 +32,10 @@ public:
     inline u32 GetBufferCount() const { return m_Count; }
     inline u64 GetElementSize() const { return m_ElementSize; }
 
+	[[nodiscard]]
+    inline bool IsMapped() const { return m_pSystemMemory != nullptr; }
     [[nodiscard]]
-    u8* GetSystemMemoryAddress() const { return m_pSystemMemory; }
+    virtual void* MappedMemory() const override { return m_pSystemMemory; }
 
     [[nodiscard]]
     D3D12_CPU_DESCRIPTOR_HANDLE GetShaderResourceViewCPU() const { return m_SRVAllocation.GetCPUHandle(); }

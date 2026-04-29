@@ -81,7 +81,7 @@ struct StaticMeshComponent
 	Vertex* pVertices   = nullptr;
 	u32     numVertices = 0;
 
-	struct 
+	struct
 	{
 		Index*  pIndices    = nullptr;
 		u32     numIndices  = 0;
@@ -93,6 +93,8 @@ struct StaticMeshComponent
 		u32      numMeshletVertices  = 0;
 		u32*     pMeshletTriangles   = nullptr;
 		u32      numMeshletTriangles = 0;
+
+		float simplifyError = 0.0f; // for lod scale
 	} lods[LOD_COUNT];
 	u8 maxLOD;
 };

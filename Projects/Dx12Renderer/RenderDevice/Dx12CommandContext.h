@@ -39,6 +39,7 @@ public:
 	void UploadData(const Arc< render::Buffer >& pDstBuffer, const void* pData, u32 numElements, u64 elemSizeInBytes, u64 dstOffsetInBytes);
 
 	virtual void CopyBuffer(const Arc< render::Buffer >& pDstBuffer, const Arc< render::Buffer >& pSrcBuffer, SIZE_T dstOffsetInBytes = 0, SIZE_T srcOffsetInBytes = 0) override;
+	virtual void CopyBufferRegion(const Arc< render::Buffer >& pDstBuffer, const Arc< render::Buffer >& pSrcBuffer, u64 sizeInBytes, u64 dstOffsetInBytes = 0, u64 srcOffsetInBytes = 0) override;
 	virtual void CopyTexture(const Arc< render::Texture >& pDstTexture, const Arc< render::Texture >& pSrcTexture, u64 offsetInBytes = 0) override;
 	void CopyBuffer(ID3D12Resource2* d3d12DstBuffer, ID3D12Resource2* d3d12SrcBuffer, SIZE_T sizeInBytes, SIZE_T dstOffsetInBytes, SIZE_T srcOffsetInBytes);
 	void ResolveSubresource(Dx12Resource* pDstResource, Dx12Resource* pSrcResource, u32 dstSubresource = 0, u32 srcSubresource = 0);
@@ -53,6 +54,7 @@ public:
 	virtual void SetRenderPipeline(render::RaytracingPipeline* pRenderPipeline) override;
 
 	// ---- Bindings ----
+	virtual void SetConstants(u32 sizeInBytes, const void* pData, render::eShaderStage stage, u32 offsetInBytes = 0) override;
 	virtual void SetComputeConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) override;
 	virtual void SetGraphicsConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) override;
 
@@ -94,6 +96,9 @@ public:
 	virtual void Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ) override;
 	virtual void DispatchRays(render::ShaderBindingTable& sbt, u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ = 1) override;
 
+	virtual void BeginGpuMarker(const char* name, bool bWithStats = false) override;
+	virtual void EndGpuMarker() override;
+	virtual const std::vector< render::GpuProfileEntry >& GetLastFrameProfile() const override;
 	virtual double GetLastFrameElapsedTime() const override;
 
 public:

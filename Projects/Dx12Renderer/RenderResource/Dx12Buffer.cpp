@@ -37,6 +37,16 @@ namespace
 		return eBufferType::None;
 	}
 
+	D3D12_HEAP_TYPE HeapType(u8 mapDirection)
+	{
+		switch (mapDirection)
+		{
+		case 1 : return D3D12_HEAP_TYPE_UPLOAD;
+		case 2 : return D3D12_HEAP_TYPE_READBACK;
+		default: return D3D12_HEAP_TYPE_DEFAULT;
+		}
+	}
+
 }
 
 
@@ -67,15 +77,15 @@ Dx12Buffer::Dx12Buffer(Dx12RenderDevice& rd, const char* name, CreationInfo&& in
 					baamboo::math::AlignUp(m_CreationInfo.count * m_CreationInfo.elementSizeInBytes, (u64)D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
 					(m_CreationInfo.bufferUsage & render::eBufferUsage_Storage) || (m_CreationInfo.bufferUsage & render::eBufferUsage_ShaderDeviceAddress) ? D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS : D3D12_RESOURCE_FLAG_NONE
 				),
-			.heapProps     = m_CreationInfo.bMap ? D3D12_HEAP_TYPE_UPLOAD : D3D12_HEAP_TYPE_DEFAULT,
+			.heapProps     = HeapType(info.mapDirection),
 			.initialLayout = D3D12_BARRIER_LAYOUT_COMMON // Buffers are effectively created in state D3D12_RESOURCE_STATE_COMMON
 		}, eResourceType::Buffer)
 	, m_Count(m_CreationInfo.count)
 	, m_Type(GetBufferType(m_CreationInfo, type))
 	, m_ElementSize(m_CreationInfo.elementSizeInBytes)
-	, m_BufferSize(baamboo::math::AlignUp(m_CreationInfo.count* m_CreationInfo.elementSizeInBytes, (u64)D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT))
+	, m_BufferSize(baamboo::math::AlignUp(m_CreationInfo.count * m_CreationInfo.elementSizeInBytes, (u64)D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT))
 {
-	if (m_CreationInfo.bMap)
+	if (m_CreationInfo.mapDirection > 0)
 	{
 		CD3DX12_RANGE writeRange(0, 0);
 		m_d3d12Resource->Map(0, &writeRange, reinterpret_cast<void**>(&m_pSystemMemory));
@@ -101,14 +111,6 @@ void Dx12Buffer::Resize(u64 sizeInBytes, bool bReset)
 	if (sizeInBytes <= m_BufferSize && !bReset)
 		return;
 
-	u64 newSizeInBytes = std::max(sizeInBytes, m_BufferSize);
-
-	ID3D12Resource2* pOldResource = m_d3d12Resource;
-	u64 oldSize = m_BufferSize;
-	m_d3d12Resource = nullptr;
-
-	u64 alignedSize = baamboo::math::AlignUp(newSizeInBytes, (u64)D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
-
 	if (m_pSystemMemory && m_d3d12Resource)
 	{
 		m_d3d12Resource->Unmap(0, nullptr);
@@ -116,14 +118,15 @@ void Dx12Buffer::Resize(u64 sizeInBytes, bool bReset)
 	}
 	ReleaseViews();
 
-	COM_RELEASE(m_d3d12Resource);
+	ID3D12Resource2* d3d12OldResource = m_d3d12Resource;
+	u64 oldSize = m_BufferSize;
+
+	u64 alignedSize = baamboo::math::AlignUp(sizeInBytes, (u64)D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
 
 	auto d3d12Device = m_RenderDevice.GetD3D12Device();
 
 	auto desc      = CD3DX12_RESOURCE_DESC1::Buffer(alignedSize, ConvertToDx12BufferResourceFlags(m_CreationInfo.bufferUsage));
-	auto heapProps = m_CreationInfo.bMap ?
-		CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD) :
-		CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+	auto heapProps = CD3DX12_HEAP_PROPERTIES(HeapType(m_CreationInfo.mapDirection));
 
 	ThrowIfFailed(d3d12Device->CreateCommittedResource3(
 		&heapProps, D3D12_HEAP_FLAG_NONE,
@@ -132,35 +135,44 @@ void Dx12Buffer::Resize(u64 sizeInBytes, bool bReset)
 		nullptr,
 		nullptr,
 		0, nullptr,
-		IID_PPV_ARGS(&m_d3d12Resource)));
+		IID_PPV_ARGS(&m_d3d12Resource))
+	);
 
 	m_d3d12Resource->SetName(m_wName.data());
 	m_ResourceDesc = m_d3d12Resource->GetDesc1();
 	m_BufferSize   = alignedSize;
 
+	// m_Count must be refreshed before creating views (see BugHistory.md for details)
+	if (m_ElementSize > 0)
+		m_Count = static_cast<u32>(m_BufferSize / m_ElementSize);
+
 	m_CurrentState = ResourceState(D3D12_BARRIER_SYNC_NONE, D3D12_BARRIER_ACCESS_NO_ACCESS);
 
-	if (m_CreationInfo.bMap)
+	if (m_CreationInfo.mapDirection > 0)
 	{
 		CD3DX12_RANGE writeRange(0, 0);
 		m_d3d12Resource->Map(0, &writeRange, reinterpret_cast<void**>(&m_pSystemMemory));
 	}
 	CreateViews();
 
-	if (!bReset && pOldResource && oldSize > 0)
+	if (d3d12OldResource)
 	{
-		auto pContext = m_RenderDevice.BeginCommand(D3D12_COMMAND_LIST_TYPE_COPY);
+		if (!bReset && oldSize > 0)
 		{
-			pContext->CopyBuffer(m_d3d12Resource, pOldResource, std::min(oldSize, newSizeInBytes), 0, 0);
-			pContext->Close();
+			auto pContext = m_RenderDevice.BeginCommand(D3D12_COMMAND_LIST_TYPE_COPY);
+			{
+				pContext->CopyBuffer(m_d3d12Resource, d3d12OldResource, std::min(oldSize, sizeInBytes), 0, 0);
+				pContext->Close();
+			}
+			m_RenderDevice.ExecuteCommand(std::move(pContext)).Wait();
 		}
-		m_RenderDevice.ExecuteCommand(std::move(pContext)).Wait();
+		else
+		{
+			m_RenderDevice.Flush();
+		}
 	}
 
-	COM_RELEASE(pOldResource);
-
-	if (m_ElementSize > 0)
-		m_Count = static_cast<u32>(m_BufferSize / m_ElementSize);
+	COM_RELEASE(d3d12OldResource);
 }
 
 
@@ -317,7 +329,7 @@ Dx12VertexBuffer::Dx12VertexBuffer(Dx12RenderDevice& rd, const char* name, u32 n
 		{
 			.count              = numVertices,
 			.elementSizeInBytes = sizeof(Vertex),
-			.bMap               = false,
+			.mapDirection       = 0,
 			.bufferUsage        = render::eBufferUsage_TransferDest | render::eBufferUsage_Vertex
 		}, eBufferType::Vertex)
 {
@@ -340,7 +352,7 @@ Dx12IndexBuffer::Dx12IndexBuffer(Dx12RenderDevice& rd, const char* name, u32 num
 		{
 			.count              = numIndices,
 			.elementSizeInBytes = 4,
-			.bMap               = false,
+			.mapDirection       = 0,
 			.bufferUsage        = render::eBufferUsage_TransferDest | render::eBufferUsage_Index
 		}, eBufferType::Index)
 {
@@ -363,7 +375,7 @@ Dx12ConstantBuffer::Dx12ConstantBuffer(Dx12RenderDevice& rd, const char* name, u
 		{
 			.count              = 1,
 			.elementSizeInBytes = sizeInBytes,
-			.bMap               = true,
+			.mapDirection       = 1,
 			.bufferUsage        = additionalUsage | render::eBufferUsage_Uniform
 		}, eBufferType::Constant)
 {
@@ -385,14 +397,14 @@ Dx12ConstantBuffer::~Dx12ConstantBuffer()
 
 void Dx12ConstantBuffer::Reset()
 {
-	memset(GetSystemMemoryAddress(), 0, SizeInBytes());
+	memset(MappedMemory(), 0, SizeInBytes());
 }
 
 void Dx12ConstantBuffer::Upload(const void* pData, u64 sizeInBytes, u64 offsetInBytes)
 {
 	if (pData && sizeInBytes > 0)
 	{
-		memcpy(GetSystemMemoryAddress() + offsetInBytes, pData, sizeInBytes);
+		memcpy((u8*)MappedMemory() + offsetInBytes, pData, sizeInBytes);
 	}
 }
 

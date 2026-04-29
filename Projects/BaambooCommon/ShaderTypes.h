@@ -9,6 +9,8 @@ struct MeshLOD
     u32 mOffset;
     u32 mvOffset;
     u32 mtOffset;
+
+    float simplifyError; // for lod scale
 };
 
 struct MeshData
@@ -21,12 +23,16 @@ struct MeshData
     u32     maxLOD;
     MeshLOD lods[LOD_COUNT];
 };
+static_assert(sizeof(MeshLOD) == 24);
+static_assert(sizeof(MeshData) == 4 + 12 + 4 + 4 + LOD_COUNT * sizeof(MeshLOD));
 
 struct InstanceData
 {
     u32 meshID;
     u32 transformID;
     u32 materialID;
+
+    u32 visOffset;
 };
 
 struct IndirectCommandData
@@ -70,9 +76,12 @@ struct CullData
 {
     float4 frustum[6];
 
-    float lodNear;
-    float lodFar;
+	float sseThresholdPx; // for lod selection in culling and mesh shading
+    float viewportHeight;
+    float padding0;
+    float padding1;
 };
+static_assert(sizeof(CullData) == 6 * sizeof(float4) + 16);
 
 
 struct MaterialData

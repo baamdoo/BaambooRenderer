@@ -304,6 +304,17 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
         meshopt_optimizeVertexFetch(meshData.vertices.data(), meshData.lods[0].indices.data(), indexCount, meshData.vertices.data(), vertexCount, sizeof(Vertex));
     }
 
+    const float lodScale = meshopt_simplifyScale(
+        static_cast<const float*>(meshData.GetVertexData()),
+        static_cast<size_t>(vertexCount),
+        vertexSize
+    );
+
+    // LOD 0 is the ground truth (zero error). Subsequent LODs accumulate error
+    // monotonically because each simplify step takes the previous LOD's index buffer as input.
+    meshData.lods[0].simplifyError = 0.0f;
+    float prevAbsError = 0.0f;
+
     u8 lod = 0;
     while (lod < descriptor.numLODs)
     {
@@ -311,7 +322,7 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
         {
             MeshLODData& lodData = meshData.lods.emplace_back();
 
-            float  simplifyError = 0.0f;
+            float  relError = 0.0f;
             size_t targetIndexCount = (size_t(double(indexCount) * 0.6) / 3) * 3;
 
             lodData.indices.resize(indexCount);
@@ -325,7 +336,7 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
                 targetIndexCount,
                 1e-1f,         // target error threshold
                 0,             // options (0 = default)
-                &simplifyError
+                &relError      // [0,1] relative — absolute = relError * lodScale
             );
 
             if (nextIndexCount == 0 || nextIndexCount == lodData.indices.size())
@@ -342,6 +353,12 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
 
             indexCount = nextIndexCount;
             lodData.indices.resize(indexCount);
+
+            // Convert relative error to absolute mesh-local units and track the monotonic max. 
+            // Each LOD i is a simplification of LOD i-1, so the new error must include all prior accumulated error.
+            const float absError = relError * lodScale;
+            prevAbsError = std::max(prevAbsError, absError);
+            lodData.simplifyError = prevAbsError;
         }
 
         if (descriptor.bGenerateMeshlets)
@@ -587,7 +604,7 @@ void ModelLoader::GenerateMeshlets(MeshData& meshData, u8 lodLevel)
 {
     const size_t maxVertices  = 64;
     const size_t maxTriangles = 124;
-    const float  coneWeight   = 0.0f;
+    const float  coneWeight   = 0.25f;
 
     size_t vertexCount = meshData.GetVertexCount();
     size_t indexCount  = meshData.lods[lodLevel].indices.size();
@@ -621,6 +638,13 @@ void ModelLoader::GenerateMeshlets(MeshData& meshData, u8 lodLevel)
     meshData.lods[lodLevel].meshletTriangles.reserve(numMeshlets * maxTriangles);
 
     meshData.lods[lodLevel].meshlets.reserve(numMeshlets);
+
+    u32   validCones = 0;     // meshlets with cutoff < 1.0 (cone_axis non-zero)
+    u32   tightCones = 0;     // meshlets with cutoff < 0.5 (highly alignable)
+    float minCutoff  = 1.0f;
+    float maxCutoff  = 0.0f;
+    float sumCutoff  = 0.0f;
+
     for (size_t i = 0; i < numMeshlets; ++i)
     {
         const meshopt_Meshlet& m = meshlets[i];
@@ -644,6 +668,12 @@ void ModelLoader::GenerateMeshlets(MeshData& meshData, u8 lodLevel)
         newMeshlet.radius     = bounds.radius;
         newMeshlet.coneAxis   = float3(bounds.cone_axis[0], bounds.cone_axis[1], bounds.cone_axis[2]);
         newMeshlet.coneCutoff = bounds.cone_cutoff;
+
+        if (bounds.cone_cutoff < 1.0f) { validCones++; }
+        if (bounds.cone_cutoff < 0.5f) { tightCones++; }
+        minCutoff  = std::min(minCutoff, bounds.cone_cutoff);
+        maxCutoff  = std::max(maxCutoff, bounds.cone_cutoff);
+        sumCutoff += bounds.cone_cutoff;
 
         for (size_t t = 0; t < m.triangle_count; ++t)
         {

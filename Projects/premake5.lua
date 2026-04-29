@@ -293,9 +293,10 @@ project "Dx12Renderer"
 
 		nuget { 
 			"Microsoft.Direct3D.D3D12:1.618.5",
-			"directxtk12_desktop_2019:2025.10.28.1",
-			"directxtex_desktop_2019:2025.10.28.1",
+			"directxtk12_desktop_win10:2026.4.1.1",
+			"directxtex_desktop_win10:2026.4.1.1",
 			"Microsoft.Direct3D.DXC:1.8.2505.32",
+			"WinPixEventRuntime:1.0.240308001"
 		 }
     	-- Copy Agility SDK DLLs to output directory
     	postbuildcommands {

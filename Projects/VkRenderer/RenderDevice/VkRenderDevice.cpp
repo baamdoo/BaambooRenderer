@@ -26,7 +26,8 @@ VkRenderDevice::VkRenderDevice(const render::DeviceSettings& ds)
 	: Super(ds)
 {
 	InstanceBuilder instanceBuilder;
-	m_vkInstance = instanceBuilder.AddExtensionLayer(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME).Build();
+	m_vkInstance = instanceBuilder.AddExtensionLayer(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME)
+	                              .SetValidationFeatureEnable({ VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT }).Build();
 
 	DebugMessengerBuilder debugMessengerBuilder;
 	m_vkDebugMessenger = debugMessengerBuilder.SetDebugMessageCallback(DebugCallback).Build(m_vkInstance);
@@ -46,12 +47,14 @@ VkRenderDevice::VkRenderDevice(const render::DeviceSettings& ds)
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_Sync2)
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_MeshShader)
 		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_StorageBuffer8BitAccess)
-		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_SwapChainMaintenance).Build(m_vkInstance);
+		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_SwapChainMaintenance)
+		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_PipelineStatistics).Build(m_vkInstance);
 	m_vkPhysicalDevice         = deviceBuilder.physicalDevice;
 	m_PhysicalDeviceProperties = deviceBuilder.physicalDeviceProperties;
 	m_PhysicalDeviceMaintenance3Properties = deviceBuilder.physicalDeviceMaintenance3Properties;
 
 	m_Settings.bMeshShader = deviceBuilder.bSupportMeshShader;
+	vkGetPhysicalDeviceFeatures(m_vkPhysicalDevice, &m_PhysicalDeviceFeatures);
 
 	m_pGraphicsQueue = new CommandQueue(*this, deviceBuilder.queueFamilyIndices.graphicsQueueIndex, eCommandType::Graphics);
 	m_pComputeQueue  = new CommandQueue(*this, deviceBuilder.queueFamilyIndices.computeQueueIndex, eCommandType::Compute);
@@ -105,8 +108,12 @@ VkRenderDevice::~VkRenderDevice()
 
 	vkDestroyDevice(m_vkDevice, nullptr);
 
-	auto vkDestroyDebugUtilsMessengerEXT = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(m_vkInstance, "vkDestroyDebugUtilsMessengerEXT");
-	vkDestroyDebugUtilsMessengerEXT(m_vkInstance, m_vkDebugMessenger, nullptr);
+	if (m_vkDebugMessenger)
+	{
+		auto vkDestroyDebugUtilsMessengerEXT = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(m_vkInstance, "vkDestroyDebugUtilsMessengerEXT");
+		vkDestroyDebugUtilsMessengerEXT(m_vkInstance, m_vkDebugMessenger, nullptr);
+	}
+
 	vkDestroyInstance(m_vkInstance, nullptr);
 }
 
@@ -273,8 +280,10 @@ void VkRenderDevice::SetVkObjectName(const std::string& name, u64 handle, VkObje
 	nameInfo.objectHandle = handle;
 	nameInfo.pObjectName  = name.data();
 
+#ifdef _DEBUG
 	static auto vkSetDebugUtilsObjectNameEXT = (PFN_vkSetDebugUtilsObjectNameEXT)vkGetInstanceProcAddr(m_vkInstance, "vkSetDebugUtilsObjectNameEXT");
 	VK_CHECK(vkSetDebugUtilsObjectNameEXT(m_vkDevice, &nameInfo));
+#endif
 }
 
 } // namespace vk

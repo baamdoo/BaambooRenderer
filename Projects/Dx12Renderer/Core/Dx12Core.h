@@ -105,7 +105,6 @@ inline std::wstring ConvertToWString(const std::string& str)
 //-------------------------------------------------------------------------
 // Predefined
 //-------------------------------------------------------------------------
-constexpr u32 MAX_FRAMES_IN_FLIGHT = 3u;
 constexpr u32 NUM_SAMPLING = 1u;
 constexpr u32 NUM_RESOURCE_DESCRIPTOR_TYPE = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER + 1;
 constexpr u32 MAX_NUM_DESCRIPTOR_PER_POOL[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES] = { 1024, 32, 256, 8 };
@@ -117,6 +116,7 @@ constexpr u32 MAX_LOCAL_ROOTCONSTANTS = MAX_ROOTCONSTANTS - MAX_DESCRIPTORHEAPIN
 constexpr u32 MAX_VIEWS = (MAX_ROOT_INDEX - MAX_ROOTCONSTANTS) / 2;
 
 constexpr u32 GLOBAL_DESCRIPTOR_SPACE = 0u;
+constexpr u32 COMMANDSIGNATURE_SPACE  = 99u;
 constexpr u32 ROOT_CONSTANT_SPACE     = 100u;
 constexpr u32 MISS_ARGUMENT_SPACE     = 200u;
 constexpr u32 HITGROUP_ARGUMENT_SPACE = 300u;

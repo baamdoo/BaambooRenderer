@@ -3,6 +3,7 @@
 
 #include "RenderCommon/RenderDevice.h"
 #include "RenderCommon/CommandContext.h"
+#include "RenderCommon/CpuProfiler.h"
 #include "BaambooScene/Scene.h"
 
 namespace baamboo
@@ -38,7 +39,7 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 		{
 			.count              = 1,
 			.elementSizeInBytes = sizeof(u32),
-			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_Indirect | eBufferUsage_TransferDest | eBufferUsage_ShaderDeviceAddress,
+			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_Indirect | eBufferUsage_TransferSource | eBufferUsage_TransferDest | eBufferUsage_ShaderDeviceAddress,
 		});
 	m_CulledIndirectCommandBuffer = Buffer::Create(rd, "GBufferPass::CulledIndirectCommandBuffer",
 		{
@@ -52,12 +53,58 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 			.elementSizeInBytes = sizeof(u32),
 			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest
 		});
+	m_MeshletVisibilityBuffer = Buffer::Create(rd, "GBufferPass::MeshletVisibilityBuffer",
+		{
+			.count              = NUM_INITIAL_MESHLET_VISIBILITY_WORDS,
+			.elementSizeInBytes = sizeof(u32),
+			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferSource | eBufferUsage_TransferDest
+		});
+	m_NumMeshletVisibilityWords = NUM_INITIAL_MESHLET_VISIBILITY_WORDS;
 	m_pSPDCounterBuffer = Buffer::Create(rd, "GBufferPass::SPDCounterBuffer",
 		{
 			.count              = 1,
 			.elementSizeInBytes = sizeof(u32),
 			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest,
 		});
+
+	// Debug culling
+	m_Phase1CountReadback = Buffer::Create(rd, "GBufferPass::Phase1CountReadback",
+		{
+			.count              = READBACK_SLOTS,
+			.elementSizeInBytes = sizeof(u32),
+			.mapDirection       = 2,
+			.bufferUsage        = eBufferUsage_TransferDest,
+		});
+	m_Phase2CountReadback = Buffer::Create(rd, "GBufferPass::Phase2CountReadback",
+		{
+			.count              = READBACK_SLOTS,
+			.elementSizeInBytes = sizeof(u32),
+			.mapDirection       = 2,
+			.bufferUsage        = eBufferUsage_TransferDest,
+		});
+
+#if PROFILING_LEVEL >= 1
+	m_MeshletStatsBuffer = Buffer::Create(rd, "GBufferPass::MeshletStatsBuffer",
+		{
+			.count              = MESHLET_STATS_FIELDS,
+			.elementSizeInBytes = sizeof(u32),
+			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferSource | eBufferUsage_TransferDest,
+		});
+	m_Phase1MeshletStatsReadback = Buffer::Create(rd, "GBufferPass::Phase1MeshletStatsReadback",
+		{
+			.count              = READBACK_SLOTS * MESHLET_STATS_FIELDS,
+			.elementSizeInBytes = sizeof(u32),
+			.mapDirection       = 2,
+			.bufferUsage        = eBufferUsage_TransferDest,
+		});
+	m_Phase2MeshletStatsReadback = Buffer::Create(rd, "GBufferPass::Phase2MeshletStatsReadback",
+		{
+			.count              = READBACK_SLOTS * MESHLET_STATS_FIELDS,
+			.elementSizeInBytes = sizeof(u32),
+			.mapDirection       = 2,
+			.bufferUsage        = eBufferUsage_TransferDest,
+		});
+#endif // PROFILING_LEVEL >= 1
 
 	// --- GBuffer attachments ---
 	auto pAttachment0 =
@@ -176,12 +223,21 @@ void GBufferNode::DispatchCull(render::CommandContext& context, u32 numInstances
 	context.TransitionBufferToWrite(m_VisibilityBuffer, ePipelineStage::ComputeShader);
 	context.TransitionBarrier(m_pHiZTexture, eTextureLayout::ShaderReadOnly);
 
-	CullPushConstants constant = {
+	struct
+	{
+		u32 numInstances;
+		u32 cullingPhase;
+		u32 hiZMipCount;
+		u32 hiZWidth;
+		u32 hiZHeight;
+		u32 cullFlags;
+	} constant = {
 		.numInstances = numInstances,
 		.cullingPhase = phase,
 		.hiZMipCount  = m_pHiZTexture->MipLevels(),
 		.hiZWidth     = m_pHiZTexture->Width(),
 		.hiZHeight    = m_pHiZTexture->Height(),
+		.cullFlags    = g_FrameData.cullFlags,
 	};
 	context.SetComputeConstants(sizeof(constant), &constant);
 
@@ -199,24 +255,72 @@ void GBufferNode::DispatchCull(render::CommandContext& context, u32 numInstances
 }
 
 // =========================================================================
-// Draw GBuffer with current indirect command buffer
+// Draw GBuffer
 // =========================================================================
-void GBufferNode::DrawGBuffer(render::CommandContext& context, Arc< render::RenderTarget > rt, u32 numInstances)
+void GBufferNode::DrawGBuffer(render::CommandContext& context, Arc< render::RenderTarget > rt, u32 numInstances, u32 phase)
 {
 	using namespace render;
+
+	if (phase == PHASE2_CULL)
+	{
+		context.TransitionBarrier(m_pHiZTexture, eTextureLayout::ShaderReadOnly);
+	}
+	context.TransitionBufferToWrite(m_MeshletVisibilityBuffer, ePipelineStage::TaskShader);
+
+#if PROFILING_LEVEL >= 1
+	context.ClearBuffer(m_MeshletStatsBuffer, 0);
+	context.TransitionBufferToWrite(m_MeshletStatsBuffer, ePipelineStage::TaskShader);
+#endif
 
 	context.BeginRenderPass(rt);
 	{
 		context.SetRenderPipeline(m_pGBufferPSO.get());
+
+		struct GBufferPushConstants
+		{
+			float viewportWidth;
+			float viewportHeight;
+
+			u32 cullFlags;
+			u32 phase;
+			u32 hiZWidth;
+			u32 hiZHeight;
+		} constants = {
+			.viewportWidth  = static_cast<float>(m_RenderDevice.WindowWidth()),
+			.viewportHeight = static_cast<float>(m_RenderDevice.WindowHeight()),
+
+			.cullFlags = g_FrameData.cullFlags,
+			.phase     = phase,
+			.hiZWidth  = m_pHiZTexture->Width(),
+			.hiZHeight = m_pHiZTexture->Height(),
+		};
+		context.SetConstants(sizeof(constants), &constants, static_cast<eShaderStage>(eShaderStage::Task | eShaderStage::Mesh));
 		context.SetGraphicsShaderResource("g_DrawIDs", m_DrawIndexBuffer);
+		context.StageDescriptor("g_HiZTexture", m_pHiZTexture, g_FrameData.pLinearClampMin);
+		context.StageDescriptor("g_MeshletVisibilityBuffer", m_MeshletVisibilityBuffer);
+#if PROFILING_LEVEL >= 1
+		context.StageDescriptor("g_MeshletStats", m_MeshletStatsBuffer);
+#endif
+
 		context.DrawMeshTasksIndirectCount(
 			m_CulledIndirectCommandBuffer,
 			offsetof(IndirectCommandData, groupCountX),
 			m_DrawCountBuffer,
 			numInstances,
-			sizeof(IndirectCommandData));
+			sizeof(IndirectCommandData)
+		);
 	}
 	context.EndRenderPass();
+
+#if PROFILING_LEVEL >= 1
+	const u32 statsBytes = MESHLET_STATS_FIELDS * sizeof(u32);
+	context.CopyBufferRegion(
+		(phase == PHASE1_CULL) ? m_Phase1MeshletStatsReadback : m_Phase2MeshletStatsReadback,
+		m_MeshletStatsBuffer,
+		statsBytes,
+		m_ReadbackIdx * statsBytes,
+		0);
+#endif // PROFILING_LEVEL >= 1
 }
 
 // =========================================================================
@@ -286,31 +390,93 @@ void GBufferNode::Apply(render::CommandContext& context, const SceneRenderView& 
 	auto& rm = m_RenderDevice.GetResourceManager();
 	auto& sr = rm.GetSceneResource();
 
-	u32 numInstances = sr.NumInstances();
+	u32 numInstances     = sr.NumInstances();
+	u32 numRequiredBits  = sr.NumMeshletVisibilitySlots();
+	u32 numRequiredWords = (numRequiredBits + 31u) / 32u;
+	if (numRequiredWords > m_NumMeshletVisibilityWords)
+	{
+		m_MeshletVisibilityBuffer->Resize(numRequiredWords * 2 * sizeof(u32), true);
+
+		m_NumMeshletVisibilityWords = numRequiredWords * 2;
+		m_bNeedsClear               = true;
+	}
 
 	if (m_bNeedsClear)
 	{
 		context.ClearBuffer(m_VisibilityBuffer, 0);
+		context.ClearBuffer(m_MeshletVisibilityBuffer, 0);
 		m_bNeedsClear = false;
 	}
 
-	DispatchCull(context, numInstances, PHASE1_CULL);
-	DrawGBuffer(context, m_pRenderTargetPhase1, numInstances);
-	m_pRenderTargetPhase1->InvalidateImageLayout();
+	g_FrameData.totalInstances = numInstances;
+	if (m_ReadbackFrameCounter >= READBACK_SLOTS)
+	{
+		if (auto* p1 = static_cast<u32*>(m_Phase1CountReadback->MappedMemory()))
+			g_FrameData.phase1InstanceDrawCount = p1[m_ReadbackIdx];
+		if (auto* p2 = static_cast<u32*>(m_Phase2CountReadback->MappedMemory()))
+			g_FrameData.phase2InstanceDrawCount = p2[m_ReadbackIdx];
+
+#if PROFILING_LEVEL >= 1
+		if (auto* p1m = static_cast<u32*>(m_Phase1MeshletStatsReadback->MappedMemory()))
+		{
+			const u32 base = m_ReadbackIdx * MESHLET_STATS_FIELDS;
+			g_FrameData.phase1MeshletDrawn       = p1m[base + 0];
+			g_FrameData.phase1MeshletTotal       = p1m[base + 1];
+			g_FrameData.phase1TriangleCandidates = p1m[base + 2];
+		}
+		if (auto* p2m = static_cast<u32*>(m_Phase2MeshletStatsReadback->MappedMemory()))
+		{
+			const u32 base = m_ReadbackIdx * MESHLET_STATS_FIELDS;
+			g_FrameData.phase2MeshletDrawn       = p2m[base + 0];
+			g_FrameData.phase2MeshletTotal       = p2m[base + 1];
+			g_FrameData.phase2TriangleCandidates = p2m[base + 2];
+		}
+#endif // PROFILING_LEVEL >= 1
+	}
+
+	{
+		BAAMBOO_PROFILE_SCOPE(context,"Phase1Cull");
+		DispatchCull(context, numInstances, PHASE1_CULL);
+
+		context.CopyBufferRegion(m_Phase1CountReadback, m_DrawCountBuffer, sizeof(u32), m_ReadbackIdx * sizeof(u32), 0);
+		context.TransitionBufferToRead(m_DrawCountBuffer, ePipelineStage::DrawIndirect, 0, true);
+	}
+	{
+		BAAMBOO_PROFILE_SCOPE_STATS(context,"Phase1Draw");
+		DrawGBuffer(context, m_pRenderTargetPhase1, numInstances, PHASE1_CULL);
+		m_pRenderTargetPhase1->InvalidateImageLayout();
+	}
 
 	// ============================================================
 	// BUILD INTERMEDIATE HiZ from Phase 1 depth
 	// ============================================================
-	BuildHiZ(context);
+	{
+		BAAMBOO_PROFILE_SCOPE(context,"BuildHiZ");
+		BuildHiZ(context);
+	}
 
 	// ============================================================
 	// PHASE 2: Test ALL instances (frustum + HZB).
 	// Atomically set/clear each bit for next frame.
 	// Only emit draws for newly visible (bit was 0 = not in Phase 1).
 	// ============================================================
-	DispatchCull(context, numInstances, PHASE2_CULL);
-	DrawGBuffer(context, m_pRenderTargetPhase2, numInstances);
-	m_pRenderTargetPhase2->InvalidateImageLayout();
+	{
+		BAAMBOO_PROFILE_SCOPE(context,"Phase2Cull");
+		DispatchCull(context, numInstances, PHASE2_CULL);
+
+		context.CopyBufferRegion(m_Phase2CountReadback, m_DrawCountBuffer, sizeof(u32), m_ReadbackIdx * sizeof(u32), 0);
+		context.TransitionBufferToRead(m_DrawCountBuffer, ePipelineStage::DrawIndirect, 0, true);
+	}
+	{
+		BAAMBOO_PROFILE_SCOPE_STATS(context,"Phase2Draw");
+		DrawGBuffer(context, m_pRenderTargetPhase2, numInstances, PHASE2_CULL);
+		m_pRenderTargetPhase2->InvalidateImageLayout();
+	}
+
+	// Advance ring-buffer index for next frame.
+	m_ReadbackIdx = (m_ReadbackIdx + 1) % READBACK_SLOTS;
+	if (m_ReadbackFrameCounter < READBACK_SLOTS + 1)
+		++m_ReadbackFrameCounter;
 
 	// Export frame data for downstream passes
 	g_FrameData.pColor    = m_pRenderTargetPhase2->Attachment(eAttachmentPoint::Color0);

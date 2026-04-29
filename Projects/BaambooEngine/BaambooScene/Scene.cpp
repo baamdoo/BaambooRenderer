@@ -160,6 +160,8 @@ Entity Scene::ImportModel(Entity parentEntity, const fs::path& filepath, MeshDes
 							meshComponent.lods[i].numMeshletTriangles = static_cast<u32>(meshData.lods[i].meshletTriangles.size());
 							meshComponent.lods[i].pMeshletTriangles   = const_cast<u32*>(meshData.lods[i].meshletTriangles.data());
 						}
+
+						meshComponent.lods[i].simplifyError = meshData.lods[i].simplifyError;
 					}
 				}
 
@@ -322,9 +324,10 @@ void Scene::OnWindowResized(u32 width, u32 height)
 SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport, u64 frame, const render::DeviceSettings& ds) const
 {
 	SceneRenderView view = {};
-	view.time       = s_SceneRunningTime;
-	view.frame      = frame;
-	view.viewport   = viewport;
+	view.time           = s_SceneRunningTime;
+	view.frame          = frame;
+	view.viewport       = viewport;
+	view.sseThresholdPx = g_FrameData.sseThresholdPx;
 
 	view.rg = m_RenderGraph.GetRenderNodes();
 

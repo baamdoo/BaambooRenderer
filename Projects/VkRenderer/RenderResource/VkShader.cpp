@@ -235,7 +235,7 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, VulkanShader::Sh
 		if (!reflection.pushConstants.empty())
 			offset = reflection.pushConstants.back().offset + reflection.pushConstants.back().size;
 
-		auto& pushConstant      = reflection.pushConstants.emplace_back();
+		auto& pushConstant = reflection.pushConstants.emplace_back();
 		pushConstant.stageFlags = stage;
 		pushConstant.size       = size - offset;
 		pushConstant.offset     = offset;

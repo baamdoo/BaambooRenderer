@@ -1,13 +1,37 @@
-#ifndef _GLSL_OCCLUSION_CULLING_HEADER
-#define _GLSL_OCCLUSION_CULLING_HEADER
+#ifndef _GLSL_CULLING_COMMON_HEADER
+#define _GLSL_CULLING_COMMON_HEADER
 
-// Sphere-vs-HiZ occlusion test for reversed-Z depth (0=far, 1=near).
+
+// =========================================================================
+// Frustum Culling
+// =========================================================================
+bool IsFrustumCulled(vec4 planes[6], vec3 centerWS, float radius)
+{
+    for (int i = 0; i < 5; ++i)
+        if (dot(planes[i], vec4(centerWS, 1.0)) + radius < 0.0)
+            return true;
+    return false;
+}
+
+// =========================================================================
+// Backface Culling
+// =========================================================================
+bool IsConeCulled(vec4 cone, vec3 sphereCenterWS, float sphereRadius, vec3 viewPosWS)
+{
+    vec3 toSphere = sphereCenterWS - viewPosWS;
+    return dot(cone.xyz, toSphere) >= cone.w * length(toSphere) + sphereRadius;
+}
+
+
+// =========================================================================
+// Occlusion Culling : 
+//     Sphere-vs-HiZ occlusion test for reversed-Z depth (0=far, 1=near).
 //
 // Uses Mara/McGuire 2013 tight AABB projection for correct screen-space
 // bounds regardless of aspect ratio. The HiZ sampler must use MIN
 // reduction mode so that a single textureLod returns the conservative
 // minimum depth within the sampled region.
-
+// =========================================================================
 bool IsOccluded(vec3      centerWS,
                 float     radius,
                 mat4      view,
@@ -48,9 +72,10 @@ bool IsOccluded(vec3      centerWS,
     bMax = clamp(bMax, 0.0, 1.0);
 
     // --- 4. Select HiZ mip level ---
+    // LINEAR + MIN reduction sampler → one sample covers 2x2 texels = 2^(L+1) px.
     float width  = (bMax.x - bMin.x) * pyramidWidth;
     float height = (bMax.y - bMin.y) * pyramidHeight;
-    float level  = ceil(log2(max(max(width, height), 1.0)));
+    float level  = floor(log2(max(max(width, height), 1.0)));
 
     // --- 5. Sample HiZ (MIN reduction sampler → single sample is conservative) ---
     float depth = textureLod(hiZ, (bMin + bMax) * 0.5, level).x;
@@ -62,4 +87,4 @@ bool IsOccluded(vec3      centerWS,
     return depthSphere < depth;
 }
 
-#endif // _GLSL_OCCLUSION_CULLING_HEADER
+#endif // _GLSL_CULLING_COMMON_HEADER

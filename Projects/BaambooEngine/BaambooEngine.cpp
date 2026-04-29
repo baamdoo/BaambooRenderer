@@ -6,6 +6,7 @@
 #include "BaambooScene/Entity.h"
 #include "RenderCommon/RenderDevice.h"
 #include "RenderCommon/CommandContext.h"
+#include "RenderCommon/CpuProfiler.h"
 #include "ThreadQueue.hpp"
 #include "Utils/Math.hpp"
 
@@ -279,6 +280,8 @@ void Engine::RenderLoop()
 		{
 			auto& rm = m_pRendererBackend->GetDevice()->GetResourceManager();
 
+			render::CpuProfiler::Thread().BeginFrame(); // Must match the GPU "Frame" scope.
+
 			auto pContext = m_pRendererBackend->BeginFrame();
 			if (pContext)
 			{
@@ -286,6 +289,129 @@ void Engine::RenderLoop()
 				rm.GetSceneResource().BindSceneResources(*pContext);
 
 				m_LastFrameGpuTimeElapsed = pContext->GetLastFrameElapsedTime();
+
+				// --- Update GPU/CPU profile snapshots + stats ---
+				auto updateSnapshot = [](
+					const auto&                                     entries,     // vector of Gpu/CpuProfileEntry
+					std::vector< ProfileSnapshotEntry >&            snapshot,
+					std::unordered_map< std::string, ProfileStats >& statsByName)
+				{
+					snapshot.clear();
+					snapshot.reserve(entries.size());
+
+					// Frame total = top-level scope (index 0 by construction). Used for % share.
+					const double frameTotalMs = entries.empty() ? 0.0 : entries[0].elapsedMs;
+
+					for (const auto& e : entries)
+					{
+						const char*   rawName = e.name ? e.name : "(null)";
+						ProfileStats& s       = statsByName[rawName];
+
+						// EMA: ~20-frame moving average.
+						s.ema = 0.95 * s.ema + 0.05 * e.elapsedMs;
+
+						// Min/Max since last reset. First sample seeds both.
+						if (!s.bSeeded)
+						{
+							s.minMs   = e.elapsedMs;
+							s.maxMs   = e.elapsedMs;
+							s.bSeeded = true;
+						}
+						else
+						{
+							if (e.elapsedMs < s.minMs) s.minMs = e.elapsedMs;
+							if (e.elapsedMs > s.maxMs) s.maxMs = e.elapsedMs;
+						}
+
+						const double pct = (frameTotalMs > 1e-9)
+							? (e.elapsedMs / frameTotalMs * 100.0)
+							: 0.0;
+
+						ProfileSnapshotEntry snap = {
+							.name           = rawName,
+							.depth          = e.depth,
+							.currentMs      = e.elapsedMs,
+							.emaMs          = s.ema,
+							.minMs          = s.minMs,
+							.maxMs          = s.maxMs,
+							.percentOfFrame = pct,
+						};
+						if constexpr (requires { e.bHasStats; e.stats; })
+						{
+							if (e.bHasStats)
+							{
+								snap.bHasStats        = true;
+								snap.bHasMeshCounters = e.stats.bHasMeshCounters;
+								snap.clippingInvs     = e.stats.clippingInvocations;
+								snap.clippingPrims    = e.stats.clippingPrimitives;
+								snap.fsInvocations    = e.stats.fsInvocations;
+								snap.meshInvocations  = e.stats.meshInvocations;
+								snap.taskInvocations  = e.stats.taskInvocations;
+
+								s.clipInsEma   = 0.95 * s.clipInsEma   + 0.05 * double(e.stats.clippingInvocations);
+								s.clipPrimsEma = 0.95 * s.clipPrimsEma + 0.05 * double(e.stats.clippingPrimitives);
+								s.fsInvocsEma  = 0.95 * s.fsInvocsEma  + 0.05 * double(e.stats.fsInvocations);
+								snap.clippingInvsEma  = s.clipInsEma;
+								snap.clippingPrimsEma = s.clipPrimsEma;
+								snap.fsInvocationsEma = s.fsInvocsEma;
+							}
+						}
+						snapshot.push_back(std::move(snap));
+					}
+				};
+
+				updateSnapshot(pContext->GetLastFrameProfile(),
+				               m_GpuProfileSnapshot,
+				               m_GpuProfileStatsByName);
+
+				updateSnapshot(render::CpuProfiler::Thread().GetLastFrameProfile(),
+				               m_CpuProfileSnapshot,
+				               m_CpuProfileStatsByName);
+
+				// Push this frame's GPU total (implicit "Frame" scope) to the ring-buffer.
+				const float frameTotalMs = m_GpuProfileSnapshot.empty()
+					? 0.0f
+					: float(m_GpuProfileSnapshot[0].currentMs);
+				m_FrameTimeHistory[m_FrameTimeHistoryIdx] = frameTotalMs;
+				m_FrameTimeHistoryIdx = (m_FrameTimeHistoryIdx + 1) % FRAME_HISTORY_SIZE;
+
+				// --- Frame anomaly detection ---
+				// Compare current Frame time against its EMA baseline; on large deviation,
+				// snapshot the full profile for post-hoc inspection.
+				++m_FrameCounter;
+				if (m_bAnomalyCapture
+				    && !m_GpuProfileSnapshot.empty()
+				    && m_FrameCounter > ANOMALY_WARMUP_FRAMES
+				    && m_FrameCounter - m_LastAnomalyFrame > ANOMALY_COOLDOWN_FRAMES)
+				{
+					const auto& frameEntry  = m_GpuProfileSnapshot[0];
+					const double baselineMs = frameEntry.emaMs;
+					const double currentMs  = frameEntry.currentMs;
+					if (baselineMs > 0.1) // avoid div-near-zero
+					{
+						const double deltaPct = (currentMs - baselineMs) / baselineMs * 100.0;
+						if (std::abs(deltaPct) >= double(m_AnomalyThresholdPct))
+						{
+							FrameAnomaly a;
+							a.frameNum       = m_FrameCounter;
+							a.currentMs      = currentMs;
+							a.baselineMs     = baselineMs;
+							a.deltaPct       = deltaPct;
+							a.bSpike         = deltaPct > 0.0;
+							a.cullFlags      = g_FrameData.cullFlags;
+							a.totalInstances = g_FrameData.totalInstances;
+							a.phase1Drawn    = g_FrameData.phase1InstanceDrawCount;
+							a.phase2Drawn    = g_FrameData.phase2InstanceDrawCount;
+							a.gpuProfile     = m_GpuProfileSnapshot;  // deep copy
+							a.cpuProfile     = m_CpuProfileSnapshot;
+							m_AnomalyLog.push_back(std::move(a));
+							if (m_AnomalyLog.size() > MAX_ANOMALY_CAPTURES)
+								m_AnomalyLog.pop_front();
+							m_LastAnomalyFrame = m_FrameCounter;
+						}
+					}
+				}
+
 				if (renderView.pEntityDirtyMarks)
 				{
 					assert(renderView.pSceneMutex);
@@ -312,7 +438,10 @@ void Engine::RenderLoop()
 				for (auto pNode : m_pScene->GetRenderNodes())
 				{
 					if (pNode)
+					{
+						BAAMBOO_PROFILE_SCOPE(*pContext, pNode->GetName().c_str());
 						pNode->Apply(*pContext, renderView);
+					}
 				}
 
 				assert(g_FrameData.pColor);
@@ -322,6 +451,9 @@ void Engine::RenderLoop()
 				m_Frame++;
 				g_FrameData.componentMarker = 0;
 			}
+
+			// Close the CPU-side "Frame" scope.
+			render::CpuProfiler::Thread().EndFrame();
 		}
 	}
 }
@@ -352,6 +484,543 @@ void Engine::DrawUI()
 		}
 		ImGui::Text("RenderLoop(CPU) %.3f ms(frame: %.1f FPS)", renderElapsedCpu_ms, 1000.0f / renderElapsedCpu_ms);
 		ImGui::Text("RenderLoop(GPU) %.3f ms(frame: %.1f FPS)", renderElapsedGpu_ms, 1000.0f / renderElapsedGpu_ms);
+
+		// --- GPU Frame Time History Plot ---
+		ImGui::Separator();
+		{
+			float histMax = 0.0f;
+			for (u32 i = 0; i < FRAME_HISTORY_SIZE; ++i)
+				histMax = std::max(histMax, m_FrameTimeHistory[i]);
+			histMax = std::max(histMax * 1.15f, 1.0f); // 15% headroom, min 1ms
+
+			char overlay[32];
+			snprintf(overlay, sizeof(overlay), "max %.2f ms", histMax);
+			ImGui::PlotLines(
+				"##gpu_frame_time",
+				m_FrameTimeHistory,
+				int(FRAME_HISTORY_SIZE),
+				int(m_FrameTimeHistoryIdx),
+				overlay,
+				0.0f, histMax,
+				ImVec2(0.0f, 60.0f));
+		}
+
+		if (m_GpuProfileSnapshot.size() > 1)
+		{
+			ImGui::Separator();
+			ImGui::TextDisabled("Frame breakdown (top-level passes)");
+
+			const double frameMs = m_GpuProfileSnapshot[0].currentMs;
+			struct Slice { const char* name; double ms; u32 color; };
+			std::vector< Slice > slices;
+			slices.reserve(m_GpuProfileSnapshot.size());
+
+			double accounted = 0.0;
+			for (const auto& e : m_GpuProfileSnapshot)
+			{
+				if (e.depth != 1) continue; // top-level only
+				slices.push_back({ e.name.c_str(), e.currentMs, render::GetGpuMarkerColor(e.name.c_str()) });
+				accounted += e.currentMs;
+			}
+			const double residualMs = std::max(0.0, frameMs - accounted);
+
+			// Chart area + legend: pie on the left, colored labels on the right.
+			const float pieRadius = 45.0f;
+			const ImVec2 cursor   = ImGui::GetCursorScreenPos();
+			const ImVec2 center   = { cursor.x + pieRadius + 4.0f, cursor.y + pieRadius + 4.0f };
+
+			ImDrawList* dl = ImGui::GetWindowDrawList();
+			if (frameMs > 1e-6)
+			{
+				constexpr float TAU = 6.2831853f;
+				float a0 = -TAU * 0.25f; // start at 12 o'clock
+				auto addWedge = [&](double frac, u32 color)
+				{
+					if (frac <= 0.0) return;
+					const float a1 = a0 + float(frac) * TAU;
+					const int   seg = std::max(4, int(frac * 48.0));
+					dl->PathLineTo(center);
+					dl->PathArcTo(center, pieRadius, a0, a1, seg);
+					dl->PathFillConvex(color);
+					a0 = a1;
+				};
+				for (const auto& s : slices) addWedge(s.ms / frameMs, s.color);
+				addWedge(residualMs / frameMs, 0xFF555555u); // "other" in dark gray
+				dl->AddCircle(center, pieRadius + 0.5f, 0xFF000000u, 48, 1.0f);
+			}
+
+			// Reserve vertical space for the pie so ImGui advances cursor.
+			ImGui::Dummy(ImVec2(pieRadius * 2.0f + 8.0f, pieRadius * 2.0f + 8.0f));
+
+			// Legend
+			ImGui::SameLine();
+			ImGui::BeginGroup();
+			auto legendRow = [&](const char* label, double ms, u32 color)
+			{
+				const ImVec2 p = ImGui::GetCursorScreenPos();
+				const float  sz = ImGui::GetTextLineHeight();
+				dl->AddRectFilled(p, { p.x + sz, p.y + sz }, color);
+				dl->AddRect(p, { p.x + sz, p.y + sz }, 0xFF000000u);
+				ImGui::Dummy(ImVec2(sz + 4.0f, sz));
+				ImGui::SameLine();
+				const double frac = frameMs > 1e-6 ? ms / frameMs * 100.0 : 0.0;
+				ImGui::Text("%s  %.2f ms (%.1f%%)", label, ms, frac);
+			};
+			for (const auto& s : slices) legendRow(s.name, s.ms, s.color);
+			if (residualMs > 0.001) legendRow("other", residualMs, 0xFF555555u);
+			ImGui::EndGroup();
+		}
+
+		// --- GPU / CPU Profile Trees ---
+		auto drawProfileTable = [](
+			const char*                                       tableId,
+			const std::vector< ProfileSnapshotEntry >&         snapshot,
+			std::unordered_map< std::string, ProfileStats >&  stats)
+		{
+			// Reset button clears min/max (ema survives so the moving avg doesn't jump).
+			if (ImGui::SmallButton((std::string("Reset Min/Max##minmax") + tableId).c_str()))
+			{
+				for (auto& kv : stats)
+				{
+					kv.second.minMs   = 0.0;
+					kv.second.maxMs   = 0.0;
+					kv.second.bSeeded = false;
+				}
+			}
+			ImGui::SameLine();
+			if (ImGui::SmallButton((std::string("Reset EMA##ema") + tableId).c_str()))
+			{
+				for (auto& kv : stats)
+				{
+					kv.second.ema          = 0.0;
+					kv.second.clipInsEma   = 0.0;
+					kv.second.clipPrimsEma = 0.0;
+					kv.second.fsInvocsEma  = 0.0;
+				}
+			}
+
+			if (snapshot.empty())
+			{
+				ImGui::TextDisabled("(no data yet)");
+				return;
+			}
+
+			const int numCols = 6;
+			if (ImGui::BeginTable(tableId, numCols,
+				ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_ScrollX | ImGuiTableFlags_Resizable))
+			{
+				ImGui::TableSetupColumn("Pass", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoClip, 200.0f);
+				ImGui::TableSetupColumn("ms", ImGuiTableColumnFlags_WidthFixed, 65.0f);
+				ImGui::TableSetupColumn("ema", ImGuiTableColumnFlags_WidthFixed, 65.0f);
+				ImGui::TableSetupColumn("%", ImGuiTableColumnFlags_WidthFixed, 50.0f);
+				ImGui::TableSetupColumn("min", ImGuiTableColumnFlags_WidthFixed, 65.0f);
+				ImGui::TableSetupColumn("max", ImGuiTableColumnFlags_WidthFixed, 65.0f);
+				ImGui::TableHeadersRow();
+
+				auto formatCount = [](u64 v, char* buf, size_t n)
+				{
+					if (v >= 1'000'000ULL) snprintf(buf, n, "%.2fM", double(v) * 1e-6);
+					else if (v >= 1'000ULL) snprintf(buf, n, "%.1fK", double(v) * 1e-3);
+					else snprintf(buf, n, "%llu", (unsigned long long)v);
+				};
+
+				for (const auto& e : snapshot)
+				{
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::Text("%*s%s", int(e.depth) * 2, "", e.name.c_str());
+					ImGui::TableSetColumnIndex(1);
+					ImGui::Text("%6.3f", e.currentMs);
+					ImGui::TableSetColumnIndex(2);
+					ImGui::Text("%6.3f", e.emaMs);
+					ImGui::TableSetColumnIndex(3);
+					ImGui::Text("%5.1f", e.percentOfFrame);
+					ImGui::TableSetColumnIndex(4);
+					ImGui::Text("%6.3f", e.minMs);
+					ImGui::TableSetColumnIndex(5);
+					ImGui::Text("%6.3f", e.maxMs);
+				}
+				ImGui::EndTable();
+			}
+		};
+
+		ImGui::Separator();
+		if (ImGui::CollapsingHeader("GPU Profile", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			drawProfileTable("##gpu_profile", m_GpuProfileSnapshot, m_GpuProfileStatsByName);
+		}
+
+		/*if (ImGui::CollapsingHeader("CPU Profile"))
+		{
+			drawProfileTable("##cpu_profile", m_CpuProfileSnapshot, m_CpuProfileStatsByName);
+		}*/
+
+		// --- Culling Controls [TEMP] ---
+		ImGui::Separator();
+		if (ImGui::CollapsingHeader("Culling Controls", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			auto toggleBit = [](const char* label, u32 bit)
+			{
+				bool on = (g_FrameData.cullFlags & bit) != 0;
+				if (ImGui::Checkbox(label, &on))
+				{
+					if (on) g_FrameData.cullFlags |=  bit;
+					else    g_FrameData.cullFlags &= ~bit;
+				}
+			};
+			ImGui::TextDisabled("Per-triangle (mesh shader)");
+			toggleBit("Backface##cull0", 0x1);
+			ImGui::SameLine();
+			toggleBit("Subpixel##cull1", 0x2);
+
+			ImGui::TextDisabled("Per-meshlet (task shader)");
+			toggleBit("Frustum##cull2", 0x4);
+			ImGui::SameLine();
+			toggleBit("Cone##cull3", 0x8);
+			ImGui::SameLine();
+			toggleBit("Occlusion##cull4", 0x10);
+
+			ImGui::TextDisabled("LOD selection (SSE)");
+			ImGui::SliderFloat("SSE Threshold (px)##lodSse", &g_FrameData.sseThresholdPx, 0.1f, 4.0f, "%.2f");
+		}
+
+		// --- Pipeline Summary ---
+		ImGui::Separator();
+		if (ImGui::CollapsingHeader("Pipeline Summary", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			// =====================================================================
+			// Per-level cull pipeline. Each row is one stage of the GPU cull funnel:
+			//
+			//   Instance  — InstanceCullingCS: frustum + HZB cull on whole models.
+			//               OUTPUT count = phase1+phase2 instance-cull survivors.
+			//               When meshlet-occlusion is ON the same instance is
+			//               re-emitted in BOTH phases, so OUTPUT can exceed INPUT
+			//               by design — the "Cull %" cell hides the meaningless
+			//               number in that mode.
+			//   Meshlet   — task shader: frustum + cone + HZB + Phase 1 visibility
+			//               persistence. INPUT/OUTPUT come from atomic counters
+			//               written by the task shader.
+			//   Triangle  — mesh-shader triangle cull (backface + subpixel).
+			//               INPUT  = sum of meshlet.triangleCount for drawn meshlets
+			//                        (= triangleCandidates atomic counter).
+			//               OUTPUT = clippingInvocations from pipeline statistics
+			//                        (= what the mesh shader actually emitted).
+			//   Clip (HW) — hardware clipping/subpixel rejection.
+			//               INPUT  = clippingInvocations (mesh shader output).
+			//               OUTPUT = clippingPrimitives (rasterizer fed primitives).
+			// =====================================================================
+			const u32 totalInst   = g_FrameData.totalInstances;
+			const u32 phase1Inst  = g_FrameData.phase1InstanceDrawCount;
+			const u32 phase2Inst  = g_FrameData.phase2InstanceDrawCount;
+			const u32 drawnInst   = phase1Inst + phase2Inst;
+
+#if PROFILING_LEVEL >= 1
+			const u32 phase1mTotal   = g_FrameData.phase1MeshletTotal;
+			const u32 phase2mTotal   = g_FrameData.phase2MeshletTotal;
+			const u32 phase1mDrawn   = g_FrameData.phase1MeshletDrawn;
+			const u32 phase2mDrawn   = g_FrameData.phase2MeshletDrawn;
+			const u32 totalMeshlets  = phase1mTotal + phase2mTotal;
+			const u32 drawnMeshlets  = phase1mDrawn + phase2mDrawn;
+
+			const u32 phase1TCand   = g_FrameData.phase1TriangleCandidates;
+			const u32 phase2TCand   = g_FrameData.phase2TriangleCandidates;
+			const u32 totalTCand    = phase1TCand + phase2TCand;
+#endif // PROFILING_LEVEL >= 1
+
+			// "Drawn instances exceeds total" can happen with meshlet-occlusion ON (2-phase draw of same instance).
+			// Detect that here so the cull% cell can be marked N/A instead of going negative.
+			const bool bMeshletOcclusionOn =
+				(g_FrameData.cullFlags & 0x10u) != 0u;
+			const bool bInstanceCullPctMeaningful = !bMeshletOcclusionOn;
+
+			auto pct = [](u64 num, u64 den) { return den > 0 ? 100.0 * double(num) / double(den) : 0.0; };
+
+			// --- Triangle counts (pipeline stats: clip stage in/out per phase) ---
+			u64 phase1ClipIn  = 0, phase2ClipIn  = 0;
+			u64 phase1ClipOut = 0, phase2ClipOut = 0;
+			double phase1Ms   = 0.0, phase2Ms    = 0.0;
+			double phase1ClipInEma  = 0.0, phase2ClipInEma  = 0.0;
+			double phase1ClipOutEma = 0.0, phase2ClipOutEma = 0.0;
+			double phase1FsEma      = 0.0, phase2FsEma      = 0.0;
+			for (const auto& e : m_GpuProfileSnapshot)
+			{
+				if (!e.bHasStats) continue;
+				if (e.name == "Phase1Draw")
+				{
+					phase1ClipIn     = e.clippingInvs;
+					phase1ClipOut    = e.clippingPrims;
+					phase1Ms         = e.currentMs;
+					phase1ClipInEma  = e.clippingInvsEma;
+					phase1ClipOutEma = e.clippingPrimsEma;
+					phase1FsEma      = e.fsInvocationsEma;
+				}
+				else if (e.name == "Phase2Draw")
+				{
+					phase2ClipIn     = e.clippingInvs;
+					phase2ClipOut    = e.clippingPrims;
+					phase2Ms         = e.currentMs;
+					phase2ClipInEma  = e.clippingInvsEma;
+					phase2ClipOutEma = e.clippingPrimsEma;
+					phase2FsEma      = e.fsInvocationsEma;
+				}
+			}
+			const u64    clipInTotal     = phase1ClipIn  + phase2ClipIn;
+			const u64    clipOutTotal    = phase1ClipOut + phase2ClipOut;
+			const double clipInTotalEma  = phase1ClipInEma  + phase2ClipInEma;
+			const double clipOutTotalEma = phase1ClipOutEma + phase2ClipOutEma;
+			const double msTotal         = phase1Ms + phase2Ms;
+			const double trisPerMs       = msTotal > 1e-6 ? double(clipOutTotal) / msTotal : 0.0;
+
+			auto formatDouble = [](double v, char* buf, size_t n)
+			{
+				if (v >= 1e6)      snprintf(buf, n, "%.2fM", v * 1e-6);
+				else if (v >= 1e3) snprintf(buf, n, "%.1fK", v * 1e-3);
+				else               snprintf(buf, n, "%.0f",  v);
+			};
+
+			// =====================================================================
+			// Cull pipeline (per-level In → Out → Cull%).
+			// =====================================================================
+			if (ImGui::BeginTable("##cull_levels", 4,
+				ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH))
+			{
+				ImGui::TableSetupColumn("Level",  ImGuiTableColumnFlags_WidthFixed, 100.0f);
+				ImGui::TableSetupColumn("In",     ImGuiTableColumnFlags_WidthFixed, 110.0f);
+				ImGui::TableSetupColumn("Out",    ImGuiTableColumnFlags_WidthFixed, 110.0f);
+				ImGui::TableSetupColumn("Cull %", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+				ImGui::TableHeadersRow();
+
+				char buf[32];
+				auto numCell = [&](double v)
+				{
+					if (v > 0.5) { formatDouble(v, buf, sizeof(buf)); ImGui::TextUnformatted(buf); }
+					else ImGui::TextDisabled("-");
+				};
+
+				auto row = [&](const char* lvl, double inV, double outV, bool bShowCullPct, const char* note)
+				{
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(lvl);
+					ImGui::TableSetColumnIndex(1); numCell(inV);
+					ImGui::TableSetColumnIndex(2); numCell(outV);
+					ImGui::TableSetColumnIndex(3);
+					if (!bShowCullPct)
+						ImGui::TextDisabled("N/A");
+					else if (inV > 0.5)
+					{
+						const double diff = (inV > outV) ? (inV - outV) : 0.0;
+						ImGui::Text("%.1f%%", 100.0 * diff / inV);
+					}
+					else
+						ImGui::TextDisabled("-");
+					if (note && *note)
+					{
+						ImGui::SameLine();
+						ImGui::TextDisabled("%s", note);
+					}
+				};
+
+				row("Instance(CS)", double(totalInst), double(drawnInst), bInstanceCullPctMeaningful, "");
+#if PROFILING_LEVEL >= 1
+				row("Meshlet(TS)", double(totalMeshlets), double(drawnMeshlets), true, "");
+				row("Triangle(MS)", double(totalTCand),  double(clipInTotalEma), true, "");
+#endif
+				row("Clip(HW)", double(clipInTotalEma), double(clipOutTotalEma), true, "");
+
+				ImGui::EndTable();
+			}
+#if PROFILING_LEVEL == 0
+			ImGui::TextDisabled("(Meshlet/Triangle rows hidden — define PROFILING_LEVEL>=1");
+#endif
+
+			// =====================================================================
+			// Per-phase detail (Phase 1 emits prev-visible, Phase 2 emits the rest).
+			// Meshlets / Tri-cand columns require PROFILING_LEVEL>=1; everything
+			// else (instances, clipping primitives, FS invocations) is always on.
+			// =====================================================================
+			ImGui::Spacing();
+			if (ImGui::TreeNode("Per-phase detail"))
+			{
+#if PROFILING_LEVEL >= 1
+				constexpr int kPerPhaseCols = 6;
+#else
+				constexpr int kPerPhaseCols = 4;
+#endif
+				if (ImGui::BeginTable("##per_phase", kPerPhaseCols,
+					ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH))
+				{
+					ImGui::TableSetupColumn("Phase",     ImGuiTableColumnFlags_WidthFixed, 70.0f);
+					ImGui::TableSetupColumn("Instances", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+#if PROFILING_LEVEL >= 1
+					ImGui::TableSetupColumn("Meshlets",  ImGuiTableColumnFlags_WidthFixed, 130.0f); // drawn / total
+					ImGui::TableSetupColumn("Tri cand",  ImGuiTableColumnFlags_WidthFixed, 100.0f); // triangleCandidates (mesh shader input)
+#endif
+					ImGui::TableSetupColumn("Tri output",  ImGuiTableColumnFlags_WidthFixed, 100.0f); // clipping primitives (post-HW-clip EMA)
+					ImGui::TableSetupColumn("FS invocations", ImGuiTableColumnFlags_WidthFixed, 110.0f);
+					ImGui::TableHeadersRow();
+
+					char buf[32];
+					auto numCell = [&](double v)
+					{
+						if (v > 0.5) { formatDouble(v, buf, sizeof(buf)); ImGui::TextUnformatted(buf); }
+						else ImGui::TextDisabled("-");
+					};
+#if PROFILING_LEVEL >= 1
+					auto meshletCell = [&](u32 drawn, u32 total)
+					{
+						if (total == 0) { ImGui::TextDisabled("-"); return; }
+						char b1[16]; char b2[16];
+						formatDouble(double(drawn), b1, sizeof(b1));
+						formatDouble(double(total), b2, sizeof(b2));
+						ImGui::Text("%s / %s", b1, b2);
+					};
+#endif
+
+#if PROFILING_LEVEL >= 1
+					auto row = [&](const char* phase, u32 inst, u32 mDrawn, u32 mTot, double tCand, double clipOut, double fs)
+					{
+						ImGui::TableNextRow();
+						ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(phase);
+						ImGui::TableSetColumnIndex(1); ImGui::Text("%u", inst);
+						ImGui::TableSetColumnIndex(2); meshletCell(mDrawn, mTot);
+						ImGui::TableSetColumnIndex(3); numCell(tCand);
+						ImGui::TableSetColumnIndex(4); numCell(clipOut);
+						ImGui::TableSetColumnIndex(5); numCell(fs);
+					};
+					row("Phase 1", phase1Inst, phase1mDrawn, phase1mTotal, double(phase1TCand), phase1ClipOutEma, phase1FsEma);
+					row("Phase 2", phase2Inst, phase2mDrawn, phase2mTotal, double(phase2TCand), phase2ClipOutEma, phase2FsEma);
+
+					// Aggregate row
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted("Drawn");
+					ImGui::TableSetColumnIndex(1); ImGui::Text("%u", drawnInst);
+					ImGui::TableSetColumnIndex(2); meshletCell(drawnMeshlets, totalMeshlets);
+					ImGui::TableSetColumnIndex(3); numCell(double(totalTCand));
+					ImGui::TableSetColumnIndex(4); numCell(clipOutTotalEma);
+					ImGui::TableSetColumnIndex(5); numCell(phase1FsEma + phase2FsEma);
+#else // PROFILING_LEVEL >= 1
+					auto row = [&](const char* phase, u32 inst, double clipOut, double fs)
+					{
+						ImGui::TableNextRow();
+						ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(phase);
+						ImGui::TableSetColumnIndex(1); ImGui::Text("%u", inst);
+						ImGui::TableSetColumnIndex(2); numCell(clipOut);
+						ImGui::TableSetColumnIndex(3); numCell(fs);
+					};
+					row("Phase 1", phase1Inst, phase1ClipOutEma, phase1FsEma);
+					row("Phase 2", phase2Inst, phase2ClipOutEma, phase2FsEma);
+
+					// Aggregate row
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted("Drawn");
+					ImGui::TableSetColumnIndex(1); ImGui::Text("%u", drawnInst);
+					ImGui::TableSetColumnIndex(2); numCell(clipOutTotalEma);
+					ImGui::TableSetColumnIndex(3); numCell(phase1FsEma + phase2FsEma);
+#endif // PROFILING_LEVEL >= 1
+
+					ImGui::EndTable();
+				}
+				ImGui::TreePop();
+			}
+
+			// --- Throughput summary ---
+			ImGui::Spacing();
+			if (clipOutTotal > 0 && msTotal > 1e-6)
+			{
+				char tbuf[32];
+				auto formatThroughput = [&](double v) {
+					if (v >= 1e9) snprintf(tbuf, sizeof(tbuf), "%.2f Gtri/s", v * 1e-9);
+					else if (v >= 1e6) snprintf(tbuf, sizeof(tbuf), "%.2f Mtri/s", v * 1e-6);
+					else snprintf(tbuf, sizeof(tbuf), "%.1f Ktri/s", v * 1e-3);
+				};
+				formatThroughput(trisPerMs * 1000.0);
+				ImGui::Text("Throughput : %s  (%.2f ms total draw)", tbuf, msTotal);
+			}
+
+			ImGui::Spacing();
+			ImGui::TextDisabled("(GPU stats are %u frames stale)", u32(3));
+		}
+
+		// --- Frame Anomalies ---
+		ImGui::Separator();
+		{
+			char header[64];
+			snprintf(header, sizeof(header), "Frame Anomalies (%zu)###anomalies_header", m_AnomalyLog.size());
+			const bool open = ImGui::CollapsingHeader(header, ImGuiTreeNodeFlags_DefaultOpen);
+			if (open)
+			{
+				ImGui::Checkbox("Capture##anomaly_enable", &m_bAnomalyCapture);
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth(120.0f);
+				ImGui::DragFloat("±% threshold##anomaly_thr", &m_AnomalyThresholdPct, 1.0f, 10.0f, 500.0f, "%.0f%%");
+				ImGui::SameLine();
+				if (ImGui::SmallButton("Clear##anomaly_clear"))
+					m_AnomalyLog.clear();
+				ImGui::TextDisabled("Captured when |current - EMA|/EMA > threshold. Most recent first.");
+
+				// List (newest first) with expandable detail per row.
+				for (i64 i = i64(m_AnomalyLog.size()) - 1; i >= 0; --i)
+				{
+					const auto& a = m_AnomalyLog[size_t(i)];
+					char label[128];
+					snprintf(label, sizeof(label), "%s frame #%llu  %.2f ms  (baseline %.2f, %+.0f%%)###anomaly_%lld",
+						a.bSpike ? "[SPIKE]" : "[DIP]  ",
+						(unsigned long long)a.frameNum,
+						a.currentMs, a.baselineMs, a.deltaPct,
+						(long long)i);
+
+					// Color-code based on severity
+					const ImVec4 col = a.bSpike
+						? ImVec4(1.00f, 0.55f, 0.30f, 1.0f)  // spike (orange)
+						: ImVec4(0.50f, 0.90f, 1.00f, 1.0f); // dip (cyan)
+					ImGui::PushStyleColor(ImGuiCol_Text, col);
+					const bool rowOpen = ImGui::TreeNode(label);
+					ImGui::PopStyleColor();
+
+					if (rowOpen)
+					{
+						ImGui::Text("Instances : total %u | Phase1 %u | Phase2 %u (culled %u)",
+							a.totalInstances, a.phase1Drawn, a.phase2Drawn,
+							a.totalInstances > (a.phase1Drawn + a.phase2Drawn)
+								? a.totalInstances - (a.phase1Drawn + a.phase2Drawn) : 0u);
+						ImGui::Text("CullFlags : 0x%X  (bit0=backface, bit1=subpixel, bit2=meshletFrustum, bit3=meshletCone, bit4=meshletOcclusion)", a.cullFlags);
+
+						// GPU profile table (compact, no stats columns)
+						if (!a.gpuProfile.empty() &&
+						    ImGui::BeginTable((std::string("##anomaly_gpu_") + std::to_string(i)).c_str(),
+						                      4, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH))
+						{
+							ImGui::TableSetupColumn("Pass", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoClip, 180.0f);
+							ImGui::TableSetupColumn("ms",   ImGuiTableColumnFlags_WidthFixed, 65.0f);
+							ImGui::TableSetupColumn("ema",  ImGuiTableColumnFlags_WidthFixed, 65.0f);
+							ImGui::TableSetupColumn("Δ %",  ImGuiTableColumnFlags_WidthFixed, 60.0f);
+							ImGui::TableHeadersRow();
+							for (const auto& e : a.gpuProfile)
+							{
+								ImGui::TableNextRow();
+								ImGui::TableSetColumnIndex(0);
+								ImGui::Text("%*s%s", int(e.depth) * 2, "", e.name.c_str());
+								ImGui::TableSetColumnIndex(1); ImGui::Text("%6.3f", e.currentMs);
+								ImGui::TableSetColumnIndex(2); ImGui::Text("%6.3f", e.emaMs);
+								ImGui::TableSetColumnIndex(3);
+								const double d = e.emaMs > 1e-6 ? (e.currentMs - e.emaMs) / e.emaMs * 100.0 : 0.0;
+								if (std::abs(d) > 20.0)
+								{
+									ImGui::PushStyleColor(ImGuiCol_Text,
+										d > 0.0 ? ImVec4(1,0.6f,0.3f,1) : ImVec4(0.5f,0.9f,1,1));
+									ImGui::Text("%+.0f%%", d);
+									ImGui::PopStyleColor();
+								}
+								else ImGui::Text("%+.0f%%", d);
+							}
+							ImGui::EndTable();
+						}
+						ImGui::TreePop();
+					}
+				}
+			}
+		}
+
 	ImGui::End();
 
 	// **

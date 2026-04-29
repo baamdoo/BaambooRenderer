@@ -28,14 +28,19 @@ InstanceBuilder::InstanceBuilder()
 	// **
 	// Set default values
 	// **
+#ifdef _DEBUG
 	m_ValidationLayers = 
 	{
 		"VK_LAYER_KHRONOS_validation",
 	};
+#endif
 	m_ExtensionLayers = 
 	{
 		VK_KHR_SURFACE_EXTENSION_NAME,
+#ifdef _DEBUG
 		VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+		"VK_EXT_debug_report",
+#endif
 #if defined(_WIN32)
 		VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
 #elif defined(VK_USE_PLATFORM_ANDROID_KHR)
@@ -50,9 +55,6 @@ InstanceBuilder::InstanceBuilder()
 	VK_EXT_LAYER_SETTINGS_EXTENSION_NAME,
 	VK_MVK_MACOS_SURFACE_EXTENSION_NAME,
 #endif
-#ifdef _DEBUG
-		"VK_EXT_debug_report",
-#endif
 	};
 
 	m_AppInfo.sType              = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -65,7 +67,9 @@ InstanceBuilder::InstanceBuilder()
 
 InstanceBuilder& InstanceBuilder::AddValidationLayer(const char* layerString)
 {
+#ifdef _DEBUG
 	m_ValidationLayers.push_back(layerString);
+#endif
 	return *this;
 }
 
@@ -83,7 +87,8 @@ InstanceBuilder& InstanceBuilder::SetApiVersion(u32 version)
 
 InstanceBuilder& InstanceBuilder::SetValidationFeatureEnable(const std::vector< VkValidationFeatureEnableEXT >& features)
 {
-	VkValidationFeaturesEXT validationFeatures        = {};
+#ifdef _DEBUG
+	VkValidationFeaturesEXT validationFeatures = {};
 	validationFeatures.sType                          = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
 	validationFeatures.enabledValidationFeatureCount  = static_cast<u32>(features.size());
 	validationFeatures.pEnabledValidationFeatures     = features.data();
@@ -91,6 +96,7 @@ InstanceBuilder& InstanceBuilder::SetValidationFeatureEnable(const std::vector< 
 	validationFeatures.pDisabledValidationFeatures    = nullptr;
 
 	m_ValidationFeatures = validationFeatures;
+#endif
 	return *this;
 }
 
@@ -100,15 +106,13 @@ VkInstance InstanceBuilder::Build()
 
 	VkInstanceCreateInfo instanceInfo = {};
 	instanceInfo.sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-	instanceInfo.pNext                   = m_ValidationFeatures.enabledValidationFeatureCount > 0 ? &m_ValidationFeatures.enabledValidationFeatureCount : nullptr;
+	instanceInfo.pNext                   = m_ValidationFeatures.enabledValidationFeatureCount > 0 ? &m_ValidationFeatures : nullptr;
 	instanceInfo.flags                   = 0; //VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
 	instanceInfo.pApplicationInfo        = &m_AppInfo;
 	instanceInfo.enabledExtensionCount   = static_cast<u32>(m_ExtensionLayers.size());
 	instanceInfo.ppEnabledExtensionNames = m_ExtensionLayers.data();
-#ifdef _DEBUG
 	instanceInfo.enabledLayerCount   = static_cast<u32>(m_ValidationLayers.size());
 	instanceInfo.ppEnabledLayerNames = m_ValidationLayers.data();
-#endif
 
 	VK_CHECK(vkCreateInstance(&instanceInfo, nullptr, &instance));
 	return instance;
@@ -153,9 +157,10 @@ DebugMessengerBuilder& DebugMessengerBuilder::SetDebugMessageCallback(std::funct
 VkDebugUtilsMessengerEXT DebugMessengerBuilder::Build(VkInstance instance)
 {
 	VkDebugUtilsMessengerEXT outDebugMessenger = VK_NULL_HANDLE;
-
+#ifdef _DEBUG
 	auto vkCreateDebugUtilsMessengerEXT = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
 	VK_CHECK(vkCreateDebugUtilsMessengerEXT(instance, &m_DebugMessengerInfo, nullptr, &outDebugMessenger));
+#endif
 	return outDebugMessenger;
 }
 
@@ -311,6 +316,11 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 			physicalDeviceFeatures.shaderInt64 = VK_TRUE;
 		}
 
+		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_PipelineStatistics))
+		{
+			physicalDeviceFeatures.pipelineStatisticsQuery = VK_TRUE;
+		}
+
 		if (m_PhysicalRequirements.featureBits & (1LL << ePhysicalDeviceFeature_MeshShader))
 		{
 			physicalDevice12Features.storageBuffer8BitAccess = VK_TRUE;
@@ -375,6 +385,7 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 			if (meshShaderFeatures.taskShader && meshShaderFeatures.meshShader)
 			{
 				meshShaderFeatures.multiviewMeshShader = VK_FALSE; // No use
+				meshShaderFeatures.meshShaderQueries   = VK_FALSE;
 
 				bSupportMeshShader = true;
 				featureChain.bind(meshShaderFeatures);

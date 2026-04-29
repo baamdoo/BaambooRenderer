@@ -134,6 +134,7 @@ CloudData GetCloudData()
 
 #define GetResource(idx) ResourceDescriptorHeap[NonUniformResourceIndex(idx)]
 
+#define COMMMANDSIGNATURE_SPACE space99
 #define ROOT_CONSTANT_SPACE     space100
 #define MISS_ARGUMENT_SPACE     space200
 #define HITGROUP_ARGUMENT_SPACE space300

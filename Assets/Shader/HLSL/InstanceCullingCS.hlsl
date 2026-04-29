@@ -4,11 +4,12 @@
 #define _TRANSFORM
 #include "Common.hlsli"
 #include "HelperFunctions.hlsli"
-#include "OcclusionCulling.hlsli"
+#include "CullingCommon.hlsli"
 
 
 #define PHASE1_CULL  0u
 #define PHASE2_CULL  1u
+#define CULL_FLAG_MESHLET_OCCLUSION 16u
 
 cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
@@ -17,9 +18,9 @@ cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
     uint g_HiZMipCount;
     uint g_HiZWidth;
     uint g_HiZHeight;
+    uint g_CullFlags;
 };
 
-// All buffer/texture bindings via DescriptorHeapIndex (bindless pattern)
 ConstantBuffer< DescriptorHeapIndex > g_IndirectCommands : register(b1, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_DrawCount        : register(b2, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_VisibilityBuffer : register(b3, ROOT_CONSTANT_SPACE);
@@ -75,12 +76,13 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
     float4 center = mul(transform.mLocalToWorld, float4(mesh.centerX, mesh.centerY, mesh.centerZ, 1.0));
     float  radius = mesh.radius * maxScale;
 
-    uint lod = CalculateLODLevel(g_Camera.posWORLD, center.xyz, radius, float2(g_CullData.lodNear, g_CullData.lodFar), mesh.maxLOD);
+    uint lod = CalculateLODLevelSSE(
+        mesh, center.xyz, maxScale,
+        g_Camera.posWORLD, g_Camera.mProj[1][1],
+        g_CullData.viewportHeight, g_CullData.sseThresholdPx);
 
     // --- Frustum culling ---
-    bool bVisible = true;
-    for (int i = 0; i < 5; ++i)
-        bVisible = bVisible && dot(g_CullData.frustum[i], center) + radius > 0.0;
+    bool bVisible = !IsFrustumCulled(g_CullData.frustum, center.xyz, radius);
 
     // --- Occlusion culling (Phase 2 only — Phase 1 skips HZB) ---
     uint prevVisibility = VisibilityBuffer[instanceID];
@@ -104,8 +106,15 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
         VisibilityBuffer[instanceID] = bVisible ? 1u : 0u; // Update visibility bit for next frame (Phase 1 read)
     }
 
-    // --- Emit draw (Phase 1 survivors, or Phase 2 newly visible) ---
-    if (bVisible && (g_CullingPhase == PHASE1_CULL || prevVisibility == 0u))
+    // --- Emit draw (niagara-style conditional emission) ---
+    // Phase 1: previously-visible instances.
+    // Phase 2: depends on CULL_FLAG_MESHLET_OCCLUSION.
+    //   OFF → classic 2-pass: emit only newly-visible (prevVisibility == 0).
+    //   ON  → meshlet persistence: emit ALL visible so task shader can disocclude newly-exposed meshlets inside old-visible instances.
+    bool bMeshletOcclusion = (g_CullFlags & CULL_FLAG_MESHLET_OCCLUSION) != 0u;
+    bool bEmitLate         = bMeshletOcclusion || (prevVisibility == 0u);
+
+    if (bVisible && (g_CullingPhase == PHASE1_CULL || bEmitLate))
     {
         EmitDrawCommand(instanceID, mesh, lod, IndirectCommands, DrawCount);
     }

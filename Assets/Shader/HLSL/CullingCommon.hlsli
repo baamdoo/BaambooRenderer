@@ -1,12 +1,38 @@
-#ifndef _HLSL_OCCLUSION_CULLING_HEADER
-#define _HLSL_OCCLUSION_CULLING_HEADER
+#ifndef _HLSL_CULLING_COMMON_HEADER
+#define _HLSL_CULLING_COMMON_HEADER
 
-// Sphere-vs-HiZ occlusion test for reversed-Z depth (0=far, 1=near).
+
+// =========================================================================
+// Frustum Culling
+// =========================================================================
+bool IsFrustumCulled(float4 planes[6], float3 centerWS, float radius)
+{
+    [unroll]
+    for (int i = 0; i < 5; ++i)
+        if (dot(planes[i], float4(centerWS, 1.0)) + radius < 0.0)
+            return true;
+    return false;
+}
+
+// =========================================================================
+// Backface Culling
+// =========================================================================
+bool IsConeCulled(float4 cone, float3 sphereCenterWS, float sphereRadius, float3 viewPosWS)
+{
+    float3 toSphere = sphereCenterWS - viewPosWS;
+    return dot(cone.xyz, toSphere) >= cone.w * length(toSphere) + sphereRadius;
+}
+
+
+// =========================================================================
+// Occlusion Culling : 
+//     Sphere-vs-HiZ occlusion test for reversed-Z depth (0=far, 1=near).
 //
 // Uses Mara/McGuire 2013 tight AABB projection for correct screen-space
-// bounds regardless of aspect ratio. The HiZ is sampled with a single
-// SampleLevel using the static MIN reduction sampler (g_PointClampMinSampler).
-
+// bounds regardless of aspect ratio. The HiZ sampler must use MIN
+// reduction mode so that a single textureLod returns the conservative
+// minimum depth within the sampled region.
+// =========================================================================
 bool IsOccluded(float3           centerWS,
                 float            radius,
                 float4x4         view,
@@ -49,9 +75,10 @@ bool IsOccluded(float3           centerWS,
     bMax = clamp(bMax, 0.0, 1.0);
 
     // --- 4. Select HiZ mip level ---
+    // LINEAR + MIN reduction sampler → one sample covers 2x2 texels = 2^(L+1) px.
     float width  = (bMax.x - bMin.x) * float(pyramidWidth);
     float height = (bMax.y - bMin.y) * float(pyramidHeight);
-    float level  = ceil(log2(max(max(width, height), 1.0)));
+    float level  = floor(log2(max(max(width, height), 1.0)));
 
     // --- 5. Sample HiZ (MIN reduction sampler -> single sample is conservative) ---
     float depth = hiZ.SampleLevel(PointClampMinSampler, (bMin + bMax) * 0.5, level);
@@ -63,4 +90,4 @@ bool IsOccluded(float3           centerWS,
     return depthSphere < depth;
 }
 
-#endif // _HLSL_OCCLUSION_CULLING_HEADER
+#endif // _HLSL_CULLING_COMMON_HEADER

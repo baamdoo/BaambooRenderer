@@ -108,6 +108,7 @@ enum : u8
 	ePhysicalDeviceFeature_Sync2,
 	ePhysicalDeviceFeature_IndexTypeUint8,
 	ePhysicalDeviceFeature_SwapChainMaintenance,
+	ePhysicalDeviceFeature_PipelineStatistics,
 };
 class DeviceBuilder
 {

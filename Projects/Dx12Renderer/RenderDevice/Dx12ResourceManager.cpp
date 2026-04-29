@@ -30,7 +30,9 @@ Dx12ResourceManager::Dx12ResourceManager(Dx12RenderDevice& rd)
             D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT | D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED
         );
 
-    // Root Constant:   space100, b0
+    // CommandSignature Param: space100, b0
+    m_pGlobalRootSignature->AddConstants(0, COMMANDSIGNATURE_SPACE, 1);
+    // Root Constant: space100, b0
     m_pGlobalRootSignature->AddConstants(0, MAX_LOCAL_ROOTCONSTANTS - 1);
     // DescriptorHeapIndices: space100, b1 ~ b16
     for (u32 i = 1; i < MAX_DESCRIPTORHEAPINDICES + 1; ++i)
@@ -306,7 +308,7 @@ void Dx12ResourceManager::UploadData(Dx12Resource* pResource, const void* pData,
                 {
                     .count              = 1,
                     .elementSizeInBytes = _MB(8),
-                    .bMap               = true,
+                    .mapDirection       = 1,
                     .bufferUsage        = render::eBufferUsage_TransferSource | render::eBufferUsage_TransferDest
                 });
     }
@@ -315,7 +317,7 @@ void Dx12ResourceManager::UploadData(Dx12Resource* pResource, const void* pData,
     {
         m_pStagingBuffer->Resize(sizeInBytes);
     }
-    memcpy(m_pStagingBuffer->GetSystemMemoryAddress(), pData, sizeInBytes);
+    memcpy(m_pStagingBuffer->MappedMemory(), pData, sizeInBytes);
 
     auto pContext = m_RenderDevice.BeginCommand(D3D12_COMMAND_LIST_TYPE_DIRECT);
     {

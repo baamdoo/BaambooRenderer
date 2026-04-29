@@ -51,7 +51,7 @@ void VulkanBuffer::Resize(u64 sizeInBytes, bool bReset)
 	bufferInfo.usage = VK_BUFFER_USAGE_FLAGS(m_CreationInfo.bufferUsage);
 
 	VmaAllocationCreateInfo vmaInfo = {};
-	vmaInfo.flags = m_CreationInfo.bMap ?
+	vmaInfo.flags = m_CreationInfo.mapDirection > 0 ?
 		VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT : VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
 	vmaInfo.usage = VMA_MEMORY_USAGE_AUTO;
 	VK_CHECK(vmaCreateBuffer(m_RenderDevice.vmaAllocator(), &bufferInfo, &vmaInfo, &vkNewBuffer, &vmaAllocation, &allocationInfo));
@@ -65,13 +65,19 @@ void VulkanBuffer::Resize(u64 sizeInBytes, bool bReset)
 		assert(deviceAddress);
 	}
 
-	if (!bReset && m_vkBuffer != VK_NULL_HANDLE)
+	if (m_vkBuffer != VK_NULL_HANDLE)
 	{
-		auto pContext = m_RenderDevice.BeginCommand(eCommandType::Transfer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
-		pContext->CopyBuffer(vkNewBuffer, m_vkBuffer, SizeInBytes(), VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT);
-		pContext->Close();
-		m_RenderDevice.ExecuteCommand(pContext);
-
+		if (!bReset)
+		{
+			auto pContext = m_RenderDevice.BeginCommand(eCommandType::Transfer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
+			pContext->CopyBuffer(vkNewBuffer, m_vkBuffer, SizeInBytes());
+			pContext->Close();
+			m_RenderDevice.ExecuteCommand(pContext); // synchronous — GPU caught up to transfer queue
+		}
+		else
+		{
+			vkDeviceWaitIdle(m_RenderDevice.vkDevice());
+		}
 		vmaDestroyBuffer(m_RenderDevice.vmaAllocator(), m_vkBuffer, m_vmaAllocation);
 	}
 
@@ -103,7 +109,7 @@ VulkanIndexBuffer::VulkanIndexBuffer(VkRenderDevice& rd, const char* name, u32 n
 		{
 			.count              = numIndices,
 			.elementSizeInBytes = GetIndexSize(),
-			.bMap               = false,
+			.mapDirection       = 0,
 			.bufferUsage        = VK_BUFFER_USAGE_2_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT | VK_BUFFER_USAGE_2_INDEX_BUFFER_BIT,
 		})
 {
@@ -123,7 +129,7 @@ VulkanUniformBuffer::VulkanUniformBuffer(VkRenderDevice& rd, const char* name, u
 		{
 			.count              = 1,
 			.elementSizeInBytes = sizeInBytes,
-			.bMap               = true,
+			.mapDirection       = 1,
 			.bufferUsage        = additionalUsage | VK_BUFFER_USAGE_2_UNIFORM_BUFFER_BIT
 		})
 {

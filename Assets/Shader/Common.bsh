@@ -5,6 +5,10 @@
 
 #define INVALID_INDEX 0xffffffff
 
+#ifndef PROFILING_LEVEL
+#define PROFILING_LEVEL 1
+#endif
+
 #define FLT_MAX          (3.402823466e+38)
 #define PI               (3.14159265359)
 #define PI_MUL(num)      (PI * num)
@@ -49,6 +53,8 @@ struct MeshLOD
     uint mOffset;
     uint mvOffset;
     uint mtOffset;
+
+    float simplifyError; // for lod scale
 };
 
 struct MeshData
@@ -84,6 +90,8 @@ struct InstanceData
 	uint meshID;
 	uint transformID;
 	uint materialID;
+
+	uint visOffset;
 };
 
 struct IndirectCommandData
@@ -100,8 +108,10 @@ struct CullData
 {
 	float4 frustum[6];
 
-	float lodNear;
-	float lodFar;
+	float sseThresholdPx; // for lod selection
+	float viewportHeight;
+	float padding0;
+	float padding1;
 };
 
 #elif defined(_GLSL)
@@ -109,8 +119,10 @@ struct CullData
 {
 	vec4 frustum[6];
 
-	float lodNear;
-	float lodFar;
+	float sseThresholdPx; // for lod selection
+	float viewportHeight;
+	float padding0;
+	float padding1;
 };
 #endif
 

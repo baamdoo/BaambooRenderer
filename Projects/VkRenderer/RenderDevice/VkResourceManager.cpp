@@ -343,7 +343,7 @@ Arc< render::Texture > VkResourceManager::LoadTextureArray(const fs::path& dirpa
 	return pTextureArray;
 }
 
-void VkResourceManager::UploadData(VkBuffer vkBuffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes)
+void VkResourceManager::UploadData(Arc< VulkanBuffer > pBuffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes)
 {
 	if (m_pStagingBuffer->SizeInBytes() < sizeInBytes)
 	{
@@ -351,15 +351,11 @@ void VkResourceManager::UploadData(VkBuffer vkBuffer, const void* pData, u64 siz
 	}
 	memcpy(m_pStagingBuffer->MappedMemory(), pData, sizeInBytes);
 
-	auto pContext = m_RenderDevice.BeginCommand(eCommandType::Transfer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
-	pContext->CopyBuffer(vkBuffer, m_pStagingBuffer->vkBuffer(), sizeInBytes, dstStageMask, dstOffsetInBytes, 0);
+	auto pContext = m_RenderDevice.BeginCommand(eCommandType::Graphics, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
+	pContext->CopyBuffer(pBuffer, m_pStagingBuffer, sizeInBytes, dstOffsetInBytes, 0);
+	pContext->TransitionBufferToRead(pBuffer, dstStageMask, dstOffsetInBytes, true);
 	pContext->Close();
 	m_RenderDevice.ExecuteCommand(pContext);
-}
-
-void VkResourceManager::UploadData(Arc< VulkanBuffer > pBuffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes)
-{
-	UploadData(pBuffer->vkBuffer(), pData, sizeInBytes, dstStageMask, dstOffsetInBytes);
 }
 
 void VkResourceManager::UploadData(Arc< VulkanTexture > pTexture, const void* pData, u64 sizeInBytes, VkBufferImageCopy region, bool bGenerateMips)

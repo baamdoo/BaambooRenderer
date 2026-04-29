@@ -45,10 +45,9 @@ inline fs::path GetSpirvPath()
 //-------------------------------------------------------------------------
 // Pre-defined Values
 //-------------------------------------------------------------------------
-constexpr u32 MAX_FRAMES_IN_FLIGHT = 3u;
 constexpr u32 DEFAULT_DESCRIPTOR_POOL_SIZE = 1024u;
 constexpr u32 MAX_BINDLESS_DESCRIPTOR_RESOURCE_COUNT = 1024u;
-constexpr u32 MAX_SHADERRESOURCE_ARRAY_SIZE   = 1024u;
+constexpr u32 MAX_SHADERRESOURCE_ARRAY_SIZE = 1024u;
 
 constexpr u32 COMMON_DESCRIPTORSET_INDEX = 0u;
 
@@ -254,35 +253,33 @@ static VkFormat ConvertToVkFormat(render::eFormat format)
 }
 
 #define VK_SHADER_STAGE(stage) ConvertToVkShaderStage(stage)
-static VkShaderStageFlagBits ConvertToVkShaderStage(render::eShaderStage stage)
+static VkShaderStageFlags ConvertToVkShaderStage(render::eShaderStage stage)
 {
 	using namespace render;
-	switch (stage)
-	{
-	case eShaderStage::Vertex      : return VK_SHADER_STAGE_VERTEX_BIT;
-	case eShaderStage::Hull        : return VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-	case eShaderStage::Domain      : return VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-	case eShaderStage::Geometry    : return VK_SHADER_STAGE_GEOMETRY_BIT;
-	case eShaderStage::Fragment    : return VK_SHADER_STAGE_FRAGMENT_BIT;
-	case eShaderStage::Compute     : return VK_SHADER_STAGE_COMPUTE_BIT;
-	case eShaderStage::AllGraphics : return VK_SHADER_STAGE_ALL_GRAPHICS;
-	case eShaderStage::AllStage    : return VK_SHADER_STAGE_ALL;
 
-	case eShaderStage::RayGeneration : return VK_SHADER_STAGE_RAYGEN_BIT_KHR;
-	case eShaderStage::AnyHit        : return VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
-	case eShaderStage::ClosestHit    : return VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
-	case eShaderStage::Miss          : return VK_SHADER_STAGE_MISS_BIT_KHR;
-	case eShaderStage::Interaction   : return VK_SHADER_STAGE_INTERSECTION_BIT_KHR;
-	case eShaderStage::Callable      : return VK_SHADER_STAGE_CALLABLE_BIT_KHR;
+	// Compound aliases — handled first as fast paths.
+	if (stage == eShaderStage::AllGraphics) return VK_SHADER_STAGE_ALL_GRAPHICS;
+	if (stage == eShaderStage::AllStage)    return VK_SHADER_STAGE_ALL;
 
-	case eShaderStage::Task : return VK_SHADER_STAGE_TASK_BIT_EXT;
-	case eShaderStage::Mesh : return VK_SHADER_STAGE_MESH_BIT_EXT;
+	VkShaderStageFlags flags = 0;
+	u32 bits = static_cast<u32>(stage);
+	if (bits & eShaderStage::Vertex)        flags |= VK_SHADER_STAGE_VERTEX_BIT;
+	if (bits & eShaderStage::Hull)          flags |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+	if (bits & eShaderStage::Domain)        flags |= VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+	if (bits & eShaderStage::Geometry)      flags |= VK_SHADER_STAGE_GEOMETRY_BIT;
+	if (bits & eShaderStage::Fragment)      flags |= VK_SHADER_STAGE_FRAGMENT_BIT;
+	if (bits & eShaderStage::Compute)       flags |= VK_SHADER_STAGE_COMPUTE_BIT;
+	if (bits & eShaderStage::Task)          flags |= VK_SHADER_STAGE_TASK_BIT_EXT;
+	if (bits & eShaderStage::Mesh)          flags |= VK_SHADER_STAGE_MESH_BIT_EXT;
+	if (bits & eShaderStage::RayGeneration) flags |= VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+	if (bits & eShaderStage::AnyHit)        flags |= VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
+	if (bits & eShaderStage::ClosestHit)    flags |= VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+	if (bits & eShaderStage::Miss)          flags |= VK_SHADER_STAGE_MISS_BIT_KHR;
+	if (bits & eShaderStage::Interaction)   flags |= VK_SHADER_STAGE_INTERSECTION_BIT_KHR;
+	if (bits & eShaderStage::Callable)      flags |= VK_SHADER_STAGE_CALLABLE_BIT_KHR;
 
-	default:
-		assert(false && "Invalid shader stage bit!"); break;
-	}
-
-	return VkShaderStageFlagBits(0);
+	assert(flags != 0 && "Invalid / empty shader stage bitmask!");
+	return flags;
 }
 
 #define VK_PIPELINE_STAGE2(stage) ConvertToVkPipelineStage2(stage)

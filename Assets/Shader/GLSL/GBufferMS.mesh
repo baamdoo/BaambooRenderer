@@ -7,6 +7,19 @@
 #define _TRANSFORM
 #include "DescriptorCommon.hg"
 
+#define CULL_FLAG_BACKFACE 1u
+#define CULL_FLAG_SUBPIXEL 2u
+
+
+layout(push_constant) uniform PushConstants
+{
+    vec2 viewportSize;
+    uint cullFlags;
+    uint phase;
+    uint hiZWidth;
+    uint hiZHeight;
+} g_Push;
+
 
 uint hash(uint a)
 {
@@ -19,7 +32,7 @@ uint hash(uint a)
    return a;
 }
 
-struct TaskPayload 
+struct TaskPayload
 {
 	uint drawID;
 	uint lodLevel;
@@ -28,6 +41,56 @@ struct TaskPayload
 taskPayloadSharedEXT TaskPayload Payload;
 
 layout(location = 0) out vec4 outColor[];
+
+
+// =========================================================================
+// TriangleCull : per-primitive culling
+//
+// Behind-eye gate: if any vertex has clip.w <= 0 (behind near plane),
+// don't cull — let HW handle the partial triangle culling correctly,
+// since perspective division below near produces nonsense NDC coords.
+// =========================================================================
+bool TriangleCull(vec4 ca, vec4 cb, vec4 cc)
+{
+	// Behind-eye gate
+	if (ca.w <= 0.0 || cb.w <= 0.0 || cc.w <= 0.0)
+		return false;
+
+	// Perspective divide → NDC xy
+	vec2 a = ca.xy / ca.w;
+	vec2 b = cb.xy / cb.w;
+	vec2 c = cc.xy / cc.w;
+
+	bool culled = false;
+
+	if ((g_Push.cullFlags & CULL_FLAG_BACKFACE) != 0u)
+	{
+		// Backface + zero-area via 2D signed area
+		vec2 eb = b - a;
+		vec2 ec = c - a;
+		float area = eb.x * ec.y - eb.y * ec.x;
+		if (area <= 0.0)
+			culled = true;
+	}
+
+	if ((g_Push.cullFlags & CULL_FLAG_SUBPIXEL) != 0u && !culled)
+	{
+		// NDC [-1,1] → pixel coords [0, viewportSize]
+		vec2 sa = (a * 0.5 + 0.5) * g_Push.viewportSize;
+		vec2 sb = (b * 0.5 + 0.5) * g_Push.viewportSize;
+		vec2 sc = (c * 0.5 + 0.5) * g_Push.viewportSize;
+		vec2 bmin = min(sa, min(sb, sc));
+		vec2 bmax = max(sa, max(sb, sc));
+		// Sub-pixel snap precision: 1/256 (D3D/Vulkan typical)
+		const float subPixelPrec = 1.0 / 256.0;
+		if (round(bmin.x - subPixelPrec) == round(bmax.x) ||
+		    round(bmin.y - subPixelPrec) == round(bmax.y))
+			culled = true;
+	}
+
+	return culled;
+}
+
 
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 layout(triangles, max_vertices = 64, max_primitives = 124) out;
@@ -45,24 +108,28 @@ void main()
 
 	uint mhash = hash(Payload.drawID);
 	vec3 color = vec3(float(mhash & 255), float((mhash >> 8) & 255), float((mhash >> 16) & 255)) / 255.0;
+	// color = vec3(Payload.lodLevel, Payload.lodLevel, Payload.lodLevel) / 10.0;
 
 	for (uint i = ti; i < meshlet.vertexCount; i += gl_WorkGroupSize.x)
 	{
 		uint vi = g_MeshletVertexBuffer.meshletVertices[meshlet.vertexOffset + mesh.lods[Payload.lodLevel].mvOffset + i];
-	
+
 		Vertex vertex = g_VertexBuffer.vertices[vi + mesh.vOffset];
-	
+
 		vec3 position = vec3(vertex.posX, vertex.posY, vertex.posZ);
 		vec4 posWORLD = transform.mLocalToWorld * vec4(position, 1.0);
 		vec3 normal   = vec3(vertex.normalX, vertex.normalY, vertex.normalZ);
 		vec3 tangent  = vec3(vertex.tangentX, vertex.tangentY, vertex.tangentZ);
-	
+
 		gl_MeshVerticesEXT[i].gl_Position = g_Camera.mViewProj * posWORLD;
 		//outColor[i] = vec4(normal * 0.5 + vec3(0.5), 1.0);
 		outColor[i] = vec4(color, 1.0);
 	}
-	
-	uint baseTriOffset = meshlet.triangleOffset + mesh.lods[Payload.lodLevel].mtOffset; 
+
+	// Per-vertex outputs(gl_MeshVerticesEXT[i].gl_Position) are written by different invocations.
+	barrier();
+
+	uint baseTriOffset = meshlet.triangleOffset + mesh.lods[Payload.lodLevel].mtOffset;
 	for (uint i = ti; i < meshlet.triangleCount; i += gl_WorkGroupSize.x)
 	{
 		uint tPacked3 = g_MeshletTriangleBuffer.meshletTriangles[baseTriOffset + i];
@@ -70,7 +137,13 @@ void main()
 		uint t0 = tPacked3 & 0xFF;
         uint t1 = (tPacked3 >> 8) & 0xFF;
         uint t2 = (tPacked3 >> 16) & 0xFF;
-	
+
 		gl_PrimitiveTriangleIndicesEXT[i] = uvec3(t0, t1, t2);
+
+		vec4 ca = gl_MeshVerticesEXT[t0].gl_Position;
+		vec4 cb = gl_MeshVerticesEXT[t1].gl_Position;
+		vec4 cc = gl_MeshVerticesEXT[t2].gl_Position;
+
+		gl_MeshPrimitivesEXT[i].gl_CullPrimitiveEXT = TriangleCull(ca, cb, cc);
 	}
 }

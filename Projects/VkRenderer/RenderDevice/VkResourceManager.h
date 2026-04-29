@@ -23,7 +23,6 @@ public:
 
     virtual Arc< render::Texture > LoadTexture(const std::string& filepath, bool bGenerateMips = false) override;
 
-    void UploadData(VkBuffer vkBuffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes);
     void UploadData(Arc< VulkanBuffer > pBuffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes);
     void UploadData(Arc< VulkanTexture > pTexture, const void* pData, u64 sizeInBytes, VkBufferImageCopy region, bool bGenerateMips = false);
 

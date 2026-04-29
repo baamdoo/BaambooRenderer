@@ -22,6 +22,8 @@ struct MeshLODData
 	std::vector< Meshlet > meshlets;
 	std::vector< u32 >     meshletVertices;
 	std::vector< u32 >     meshletTriangles; // three u8s packed in u32
+
+	float simplifyError = 0.0f;
 };
 
 struct MeshData

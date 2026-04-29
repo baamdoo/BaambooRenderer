@@ -201,12 +201,29 @@ float3 RayPlaneIntersection(float3 rayOrigin, float3 rayDir, float4 plane)
     return rayOrigin + t * rayDir;
 }
 
-uint CalculateLODLevel(float3 cameraPos, float3 objectPos, float objectRadius, float2 lodRange, uint maxLOD)
+// Screen-Space Error LOD selection (Reference : https://github.com/zeux/meshoptimizer.git).
+uint CalculateLODLevelSSE(MeshData mesh,
+                          float3 centerWS,
+                          float  instMaxScale,
+                          float3 cameraPos,
+                          float  fovScale,
+                          float  viewportHeight,
+                          float  sseThresholdPx)
 {
-    float distance    = length(cameraPos - objectPos) - objectRadius;
-    float lodDistance = pow(((distance - lodRange.x) / (lodRange.y - lodRange.x)), 2.0);
+    float dist = max(length(cameraPos - centerWS) - mesh.radius * instMaxScale, 1e-3);
+    float k    = abs(fovScale) * viewportHeight / (2.0 * dist);
 
-    return clamp(uint(lodDistance * float(maxLOD) + 0.5), 0u, maxLOD);
+    uint chosen = 0u;
+    for (uint i = mesh.maxLOD; i > 0u; --i)
+    {
+        float pxError = mesh.lods[i].simplifyError * instMaxScale * k;
+        if (pxError <= sseThresholdPx)
+        {
+            chosen = i;
+            break;
+        }
+    }
+    return chosen;
 }
 
 

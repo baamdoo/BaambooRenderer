@@ -120,9 +120,9 @@ using Super = Resource;
 public:
     struct CreationInfo
     {
-        u32  count              = 0;
-        u64  elementSizeInBytes = 0;
-        bool bMap               = false;
+        u32 count              = 0;
+        u64 elementSizeInBytes = 0;
+        u8  mapDirection       = 0;  // 0 = no map, 1 = host-write, 2 = read-back
 
         RenderFlags bufferUsage = 0;
 
@@ -139,6 +139,8 @@ public:
     virtual void Resize(u64 sizeInBytes, bool bReset = false) = 0;
 
     virtual u64 SizeInBytes() const { return 0; }
+
+    virtual void* MappedMemory() const { return nullptr; }
 
 public:
     CreationInfo m_CreationInfo = {};
@@ -876,9 +878,13 @@ public:
     [[nodiscard]]
     u32 NumInstances() const { return m_NumInstances; }
 
+    [[nodiscard]]
+    u32 NumMeshletVisibilitySlots() const { return m_NumMeshletVisibilitySlots; }
+
 protected:
     u32 m_ContextIndex = 0;
     u32 m_NumInstances = 0;
+    u32 m_NumMeshletVisibilitySlots = 0;
 };
 
 

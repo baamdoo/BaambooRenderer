@@ -7,11 +7,12 @@
 #define _TRANSFORM
 #include "DescriptorCommon.hg"
 #include "HelperFunctions.hg"
-#include "OcclusionCulling.hg"
+#include "CullingCommon.hg"
 
 
-#define PHASE1_CULL  0u
-#define PHASE2_CULL  1u
+#define PHASE1_CULL 0u
+#define PHASE2_CULL 1u
+#define CULL_FLAG_MESHLET_OCCLUSION 16u
 
 layout(set = 1, binding = 0) writeonly buffer OutputCommandBuffer
 {
@@ -42,6 +43,7 @@ layout(push_constant) uniform PushConstants
     uint hiZMipCount;
     uint hiZWidth;
     uint hiZHeight;
+    uint cullFlags;
 } g_Push;
 
 
@@ -72,12 +74,13 @@ void main()
     vec4  center = transform.mLocalToWorld * vec4(mesh.centerX, mesh.centerY, mesh.centerZ, 1.0);
     float radius = mesh.radius * maxScale;
 
-    uint lod = CalculateLODLevel(g_Camera.posWORLD, center.xyz, radius, vec2(g_CullData.lodNear, g_CullData.lodFar), mesh.maxLOD);
+    uint lod = CalculateLODLevelSSE(
+        mesh, center.xyz, maxScale,
+        g_Camera.posWORLD, g_Camera.mProj[1][1],
+        g_CullData.viewportHeight, g_CullData.sseThresholdPx);
 
     // --- Frustum culling ---
-    bool bVisible = true;
-    for (int i = 0; i < 5; ++i)
-        bVisible = bVisible && dot(g_CullData.frustum[i], center) + radius > 0.0;
+    bool bVisible = !IsFrustumCulled(g_CullData.frustum, center.xyz, radius);
 
     // --- Occlusion culling (Phase 2 only — Phase 1 skips HZB) ---
     uint prevVisibility = g_VisibilityBuffer[instanceID];
@@ -98,15 +101,20 @@ void main()
         g_VisibilityBuffer[instanceID] = bVisible ? 1u : 0u; // Update visibility bit for next frame (Phase 1 read)
     }
 
-    // --- Emit draw (Phase 1 survivors, or Phase 2 newly visible) ---
-    if (bVisible && (g_Push.cullingPhase == PHASE1_CULL || prevVisibility == 0u))
+    // --- Emit draw (niagara-style conditional emission) ---
+    // Phase 1: previously-visible instances.
+    // Phase 2: depends on CULL_FLAG_MESHLET_OCCLUSION.
+    //   OFF → classic 2-pass: emit only newly-visible (prevVisibility == 0).
+    //   ON  → meshlet persistence: emit ALL visible so task shader can disocclude newly-exposed meshlets inside old-visible instances.
+    bool bEmitLate = (g_Push.cullFlags & CULL_FLAG_MESHLET_OCCLUSION) != 0u || (prevVisibility == 0u);
+    if (bVisible && (g_Push.cullingPhase == PHASE1_CULL || bEmitLate))
     {
         uint outID = atomicAdd(g_DrawCount, 1);
 
         g_IndirectCommands[outID].groupCountX = roundUpAndDivide(mesh.lods[lod].mCount, 32u);
         g_IndirectCommands[outID].groupCountY = 1;
         g_IndirectCommands[outID].groupCountZ = 1;
-        
+
         g_DrawIDs[outID] = instanceID;
     }
 }

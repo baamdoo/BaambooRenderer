@@ -127,8 +127,18 @@ void VulkanRenderTarget::Build()
 	subpassDependency.srcStageMask    = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 	subpassDependency.dstStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 	subpassDependency.srcAccessMask   = 0;
-	subpassDependency.dstAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	// READ is required for loadOp=LOAD and color blending; WRITE for normal color output and loadOp=CLEAR.
+	subpassDependency.dstAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
 	subpassDependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+	if (bUseDepth)
+	{
+		// Cover the UNDEFINED -> DEPTH_STENCIL_ATTACHMENT_OPTIMAL layout transition
+		// and the loadOp=CLEAR on the depth aspect, both of which execute at
+		// EARLY/LATE_FRAGMENT_TESTS with DEPTH_STENCIL_ATTACHMENT_WRITE access.
+		// READ is required for loadOp=LOAD and depth-test reads.
+		subpassDependency.dstStageMask  |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+		subpassDependency.dstAccessMask |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+	}
 	dependencies.push_back(subpassDependency);
 
 	VkRenderPassCreateInfo renderPassInfo = {};

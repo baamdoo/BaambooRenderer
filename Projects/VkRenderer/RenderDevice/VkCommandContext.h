@@ -36,27 +36,24 @@ public:
     void Open(VkCommandBufferUsageFlags flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 	void Close();
 
-	void UploadData(const Arc< render::Buffer >& pDstBuffer, const void* pData, u32 numElements, u64 elemSizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes);
+	void UploadData(const Arc< render::Buffer >& pDstBuffer, const void* pData, u32 numElements, u64 elemSizeInBytes, u64 dstOffsetInBytes);
 
     virtual void CopyBuffer(const Arc< render::Buffer >& dstBuffer, const Arc< render::Buffer >& srcBuffer, u64 dstOffsetInBytes = 0, u64 srcOffsetInBytes = 0) override;
+    virtual void CopyBufferRegion(const Arc< render::Buffer >& pDstBuffer, const Arc< render::Buffer >& pSrcBuffer, u64 sizeInBytes, u64 dstOffsetInBytes = 0, u64 srcOffsetInBytes = 0) override;
     virtual void CopyTexture(const Arc< render::Texture >& dstTexture, const Arc< render::Texture >& srcTexture, u64 offsetInBytes = 0) override;
 
 	void CopyBuffer(
 		VkBuffer vkDstBuffer,
 		VkBuffer vkSrcBuffer,
 		VkDeviceSize sizeInBytes,
-		VkPipelineStageFlags2 dstStageMask,
 		VkDeviceSize dstOffset = 0,
-		VkDeviceSize srcOffset = 0,
-		bool bFlushImmediate = true);
+		VkDeviceSize srcOffset = 0);
 	void CopyBuffer(
 		const Arc< VulkanBuffer >& dstBuffer,
 		const Arc< VulkanBuffer >& srcBuffer,
 		VkDeviceSize sizeInBytes,
-		VkPipelineStageFlags2 dstStageMask,
 		VkDeviceSize dstOffset = 0,
-		VkDeviceSize srcOffset = 0,
-		bool bFlushImmediate = true);
+		VkDeviceSize srcOffset = 0);
 	void CopyBuffer(
 		const Arc< VulkanTexture >& dstTexture,
 		const Arc< VulkanBuffer >& srcBuffer,
@@ -66,6 +63,8 @@ public:
 	void GenerateMips(Arc< VulkanTexture > texture);
 
 	// TODO. Enhance buffer barrier management
+	void TransitionBufferToRead(const Arc< render::Buffer >& pBuffer, VkPipelineStageFlags2 dstStage, u64 offsetInBytes = 0, bool bFlushImmediate = false);
+	void TransitionBufferToWrite(const Arc< render::Buffer >& pBuffer, VkPipelineStageFlags2 dstStage, u64 offsetInBytes = 0, bool bFlushImmediate = false);
 	virtual void TransitionBufferToRead(const Arc< render::Buffer >& pBuffer, render::ePipelineStage dstStage, u64 offsetInBytes = 0, bool bFlushImmediate = false) override;
 	virtual void TransitionBufferToWrite(const Arc< render::Buffer >& pBuffer, render::ePipelineStage dstStage, u64 offsetInBytes = 0, bool bFlushImmediate = false) override;
 	virtual void TransitionBarrier(const Arc< render::Texture >& texture, render::eTextureLayout newState, u32 subresource = ALL_SUBRESOURCES, bool bFlushImmediate = false) override;
@@ -96,6 +95,7 @@ public:
 	virtual void SetRenderPipeline(render::GraphicsPipeline* pPipeline) override;
 	virtual void SetRenderPipeline(render::RaytracingPipeline* pRenderPipeline) override;
 
+	virtual void SetConstants(u32 sizeInBytes, const void* pData, render::eShaderStage stage, u32 offsetInBytes = 0) override;
 	virtual void SetComputeConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) override;
 	virtual void SetGraphicsConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) override;
 
@@ -160,6 +160,9 @@ public:
 	VkPipeline vkGraphicsPipeline() const;
 	VkPipeline vkComputePipeline() const;
 
+	virtual void BeginGpuMarker(const char* name, bool bWithStats = false) override;
+	virtual void EndGpuMarker() override;
+	virtual const std::vector< render::GpuProfileEntry >& GetLastFrameProfile() const override;
 	virtual double GetLastFrameElapsedTime() const override;
 
 private:

@@ -53,7 +53,35 @@ struct FrameData
 	Arc< render::Sampler > pLinearClamp;
 	Arc< render::Sampler > pLinearWrap;
 	Arc< render::Sampler > pPointClampMin;  // POINT + MIN reduction
-	Arc< render::Sampler > pLinearClampMin; // LINEAR + MIN reduction for HiZ occlusion testing (niagara-style)
+	Arc< render::Sampler > pLinearClampMin; // LINEAR + MIN reduction for HiZ occlusion testing
+
+	u32 totalInstances          = 0; // this frame's total instance count (not stale)
+	u32 phase1InstanceDrawCount = 0; // instances emitted by Phase1 cull (last-frame-visible survivors)
+	u32 phase2InstanceDrawCount = 0; // instances emitted by Phase2 cull (newly visible after HZB)
+
+#if PROFILING_LEVEL >= 1
+	// Per-phase meshlet/triangle counters populated by GBufferNode atomics in the task shader. 
+	//   meshletTotal       — meshlet candidates examined by task shader (post-LOD, per emitted instance).
+	//   meshletDrawn       — meshlets that passed every task-shader cull and survived to launch a mesh shader workgroup.
+	//   triangleCandidates — triangles that ENTER the mesh shader.
+	u32 phase1MeshletTotal       = 0;
+	u32 phase2MeshletTotal       = 0;
+	u32 phase1MeshletDrawn       = 0;
+	u32 phase2MeshletDrawn       = 0;
+	u32 phase1TriangleCandidates = 0;
+	u32 phase2TriangleCandidates = 0;
+#endif
+
+	// Runtime culling toggles — bitmask consumed by task + mesh shaders per-frame as push constant.
+	// Bits:
+	//   bit 0 : per-triangle backface cull
+	//   bit 1 : per-triangle sub-pixel cull
+	//   bit 2 : per-meshlet frustum cull
+	//   bit 3 : per-meshlet backface cone cull
+	//   bit 4 : per-meshlet occlusion (2-pass HiZ + visibility persistence)
+	u32 cullFlags = 0x1F; // all five toggles on by default
+
+	float sseThresholdPx = 1.0f; // for lod selection
 };
 inline FrameData g_FrameData = {};
 

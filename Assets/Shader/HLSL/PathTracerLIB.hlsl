@@ -6,13 +6,6 @@
 #include "Sampling.hlsli"
 
 
-// ───────────────────────────────────────────────────────────────────
-// Ray type indexing (Phase 3 NEE)
-// ───────────────────────────────────────────────────────────────────
-// SBT layout: hit groups and miss shaders are added in this order, so
-// the indices below also serve as the SBT record indices the engine
-// hands out. If a future phase inserts a new ray type, bump these
-// constants in lockstep with PathTracerNode's PSO/SBT build.
 #define RAY_TYPE_PRIMARY 0
 #define RAY_TYPE_SHADOW  1
 #define NUM_RAY_TYPES    2
@@ -49,7 +42,7 @@ struct PathTracerSettings
     float furnaceLenvB;
     float _pad1;
 
-    // Phase 4 MIS controls (Step 4.3).
+    // MIS controls
     uint  misEnable;         // 1 = MIS on, 0 = Phase 3 NEE-only behavior
     uint  misHeuristic;      // 0 = balance, 1 = power(beta=2)
     uint  misForceWeight;    // 0 = heuristic, 1 = w_NEE=1, 2 = w_NEE=0, 3 = w_NEE=0.5
