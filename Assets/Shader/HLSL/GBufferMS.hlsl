@@ -107,6 +107,16 @@ bool TriangleCull(float4 ca, float4 cb, float4 cc)
     return culled;
 }
 
+// Lane 0 loads everything once, derived offsets are cached in shared memory to reduce LSGB stall which is the largest bottleneck in a frame.
+groupshared float4x4 sh_LocalToWorld;
+groupshared uint     sh_VOffset;
+groupshared uint     sh_MvOffset;
+groupshared uint     sh_MtOffset;
+groupshared uint     sh_VertexCount;
+groupshared uint     sh_TriangleCount;
+groupshared uint     sh_VertexOffset;
+groupshared uint     sh_TriangleOffset;
+
 groupshared float4 s_ClipPos[64];
 
 [numthreads(32, 1, 1)]
@@ -119,42 +129,54 @@ void main(
     out indices    uint3       triangles [126],
     out primitives MSPrimitive prims     [126])
 {
-    InstanceData  instance  = Instances[g_DrawID];
-    TransformData transform = Transforms[instance.transformID];
-    MeshData      mesh      = Meshes[instance.meshID];
-
 	uint mi = Payload.meshletIndices[Gid.x]; // mesh.mOffset is already baked into the meshlet indices by TaskShader
     uint ti = GTid.x;
 
-    Meshlet meshlet = Meshlets[mi];
-    SetMeshOutputCounts(meshlet.vertexCount, meshlet.triangleCount);
-
-    uint mhash = hash(Payload.lod);
-    float3 color = float3(float(mhash & 255), float((mhash >> 8) & 255), float((mhash >> 16) & 255)) / 255.0;
-
-    for (uint i = ti; i < meshlet.vertexCount; i += 32)
+    if (ti == 0)
     {
-        uint vi = mesh.vOffset + MeshletVertices[mesh.lods[Payload.lod].mvOffset + meshlet.vertexOffset + i];
+        // g_DrawID is the packed (lod << 24) | instanceID emitted by Instance Culling.
+        uint instanceID = g_DrawID & 0x00FFFFFFu;
+
+        InstanceData  instance  = Instances[instanceID];
+        TransformData transform = Transforms[instance.transformID];
+        MeshData      mesh      = Meshes[instance.meshID];
+        Meshlet       meshlet   = Meshlets[mi];
+
+        sh_LocalToWorld   = transform.mLocalToWorld;
+        sh_VOffset        = mesh.vOffset;
+        sh_MvOffset       = mesh.lods[Payload.lod].mvOffset;
+        sh_MtOffset       = mesh.lods[Payload.lod].mtOffset;
+        sh_VertexCount    = meshlet.vertexCount;
+        sh_TriangleCount  = meshlet.triangleCount;
+        sh_VertexOffset   = meshlet.vertexOffset;
+        sh_TriangleOffset = meshlet.triangleOffset;
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    SetMeshOutputCounts(sh_VertexCount, sh_TriangleCount);
+
+    for (uint i = ti; i < sh_VertexCount; i += 32)
+    {
+        uint vi = sh_VOffset + MeshletVertices[sh_MvOffset + sh_VertexOffset + i];
 
         Vertex vertex = Vertices[vi];
 
         float3 position = float3(vertex.posX, vertex.posY, vertex.posZ);
-        float4 posWORLD = mul(transform.mLocalToWorld, float4(position, 1.0));
-        // float3 normal   = float3(vertex.normalX, vertex.normalY, vertex.normalZ);
+        float4 posWS    = mul(sh_LocalToWorld, float4(position, 1.0));
 
-        float4 clipPos = mul(g_Camera.mViewProj, posWORLD);
+        float4 posCS = mul(g_Camera.mViewProj, posWS);
 
-        s_ClipPos[i] = clipPos;
+        s_ClipPos[i] = posCS;
 
-        vertices[i].position = clipPos;
-        vertices[i].color    = float4(color, 1.0);
+        vertices[i].position = posCS;
+        vertices[i].color    = float4(float3(vertex.normalX, vertex.normalY, vertex.normalZ) * 0.5 + 0.5, 1.0);
     }
 
     // Per-vertex outputs(s_ClipPos[i]) are written by different invocations.
     GroupMemoryBarrierWithGroupSync();
 
-    uint baseTriByteOffset = mesh.lods[Payload.lod].mtOffset + meshlet.triangleOffset;
-    for (uint i = ti; i < meshlet.triangleCount; i += 32)
+    uint baseTriByteOffset = sh_MtOffset + sh_TriangleOffset;
+    for (uint i = ti; i < sh_TriangleCount; i += 32)
     {
         uint tPacked3 = MeshletTriangles[baseTriByteOffset + i];
 

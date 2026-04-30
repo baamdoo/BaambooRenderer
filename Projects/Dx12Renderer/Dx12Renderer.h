@@ -1,5 +1,6 @@
 #pragma once
 #include "RenderCommon/RendererAPI.h"
+#include "SpikeCapture.h"
 
 struct ImGuiContext;
 
@@ -30,6 +31,10 @@ public:
 	virtual render::RenderDevice* GetDevice() override { return m_pRenderDevice; }
 	virtual eRendererAPI GetAPIType() const override { return eRendererAPI::D3D12; }
 
+	// PIX programmatic GPU capture, driven by GPU frame-time spikes.
+	virtual void RecordFrameTime(double gpuFrameMs) override { m_SpikeCapture.Update(gpuFrameMs); }
+	virtual void ForceCaptureNextFrame() override { m_SpikeCapture.ForceCaptureNextFrame(); }
+
 private:
 	class Dx12RenderDevice* m_pRenderDevice = nullptr;
 	class Dx12SwapChain*    m_pSwapChain    = nullptr;
@@ -37,6 +42,8 @@ private:
 	u64 m_FrameFenceValue[MAX_FRAMES_IN_FLIGHT] = {};
 
 	Box< class ImGuiModule > m_pImGuiModule;
+
+	SpikeCapture m_SpikeCapture;
 };
 
 } // namespace dx12

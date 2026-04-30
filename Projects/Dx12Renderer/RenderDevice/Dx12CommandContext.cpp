@@ -203,11 +203,10 @@ Dx12CommandContext::Impl::Impl(Dx12RenderDevice& rd, const Dx12CommandQueue& cq,
 	auto d3d12Device = m_RenderDevice.GetD3D12Device();
 
 	ThrowIfFailed(d3d12Device->CreateCommandAllocator(m_Type, IID_PPV_ARGS(&m_d3d12CommandAllocator)));
-	ThrowIfFailed(d3d12Device->CreateCommandList1(
-		0, m_Type, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&m_d3d12CommandList10)));
+	ThrowIfFailed(d3d12Device->CreateCommandList1(0, m_Type, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&m_d3d12CommandList10)));
 
 	m_pConstantBufferPool = MakeBox< DynamicBufferAllocator >(m_RenderDevice);
-	m_pStagingBufferPool  = MakeBox< DynamicBufferAllocator >(m_RenderDevice);
+	m_pStagingBufferPool  = MakeBox< DynamicBufferAllocator >(m_RenderDevice, _MB(128));
 
 	// **
 	// Set Gpu Timer (multi-scope profiler)

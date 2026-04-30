@@ -38,7 +38,8 @@ void EmitDrawCommand(uint instanceID, MeshData mesh, uint lod,
     uint outID;
     DrawCount.InterlockedAdd(0, 1, outID);
 
-    IndirectCommands[outID].drawID     = instanceID;
+    // Pack (lod << 24) | instanceID so the Task Shader does not have to recompute LOD per workgroup.
+    IndirectCommands[outID].drawID     = (lod << 24) | (instanceID & 0x00FFFFFFu);
     IndirectCommands[outID].groupCountX = roundUpAndDivide(mesh.lods[lod].mCount, 32u);
     IndirectCommands[outID].groupCountY = 1;
     IndirectCommands[outID].groupCountZ = 1;

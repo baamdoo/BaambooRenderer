@@ -115,6 +115,7 @@ void main()
         g_IndirectCommands[outID].groupCountY = 1;
         g_IndirectCommands[outID].groupCountZ = 1;
 
-        g_DrawIDs[outID] = instanceID;
+        // Pack (lod << 24) | instanceID so the Task Shader does not have to recompute LOD per workgroup.
+        g_DrawIDs[outID] = (lod << 24) | (instanceID & 0x00FFFFFFu);
     }
 }

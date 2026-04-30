@@ -260,19 +260,20 @@ void BistroApp::ConfigureSceneObjects()
 		descriptor.numLODs			 = 8;
 
 		srand(42);
-		const u32 meshCount = 8100;
+		const u32 meshCount = 100'000;
 		for (u32 i = 0; i < meshCount; ++i)
 		{
 			auto entity = m_pScene->ImportModel(MODEL_PATH.append("kitten.obj"), descriptor);
 			entity.AttachComponent< ScriptComponent >();
 
-			auto& tc = entity.GetComponent< TransformComponent >();
 			float3 position = { float(rand()) / RAND_MAX, float(rand()) / RAND_MAX, float(rand()) / RAND_MAX + 0.5f };
-			tc.transform.position = position * 200.0f - 100.0f;
+			float3 rotation = { float(rand()) / RAND_MAX, float(rand()) / RAND_MAX, float(rand()) / RAND_MAX };
+			float  scale    = (float(rand() / RAND_MAX) + 1.0f) * 2.0f;
 
-			float scale = float(rand() / RAND_MAX) + 1.0f;
+			auto& tc = entity.GetComponent< TransformComponent >();
+			tc.transform.position = float3(position.x * 100.0f - 50.0f, position.y * 100.0f - 50.0f, position.z * 600.0f - 300.0f);
+			tc.transform.rotation = rotation * 90.0f;
 			tc.transform.scale = { scale, scale, scale };
-			tc.transform.scale *= 10.0f;
 		}
 
 		auto entity2 = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);

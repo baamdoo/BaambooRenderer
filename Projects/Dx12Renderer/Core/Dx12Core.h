@@ -101,6 +101,10 @@ inline std::wstring ConvertToWString(const std::string& str)
     return converter.from_bytes(str);
 }
 
+#ifndef BAAMBOO_PIX_CAPTURE
+#define BAAMBOO_PIX_CAPTURE
+#endif
+
 
 //-------------------------------------------------------------------------
 // Predefined

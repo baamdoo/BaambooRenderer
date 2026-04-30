@@ -43,7 +43,7 @@ layout(set = 1, binding = 2) buffer MeshletVisibilityBuffer
 };
 
 #if PROFILING_LEVEL >= 1
-// Stage 6: per-phase cull stats counter. Must match GBufferNode::MESHLET_STATS_FIELDS layout:
+// Per-phase cull stats counter. Must match GBufferNode::MESHLET_STATS_FIELDS layout:
 //   [0] = meshletDrawn         — meshlets that survived task-shader cull
 //   [1] = meshletTotal         — meshlet candidates examined (incl. bSkipPhase1 ones)
 //   [2] = triangleCandidates   — sum of triangleCount for drawn meshlets (= mesh shader input)
@@ -65,38 +65,53 @@ struct TaskPayload
 };
 taskPayloadSharedEXT TaskPayload Payload;
 
+// Lane 0 loads everything once, derived offsets are cached in shared memory to reduce LSGB stall.
+shared mat4  sh_LocalToWorld;
+shared float sh_MaxScale;
+shared uint  sh_VisOffset;
+shared uint  sh_Lod;
+shared uint  sh_MeshletOffset;
+shared uint  sh_MeshletCount;
+shared uint  sh_DrawID;
 
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 void main()
 {
-	uint drawID = g_DrawIDs[gl_DrawID];
+	if (gl_LocalInvocationID.x == 0)
+	{
+		// Unpack (lod << 24) | instanceID — Instance Culling already chose the LOD; we just consume it.
+		uint packed = g_DrawIDs[gl_DrawID];
+		uint drawID = packed & 0x00FFFFFFu;
+		uint lod    = packed >> 24;
 
-	InstanceData  instance  = g_Instances[drawID];
-	MeshData      mesh      = g_Meshes[instance.meshID];
-	TransformData transform = g_TransformBuffer.transforms[instance.transformID];
+		InstanceData  instance  = g_Instances[drawID];
+		MeshData      mesh      = g_Meshes[instance.meshID];
+		TransformData transform = g_TransformBuffer.transforms[instance.transformID];
 
-	float scaleX   = length(transform.mLocalToWorld[0].xyz);
-	float scaleY   = length(transform.mLocalToWorld[1].xyz);
-	float scaleZ   = length(transform.mLocalToWorld[2].xyz);
-	float maxScale = max(scaleX, max(scaleY, scaleZ));
+		float scaleX   = length(transform.mLocalToWorld[0].xyz);
+		float scaleY   = length(transform.mLocalToWorld[1].xyz);
+		float scaleZ   = length(transform.mLocalToWorld[2].xyz);
+		float maxScale = max(scaleX, max(scaleY, scaleZ));
 
-	vec4  center = transform.mLocalToWorld * vec4(mesh.centerX, mesh.centerY, mesh.centerZ, 1.0);
-    float radius = mesh.radius * maxScale;
-
-	uint lod = CalculateLODLevelSSE(
-		mesh, center.xyz, maxScale,
-		g_Camera.posWORLD, g_Camera.mProj[1][1],
-		g_CullData.viewportHeight, g_CullData.sseThresholdPx);
+		sh_LocalToWorld  = transform.mLocalToWorld;
+		sh_MaxScale      = maxScale;
+		sh_VisOffset     = instance.visOffset;
+		sh_Lod           = lod;
+		sh_MeshletOffset = mesh.lods[lod].mOffset;
+		sh_MeshletCount  = mesh.lods[lod].mCount;
+		sh_DrawID        = drawID;
+	}
+	barrier();
 
 	uint ti = gl_LocalInvocationID.x;
 	uint localMeshletIdx = gl_GlobalInvocationID.x;
-	uint mi = localMeshletIdx + mesh.lods[lod].mOffset;
+	uint mi = localMeshletIdx + sh_MeshletOffset;
 
-	uint vi        = instance.visOffset + localMeshletIdx;
+	uint vi        = sh_VisOffset + localMeshletIdx;
 	uint visWord   = vi >> 5;
 	uint visBitMsk = 1u << (vi & 31u);
 
-	bool bValid = (localMeshletIdx < mesh.lods[lod].mCount);
+	bool bValid = (localMeshletIdx < sh_MeshletCount);
 	bool accept = false;
 #if PROFILING_LEVEL >= 1
 	uint myTriCount = 0u; // triangleCount of THIS thread's meshlet, only when accept
@@ -115,8 +130,8 @@ void main()
 			Meshlet meshlet = g_MeshletBuffer.meshlets[mi];
 
 			// World-space meshlet bound (scaled by instance transform)
-			vec3  meshletCenterWS = (transform.mLocalToWorld * vec4(meshlet.centerX, meshlet.centerY, meshlet.centerZ, 1.0)).xyz;
-			float meshletRadiusWS = meshlet.radius * maxScale;
+			vec3  meshletCenterWS = (sh_LocalToWorld * vec4(meshlet.centerX, meshlet.centerY, meshlet.centerZ, 1.0)).xyz;
+			float meshletRadiusWS = meshlet.radius * sh_MaxScale;
 
 			accept = true;
 
@@ -127,7 +142,7 @@ void main()
 			// 2) Backface cone cull
 			if ((g_Push.cullFlags & CULL_FLAG_MESHLET_CONE) != 0u && accept)
 			{
-				vec3 coneAxisWS = normalize((transform.mLocalToWorld * vec4(meshlet.coneAxisX, meshlet.coneAxisY, meshlet.coneAxisZ, 0.0)).xyz);
+				vec3 coneAxisWS = normalize((sh_LocalToWorld * vec4(meshlet.coneAxisX, meshlet.coneAxisY, meshlet.coneAxisZ, 0.0)).xyz);
 
 				accept = !IsConeCulled(vec4(coneAxisWS, meshlet.coneCutoff), meshletCenterWS, meshletRadiusWS, g_Camera.posWORLD);
 			}
@@ -189,8 +204,8 @@ void main()
 
 	if (ti == 0)
 	{
-		Payload.drawID   = drawID;
-		Payload.lodLevel = lod;
+		Payload.drawID   = sh_DrawID;
+		Payload.lodLevel = sh_Lod;
 		EmitMeshTasksEXT(numMeshlets, 1, 1);
 	}
 }

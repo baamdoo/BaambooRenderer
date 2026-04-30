@@ -31,7 +31,7 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 	// --- Draw buffers ---
 	m_DrawIndexBuffer = Buffer::Create(rd, "GBufferPass::DrawIndexBuffer",
 		{
-			.count              = _KB(8),
+			.count              = MAX_ENTITY_COUNT,
 			.elementSizeInBytes = sizeof(u32),
 			.bufferUsage        = eBufferUsage_Storage
 		});
@@ -43,13 +43,13 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 		});
 	m_CulledIndirectCommandBuffer = Buffer::Create(rd, "GBufferPass::CulledIndirectCommandBuffer",
 		{
-			.count              = _KB(8),
+			.count              = MAX_ENTITY_COUNT,
 			.elementSizeInBytes = sizeof(IndirectCommandData),
 			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_Indirect
 		});
 	m_VisibilityBuffer = Buffer::Create(rd, "GBufferPass::VisibilityBuffer",
 		{
-			.count              = _KB(8),
+			.count              = MAX_ENTITY_COUNT,
 			.elementSizeInBytes = sizeof(u32),
 			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest
 		});

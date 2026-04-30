@@ -55,6 +55,7 @@ inline bool LoadRenderer(eRendererAPI eApi, baamboo::Window* pWindow, const rend
 		MessageBox(pWindow->WinHandle(), wchErrTxt, L"Error", MB_OK);
 		__debugbreak();
 	}
+	//system("PAUSE");
 
 	RemoveDllDirectory(cookie);
 

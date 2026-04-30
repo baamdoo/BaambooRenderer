@@ -649,6 +649,13 @@ void ModelLoader::GenerateMeshlets(MeshData& meshData, u8 lodLevel)
     {
         const meshopt_Meshlet& m = meshlets[i];
 
+        meshopt_optimizeMeshlet(
+            &meshData.lods[lodLevel].meshletVertices[m.vertex_offset],
+            &meshletTrianglesUnpacked[m.triangle_offset],
+            m.triangle_count,
+            m.vertex_count
+        );
+
         meshopt_Bounds bounds = meshopt_computeMeshletBounds(
             &meshData.lods[lodLevel].meshletVertices[m.vertex_offset],
             &meshletTrianglesUnpacked[m.triangle_offset],

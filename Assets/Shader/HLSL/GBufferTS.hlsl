@@ -36,7 +36,7 @@ ConstantBuffer< DescriptorHeapIndex > g_MeshletVisibilityBuffer : register(b2, R
 #if PROFILING_LEVEL >= 1
 ConstantBuffer< DescriptorHeapIndex > g_MeshletStats            : register(b3, ROOT_CONSTANT_SPACE);
 
-// Stage 6: per-phase cull stats counter. Must match GBufferNode::MESHLET_STATS_FIELDS layout:
+// Per-phase cull stats counter. Must match GBufferNode::MESHLET_STATS_FIELDS layout:
 //   [0] = meshletDrawn         — meshlets that survived task-shader cull
 //   [1] = meshletTotal         — meshlet candidates examined (incl. bSkipPhase1 ones)
 //   [2] = triangleCandidates   — sum of triangleCount for drawn meshlets (= mesh shader input)
@@ -60,34 +60,49 @@ struct AmplificationPayload
 
 groupshared AmplificationPayload Payload;
 
+// Lane 0 loads everything once, derived offsets are cached in shared memory to reduce LSGB stall.
+groupshared float4x4 sh_LocalToWorld;
+groupshared float    sh_MaxScale;
+groupshared uint     sh_VisOffset;
+groupshared uint     sh_Lod;
+groupshared uint     sh_MeshletOffset;
+groupshared uint     sh_MeshletCount;
+
 [numthreads(32, 1, 1)]
 void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
 {
-    InstanceData  instance  = Instances[g_DrawID];
-    MeshData      mesh      = Meshes[instance.meshID];
-    TransformData transform = Transforms[instance.transformID];
+    if (GTid.x == 0)
+    {
+        // Unpack (lod << 24) | instanceID — Instance Culling already chose the LOD; we just consume it.
+        uint instanceID = g_DrawID & 0x00FFFFFFu;
+        uint lod        = g_DrawID >> 24;
 
-    float scaleX = length(transform.mLocalToWorld[0].xyz);
-    float scaleY = length(transform.mLocalToWorld[1].xyz);
-    float scaleZ = length(transform.mLocalToWorld[2].xyz);
-    float maxScale = max(scaleX, max(scaleY, scaleZ));
+        InstanceData  instance  = Instances[instanceID];
+        MeshData      mesh      = Meshes[instance.meshID];
+        TransformData transform = Transforms[instance.transformID];
 
-    float4 center = mul(transform.mLocalToWorld, float4(mesh.centerX, mesh.centerY, mesh.centerZ, 1.0));
-    float  radius = mesh.radius * maxScale;
+        float scaleX = length(transform.mLocalToWorld[0].xyz);
+        float scaleY = length(transform.mLocalToWorld[1].xyz);
+        float scaleZ = length(transform.mLocalToWorld[2].xyz);
+        float maxScale = max(scaleX, max(scaleY, scaleZ));
 
-    uint lod = CalculateLODLevelSSE(
-        mesh, center.xyz, maxScale,
-        g_Camera.posWORLD, g_Camera.mProj[1][1],
-        g_CullData.viewportHeight, g_CullData.sseThresholdPx);
+        sh_LocalToWorld  = transform.mLocalToWorld;
+        sh_MaxScale      = maxScale;
+        sh_VisOffset     = instance.visOffset;
+        sh_Lod           = lod;
+        sh_MeshletOffset = mesh.lods[lod].mOffset;
+        sh_MeshletCount  = mesh.lods[lod].mCount;
+    }
+    GroupMemoryBarrierWithGroupSync();
 
     uint localMeshletIdx = Gid.x;
-    uint mi              = localMeshletIdx + mesh.lods[lod].mOffset;
+    uint mi              = localMeshletIdx + sh_MeshletOffset;
 
-    uint vi        = instance.visOffset + localMeshletIdx;
+    uint vi        = sh_VisOffset + localMeshletIdx;
     uint visWord   = vi >> 5;
     uint visBitMsk = 1u << (vi & 31u);
 
-    bool bValid = (localMeshletIdx < mesh.lods[lod].mCount);
+    bool bValid = (localMeshletIdx < sh_MeshletCount);
     bool accept = false;
 #if PROFILING_LEVEL >= 1
     uint myTriCount = 0u; // triangleCount of THIS thread's meshlet, only when accept
@@ -107,8 +122,8 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
             Meshlet meshlet = Meshlets[mi];
 
             // World-space meshlet bound (scaled by instance transform)
-            float3 meshletCenterWS = mul(transform.mLocalToWorld, float4(meshlet.centerX, meshlet.centerY, meshlet.centerZ, 1.0)).xyz;
-            float  meshletRadiusWS = meshlet.radius * maxScale;
+            float3 meshletCenterWS = mul(sh_LocalToWorld, float4(meshlet.centerX, meshlet.centerY, meshlet.centerZ, 1.0)).xyz;
+            float  meshletRadiusWS = meshlet.radius * sh_MaxScale;
 
             accept = true;
 
@@ -121,7 +136,7 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
             // 2) Backface cone cull
             if ((g_CullFlags & CULL_FLAG_MESHLET_CONE) != 0u && accept)
             {
-                float3 coneAxisWS = normalize(mul(transform.mLocalToWorld, float4(meshlet.coneAxisX, meshlet.coneAxisY, meshlet.coneAxisZ, 0.0)).xyz);
+                float3 coneAxisWS = normalize(mul(sh_LocalToWorld, float4(meshlet.coneAxisX, meshlet.coneAxisY, meshlet.coneAxisZ, 0.0)).xyz);
 
                 accept = !IsConeCulled(float4(coneAxisWS, meshlet.coneCutoff), meshletCenterWS, meshletRadiusWS, g_Camera.posWORLD);
             }
@@ -166,7 +181,7 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
         Payload.meshletIndices[payloadIndex] = mi;
 
     if (GTid.x == 0)
-        Payload.lodLevel = lod;
+        Payload.lodLevel = sh_Lod;
 
     uint numMeshlets = WaveActiveCountBits(accept);
 

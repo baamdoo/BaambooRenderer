@@ -225,7 +225,7 @@ VkCommandContext::Impl::Impl(VkRenderDevice& rd, VkCommandContext& context, VkCo
 	// Create buffer pools
 	// **
 	//m_pUniformBufferPool = MakeBox< DynamicBufferAllocator >(m_RenderDevice);
-	m_pStagingBufferPool = MakeBox< DynamicBufferAllocator >(m_RenderDevice);
+	m_pStagingBufferPool = MakeBox< DynamicBufferAllocator >(m_RenderDevice, _MB(128));
 
 
 	// **

@@ -454,6 +454,9 @@ void Engine::RenderLoop()
 
 			// Close the CPU-side "Frame" scope.
 			render::CpuProfiler::Thread().EndFrame();
+
+			/*if (!m_GpuProfileSnapshot.empty() && m_pRendererBackend)
+				m_pRendererBackend->RecordFrameTime(m_GpuProfileSnapshot[0].currentMs);*/
 		}
 	}
 }

@@ -53,7 +53,7 @@ struct DeviceSettings
 	bool bMeshShader = false;
 };
 
-class Renderer 
+class Renderer
 {
 public:
     virtual ~Renderer() = default;
@@ -68,6 +68,9 @@ public:
 
     virtual RenderDevice* GetDevice() = 0;
     virtual eRendererAPI GetAPIType() const = 0;
+
+    virtual void RecordFrameTime(double gpuFrameMs) { (void)gpuFrameMs; }
+    virtual void ForceCaptureNextFrame() {}
 };
 
 }

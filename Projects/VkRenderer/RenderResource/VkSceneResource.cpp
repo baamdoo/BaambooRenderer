@@ -127,20 +127,20 @@ VkSceneResource::VkSceneResource(VkRenderDevice& rd)
 	// scene buffers
 	// **
 
-	m_pVertexAllocator          = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(Vertex) * _KB(8LL), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
-	m_pIndexAllocator           = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(Index) * 3 * _KB(8LL), VK_BUFFER_USAGE_2_INDEX_BUFFER_BIT);
-	m_pMeshletAllocator         = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(Meshlet) * _KB(8LL), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
-	m_pMeshletVertexAllocator   = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(u32) * _KB(8LL), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
-	m_pMeshletTriangleAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(u32) * _KB(8LL), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
+	m_pVertexAllocator          = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(Vertex) * _KB(1LL), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
+	m_pIndexAllocator           = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(Index) * 3 * _KB(1LL), VK_BUFFER_USAGE_2_INDEX_BUFFER_BIT);
+	m_pMeshletAllocator         = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(Meshlet) * _KB(1LL), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
+	m_pMeshletVertexAllocator   = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(u32) * _KB(1LL), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
+	m_pMeshletTriangleAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(u32) * _KB(1LL), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
 
 	for (auto& frameData : m_FrameData)
 	{
-		frameData.pMeshDataAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(MeshData) * _KB(8LL), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT);
-		frameData.pInstanceAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(InstanceData) * _KB(8LL), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT);
-		//frameData.pIndirectCommandAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(IndirectCommandData) * _KB(8LL), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT);
+		frameData.pMeshDataAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(MeshData) * _KB(1LL), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT);
+		frameData.pInstanceAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(InstanceData) * MAX_ENTITY_COUNT, VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT);
+		//frameData.pIndirectCommandAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(IndirectCommandData) * MAX_ENTITY_COUNT, VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT);
 
-		frameData.pTransformAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(TransformData) * _KB(8LL), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
-		frameData.pMaterialAllocator  = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(MaterialData) * _KB(8LL), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
+		frameData.pTransformAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(TransformData) * MAX_ENTITY_COUNT, VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
+		frameData.pMaterialAllocator  = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(MaterialData) * MAX_ENTITY_COUNT, VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
 		frameData.pLightAllocator     = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(LightData), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
 
 		frameData.pCameraBuffer           = VulkanUniformBuffer::Create(m_RenderDevice, "CameraBuffer", sizeof(CameraData));

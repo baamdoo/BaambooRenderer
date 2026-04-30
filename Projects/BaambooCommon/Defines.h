@@ -67,6 +67,7 @@ using RenderFlags = uint64_t;
 #define REMAINING_ARRAY_LAYERS (~0U)
 #define ALL_SUBRESOURCES       (0xFFFFFFFF)
 
+constexpr unsigned MAX_ENTITY_COUNT = _1MB;
 constexpr unsigned MAX_FRAMES_IN_FLIGHT = 3;
 
 

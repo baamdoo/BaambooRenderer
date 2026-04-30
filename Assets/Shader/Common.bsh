@@ -96,7 +96,7 @@ struct InstanceData
 
 struct IndirectCommandData
 {
-	uint drawID; // index of the instance to draw [DX12-only]
+	uint drawID;
 
     uint groupCountX;
     uint groupCountY;

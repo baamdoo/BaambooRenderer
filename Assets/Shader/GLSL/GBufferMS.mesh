@@ -92,45 +92,62 @@ bool TriangleCull(vec4 ca, vec4 cb, vec4 cc)
 }
 
 
+// Lane 0 loads everything once, derived offsets are cached in shared memory. To reduce LSGB stall which is the largest bottleneck in a frame.
+shared mat4 sh_LocalToWorld;
+shared uint sh_VOffset;
+shared uint sh_MvOffset;
+shared uint sh_MtOffset;
+shared uint sh_VertexCount;
+shared uint sh_TriangleCount;
+shared uint sh_VertexOffset;
+shared uint sh_TriangleOffset;
+
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 layout(triangles, max_vertices = 64, max_primitives = 124) out;
 void main()
 {
-	InstanceData  instance  = g_Instances[Payload.drawID];
-	MeshData      mesh      = g_Meshes[instance.meshID];
-	TransformData transform = g_TransformBuffer.transforms[instance.transformID];
-
 	uint mi = Payload.meshletIndices[gl_WorkGroupID.x]; // + mesh.lods[Payload.lodLevel].mOffset - This addition is already handled in TaskShader
 	uint ti = gl_LocalInvocationID.x;
 
-	Meshlet meshlet = g_MeshletBuffer.meshlets[mi];
-	SetMeshOutputsEXT(meshlet.vertexCount, meshlet.triangleCount);
-
-	uint mhash = hash(Payload.drawID);
-	vec3 color = vec3(float(mhash & 255), float((mhash >> 8) & 255), float((mhash >> 16) & 255)) / 255.0;
-	// color = vec3(Payload.lodLevel, Payload.lodLevel, Payload.lodLevel) / 10.0;
-
-	for (uint i = ti; i < meshlet.vertexCount; i += gl_WorkGroupSize.x)
+	if (ti == 0)
 	{
-		uint vi = g_MeshletVertexBuffer.meshletVertices[meshlet.vertexOffset + mesh.lods[Payload.lodLevel].mvOffset + i];
+		InstanceData  instance  = g_Instances[Payload.drawID];
+		MeshData      mesh      = g_Meshes[instance.meshID];
+		TransformData transform = g_TransformBuffer.transforms[instance.transformID];
+		Meshlet       meshlet   = g_MeshletBuffer.meshlets[mi];
 
-		Vertex vertex = g_VertexBuffer.vertices[vi + mesh.vOffset];
+		sh_LocalToWorld   = transform.mLocalToWorld;
+		sh_VOffset        = mesh.vOffset;
+		sh_MvOffset       = mesh.lods[Payload.lodLevel].mvOffset;
+		sh_MtOffset       = mesh.lods[Payload.lodLevel].mtOffset;
+		sh_VertexCount    = meshlet.vertexCount;
+		sh_TriangleCount  = meshlet.triangleCount;
+		sh_VertexOffset   = meshlet.vertexOffset;
+		sh_TriangleOffset = meshlet.triangleOffset;
+	}
+	barrier();
 
+	SetMeshOutputsEXT(sh_VertexCount, sh_TriangleCount);
+
+	for (uint i = ti; i < sh_VertexCount; i += gl_WorkGroupSize.x)
+	{
+		uint vi = g_MeshletVertexBuffer.meshletVertices[sh_VertexOffset + sh_MvOffset + i];
+
+		Vertex vertex = g_VertexBuffer.vertices[vi + sh_VOffset];
 		vec3 position = vec3(vertex.posX, vertex.posY, vertex.posZ);
-		vec4 posWORLD = transform.mLocalToWorld * vec4(position, 1.0);
+		vec4 posWORLD = sh_LocalToWorld * vec4(position, 1.0);
 		vec3 normal   = vec3(vertex.normalX, vertex.normalY, vertex.normalZ);
 		vec3 tangent  = vec3(vertex.tangentX, vertex.tangentY, vertex.tangentZ);
 
 		gl_MeshVerticesEXT[i].gl_Position = g_Camera.mViewProj * posWORLD;
-		//outColor[i] = vec4(normal * 0.5 + vec3(0.5), 1.0);
-		outColor[i] = vec4(color, 1.0);
+		outColor[i] = vec4(normal * 0.5 + vec3(0.5), 1.0);
 	}
 
 	// Per-vertex outputs(gl_MeshVerticesEXT[i].gl_Position) are written by different invocations.
 	barrier();
 
-	uint baseTriOffset = meshlet.triangleOffset + mesh.lods[Payload.lodLevel].mtOffset;
-	for (uint i = ti; i < meshlet.triangleCount; i += gl_WorkGroupSize.x)
+	uint baseTriOffset = sh_TriangleOffset + sh_MtOffset;
+	for (uint i = ti; i < sh_TriangleCount; i += gl_WorkGroupSize.x)
 	{
 		uint tPacked3 = g_MeshletTriangleBuffer.meshletTriangles[baseTriOffset + i];
 
