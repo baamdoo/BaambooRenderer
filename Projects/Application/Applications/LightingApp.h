@@ -1,7 +1,7 @@
 #pragma once
 #include "BaambooEngine.h"
 
-class RayTracingApp : public baamboo::Engine
+class LightingApp : public baamboo::Engine
 {
 using Super = baamboo::Engine;
 public:
@@ -19,4 +19,3 @@ private:
 
 	baamboo::CameraController_FirstPerson m_CameraController;
 };
-

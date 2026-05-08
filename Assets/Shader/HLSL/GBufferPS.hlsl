@@ -1,22 +1,17 @@
 #define _MATERIAL
 #include "Common.hlsli"
 
-cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
-{
-    uint g_TransformIndex;
-    uint g_MaterialIndex;
-};
-
 
 struct PSInput
 {
     float4 position     : SV_Position;
     float4 posCurrCLIP  : POSITION0;
     float4 posPrevCLIP  : POSITION1;
-    float3 posWORLD     : POSITION2;
     float2 uv           : TEXCOORD0;
     float3 normalWORLD  : TEXCOORD1;
     float3 tangentWORLD : TEXCOORD2;
+
+    nointerpolation uint materialID : ID0;
 };
 
 struct PSOutput 
@@ -29,24 +24,23 @@ struct PSOutput
 
 PSOutput main(PSInput input)
 {
-    PSOutput output;
-    if (g_MaterialIndex == INVALID_INDEX)
+    PSOutput output = (PSOutput)0;
+    if (input.materialID == INVALID_INDEX)
     {
         return output;
     }
 
     StructuredBuffer< MaterialData > Materials = GetResource(g_Materials.index);
 
-    MaterialData material = Materials[g_MaterialIndex];
+    MaterialData material = Materials[input.materialID];
 
-    float3 albedo = float3(1.0, 1.0, 1.0);
+    float3 albedo = float3(material.tintR, material.tintG, material.tintB);
     if (material.albedoID != INVALID_INDEX) 
     {
         Texture2D AlbedoMap = GetResource(material.albedoID);
 
-        albedo = AlbedoMap.Sample(g_LinearClampSampler, input.uv).rgb;
+        albedo *= AlbedoMap.Sample(g_LinearWrapSampler, input.uv).rgb;
     }
-    albedo *= float3(material.tintR, material.tintG, material.tintB);
 
     float metallic  = material.metallic;
     float roughness = material.roughness;
@@ -55,7 +49,7 @@ PSOutput main(PSInput input)
     {
         Texture2D OrmMap = GetResource(material.metallicRoughnessAoID);
 
-        float3 orm = OrmMap.Sample(g_LinearClampSampler, input.uv).rgb;
+        float3 orm = OrmMap.Sample(g_LinearWrapSampler, input.uv).rgb;
 
         metallic  *= orm.b;
         roughness *= orm.g;
@@ -67,7 +61,7 @@ PSOutput main(PSInput input)
     {
         Texture2D NormalMap = GetResource(material.normalID);
 
-        float3 tangentNormal = NormalMap.Sample(g_LinearClampSampler, input.uv).rgb * 2.0 - 1.0;
+        float3 tangentNormal = NormalMap.Sample(g_LinearWrapSampler, input.uv).rgb * 2.0 - 1.0;
 
         float3   T   = normalize(input.tangentWORLD);
         float3   B   = cross(N, T);
@@ -81,13 +75,13 @@ PSOutput main(PSInput input)
     {
         Texture2D EmissiveMap = GetResource(material.emissiveID);
 
-        emissive = EmissiveMap.Sample(g_LinearClampSampler, input.uv).rgb;
+        emissive = EmissiveMap.Sample(g_LinearWrapSampler, input.uv).rgb;
         //emissive  = pow(emissive, 2.2); // convert from sRGB to linear
         emissive *= material.emissivePower;
     }
 
     output.GBuffer0 = float4(albedo, ao);
-    output.GBuffer1 = float4(N, g_MaterialIndex / 255.0);
+    output.GBuffer1 = float4(N, input.materialID / 255.0);
     output.GBuffer2 = emissive;
 
     float2 posPrevUV = (input.posPrevCLIP.xy / input.posPrevCLIP.w) * 0.5 + 0.5;

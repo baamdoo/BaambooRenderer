@@ -712,22 +712,22 @@ void Engine::DrawUI()
 			//               INPUT  = clippingInvocations (mesh shader output).
 			//               OUTPUT = clippingPrimitives (rasterizer fed primitives).
 			// =====================================================================
-			const u32 totalInst   = g_FrameData.totalInstances;
-			const u32 phase1Inst  = g_FrameData.phase1InstanceDrawCount;
-			const u32 phase2Inst  = g_FrameData.phase2InstanceDrawCount;
-			const u32 drawnInst   = phase1Inst + phase2Inst;
+			const u32 totalInst  = g_FrameData.totalInstances;
+			const u32 phase1Inst = g_FrameData.phase1InstanceDrawCount;
+			const u32 phase2Inst = g_FrameData.phase2InstanceDrawCount;
+			const u32 drawnInst  = phase1Inst + phase2Inst;
 
 #if PROFILING_LEVEL >= 1
-			const u32 phase1mTotal   = g_FrameData.phase1MeshletTotal;
-			const u32 phase2mTotal   = g_FrameData.phase2MeshletTotal;
-			const u32 phase1mDrawn   = g_FrameData.phase1MeshletDrawn;
-			const u32 phase2mDrawn   = g_FrameData.phase2MeshletDrawn;
-			const u32 totalMeshlets  = phase1mTotal + phase2mTotal;
-			const u32 drawnMeshlets  = phase1mDrawn + phase2mDrawn;
+			const u32 phase1mTotal  = g_FrameData.phase1MeshletTotal;
+			const u32 phase2mTotal  = g_FrameData.phase2MeshletTotal;
+			const u32 phase1mDrawn  = g_FrameData.phase1MeshletDrawn;
+			const u32 phase2mDrawn  = g_FrameData.phase2MeshletDrawn;
+			const u32 totalMeshlets = phase1mTotal + phase2mTotal;
+			const u32 drawnMeshlets = phase1mDrawn + phase2mDrawn;
 
-			const u32 phase1TCand   = g_FrameData.phase1TriangleCandidates;
-			const u32 phase2TCand   = g_FrameData.phase2TriangleCandidates;
-			const u32 totalTCand    = phase1TCand + phase2TCand;
+			const u32 phase1TCand = g_FrameData.phase1TriangleCandidates;
+			const u32 phase2TCand = g_FrameData.phase2TriangleCandidates;
+			const u32 totalTCand  = phase1TCand + phase2TCand;
 #endif // PROFILING_LEVEL >= 1
 
 			// "Drawn instances exceeds total" can happen with meshlet-occlusion ON (2-phase draw of same instance).
@@ -1335,7 +1335,7 @@ void Engine::DrawUI()
 				{
 					auto& component = ImGui::SelectedEntity.GetComponent< LightComponent >();
 
-					const char* lightTypes[] = { "Directional", "Point", "Spot", "Area", "Sphere" };
+					const char* lightTypes[] = { "Directional", "Spot", "Area", "Sphere", "Disk", "Tube" };
 					int currentType = (int)component.type;
 					if (ImGui::Combo("Type", &currentType, lightTypes, IM_ARRAYSIZE(lightTypes)))
 					{
@@ -1346,9 +1346,6 @@ void Engine::DrawUI()
 						case eLightType::Directional:
 							component.SetDefaultDirectionalLight();
 							break;
-						case eLightType::Point:
-							component.SetDefaultPoint();
-							break;
 						case eLightType::Spot:
 							component.SetDefaultSpot();
 							break;
@@ -1357,6 +1354,12 @@ void Engine::DrawUI()
 							break;
 						case eLightType::Sphere:
 							component.SetDefaultSphere();
+							break;
+						case eLightType::Disk:
+							component.SetDefaultDisk();
+							break;
+						case eLightType::Tube:
+							component.SetDefaultTube();
 							break;
 						}
 
@@ -1392,17 +1395,6 @@ void Engine::DrawUI()
 
 							bMark = true;
 						}
-						break;
-					}
-					case eLightType::Point:
-					{
-						bMark |= ImGui::DragFloat("Power (lm)", &component.luminousFluxLm, 10.0f, 0.0f, 10000.0f, "%.0f");
-						if (ImGui::IsItemHovered())
-						{
-							ImGui::BeginTooltip();
-							ImGui::EndTooltip();
-						}
-						bMark |= ImGui::DragFloat("Source Radius (m)", &component.radiusM, 0.001f, 0.001f, 1.0f, "%.3f");
 						break;
 					}
 					case eLightType::Spot:
@@ -1455,6 +1447,21 @@ void Engine::DrawUI()
 							ImGui::EndTooltip();
 						}
 						bMark |= ImGui::DragFloat("Source Radius (m)", &component.radiusM, 0.001f, 0.001f, 100.0f, "%.3f");
+						break;
+					}
+
+					case eLightType::Disk:
+					{
+						bMark |= ImGui::DragFloat("Power (lm)", &component.luminousFluxLm, 1.0f, 0.0f, 10000.0f, "%.0f");
+						bMark |= ImGui::DragFloat("Disk Radius (m)", &component.diskRadiusM, 0.05f, 0.05f, 10.0f, "%.2f");
+						break;
+					}
+
+					case eLightType::Tube:
+					{
+						bMark |= ImGui::DragFloat("Power (lm)", &component.luminousFluxLm, 1.0f, 0.0f, 10000.0f, "%.0f");
+						bMark |= ImGui::DragFloat("Length (m)", &component.tubeLengthM, 0.1f, 0.1f, 10.0f, "%.2f");
+						bMark |= ImGui::DragFloat("Tube Radius (m)", &component.tubeRadiusM, 0.01f, 0.0f, 1.0f, "%.3f");
 						break;
 					}
 

@@ -46,10 +46,11 @@ public:
 private:
     TransformSystem* m_pTransformSystem = nullptr;
 
-    std::vector< PointLight >  m_PointLights;
     std::vector< SpotLight >   m_SpotLights;
     std::vector< AreaLight >   m_AreaLights;
     std::vector< SphereLight > m_SphereLights;
+    std::vector< DiskLight >   m_DiskLights;
+    std::vector< TubeLight >   m_TubeLights;
 };
 
 } // namespace baamboo

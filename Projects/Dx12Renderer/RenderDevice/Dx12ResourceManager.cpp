@@ -414,6 +414,15 @@ Arc< render::Texture > Dx12ResourceManager::GetFlatBlackTexture3D()
     return m_pBlackTexture3D;
 }
 
+Arc<render::Texture> Dx12ResourceManager::GetFlatBlackTextureCube()
+{
+    if (!m_pBlackTextureCube)
+    {
+        m_pBlackTextureCube = CreateFlatCubeTexture("DefaultTexture::BlackCube", 0xFF000000u);
+    }
+	return m_pBlackTextureCube;
+}
+
 Arc< Dx12RootSignature > Dx12ResourceManager::GetGlobalRootSignature() const
 {
     return m_pGlobalRootSignature;
@@ -463,6 +472,33 @@ Arc< Dx12Texture > Dx12ResourceManager::CreateFlat3DTexture(const char* name, u3
                 .imageType  = eImageType::Texture3D,
                 .resolution = { 1, 1, 1 },
                 .format     = eFormat::RGBA8_UNORM,
+            });
+
+    u32* pData = (u32*)malloc(4);
+    *pData = color;
+
+    D3D12_SUBRESOURCE_DATA subresouceData = {};
+    subresouceData.pData      = pData;
+    subresouceData.RowPitch   = 4;
+    subresouceData.SlicePitch = 4;
+    m_RenderDevice.UpdateSubresources(pFlatTexture.get(), 0, 1, &subresouceData);
+
+    RELEASE(pData);
+    return pFlatTexture;
+}
+
+Arc< Dx12Texture > Dx12ResourceManager::CreateFlatCubeTexture(const char* name, u32 color)
+{
+    using namespace render;
+
+    auto pFlatTexture =
+        Dx12Texture::Create(
+            m_RenderDevice,
+            name,
+            {
+                .imageType   = eImageType::TextureCube,
+                .resolution  = { 1, 1, 1 },
+                .arrayLayers = 6
             });
 
     u32* pData = (u32*)malloc(4);

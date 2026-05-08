@@ -11,6 +11,7 @@ LightingNode::LightingNode(render::RenderDevice& rd)
 	: Super(rd, "LightingPass")
 {
 	using namespace render;
+	auto& rm = m_RenderDevice.GetResourceManager();
 
 	m_pSceneTexture =
 		Texture::Create(
@@ -21,6 +22,9 @@ LightingNode::LightingNode(render::RenderDevice& rd)
 				.format     = eFormat::RGBA16_FLOAT,
 				.imageUsage = eTextureUsage_Sample | eTextureUsage_Storage | eTextureUsage_TransferSource | eTextureUsage_ColorAttachment
 			});
+
+	m_pLtcLut1 = rm.LoadTexture(TEXTURE_PATH.string() + "ltc_1.dds");
+	m_pLtcLut2 = rm.LoadTexture(TEXTURE_PATH.string() + "ltc_2.dds");
 
 	m_pLightingPSO = ComputePipeline::Create(m_RenderDevice, "LightingPSO");
 	m_pLightingPSO->SetComputeShader(
@@ -50,12 +54,14 @@ void LightingNode::Apply(render::CommandContext& context, const SceneRenderView&
 	context.TransitionBarrier(g_FrameData.pGBuffer2.lock(), eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(g_FrameData.pGBuffer3.lock(), eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(g_FrameData.pDepth.lock(), eTextureLayout::ShaderReadOnly);
-	context.TransitionBarrier(g_FrameData.pAerialPerspectiveLUT ? 
+	context.TransitionBarrier(g_FrameData.pAerialPerspectiveLUT ?
 		g_FrameData.pAerialPerspectiveLUT.lock() : rm.GetFlatBlackTexture3D(), eTextureLayout::ShaderReadOnly);
-	context.TransitionBarrier(g_FrameData.pCloudScatteringLUT ? 
+	context.TransitionBarrier(g_FrameData.pCloudScatteringLUT ?
 		g_FrameData.pCloudScatteringLUT.lock() : rm.GetFlatBlackTexture(), eTextureLayout::ShaderReadOnly);
-	context.TransitionBarrier(g_FrameData.pSkyboxLUT ? 
+	context.TransitionBarrier(g_FrameData.pSkyboxLUT ?
 		g_FrameData.pSkyboxLUT.lock() : rm.GetFlatBlackTextureCube(), eTextureLayout::ShaderReadOnly);
+	context.TransitionBarrier(m_pLtcLut1, eTextureLayout::ShaderReadOnly);
+	context.TransitionBarrier(m_pLtcLut2, eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(m_pSceneTexture, eTextureLayout::General);
 
 	context.StageDescriptor("g_GBuffer0", g_FrameData.pGBuffer0.lock(), g_FrameData.pLinearClamp);
@@ -63,12 +69,14 @@ void LightingNode::Apply(render::CommandContext& context, const SceneRenderView&
 	context.StageDescriptor("g_GBuffer2", g_FrameData.pGBuffer2.lock(), g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_GBuffer3", g_FrameData.pGBuffer3.lock(), g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_DepthBuffer", g_FrameData.pDepth.lock(), g_FrameData.pPointClamp);
-	context.StageDescriptor("g_AerialPerspectiveLUT", g_FrameData.pAerialPerspectiveLUT ? 
+	context.StageDescriptor("g_AerialPerspectiveLUT", g_FrameData.pAerialPerspectiveLUT ?
 		g_FrameData.pAerialPerspectiveLUT.lock() : rm.GetFlatBlackTexture3D(), g_FrameData.pLinearWrap);
-	context.StageDescriptor("g_CloudScatteringLUT", g_FrameData.pCloudScatteringLUT ? 
+	context.StageDescriptor("g_CloudScatteringLUT", g_FrameData.pCloudScatteringLUT ?
 		g_FrameData.pCloudScatteringLUT.lock() : rm.GetFlatBlackTexture(), g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_SkyboxLUT", g_FrameData.pSkyboxLUT ?
 		g_FrameData.pSkyboxLUT.lock() : rm.GetFlatBlackTextureCube(), g_FrameData.pLinearWrap);
+	context.StageDescriptor("g_LtcMatrixLUT",    m_pLtcLut1, g_FrameData.pLinearClamp);
+	context.StageDescriptor("g_LtcAmplitudeLUT", m_pLtcLut2, g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_OutSceneTexture", m_pSceneTexture);
 
 	context.Dispatch2D< 16, 16 >(m_pSceneTexture->Width(), m_pSceneTexture->Height());

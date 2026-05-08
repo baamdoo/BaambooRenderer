@@ -224,6 +224,7 @@ void RayTracingApp::ConfigureSceneObjects()
 		auto areaLight = m_pScene->CreateEntity("AreaLight");
 		auto& areaXform = areaLight.GetComponent< TransformComponent >().transform;
 		areaXform.position = float3(0.0f, 4.5f, 0.0f);
+		areaXform.rotation = float3(90.0f, 0.0f, 0.0f);
 		auto& areaLC = areaLight.AttachComponent< LightComponent >();
 		areaLC.SetDefaultArea();
 		areaLC.color          = float3(1.0f, 1.0f, 1.0f);

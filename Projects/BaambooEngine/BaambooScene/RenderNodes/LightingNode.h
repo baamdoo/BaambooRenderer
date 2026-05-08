@@ -16,6 +16,8 @@ public:
 
 private:
 	Arc< render::Texture > m_pSceneTexture;
+	Arc< render::Texture > m_pLtcLut1;
+	Arc< render::Texture > m_pLtcLut2;
 
 	Box< render::ComputePipeline > m_pLightingPSO;
 };

@@ -262,32 +262,6 @@ float3 EvaluateDirectLighting(float3 hitPosition, float3 N, float3 V, float3 T, 
         Lo += shadowFactor * luminance * BxDF::Evaluate(mp, N, V, L, T, B);
     }
 
-    for (uint pi = 0; pi < g_Lights.numPoints; ++pi)
-    {
-        PointLight light = g_Lights.points[pi];
-
-        float3 lightPos = float3(light.posX, light.posY, light.posZ);
-        float3 toLight  = lightPos - hitPosition;
-        float  dist     = length(toLight);
-        float3 L        = toLight / dist;
-        
-        float NoL = dot(N, L);
-        if (NoL <= 0.0 && mp.subsurface <= 0.0)
-            continue;
-
-        float shadowFactor = TraceShadowRay(hitPosition, N, L, g_Camera.zFar);
-        if (shadowFactor <= 0.0)
-            continue;
-
-        float3 lightColor        = GetLightColor(float3(light.colorR, light.colorG, light.colorB), light.temperatureK);
-        float  luminousIntensity = light.luminousFluxLm / (light.radiusM * light.radiusM * PI_MUL(4.0));
-
-        float  attenuation = 1.0 / max(dist * dist, light.radiusM * light.radiusM);
-        float3 luminance   = lightColor * luminousIntensity * attenuation;
-
-        Lo += shadowFactor * luminance * BxDF::Evaluate(mp, N, V, L, T, B);
-    }
-
     for (uint si = 0; si < g_Lights.numSpots; ++si)
     {
         SpotLight light = g_Lights.spots[si];

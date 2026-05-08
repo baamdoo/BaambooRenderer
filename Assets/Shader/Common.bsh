@@ -210,16 +210,6 @@ struct DirectionalLight
 	float padding0, padding1, padding2;
 };
 
-struct PointLight
-{
-	float posX, posY, posZ;
-	float luminousFluxLm;
-	float colorR, colorG, colorB;
-	float radiusM;
-	float temperatureK;
-	float padding0, padding1, padding2;
-};
-
 struct SpotLight
 {
 	float posX, posY, posZ;
@@ -255,26 +245,51 @@ struct SphereLight
 	float padding0, padding1, padding2;
 };
 
+struct DiskLight
+{
+	float posX, posY, posZ;
+	float radius;
+	float normalX, normalY, normalZ;     // back-face direction (single-sided cull)
+	float luminousFluxLm;
+	float tangentX, tangentY, tangentZ;  // azimuth zero axis on disk plane
+	float temperatureK;
+	float colorR, colorG, colorB;
+	float padding0;
+};
+
+struct TubeLight
+{
+	float posAX, posAY, posAZ;           // line endpoint A
+	float radius;                        // tube thickness (0 = ideal line)
+	float posBX, posBY, posBZ;           // line endpoint B
+	float luminousFluxLm;
+	float colorR, colorG, colorB;
+	float temperatureK;
+};
+
 #define MAX_DIRECTIONAL_LIGHT 2
-#define MAX_POINT_LIGHT       512
 #define MAX_SPOT_LIGHT        32
 #define MAX_AREA_LIGHT        16
 #define MAX_SPHERE_LIGHT      16
+#define MAX_DISK_LIGHT        16
+#define MAX_TUBE_LIGHT        16
 struct LightingData
 {
 	DirectionalLight directionals[MAX_DIRECTIONAL_LIGHT];
-	PointLight       points[MAX_POINT_LIGHT];
-	SpotLight        spots[MAX_SPOT_LIGHT];
-	AreaLight        areas[MAX_AREA_LIGHT];
-	SphereLight      spheres[MAX_SPHERE_LIGHT];
+	SpotLight        spots       [MAX_SPOT_LIGHT];
+	AreaLight        areas       [MAX_AREA_LIGHT];
+	SphereLight      spheres     [MAX_SPHERE_LIGHT];
+	DiskLight        disks       [MAX_DISK_LIGHT];
+	TubeLight        tubes       [MAX_TUBE_LIGHT];
 
 	uint  numDirectionals;
-	uint  numPoints;
 	uint  numSpots;
 	uint  numAreas;
-
 	uint  numSpheres;
-	float padding0, padding1, padding2;
+	uint  numDisks;
+	uint  numTubes;
+	uint  padding0;
+	uint  padding1;
 
 	float ambientColorR, ambientColorG, ambientColorB;
 	float ambientIntensity;

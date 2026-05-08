@@ -333,20 +333,20 @@ void ExampleApp::ConfigureSceneObjects()
 		//cloud.blueNoiseTex = TEXTURE_PATH.string() + "BlueNoise_RG_128x128x64";
 	}
 
-	// Create a point light
+	// sphere light
 	{
-		/*auto pointLight = m_pScene->CreateEntity("Point Light");
-		pointLight.AttachComponent< LightComponent >();
+		auto sphereLight = m_pScene->CreateEntity("Sphere Light");
+		sphereLight.AttachComponent< LightComponent >();
 
-		auto& light            = pointLight.GetComponent< LightComponent >();
-		light.type             = eLightType::Point;
-		light.color            = float3(1.0f, 1.0f, 1.0f);
-		light.temperatureK    = 4000.0f;
-		light.radiusM         = 0.03f;
-		light.luminousPower_lm = 1000.0f;
+		auto& light          = sphereLight.GetComponent< LightComponent >();
+		light.type           = eLightType::Sphere;
+		light.color          = float3(1.0f, 1.0f, 1.0f);
+		light.temperatureK   = 5000.0f;
+		light.radiusM        = 1.0;
+		light.luminousFluxLm = 100.0f;
 
-		auto& transformComponent              = pointLight.GetComponent< TransformComponent >();
-		transformComponent.transform.position = float3(0.0f, 0.0f, 5.0f);*/
+		auto& transformComponent              = sphereLight.GetComponent< TransformComponent >();
+		transformComponent.transform.position = float3(0.0f, 0.0f, 5.0f);
 	}
 
 	// Create a spot light

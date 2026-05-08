@@ -135,16 +135,6 @@ struct DirectionalLight
     float3 padding;
 };
 
-struct PointLight
-{
-    float3 position;
-    float  luminousFluxLm;
-    float3 color;
-    float  radiusM;
-    float  temperatureK;
-    float3 padding;
-};
-
 struct SpotLight
 {
     float3 position;
@@ -180,28 +170,51 @@ struct SphereLight
     float3 padding;
 };
 
+struct DiskLight
+{
+    float3 position;
+    float  radius;
+    float3 normal;          // back-face direction (single-sided cull)
+    float  luminousFluxLm;
+    float3 tangent;         // azimuth zero axis on disk plane
+    float  temperatureK;
+    float3 color;
+    float  padding;
+};
+
+struct TubeLight
+{
+    float3 positionA;       // line endpoint A
+    float  radius;          // tube thickness (0 = ideal line)
+    float3 positionB;       // line endpoint B
+    float  luminousFluxLm;
+    float3 color;
+    float  temperatureK;
+};
+
 #define MAX_DIRECTIONAL_LIGHT 2
-#define MAX_POINT_LIGHT       512
 #define MAX_SPOT_LIGHT        32
 #define MAX_AREA_LIGHT        16
 #define MAX_SPHERE_LIGHT      16
+#define MAX_DISK_LIGHT        16
+#define MAX_TUBE_LIGHT        16
 struct LightData
 {
     DirectionalLight directionals[MAX_DIRECTIONAL_LIGHT];
-    PointLight       points[MAX_POINT_LIGHT];
-    SpotLight        spots[MAX_SPOT_LIGHT];
-    AreaLight        areas[MAX_AREA_LIGHT];
-    SphereLight      spheres[MAX_SPHERE_LIGHT];
+    SpotLight        spots      [MAX_SPOT_LIGHT];
+    AreaLight        areas      [MAX_AREA_LIGHT];
+    SphereLight      spheres    [MAX_SPHERE_LIGHT];
+    DiskLight        disks      [MAX_DISK_LIGHT];
+    TubeLight        tubes      [MAX_TUBE_LIGHT];
 
-    u32   numDirectionals;
-    u32   numPoints;
-    u32   numSpots;
-    u32   numAreas;
-
-    u32   numSpheres;
-    float padding0;
-    float padding1;
-    float padding2;
+    u32 numDirectionals;
+    u32 numSpots;
+    u32 numAreas;
+    u32 numSpheres;
+    u32 numDisks;
+    u32 numTubes;
+    u32 padding0;
+    u32 padding1;
 
     float3 ambientColor;
     float  ambientIntensity;

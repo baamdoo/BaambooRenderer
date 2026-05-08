@@ -198,7 +198,7 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 	{
 		auto pTS = Shader::Create(rd, "GBufferTS", { .stage = eShaderStage::Task, .filename = "GBufferTS" });
 		auto pMS = Shader::Create(rd, "GBufferMS", { .stage = eShaderStage::Mesh, .filename = "GBufferMS" });
-		auto pFS = Shader::Create(rd, "GBufferPS", { .stage = eShaderStage::Fragment, .filename = "GBufferTestPS" });
+		auto pFS = Shader::Create(rd, "GBufferPS", { .stage = eShaderStage::Fragment, .filename = "GBufferPS" });
 
 		m_pGBufferPSO->SetMeshShaders(pMS, pFS, pTS)
 			          .SetRenderTarget(m_pRenderTargetPhase1)

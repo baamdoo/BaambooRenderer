@@ -1,23 +1,22 @@
-#include "BistroApp.h"
+#include "LightingApp.h"
+
 #include "BaambooCore/Common.h"
 #include "BaambooCore/Window.h"
 #include "BaambooCore/Input.hpp"
+
 #include "BaambooScene/Entity.h"
 #include "BaambooScene/Components.h"
-#include "BaambooScene/RenderNodes/AtmosphereNode.h"
-#include "BaambooScene/RenderNodes/GBufferNode.h"
-#include "BaambooScene/RenderNodes/CloudNode.h"
 #include "BaambooScene/RenderNodes/SkyboxNode.h"
+#include "BaambooScene/RenderNodes/GBufferNode.h"
 #include "BaambooScene/RenderNodes/LightingNode.h"
 #include "BaambooScene/RenderNodes/PostProcessNode.h"
 
-#include <random>
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui/backends/imgui_impl_glfw.h>
 
 using namespace baamboo;
 
-void BistroApp::Initialize(eRendererAPI api)
+void LightingApp::Initialize(eRendererAPI api)
 {
 	m_DeviceSettings.bMeshShader = true;
 
@@ -27,21 +26,21 @@ void BistroApp::Initialize(eRendererAPI api)
 	m_pCamera = new EditorCamera(m_CameraController, m_pWindow->Width(), m_pWindow->Height());
 }
 
-void BistroApp::Update(f32 dt)
+void LightingApp::Update(f32 dt)
 {
 	Super::Update(dt);
 
 	m_CameraController.Update(dt);
 }
 
-void BistroApp::Release()
+void LightingApp::Release()
 {
 	m_CameraController.Reset();
 
 	Super::Release();
 }
 
-bool BistroApp::InitWindow()
+bool LightingApp::InitWindow()
 {
 	// **
 	// Create window
@@ -61,7 +60,7 @@ bool BistroApp::InitWindow()
 			ImGuiIO& io = ImGui::GetIO();
 			if (!io.WantCaptureKeyboard)
 			{
-				auto app = reinterpret_cast<BistroApp*>(glfwGetWindowUserPointer(window));
+				auto app = reinterpret_cast<LightingApp*>(glfwGetWindowUserPointer(window));
 				if (app)
 				{
 					bool bPressed = action != GLFW_RELEASE;
@@ -123,7 +122,7 @@ bool BistroApp::InitWindow()
 
 	m_pWindow->SetResizeCallback([](GLFWwindow* window, i32 width, i32 height)
 		{
-			auto app = reinterpret_cast<BistroApp*>(glfwGetWindowUserPointer(window));
+			auto app = reinterpret_cast<LightingApp*>(glfwGetWindowUserPointer(window));
 			if (app)
 			{
 				app->m_bWindowResized = true;
@@ -134,7 +133,7 @@ bool BistroApp::InitWindow()
 
 	m_pWindow->SetIconifyCallback([](GLFWwindow* window, i32 iconified)
 		{
-			auto app = reinterpret_cast<BistroApp*>(glfwGetWindowUserPointer(window));
+			auto app = reinterpret_cast<LightingApp*>(glfwGetWindowUserPointer(window));
 			if (app)
 			{
 				app->m_bWindowResized = true;
@@ -151,7 +150,7 @@ bool BistroApp::InitWindow()
 	return true;
 }
 
-bool BistroApp::LoadScene()
+bool LightingApp::LoadScene()
 {
 	m_pScene = new Scene("BistroScene");
 
@@ -161,7 +160,7 @@ bool BistroApp::LoadScene()
 	return m_pScene != nullptr;
 }
 
-void BistroApp::DrawUI()
+void LightingApp::DrawUI()
 {
 	Super::DrawUI();
 
@@ -239,7 +238,7 @@ void BistroApp::DrawUI()
 	ImGui::End();
 }
 
-void BistroApp::ConfigureRenderGraph()
+void LightingApp::ConfigureRenderGraph()
 {
 	m_pScene->AddRenderNode(MakeArc< StaticSkyboxNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< GBufferNode >(*m_pRendererBackend->GetDevice()));
@@ -247,39 +246,51 @@ void BistroApp::ConfigureRenderGraph()
 	m_pScene->AddRenderNode(MakeArc< PostProcessNode >(*m_pRendererBackend->GetDevice()));
 }
 
-void BistroApp::ConfigureSceneObjects()
+void LightingApp::ConfigureSceneObjects()
 {
 	// static mesh
 	{
 		MeshDescriptor descriptor = {};
-		descriptor.rootPath          = GetModelPath();
-		descriptor.bOptimize         = true;
-		descriptor.rendererAPI       = s_RendererAPI;
-		descriptor.bWindingCW        = true;
+		descriptor.rootPath = GetModelPath();
+		descriptor.bOptimize = true;
+		descriptor.rendererAPI = s_RendererAPI;
+		descriptor.bWindingCW = true;
 		descriptor.bGenerateMeshlets = true;
-		descriptor.numLODs			 = 8;
+		descriptor.numLODs = 8;
 
-		srand(42);
-		const u32 meshCount = 100'000;
-		for (u32 i = 0; i < meshCount; ++i)
-		{
-			auto entity = m_pScene->ImportModel(MODEL_PATH.append("kitten.obj"), descriptor);
-			entity.AttachComponent< ScriptComponent >();
+		auto entity = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
+		entity.AttachComponent< ScriptComponent >();
 
-			float3 position = { float(rand()) / RAND_MAX, float(rand()) / RAND_MAX, float(rand()) / RAND_MAX + 0.5f };
-			float3 rotation = { float(rand()) / RAND_MAX, float(rand()) / RAND_MAX, float(rand()) / RAND_MAX };
-			float  scale    = (float(rand() / RAND_MAX) + 1.0f) * 2.0f;
+		const float3 scaleFloor = float3(10.0f, 0.4f, 10.0f);
+		const float3 scaleSide  = float3(0.4f, 10.0f, 10.0f);
+		const float3 scaleEnd   = float3(10.0f, 10.0f, 0.4f);
 
-			auto& tc = entity.GetComponent< TransformComponent >();
-			tc.transform.position = float3(position.x * 100.0f - 50.0f, position.y * 100.0f - 50.0f, position.z * 600.0f - 300.0f);
-			tc.transform.rotation = rotation * 90.0f;
-			tc.transform.scale = { scale, scale, scale };
-		}
+		auto floor = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
+		floor.GetComponent< TransformComponent >().transform.position = float3(0.0f, -10.0f, 0.0f);
+		floor.GetComponent< TransformComponent >().transform.scale = scaleFloor;
 
-		auto entity2 = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
-		auto& tc2 = entity2.GetComponent< TransformComponent >();
-		tc2.transform.position = float3(-10.0f, 0.0f, 0.0f);
-		tc2.transform.scale *= 10.0f;
+		auto ceiling = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
+		ceiling.GetComponent< TransformComponent >().transform.position = float3(0.0f, 10.0f, 0.0f);
+		ceiling.GetComponent< TransformComponent >().transform.scale = scaleFloor;
+
+		auto leftWall = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
+		leftWall.GetComponent< TransformComponent >().transform.position = float3(-10.0f, 0.0f, 0.0f);
+		leftWall.GetComponent< TransformComponent >().transform.scale = scaleSide;
+
+		auto rightWall = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
+		rightWall.GetComponent< TransformComponent >().transform.position = float3(10.0f, 0.0f, 0.0f);
+		rightWall.GetComponent< TransformComponent >().transform.scale = scaleSide;
+
+		auto backWall = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
+		backWall.GetComponent< TransformComponent >().transform.position = float3(0.0f, 0.0f, 10.0f);
+		backWall.GetComponent< TransformComponent >().transform.scale = scaleEnd;
+
+		auto& m = backWall.GetComponent< MaterialComponent >();
+		m.roughness = 1.0f;
+
+		/*auto frontWall = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
+		frontWall.GetComponent< TransformComponent >().transform.position = float3(0.0f, 0.0f, -10.0f);
+		frontWall.GetComponent< TransformComponent >().transform.scale = scaleEnd;*/
 	}
 
 	{
@@ -295,33 +306,89 @@ void BistroApp::ConfigureSceneObjects()
 		/*auto sphereLight = m_pScene->CreateEntity("Sphere Light");
 		sphereLight.AttachComponent< LightComponent >();
 
-		auto& light          = sphereLight.GetComponent< LightComponent >();
+		auto& light = sphereLight.GetComponent< LightComponent >();
 		light.type           = eLightType::Sphere;
-		light.color          = float3(1.0f, 1.0f, 1.0f);
-		light.temperatureK   = 5000.0f;
-		light.radiusM        = 1.0;
-		light.luminousFluxLm = 100.0f;
+		light.color          = float3(1.0f, 0.324f, 0.674f);
+		light.temperatureK   = 10000.0f;
+		light.radiusM        = 1.0f;
+		light.luminousFluxLm = 5000.0f;
 
-		auto& transformComponent              = sphereLight.GetComponent< TransformComponent >();
-		transformComponent.transform.position = float3(0.0f, 0.0f, 5.0f);*/
+		auto& transformComponent = sphereLight.GetComponent< TransformComponent >();
+		transformComponent.transform.position = float3(0.0f, 5.0f, 0.0f);*/
 	}
 
-	// Create a spot light
+	// area light
 	{
-		//auto spotLight = m_pScene->CreateEntity("Spot Light");
-		//spotLight.AttachComponent <LightComponent >();
+		//auto areaLight = m_pScene->CreateEntity("Area Light");
+		//areaLight.AttachComponent <LightComponent >();
 
-		//auto& light              = spotLight.GetComponent< LightComponent >();
-		//light.type               = eLightType::Spot;
-		//light.color              = float3(1.0f, 1.0f, 1.0f);
-		//light.temperatureK      = 3200.0f;
-		//light.radiusM           = 0.05f;
-		//light.luminousPower_lm   = 25.0f * 10.0f;
-		//light.outerConeAngleRad = PI_DIV(2.0f);
+		//auto& light = areaLight.GetComponent< LightComponent >();
+		//light.type           = eLightType::Area;
+		//light.color          = float3(0.235f, 0.678f, 0.988f);
+		//light.temperatureK   = 10000.0f;
+		//light.luminousFluxLm = 1000.0f;
 
-		//auto& transform              = spotLight.GetComponent< TransformComponent >();
-		//transform.transform.position = float3(0.0f, 10.0f, 0.0f);
-		//transform.transform.rotation = float3(90.0f, 0.0f, 0.0f); // Point down
+		//auto& transformComponent = areaLight.GetComponent< TransformComponent >();
+		//// -Z forward convention: X axis -90 deg pitch puts emit direction (-Z) onto -Y (ceiling-down).
+		//transformComponent.transform.position = float3(-3.0f, 5.0f, 0.0f);
+		//transformComponent.transform.rotation = float3(90.0f, 0.0f, 0.0f);
+		//transformComponent.transform.scale    = float3(1.0f, 1.0f, 1.0f);
+	}
+
+	// disk light
+	/*{
+		auto diskLight = m_pScene->CreateEntity("Disk Light");
+		diskLight.AttachComponent< LightComponent >();
+
+		auto& light = diskLight.GetComponent< LightComponent >();
+		light.type           = eLightType::Disk;
+		light.color          = float3(0.988f, 0.235f, 0.678f);
+		light.temperatureK   = 0.0f;
+		light.luminousFluxLm = 1500.0f;
+		light.diskRadiusM    = 1.0f;
+
+		auto& transformComponent = diskLight.GetComponent< TransformComponent >();
+		transformComponent.transform.position = float3(3.0f, 5.0f, 0.0f);
+		transformComponent.transform.rotation = float3(90.0f, 0.0f, 0.0f);
+		transformComponent.transform.scale    = float3(1.0f, 1.0f, 1.0f);
+	}*/
+
+	// tube light
+	{
+		auto tubeLight = m_pScene->CreateEntity("Tube Light");
+		tubeLight.AttachComponent< LightComponent >();
+
+		auto& light = tubeLight.GetComponent< LightComponent >();
+		light.type           = eLightType::Tube;
+		light.color          = float3(1.0f, 1.0f, 1.0f);
+		light.temperatureK   = 4000.0f;
+		light.luminousFluxLm = 2000.0f;
+		light.tubeLengthM    = 4.0f;
+		light.tubeRadiusM    = 0.5f;
+
+		auto& transformComponent = tubeLight.GetComponent< TransformComponent >();
+		// rotate so transform forward (-Z) aligns with world +X — tube spans (-2, 5, 5) → (+2, 5, 5)
+		transformComponent.transform.position = float3(0.0f, 5.0f, 5.0f);
+		transformComponent.transform.rotation = float3(0.0f, 90.0f, 0.0f);
+		transformComponent.transform.scale    = float3(1.0f, 1.0f, 1.0f);
+	}
+
+	// spot light
+	{
+		/*auto spotLight = m_pScene->CreateEntity("Spot Light");
+		spotLight.AttachComponent <LightComponent >();
+
+		auto& light = spotLight.GetComponent< LightComponent >();
+		light.type              = eLightType::Spot;
+		light.color             = float3(1.0f, 1.0f, 1.0f);
+		light.temperatureK      = 3200.0f;
+		light.radiusM           = 0.05f;
+		light.luminousFluxLm    = 25.0f * 10.0f;
+		light.outerConeAngleRad = PI_DIV(2.0f);
+
+		auto& transform              = spotLight.GetComponent< TransformComponent >();
+		transform.transform.position = float3(0.0f, 10.0f, 0.0f);
+		transform.transform.rotation = float3(90.0f, 0.0f, 0.0f);*/
 	}
 
 	// post-process volume
@@ -330,7 +397,7 @@ void BistroApp::ConfigureSceneObjects()
 		auto& pp = volume.AttachComponent< PostProcessComponent >();
 
 		pp.tonemap.op    = eToneMappingOp::ACES;
-		pp.tonemap.ev100 = -2.0f;
-		pp.tonemap.gamma = 0.3f;
+		pp.tonemap.ev100 = 0.0f;
+		pp.tonemap.gamma = 2.2f;
 	}
 }

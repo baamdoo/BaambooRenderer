@@ -38,6 +38,8 @@ public:
     virtual Arc< render::Texture > GetFlatWhiteTexture3D() override;
     virtual Arc< render::Texture > GetFlatBlackTexture3D() override;
 
+    virtual Arc< render::Texture > GetFlatBlackTextureCube() override;
+
     Arc< Dx12RootSignature > GetGlobalRootSignature() const;
     Arc< DescriptorPool > GetGlobalDescriptorHeap() const;
 
@@ -45,6 +47,7 @@ public:
 private:
     Arc< Dx12Texture > CreateFlat2DTexture(const char* name, u32 color);
     Arc< Dx12Texture > CreateFlat3DTexture(const char* name, u32 color);
+    Arc< Dx12Texture > CreateFlatCubeTexture(const char* name, u32 color);
 
     Arc< Dx12Texture > LoadTextureArray(const fs::path& dirpath, bool bGenerateMips);
 

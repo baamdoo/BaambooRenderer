@@ -5,13 +5,12 @@
 #define _MATERIAL
 #include "DescriptorCommon.hg"
 
-layout(location = 0) in vec3 inPosWORLD;
-layout(location = 1) in vec2 inUv;
-layout(location = 2) in vec3 inNormalWORLD;
-layout(location = 3) in vec3 inTangentWORLD;
-layout(location = 4) in flat uint inMaterialID;
-layout(location = 5) in vec4 inPosCLIP_prev;
-layout(location = 6) in vec4 inPosCLIP_curr;
+layout(location = 0) in vec4 inPosCLIP_curr;
+layout(location = 1) in vec4 inPosCLIP_prev;
+layout(location = 2) in vec2 inUv;
+layout(location = 3) in vec3 inNormalWORLD;
+layout(location = 4) in vec3 inTangentWORLD;
+layout(location = 5) in flat uint inMaterialID;
 
 layout(location = 0) out vec4 outGBuffer0; // albedo.rgb + AO.a
 layout(location = 1) out vec4 outGBuffer1; // Normal.xyz + MaterialID.w

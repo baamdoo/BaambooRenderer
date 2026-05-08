@@ -2,6 +2,7 @@
 #define _LIGHT
 #include "Common.hlsli"
 #include "AtmosphereCommon.hlsli"
+#include "Lighting.hlsli"
 
 ConstantBuffer< DescriptorHeapIndex > g_Materials            : register(b1, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_GBuffer0             : register(b2, ROOT_CONSTANT_SPACE);  // Albedo.rgb + AO.a
@@ -13,135 +14,11 @@ ConstantBuffer< DescriptorHeapIndex > g_AerialPerspectiveLUT : register(b7, ROOT
 ConstantBuffer< DescriptorHeapIndex > g_CloudScatteringLUT   : register(b8, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_SkyboxLUT            : register(b9, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_OutSceneTexture      : register(b10, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_LtcMatrixLUT         : register(b11, ROOT_CONSTANT_SPACE); // (m00, m02, m11, m20)
+ConstantBuffer< DescriptorHeapIndex > g_LtcAmplitudeLUT      : register(b12, ROOT_CONSTANT_SPACE); // (magnitude, F0_lerp, F90_lerp, edge)
 
 static const float MIN_ROUGHNESS = 0.045;
 
-
-float3 FresnelSchlick(float cosTheta, float3 F0)
-{
-    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
-}
-
-float DistributionGGX(float3 N, float3 H, float roughness)
-{
-    float a    = roughness * roughness;
-    float a2   = a * a;
-    float NoH  = max(dot(N, H), 0.0);
-    float NoH2 = NoH * NoH;
-
-    return a2 / (PI * pow(NoH2 * (a2 - 1.0) + 1.0, 2.0));
-}
-
-float GeometrySchlickGGX(float NoV, float roughness)
-{
-    float r = roughness + 1.0;
-    float k = (r * r) / 8.0;
-    return NoV / (NoV * (1.0 - k) + k);
-}
-
-float GeometrySmith(float3 N, float3 V, float3 L, float roughness)
-{
-    float NoL = max(dot(N, L), 0.0);
-    float NoV = max(dot(N, V), 0.0);
-    return GeometrySchlickGGX(NoL, roughness) * GeometrySchlickGGX(NoV, roughness);
-}
-
-float3 CalculateBRDF(float3 N, float3 V, float3 L, float metallic, float roughness, float3 F0, inout float3 kD)
-{
-    float3 H = normalize(V + L);
-
-    float  D = DistributionGGX(N, H, roughness);
-    float  G = GeometrySmith(N, V, L, roughness);
-    float3 F = FresnelSchlick(max(dot(H, V), 0.0), F0);
-
-    float3 kS = F;
-    kD = float3(1.0, 1.0, 1.0) - kS;
-    kD *= 1.0 - metallic;
-
-    float3 numerator   = D * G * F;
-    float  denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + EPSILON_MIN;
-
-    return numerator / denominator;
-}
-
-float CalculateAttenuation(float distance, float lightRadius)
-{
-    float distance2 = max(distance * distance, lightRadius * lightRadius);
-    return 1.0 / distance2;
-}
-
-float3 ApplyDirectionalLight(DirectionalLight light, float3 N, float3 V, float3 albedo, float metallic, float roughness, float3 F0)
-{
-    float3 L = normalize(float3(-light.dirX, -light.dirY, -light.dirZ));
-
-    float3 lightColor = float3(light.colorR, light.colorG, light.colorB);
-    if (light.temperatureK > 0.0)
-        lightColor *= ColorTemperatureToRGB(light.temperatureK);
-
-    float3 kD;
-    float3 specular = CalculateBRDF(N, V, L, metallic, roughness, F0, kD);
-
-    float  NoL       = max(dot(N, L), 0.0);
-    float3 luminance = lightColor * light.illuminanceLux;
-
-    return (kD * albedo / PI + specular) * luminance * NoL;
-}
-
-float3 ApplyPointLight(PointLight light, float3 P, float3 N, float3 V, float3 albedo, float metallic, float roughness, float3 F0)
-{
-    float3 L        = float3(light.posX, light.posY, light.posZ) - P;
-    float  distance = length(L);
-
-    float3 lightColor = float3(light.colorR, light.colorG, light.colorB);
-    if (light.temperatureK > 0.0)
-        lightColor *= ColorTemperatureToRGB(light.temperatureK);
-
-    float3 R            = reflect(-V, N);
-    float3 centerToRay  = dot(L, R) * R - L;
-    float3 closestPoint = L + centerToRay * clamp(light.radiusM / length(centerToRay), 0.0, 1.0);
-    L = normalize(closestPoint);
-
-    float3 kD;
-    float3 specular = CalculateBRDF(N, V, L, metallic, roughness, F0, kD);
-
-    float  NdotL             = max(dot(N, L), 0.0);
-    float  luminousIntensity = light.luminousFluxLm / (light.radiusM * light.radiusM * PI_MUL(4.0));
-    float  attenuation       = CalculateAttenuation(distance, light.radiusM);
-    float3 luminance         = lightColor * luminousIntensity * attenuation;
-
-    return (kD * albedo / PI + specular) * luminance * NdotL;
-}
-
-float3 ApplySpotLight(SpotLight light, float3 P, float3 N, float3 V, float3 albedo, float metallic, float roughness, float3 F0)
-{
-    float3 L       = float3(light.posX, light.posY, light.posZ) - P;
-    float distance = length(L);
-    L             /= distance;
-
-    // cone attenuation
-    float cosTheta        = dot(L, normalize(float3(-light.dirX, -light.dirY, -light.dirZ)));
-    float cosThetaInner   = cos(light.innerConeAngleRad);
-    float cosThetaOuter   = cos(light.outerConeAngleRad);
-    float spotAttenuation = clamp((cosTheta - cosThetaOuter) / (cosThetaInner - cosThetaOuter), 0.0, 1.0);
-
-    if (spotAttenuation == 0.0)
-        return float3(0.0, 0.0, 0.0);
-
-    float3 lightColor = float3(light.colorR, light.colorG, light.colorB);
-    if (light.temperatureK > 0.0)
-        lightColor *= ColorTemperatureToRGB(light.temperatureK);
-
-    float3 kD;
-    float3 specular = CalculateBRDF(N, V, L, metallic, roughness, F0, kD);
-
-    float  NoL               = max(dot(N, L), 0.0);
-    float  solidAngle        = PI_MUL(2.0) * (1.0 - cosThetaOuter);
-    float  luminousIntensity = light.luminousFluxLm / solidAngle;
-    float  attenuation       = CalculateAttenuation(distance, light.radiusM);
-    float3 luminance         = lightColor * luminousIntensity * attenuation * spotAttenuation;
-
-    return (kD * albedo / PI + specular) * luminance * NoL;
-}
 
 [numthreads(16, 16, 1)]
 void main(uint3 tID : SV_DispatchThreadID)
@@ -192,7 +69,7 @@ void main(uint3 tID : SV_DispatchThreadID)
 
         float3 posWORLD = ReconstructWorldPos(uv, depth, g_Camera.mViewProjInv);
 
-        float3 V  = normalize(posWORLD);
+        float3 V  = normalize(posWORLD - g_Camera.posWORLD);
         float3 F0 = lerp(float3(0.04, 0.04, 0.04), albedo, metallic);
 
         if (materialID != INVALID_INDEX && materialID < 256)
@@ -211,14 +88,31 @@ void main(uint3 tID : SV_DispatchThreadID)
             Lo += ApplyDirectionalLight(g_Lights.directionals[i], N, V, albedo, metallic, roughness, F0);
         }
 
-        for (uint i = 0; i < g_Lights.numPoints; ++i)
-        {
-            Lo += ApplyPointLight(g_Lights.points[i], posWORLD, N, V, albedo, metallic, roughness, F0);
-        }
-
         for (uint i = 0; i < g_Lights.numSpots; ++i)
         {
             Lo += ApplySpotLight(g_Lights.spots[i], posWORLD, N, V, albedo, metallic, roughness, F0);
+        }
+
+        for (uint i = 0; i < g_Lights.numSpheres; ++i)
+        {
+            Lo += ApplySphereLight(g_Lights.spheres[i], posWORLD, N, V, albedo, metallic, roughness, F0);
+        }
+
+        for (uint i = 0; i < g_Lights.numTubes; ++i)
+        {
+            Lo += ApplyTubeLight(g_Lights.tubes[i], posWORLD, N, V, albedo, metallic, roughness, F0);
+        }
+
+        Texture2D< float4 > LtcMatrix    = GetResource(g_LtcMatrixLUT.index);
+        Texture2D< float4 > LtcAmplitude = GetResource(g_LtcAmplitudeLUT.index);
+        for (uint i = 0; i < g_Lights.numAreas; ++i)
+        {
+            Lo += ApplyAreaLight(g_Lights.areas[i], posWORLD, N, V, albedo, metallic, roughness, F0, LtcMatrix, LtcAmplitude);
+        }
+
+        for (uint i = 0; i < g_Lights.numDisks; ++i)
+        {
+            Lo += ApplyDiskLight(g_Lights.disks[i], posWORLD, N, V, albedo, metallic, roughness, F0, LtcMatrix, LtcAmplitude);
         }
 
         float3 ambientColor = float3(g_Lights.ambientColorR, g_Lights.ambientColorG, g_Lights.ambientColorB);

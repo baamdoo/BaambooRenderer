@@ -6,6 +6,8 @@
 #define CULL_FLAG_BACKFACE 1u
 #define CULL_FLAG_SUBPIXEL 2u
 
+#define TEST_MODE 0
+
 cbuffer CommandSignatureParam : register(b0, COMMMANDSIGNATURE_SPACE)
 {
     uint g_DrawID;
@@ -47,11 +49,25 @@ struct AmplificationPayload
     uint meshletIndices[32];
 };
 
+#if TEST_MODE == 1
 struct MSOutput
 {
     float4 position : SV_POSITION;
-    float4 color    : COLOR;
+    float4 color : COLOR;
 };
+#else
+struct MSOutput
+{
+    float4 position  : SV_Position;
+    float4 posCurrCS : POSITION0;
+    float4 posPrevCS : POSITION1;
+    float2 uv        : TEXCOORD0;
+    float3 normalWS  : TEXCOORD1;
+    float3 tangentWS : TEXCOORD2;
+
+    nointerpolation uint materialID : ID0;
+};
+#endif
 
 // Per-primitive cull marker (mirrors GLSL gl_CullPrimitiveEXT).
 struct MSPrimitive
@@ -116,6 +132,7 @@ groupshared uint     sh_VertexCount;
 groupshared uint     sh_TriangleCount;
 groupshared uint     sh_VertexOffset;
 groupshared uint     sh_TriangleOffset;
+groupshared uint     sh_MaterialID;
 
 groupshared float4 s_ClipPos[64];
 
@@ -150,6 +167,7 @@ void main(
         sh_TriangleCount  = meshlet.triangleCount;
         sh_VertexOffset   = meshlet.vertexOffset;
         sh_TriangleOffset = meshlet.triangleOffset;
+		sh_MaterialID     = instance.materialID;
     }
     GroupMemoryBarrierWithGroupSync();
 
@@ -169,7 +187,17 @@ void main(
         s_ClipPos[i] = posCS;
 
         vertices[i].position = posCS;
+#if TEST_MODE == 1
         vertices[i].color    = float4(float3(vertex.normalX, vertex.normalY, vertex.normalZ) * 0.5 + 0.5, 1.0);
+#else
+        vertices[i].posCurrCS = mul(g_Camera.mViewProjUnjittered, posWS);
+        vertices[i].posPrevCS = mul(g_Camera.mViewProjUnjitteredPrev, posWS);
+        vertices[i].uv        = float2(vertex.u, vertex.v);
+        vertices[i].normalWS  = mul((float3x3)sh_LocalToWorld, float3(vertex.normalX, vertex.normalY, vertex.normalZ));
+		vertices[i].tangentWS = mul((float3x3)sh_LocalToWorld, float3(vertex.tangentX, vertex.tangentY, vertex.tangentZ));
+
+        vertices[i].materialID = sh_MaterialID;
+#endif
     }
 
     // Per-vertex outputs(s_ClipPos[i]) are written by different invocations.

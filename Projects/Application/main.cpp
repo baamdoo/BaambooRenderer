@@ -1,5 +1,6 @@
 #include "Applications/BistroApp.h"
 #include "Applications/ExampleApp.h"
+#include "Applications/LightingApp.h"
 #include "Applications/RayTracingApp.h"
 
 #include <iostream>
@@ -11,7 +12,8 @@ int main()
 	eRendererAPI rendererAPI = eRendererAPI::Vulkan;
 
 	//ExampleApp app = {};
-	BistroApp app = {};
+	//BistroApp app = {};
+	LightingApp app = {};
 	//RayTracingApp app = {};
 	try
 	{

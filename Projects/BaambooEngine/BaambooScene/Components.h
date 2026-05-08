@@ -212,10 +212,11 @@ struct SkeletonComponent
 enum class eLightType
 {
 	Directional,
-	Point,
 	Spot,
-	Area,    // rectangle emitter, transform-driven (position / orientation / scale = halfExtents)
-	Sphere   // sphere emitter, transform.position = center, radiusM = radius
+	Area,
+	Sphere,
+	Disk,
+	Tube
 };
 
 struct LightComponent
@@ -230,12 +231,19 @@ struct LightComponent
 		float luminousFluxLm; // point/spot/area/sphere: lumens
 	};
 
-	float radiusM          = 0.01f;     // point/spot: bulb radius; sphere: emitter radius
+	float radiusM          = 0.01f;     // spot: bulb radius; sphere: emitter radius
 	float angularRadiusRad = 0.00465f;  // directional
 
 	// spot light
 	float innerConeAngleRad = PI_DIV(4.0f);
 	float outerConeAngleRad = PI_DIV(3.0f);
+
+	// disk light
+	float diskRadiusM = 1.0f;
+
+	// tube/line light
+	float tubeLengthM = 2.0f;
+	float tubeRadiusM = 0.05f;
 
 	bool bDirtyMark;
 
@@ -248,17 +256,6 @@ struct LightComponent
 
 		illuminanceLux   = 3.0f;
 		angularRadiusRad = 0.00465f;
-	}
-
-	void SetDefaultPoint()
-	{
-		type = eLightType::Point;
-
-		temperatureK = 4000.0f;
-		color        = float3(1.0f, 1.0f, 1.0f);
-
-		luminousFluxLm = 1000.0f;
-		radiusM        = 0.03f;
 	}
 
 	void SetDefaultSpot()
@@ -279,22 +276,45 @@ struct LightComponent
 	{
 		type = eLightType::Area;
 
-		temperatureK = 6500.0f;
+		temperatureK = 6000.0f;
 		color        = float3(1.0f, 1.0f, 1.0f);
 
-		luminousFluxLm = 50.0f;
+		luminousFluxLm = 1000.0f;
 	}
 
 	void SetDefaultSphere()
 	{
 		type = eLightType::Sphere;
 
-		temperatureK = 5000.0f;
+		temperatureK = 6000.0f;
 		color        = float3(1.0f, 1.0f, 1.0f);
 
-		luminousFluxLm = 100.0f;
+		luminousFluxLm = 1000.0f;
 
-		radiusM  = 0.5f;
+		radiusM = 1.0f;
+	}
+
+	void SetDefaultDisk()
+	{
+		type = eLightType::Disk;
+
+		temperatureK = 6000.0f;
+		color        = float3(1.0f, 1.0f, 1.0f);
+
+		luminousFluxLm = 1500.0f;
+		diskRadiusM    = 1.0f;
+	}
+
+	void SetDefaultTube()
+	{
+		type = eLightType::Tube;
+
+		temperatureK = 4000.0f; // warm fluorescent
+		color        = float3(1.0f, 1.0f, 1.0f);
+
+		luminousFluxLm = 2000.0f;
+		tubeLengthM    = 2.0f;
+		tubeRadiusM    = 0.05f;
 	}
 };
 

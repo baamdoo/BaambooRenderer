@@ -137,10 +137,11 @@ std::vector< u64 > LocalLightSystem::UpdateRenderData(const EditorCamera& edCame
     if (m_DirtyEntities.empty())
         return markedEntities;
 
-    m_PointLights.clear();
     m_SpotLights.clear();
     m_AreaLights.clear();
     m_SphereLights.clear();
+    m_DiskLights.clear();
+    m_TubeLights.clear();
 
     m_Registry.view< TransformComponent, LightComponent >().each([this, &markedEntities](auto entity, auto& transformComponent, auto& lightComponent)
         {
@@ -149,31 +150,34 @@ std::vector< u64 > LocalLightSystem::UpdateRenderData(const EditorCamera& edCame
                 u64  id = entt::to_integral(entity);
                 mat4 mWorld = m_pTransformSystem->WorldMatrix(transformComponent.world);
 
-                float3 position  = float3(mWorld[3]);
-                float3 direction = glm::normalize(float3(mWorld[2]));
+                float3 position = float3(mWorld[3]);
+
+                // Light orientation is interpreted under LH-rotation convention so that the
+                // user-facing rotation values follow the renderer's left-handed coord system:
+                //   rotation (0, 0, 0)   -> emit forward = -Z
+                //   rotation (90, 0, 0)  -> emit forward = -Y (ceiling-down)
+                const float3 rotRad  = glm::radians(transformComponent.transform.rotation);
+                const glm::mat4 lhRS =
+                    glm::eulerAngleYXZ(-rotRad.y, -rotRad.x, -rotRad.z) *
+                    glm::scale(glm::mat4(1.0f), transformComponent.transform.scale);
+
+                const float3 colX = float3(lhRS[0]);
+                const float3 colY = float3(lhRS[1]);
+                const float3 colZ = float3(lhRS[2]);
+                const float  sX   = glm::length(colX);
+                const float  sY   = glm::length(colY);
+                const float  sZ   = glm::length(colZ);
+
+                const float3 forward = (sZ > 0.0f) ? -colZ / sZ : float3(0, 0, -1);
 
                 switch (lightComponent.type)
                 {
-                case eLightType::Point:
-                    if (m_PointLights.size() < MAX_POINT_LIGHT)
-                    {
-                        PointLight light;
-                        light.position       = position;
-                        light.color          = lightComponent.color;
-                        light.temperatureK   = lightComponent.temperatureK;
-                        light.luminousFluxLm = lightComponent.luminousFluxLm;
-                        light.radiusM        = lightComponent.radiusM;
-
-                        m_PointLights.push_back(light);
-                    }
-                    break;
-
                 case eLightType::Spot:
                     if (m_SpotLights.size() < MAX_SPOT_LIGHT)
                     {
                         SpotLight light;
                         light.position          = position;
-                        light.direction         = direction;
+                        light.direction         = forward; // emit forward direction
                         light.color             = lightComponent.color;
                         light.temperatureK      = lightComponent.temperatureK;
                         light.luminousFluxLm    = lightComponent.luminousFluxLm;
@@ -188,23 +192,15 @@ std::vector< u64 > LocalLightSystem::UpdateRenderData(const EditorCamera& edCame
                 case eLightType::Area:
                     if (m_AreaLights.size() < MAX_AREA_LIGHT)
                     {
-                        const float3 colX = float3(mWorld[0]);
-                        const float3 colY = float3(mWorld[1]);
-                        const float3 colZ = float3(mWorld[2]);
-                        const float  sX   = glm::length(colX);
-                        const float  sY   = glm::length(colY);
-                        const float  sZ   = glm::length(colZ);
-
                         AreaLight light;
                         light.position       = position;
                         light.tangent        = (sX > 0.0f) ? colX / sX : float3(1, 0, 0);
-                        light.normal         = (sY > 0.0f) ? -colY / sY : float3(0, -1, 0);
+                        light.normal         = -forward; // back-face direction for shader's single-sided cull
                         light.halfWidth      = 0.5f * sX;
-                        light.halfHeight     = 0.5f * sZ;
+                        light.halfHeight     = 0.5f * sY;
                         light.color          = lightComponent.color;
                         light.luminousFluxLm = lightComponent.luminousFluxLm;
                         light.temperatureK   = lightComponent.temperatureK;
-                        UNUSED(colZ);
 
                         m_AreaLights.push_back(light);
                     }
@@ -213,10 +209,11 @@ std::vector< u64 > LocalLightSystem::UpdateRenderData(const EditorCamera& edCame
                 case eLightType::Sphere:
                     if (m_SphereLights.size() < MAX_SPHERE_LIGHT)
                     {
-                        const float sX = glm::length(float3(mWorld[0]));
-                        const float sY = glm::length(float3(mWorld[1]));
-                        const float sZ = glm::length(float3(mWorld[2]));
-                        const float maxScale = std::max({ sX, sY, sZ });
+                        // Sphere is isotropic; only world-scale (incl. parent) matters for radius scaling.
+                        const float wsX = glm::length(float3(mWorld[0]));
+                        const float wsY = glm::length(float3(mWorld[1]));
+                        const float wsZ = glm::length(float3(mWorld[2]));
+                        const float maxScale = std::max({ wsX, wsY, wsZ });
 
                         SphereLight light;
                         light.position       = position;
@@ -226,6 +223,43 @@ std::vector< u64 > LocalLightSystem::UpdateRenderData(const EditorCamera& edCame
                         light.temperatureK   = lightComponent.temperatureK;
 
                         m_SphereLights.push_back(light);
+                    }
+                    break;
+
+                case eLightType::Disk:
+                    if (m_DiskLights.size() < MAX_DISK_LIGHT)
+                    {
+                        const float maxScale = std::max({ sX, sY, sZ });
+
+                        DiskLight light;
+                        light.position       = position;
+                        light.normal         = -forward; // back-face direction (single-sided cull, Area pattern)
+                        light.tangent        = (sX > 0.0f) ? colX / sX : float3(1, 0, 0);
+                        light.radius         = lightComponent.diskRadiusM * maxScale;
+                        light.color          = lightComponent.color;
+                        light.luminousFluxLm = lightComponent.luminousFluxLm;
+                        light.temperatureK   = lightComponent.temperatureK;
+
+                        m_DiskLights.push_back(light);
+                    }
+                    break;
+
+                case eLightType::Tube:
+                    if (m_TubeLights.size() < MAX_TUBE_LIGHT)
+                    {
+                        // Tube axis follows transform's forward (Spot pattern); length scaled by sZ.
+                        const float3 axis  = forward;
+                        const float  halfL = 0.5f * lightComponent.tubeLengthM * sZ;
+
+                        TubeLight light;
+                        light.positionA      = position - axis * halfL;
+                        light.positionB      = position + axis * halfL;
+                        light.radius         = lightComponent.tubeRadiusM * std::max(sX, sY);
+                        light.color          = lightComponent.color;
+                        light.luminousFluxLm = lightComponent.luminousFluxLm;
+                        light.temperatureK   = lightComponent.temperatureK;
+
+                        m_TubeLights.push_back(light);
                     }
                     break;
 
@@ -243,12 +277,6 @@ std::vector< u64 > LocalLightSystem::UpdateRenderData(const EditorCamera& edCame
 
 void LocalLightSystem::CollectRenderData(SceneRenderView& outView) const
 {
-    outView.light.numPoints = static_cast<u32>(m_PointLights.size());
-    for (u32 i = 0; i < outView.light.numPoints; ++i)
-    {
-        outView.light.points[i] = m_PointLights[i];
-    }
-
     outView.light.numSpots = static_cast<u32>(m_SpotLights.size());
     for (u32 i = 0; i < outView.light.numSpots; ++i)
     {
@@ -265,6 +293,18 @@ void LocalLightSystem::CollectRenderData(SceneRenderView& outView) const
     for (u32 i = 0; i < outView.light.numSpheres; ++i)
     {
         outView.light.spheres[i] = m_SphereLights[i];
+    }
+
+    outView.light.numDisks = static_cast<u32>(m_DiskLights.size());
+    for (u32 i = 0; i < outView.light.numDisks; ++i)
+    {
+        outView.light.disks[i] = m_DiskLights[i];
+    }
+
+    outView.light.numTubes = static_cast<u32>(m_TubeLights.size());
+    for (u32 i = 0; i < outView.light.numTubes; ++i)
+    {
+        outView.light.tubes[i] = m_TubeLights[i];
     }
 }
 
