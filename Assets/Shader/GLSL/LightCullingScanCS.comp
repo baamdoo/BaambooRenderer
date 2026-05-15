@@ -1,0 +1,32 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "LightCullingCommon.hg"
+
+
+layout(push_constant) uniform PushConstants
+{
+    uint numClusters;
+} g_Push;
+
+layout(set = 1, binding = 0) buffer LightGridBuffer
+{
+    uvec2 grid[];   // (offset, count) per cluster
+} g_LightGridBuffer;
+
+
+// Single-thread serial prefix sum over LightGrid.count — fast enough for the small cluster grid.
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+    if (gl_GlobalInvocationID.x != 0u)
+        return;
+
+    uint cumulativeOffset = 0u;
+    for (uint i = 0u; i < g_Push.numClusters; ++i)
+    {
+        uvec2 entry = g_LightGridBuffer.grid[i];
+        g_LightGridBuffer.grid[i] = uvec2(cumulativeOffset, entry.y);
+        cumulativeOffset += entry.y;
+    }
+}

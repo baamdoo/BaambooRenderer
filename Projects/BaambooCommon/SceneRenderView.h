@@ -193,6 +193,16 @@ struct DebugRenderView
 	u64 effectBits;
 };
 
+struct DebugViewFlags
+{
+	bool bShowClusterWireframe = false;
+	bool bClusterHeatmap       = false;
+	bool bSkipEmptyClusters    = true;
+	u32  saturationMax         = 16u;
+
+	u32 lightTypeMask = 0u;
+};
+
 //-------------------------------------------------------------------------
 // SceneRenderView : Holds all the scene data
 //                   required for rendering in a refined state.
@@ -220,6 +230,12 @@ struct SceneRenderView
 	CloudRenderView       cloud;
 	PostProcessRenderView postProcess;
 	DebugRenderView       debug;
+
+	bool             bFrozen = false;
+	CameraRenderView frozenCamera = {};
+	float2           frozenViewport = float2(0.0f, 0.0f); // viewport (px) at freeze moment
+
+	DebugViewFlags debugFlags = {};
 
 	// for sync producer(SceneRenderView)-consumer(Renderer)
 	std::mutex* pSceneMutex;

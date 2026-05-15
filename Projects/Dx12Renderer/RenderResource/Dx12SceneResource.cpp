@@ -108,6 +108,7 @@ Dx12SceneResource::Dx12SceneResource(Dx12RenderDevice& rd)
         frameData.pCameraBuffer           = Dx12ConstantBuffer::Create(m_RenderDevice, "CameraBuffer", sizeof(CameraData));
         frameData.pCullBuffer             = Dx12ConstantBuffer::Create(m_RenderDevice, "CullBuffer", sizeof(CullData));
         frameData.pSceneEnvironmentBuffer = Dx12ConstantBuffer::Create(m_RenderDevice, "SceneEnvironmentBuffer", sizeof(SceneEnvironmentData));
+        frameData.pFrozenCameraBuffer     = Dx12ConstantBuffer::Create(m_RenderDevice, "FrozenCameraBuffer", sizeof(FrozenCameraData));
     }
 
     m_pTLAS = Dx12TopLevelAS::Create(m_RenderDevice, "SceneTLAS");
@@ -162,6 +163,22 @@ void Dx12SceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneV
             return m;
         };
 
+    // 1) Compute frozen camera first.
+    const CameraRenderView& frozenCam = sceneView.bFrozen ? sceneView.frozenCamera : sceneView.camera;
+    const float2&           frozenVp  = sceneView.bFrozen ? sceneView.frozenViewport : sceneView.viewport;
+
+    FrozenCameraData frozen = {};
+    frozen.mView        = frozenCam.mView;
+    frozen.mProj        = frozenCam.mProj;
+    frozen.mViewProj    = frozen.mProj * frozen.mView;
+    frozen.mViewProjInv = glm::inverse(frozen.mViewProj);
+    frozen.position     = frozenCam.pos;
+    frozen.zNear        = frozenCam.zNear;
+    frozen.zFar         = frozenCam.zFar;
+    frozen.viewport     = frozenVp;
+    memcpy(m_FrameData[m_ContextIndex].pFrozenCameraBuffer->MappedMemory(), &frozen, sizeof(frozen));
+
+    // 2) Compute observer with jittering for TAA.
     CameraData camera = {};
     camera.mView = sceneView.camera.mView;
     camera.mProj = sceneView.postProcess.effectBits & (1 << ePostProcess::AntiAliasing) ?
@@ -177,7 +194,8 @@ void Dx12SceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneV
     m_CameraCache   = std::move(camera);
     memcpy(m_FrameData[m_ContextIndex].pCameraBuffer->MappedMemory(), &m_CameraCache, sizeof(m_CameraCache));
 
-    mat4 mViewProjectionT = glm::transpose(m_CameraCache.mViewProjUnjittered);
+    // 3) CullData — derive frustum planes from the FROZEN camera so mesh frustum cull is consistent with the cluster grid and lighting decisions.
+    mat4 mViewProjectionT = glm::transpose(frozen.mViewProj);
 
     m_CullData = {};
     m_CullData.frustum[0] = baamboo::math::NormalizePlane(mViewProjectionT[3] + mViewProjectionT[0]); // w + x < 0
@@ -188,7 +206,7 @@ void Dx12SceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneV
     m_CullData.frustum[5] = float4();                                                                 // z < 0 (reversed-z, infinite far plane)
 
     m_CullData.sseThresholdPx = sceneView.sseThresholdPx;
-    m_CullData.viewportHeight = sceneView.viewport.y;
+    m_CullData.viewportHeight = frozenVp.y;
     memcpy(m_FrameData[m_ContextIndex].pCullBuffer->MappedMemory(), &m_CullData, sizeof(CullData));
 
     SceneEnvironmentData sceneEnvironmentData =
@@ -610,6 +628,10 @@ void Dx12SceneResource::BindSceneResources(render::CommandContext& context)
     auto sceneEnvironmentRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_CBV, GLOBAL_DESCRIPTOR_SPACE, 12);
     d3d12CommandList2->SetComputeRootConstantBufferView(sceneEnvironmentRootIdx, m_FrameData[m_ContextIndex].pSceneEnvironmentBuffer->GpuAddress());
     d3d12CommandList2->SetGraphicsRootConstantBufferView(sceneEnvironmentRootIdx, m_FrameData[m_ContextIndex].pSceneEnvironmentBuffer->GpuAddress());
+
+    auto frozenCameraRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_CBV, GLOBAL_DESCRIPTOR_SPACE, 13);
+    d3d12CommandList2->SetComputeRootConstantBufferView(frozenCameraRootIdx, m_FrameData[m_ContextIndex].pFrozenCameraBuffer->GpuAddress());
+    d3d12CommandList2->SetGraphicsRootConstantBufferView(frozenCameraRootIdx, m_FrameData[m_ContextIndex].pFrozenCameraBuffer->GpuAddress());
 }
 
 BufferHandle Dx12SceneResource::GetOrUpdateVertex(u64 entity, const std::string& filepath, const void* pData, u32 count)

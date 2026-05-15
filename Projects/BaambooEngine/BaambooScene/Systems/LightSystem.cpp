@@ -43,13 +43,15 @@ std::vector< u64 > SkyLightSystem::UpdateRenderData(const EditorCamera& edCamera
 {
     UNUSED(edCamera);
 
+    const bool bHasExpired = !m_ExpiredEntities.empty();
     for (auto entity : m_ExpiredEntities)
     {
         RemoveRenderData(entt::to_integral(entity));
     }
+    m_ExpiredEntities.clear();
 
     std::vector< u64 > markedEntities;
-    if (m_DirtyEntities.empty())
+    if (m_DirtyEntities.empty() && !bHasExpired)
         return markedEntities;
 
     m_DirectionalLights.clear();
@@ -133,8 +135,15 @@ std::vector< u64 > LocalLightSystem::UpdateRenderData(const EditorCamera& edCame
 {
     UNUSED(edCamera);
 
+    const bool bHasExpired = !m_ExpiredEntities.empty();
+    for (auto entity : m_ExpiredEntities)
+    {
+        RemoveRenderData(entt::to_integral(entity));
+    }
+    m_ExpiredEntities.clear();
+
     std::vector< u64 > markedEntities;
-    if (m_DirtyEntities.empty())
+    if (m_DirtyEntities.empty() && !bHasExpired)
         return markedEntities;
 
     m_SpotLights.clear();

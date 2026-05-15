@@ -29,5 +29,6 @@ enum class eToneMappingOp
 
 enum eDebugDraw
 {
-	BoundingLine = 0,
+	BoundingLine     = 0,
+	FrustumWireframe = 1,
 };

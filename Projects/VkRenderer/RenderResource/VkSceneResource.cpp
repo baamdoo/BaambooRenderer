@@ -35,8 +35,9 @@ enum
 	eCommonSetBindingIndex_Material      = 9,
 	eCommonSetBindingIndex_SceneTextures = 100,
 
-	eCommonSetBindingIndex_Light       = 10,
-	eCommonSetBindingIndex_Environment = 11,
+	eCommonSetBindingIndex_Light        = 10,
+	eCommonSetBindingIndex_Environment  = 11,
+	eCommonSetBindingIndex_FrozenCamera = 12,
 };
 
 static VulkanComputePipeline* s_CombineTexturesPipeline = nullptr;
@@ -146,6 +147,7 @@ VkSceneResource::VkSceneResource(VkRenderDevice& rd)
 		frameData.pCameraBuffer           = VulkanUniformBuffer::Create(m_RenderDevice, "CameraBuffer", sizeof(CameraData));
 		frameData.pCullBuffer             = VulkanUniformBuffer::Create(m_RenderDevice, "CullBuffer", sizeof(CullData));
 		frameData.pSceneEnvironmentBuffer = VulkanUniformBuffer::Create(m_RenderDevice, "SceneEnvironmentBuffer", sizeof(SceneEnvironmentData));
+		frameData.pFrozenCameraBuffer     = VulkanUniformBuffer::Create(m_RenderDevice, "FrozenCameraBuffer", sizeof(FrozenCameraData));
 	}
 
 
@@ -164,8 +166,9 @@ VkSceneResource::VkSceneResource(VkRenderDevice& rd)
 		{ eCommonSetBindingIndex_Cull, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_TASK_BIT_EXT, VK_NULL_HANDLE },
 		{ eCommonSetBindingIndex_Transform, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT, VK_NULL_HANDLE },
 		{ eCommonSetBindingIndex_Material, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, VK_NULL_HANDLE },
-		{ eCommonSetBindingIndex_Light, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, VK_NULL_HANDLE },
+		{ eCommonSetBindingIndex_Light, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, VK_NULL_HANDLE },
 		{ eCommonSetBindingIndex_Environment, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, VK_NULL_HANDLE },
+		{ eCommonSetBindingIndex_FrozenCamera, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_ALL, VK_NULL_HANDLE },
 		{ eCommonSetBindingIndex_SceneTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_BINDLESS_DESCRIPTOR_RESOURCE_COUNT, VK_SHADER_STAGE_FRAGMENT_BIT, VK_NULL_HANDLE },
 	};
 
@@ -187,6 +190,7 @@ VkSceneResource::VkSceneResource(VkRenderDevice& rd)
 
 	std::vector < VkDescriptorBindingFlags > flags =
 	{
+		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT,
 		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT,
 		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT,
 		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT,
@@ -255,6 +259,23 @@ void VkSceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneVie
 			return m;
 		};
 
+	// 1) Compute frozen camera first — mirrors observer when freeze is off.
+	const CameraRenderView& frozenCam = sceneView.bFrozen ? sceneView.frozenCamera : sceneView.camera;
+	const float2&           frozenVp  = sceneView.bFrozen ? sceneView.frozenViewport : sceneView.viewport;
+
+	// Frozen camera stores the *canonical* projection (no Vulkan Y-flip) because it feeds compute-only consumers
+	FrozenCameraData frozen = {};
+	frozen.mView        = frozenCam.mView;
+	frozen.mProj        = frozenCam.mProj;
+	frozen.mViewProj    = frozen.mProj * frozen.mView;
+	frozen.mViewProjInv = glm::inverse(frozen.mViewProj);
+	frozen.position     = frozenCam.pos;
+	frozen.zNear        = frozenCam.zNear;
+	frozen.viewport     = frozenVp;
+	frozen.zFar         = frozenCam.zFar;
+	memcpy(m_FrameData[m_ContextIndex].pFrozenCameraBuffer->MappedMemory(), &frozen, sizeof(frozen));
+
+	// 2) Observer camera (with TAA jitter)
 	CameraData camera = {};
 	camera.mView = sceneView.camera.mView;
 	camera.mProj = ApplyRhiNDC((sceneView.postProcess.effectBits & (1 << ePostProcess::AntiAliasing) ?
@@ -271,7 +292,8 @@ void VkSceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneVie
 	m_CameraCache = std::move(camera);
 	memcpy(m_FrameData[m_ContextIndex].pCameraBuffer->MappedMemory(), &m_CameraCache, sizeof(CameraData));
 
-	mat4 mViewProjectionT = glm::transpose(m_CameraCache.mViewProjUnjittered);
+	// 3) CullData — derive frustum planes from the FROZEN camera so mesh frustum cull is consistent with cluster grid and lighting decisions.
+	mat4 mViewProjectionT = glm::transpose(frozen.mViewProj);
 
 	m_CullData = {};
 	m_CullData.frustum[0] = baamboo::math::NormalizePlane(mViewProjectionT[3] + mViewProjectionT[0]); // w + x < 0
@@ -282,7 +304,7 @@ void VkSceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneVie
 	m_CullData.frustum[5] = float4();                                                                 // z < 0 (reversed-z, infinite far plane)
 
 	m_CullData.sseThresholdPx = sceneView.sseThresholdPx;
-	m_CullData.viewportHeight = sceneView.viewport.y;
+	m_CullData.viewportHeight = frozenVp.y;
 	memcpy(m_FrameData[m_ContextIndex].pCullBuffer->MappedMemory(), &m_CullData, sizeof(CullData));
 
 	SceneEnvironmentData sceneEnvironmentData =
@@ -298,6 +320,7 @@ void VkSceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneVie
 	descriptorSet.StageDescriptor({ m_FrameData[m_ContextIndex].pCameraBuffer->vkBuffer(), 0, m_FrameData[m_ContextIndex].pCameraBuffer->SizeInBytes() }, eCommonSetBindingIndex_Camera, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 	descriptorSet.StageDescriptor({ m_FrameData[m_ContextIndex].pCullBuffer->vkBuffer(), 0, m_FrameData[m_ContextIndex].pCullBuffer->SizeInBytes() }, eCommonSetBindingIndex_Cull, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 	descriptorSet.StageDescriptor({ m_FrameData[m_ContextIndex].pSceneEnvironmentBuffer->vkBuffer(), 0, m_FrameData[m_ContextIndex].pSceneEnvironmentBuffer->SizeInBytes() }, eCommonSetBindingIndex_Environment, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+	descriptorSet.StageDescriptor({ m_FrameData[m_ContextIndex].pFrozenCameraBuffer->vkBuffer(), 0, m_FrameData[m_ContextIndex].pFrozenCameraBuffer->SizeInBytes() }, eCommonSetBindingIndex_FrozenCamera, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
 	descriptorSet.StageDescriptors(imageInfos, eCommonSetBindingIndex_SceneTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 	descriptorSet.StageDescriptor(m_pVertexAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Vertex, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);

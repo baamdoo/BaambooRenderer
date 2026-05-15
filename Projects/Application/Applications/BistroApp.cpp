@@ -165,6 +165,23 @@ void BistroApp::DrawUI()
 {
 	Super::DrawUI();
 
+	if (m_pScene)
+	{
+		ImGui::Begin("Debug Visualization");
+		{
+			bool bFrozenReq = m_pScene->GetCameraFreezeRequest();
+			if (ImGui::Checkbox("Camera Freeze", &bFrozenReq))
+				m_pScene->SetCameraFreezeRequest(bFrozenReq);
+
+			if (m_pScene->IsCameraFrozen())
+			{
+				ImGui::SameLine();
+				ImGui::TextDisabled("(frozen at frame %llu)", (unsigned long long)m_pScene->GetFrozenAtFrame());
+			}
+		}
+		ImGui::End();
+	}
+
 	ImGui::Begin("Editor Camera");
 	{
 		if (ImGui::CollapsingHeader("Transform"))

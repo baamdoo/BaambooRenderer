@@ -27,6 +27,22 @@ struct CameraData
 }; ConstantBuffer< CameraData > g_Camera : register(b0, space0);
 #endif // _CAMERA
 
+#ifdef _FROZENCAMERA
+struct FrozenCameraData
+{
+    float4x4 mView;
+    float4x4 mProj;
+    float4x4 mViewProj;
+    float4x4 mViewProjInv;
+
+    float3   posWORLD;
+    float    zNear;
+    float2   viewport;       // frozen-snapshot viewport (px) — kept before zFar so std140 8-align lands at offset 272
+    float    zFar;
+    float    padding0;
+}; ConstantBuffer< FrozenCameraData > g_FrozenCamera : register(b13, space0);
+#endif // _FROZENCAMERA
+
 #ifdef _MESH
 ConstantBuffer< DescriptorHeapIndex > g_Vertices         : register(b1, space0);
 ConstantBuffer< DescriptorHeapIndex > g_Indices          : register(b2, space0);

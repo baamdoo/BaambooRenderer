@@ -1,4 +1,5 @@
 #define _CAMERA
+#define _FROZENCAMERA
 #define _MESH
 #define _CULL
 #define _TRANSFORM
@@ -79,7 +80,7 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
 
     uint lod = CalculateLODLevelSSE(
         mesh, center.xyz, maxScale,
-        g_Camera.posWORLD, g_Camera.mProj[1][1],
+        g_FrozenCamera.posWORLD, g_FrozenCamera.mProj[1][1],
         g_CullData.viewportHeight, g_CullData.sseThresholdPx);
 
     // --- Frustum culling ---

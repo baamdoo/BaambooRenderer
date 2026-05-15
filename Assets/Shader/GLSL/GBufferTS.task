@@ -5,6 +5,7 @@
 #extension GL_KHR_shader_subgroup_arithmetic : require
 
 #define _CAMERA
+#define _FROZENCAMERA
 #define _MESH
 #define _CULL
 #define _TRANSFORM
@@ -139,12 +140,12 @@ void main()
 			if ((g_Push.cullFlags & CULL_FLAG_MESHLET_FRUSTUM) != 0u && accept)
 				accept = !IsFrustumCulled(g_CullData.frustum, meshletCenterWS, meshletRadiusWS);
 
-			// 2) Backface cone cull
+			// 2) Backface cone cull — frozen viewpoint so culling matches the frozen frustum
 			if ((g_Push.cullFlags & CULL_FLAG_MESHLET_CONE) != 0u && accept)
 			{
 				vec3 coneAxisWS = normalize((sh_LocalToWorld * vec4(meshlet.coneAxisX, meshlet.coneAxisY, meshlet.coneAxisZ, 0.0)).xyz);
 
-				accept = !IsConeCulled(vec4(coneAxisWS, meshlet.coneCutoff), meshletCenterWS, meshletRadiusWS, g_Camera.posWORLD);
+				accept = !IsConeCulled(vec4(coneAxisWS, meshlet.coneCutoff), meshletCenterWS, meshletRadiusWS, g_FrozenCamera.posWORLD);
 			}
 
 			// 3) HiZ occlusion cull (Phase 2 only, pyramid rebuilt from Phase 1 depth)

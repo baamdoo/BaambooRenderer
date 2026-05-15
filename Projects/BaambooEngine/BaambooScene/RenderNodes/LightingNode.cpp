@@ -1,5 +1,7 @@
 #include "BaambooPch.h"
+#include "ShaderTypes.h"
 #include "LightingNode.h"
+
 #include "RenderCommon/RenderDevice.h"
 #include "RenderCommon/CommandContext.h"
 #include "BaambooScene/Scene.h"
@@ -7,6 +9,214 @@
 namespace baamboo
 {
 
+namespace
+{
+
+u32 ceilDiv(u32 a, u32 b)
+{
+	return (a + b - 1) / b;
+}
+
+}
+
+
+// =========================================================================
+// ClusterBuildNode
+// =========================================================================
+ClusterBuildNode::ClusterBuildNode(render::RenderDevice& rd)
+	: Super(rd, "ClusterBuildPass")
+{
+	using namespace render;
+
+	m_pClusterAABBBuffer = Buffer::Create(rd, "ClusterBuildPass::ClusterAABBs",
+		{
+			.count              = MAX_CLUSTER_COUNT,
+			.elementSizeInBytes = sizeof(ClusterAABB),
+			.bufferUsage        = eBufferUsage_Storage,
+		});
+
+	m_NumTilesX = ceilDiv(rd.WindowWidth(),  CLUSTER_TILE_SIZE_PX);
+	m_NumTilesY = ceilDiv(rd.WindowHeight(), CLUSTER_TILE_SIZE_PX);
+
+	m_pClusterBuildPSO = ComputePipeline::Create(m_RenderDevice, "ClusterBuildPSO");
+	m_pClusterBuildPSO->SetComputeShader(
+		Shader::Create(m_RenderDevice, "ClusterBuildCS",
+			{
+				.stage    = eShaderStage::Compute,
+				.filename = "ClusterBuildCS"
+			})).Build();
+}
+
+void ClusterBuildNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)
+{
+	using namespace render;
+
+	if (renderView.bFrozen)
+	{
+		assert(g_FrameData.pClusterAABBBuffer && "ClusterBuild skipped under freeze but no prior buffer; toggle freeze off and on again");
+		return;
+	}
+
+	context.SetRenderPipeline(m_pClusterBuildPSO.get());
+
+	context.TransitionBufferToWrite(m_pClusterAABBBuffer, ePipelineStage::ComputeShader);
+
+	struct
+	{
+		u32 tileSize;
+		u32 numTilesX;
+		u32 numTilesY;
+		u32 numSlices;
+	} constants = {
+		.tileSize  = CLUSTER_TILE_SIZE_PX,
+		.numTilesX = m_NumTilesX,
+		.numTilesY = m_NumTilesY,
+		.numSlices = CLUSTER_SLICES_Z,
+	};
+	context.SetComputeConstants(sizeof(constants), &constants);
+
+	context.StageDescriptor("g_ClusterBuffer", m_pClusterAABBBuffer);
+
+	context.Dispatch3D< 4, 4, 4 >(m_NumTilesX, m_NumTilesY, CLUSTER_SLICES_Z);
+
+	context.TransitionBufferToRead(m_pClusterAABBBuffer, ePipelineStage::ComputeShader);
+
+	g_FrameData.pClusterAABBBuffer = m_pClusterAABBBuffer;
+}
+
+void ClusterBuildNode::Resize(u32 width, u32 height, u32 depth)
+{
+	UNUSED(depth);
+	m_NumTilesX = ceilDiv(width,  CLUSTER_TILE_SIZE_PX);
+	m_NumTilesY = ceilDiv(height, CLUSTER_TILE_SIZE_PX);
+}
+
+
+// =========================================================================
+// LightCullingNode
+// =========================================================================
+LightCullingNode::LightCullingNode(render::RenderDevice& rd)
+	: Super(rd, "LightCullingPass")
+{
+	using namespace render;
+
+	m_pLightGridBuffer = Buffer::Create(rd, "LightCullingPass::LightGrid",
+		{
+			.count              = MAX_CLUSTER_COUNT,
+			.elementSizeInBytes = sizeof(u32) * 2,  // uint2
+			.bufferUsage        = eBufferUsage_Storage,
+		});
+
+	m_pLightListDataBuffer = Buffer::Create(rd, "LightCullingPass::LightListData",
+		{
+			.count              = MAX_LIGHTS_PER_CLUSTER * MAX_CLUSTER_COUNT,
+			.elementSizeInBytes = sizeof(u32),
+			.bufferUsage        = eBufferUsage_Storage,
+		});
+
+	m_NumTilesX = ceilDiv(rd.WindowWidth(),  CLUSTER_TILE_SIZE_PX);
+	m_NumTilesY = ceilDiv(rd.WindowHeight(), CLUSTER_TILE_SIZE_PX);
+
+	m_pCountPSO = ComputePipeline::Create(m_RenderDevice, "LightCullingCountPSO");
+	m_pCountPSO->SetComputeShader(
+		Shader::Create(m_RenderDevice, "LightCullingCountCS",
+			{
+				.stage    = eShaderStage::Compute,
+				.filename = "LightCullingCountCS"
+			})).Build();
+
+	m_pScanPSO = ComputePipeline::Create(m_RenderDevice, "LightCullingScanPSO");
+	m_pScanPSO->SetComputeShader(
+		Shader::Create(m_RenderDevice, "LightCullingScanCS",
+			{
+				.stage    = eShaderStage::Compute,
+				.filename = "LightCullingScanCS"
+			})).Build();
+
+	m_pWritePSO = ComputePipeline::Create(m_RenderDevice, "LightCullingWritePSO");
+	m_pWritePSO->SetComputeShader(
+		Shader::Create(m_RenderDevice, "LightCullingWriteCS",
+			{
+				.stage    = eShaderStage::Compute,
+				.filename = "LightCullingWriteCS"
+			})).Build();
+}
+
+void LightCullingNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)
+{
+	UNUSED(renderView);
+	using namespace render;
+
+	assert(g_FrameData.pClusterAABBBuffer && "LightCullingNode requires ClusterBuildNode to run first");
+	auto pClusterAABB = g_FrameData.pClusterAABBBuffer.lock();
+
+	struct
+	{
+		u32 tileSize;
+		u32 numTilesX;
+		u32 numTilesY;
+		u32 numSlices;
+	} cullConstants = {
+		.tileSize  = CLUSTER_TILE_SIZE_PX,
+		.numTilesX = m_NumTilesX,
+		.numTilesY = m_NumTilesY,
+		.numSlices = CLUSTER_SLICES_Z,
+	};
+
+	// === Pass 1: Count ===
+	context.SetRenderPipeline(m_pCountPSO.get());
+	context.TransitionBufferToRead (pClusterAABB,         ePipelineStage::ComputeShader);
+	context.TransitionBufferToWrite(m_pLightGridBuffer,   ePipelineStage::ComputeShader);
+
+	context.SetComputeConstants(sizeof(cullConstants), &cullConstants);
+	context.StageDescriptor("g_ClusterBuffer",   pClusterAABB);
+	context.StageDescriptor("g_LightGridBuffer", m_pLightGridBuffer);
+	context.Dispatch3D< 4, 4, 4 >(m_NumTilesX, m_NumTilesY, CLUSTER_SLICES_Z);
+
+	// === Pass 2: Scan (prefix-sum) ===
+	context.UAVBarrier(m_pLightGridBuffer);
+
+	context.SetRenderPipeline(m_pScanPSO.get());
+
+	struct
+	{
+		u32 numClusters;
+	} scanConstants = {
+		.numClusters = m_NumTilesX * m_NumTilesY * CLUSTER_SLICES_Z,
+	};
+	context.SetComputeConstants(sizeof(scanConstants), &scanConstants);
+	context.StageDescriptor("g_LightGridBuffer", m_pLightGridBuffer);
+	context.Dispatch1D< 1 >(1);
+
+	// === Pass 3: Write ===
+	context.UAVBarrier(m_pLightGridBuffer);
+	context.TransitionBufferToWrite(m_pLightListDataBuffer, ePipelineStage::ComputeShader);
+
+	context.SetRenderPipeline(m_pWritePSO.get());
+	context.SetComputeConstants(sizeof(cullConstants), &cullConstants);
+	context.StageDescriptor("g_ClusterBuffer",       pClusterAABB);
+	context.StageDescriptor("g_LightGridBuffer",     m_pLightGridBuffer);
+	context.StageDescriptor("g_LightListDataBuffer", m_pLightListDataBuffer);
+	context.Dispatch3D< 4, 4, 4 >(m_NumTilesX, m_NumTilesY, CLUSTER_SLICES_Z);
+
+	context.TransitionBufferToRead(m_pLightGridBuffer,     ePipelineStage::ComputeShader);
+	context.TransitionBufferToRead(m_pLightListDataBuffer, ePipelineStage::ComputeShader);
+
+	g_FrameData.pLightGridBuffer     = m_pLightGridBuffer;
+	g_FrameData.pLightListDataBuffer = m_pLightListDataBuffer;
+}
+
+void LightCullingNode::Resize(u32 width, u32 height, u32 depth)
+{
+	UNUSED(depth);
+	m_NumTilesX = ceilDiv(width,  CLUSTER_TILE_SIZE_PX);
+	m_NumTilesY = ceilDiv(height, CLUSTER_TILE_SIZE_PX);
+}
+
+
+// =========================================================================
+// LightingNode
+// =========================================================================
 LightingNode::LightingNode(render::RenderDevice& rd)
 	: Super(rd, "LightingPass")
 {
@@ -78,6 +288,11 @@ void LightingNode::Apply(render::CommandContext& context, const SceneRenderView&
 	context.StageDescriptor("g_LtcMatrixLUT",    m_pLtcLut1, g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_LtcAmplitudeLUT", m_pLtcLut2, g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_OutSceneTexture", m_pSceneTexture);
+
+	if (g_FrameData.pLightGridBuffer)
+		context.StageDescriptor("g_LightGridBuffer", g_FrameData.pLightGridBuffer.lock());
+	if (g_FrameData.pLightListDataBuffer)
+		context.StageDescriptor("g_LightListDataBuffer", g_FrameData.pLightListDataBuffer.lock());
 
 	context.Dispatch2D< 16, 16 >(m_pSceneTexture->Width(), m_pSceneTexture->Height());
 

@@ -3,10 +3,12 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 
 #define _CAMERA
+#define _FROZENCAMERA
 #define _MATERIAL
 #define _LIGHT
 #include "Lighting.hg"
 #include "AtmosphereCommon.hg"
+#include "LightCullingCommon.hg"
 
 layout(set = 1, binding = 1) uniform sampler2D g_GBuffer0;    // Albedo.rgb + AO.a
 layout(set = 1, binding = 2) uniform sampler2D g_GBuffer1;    // Normal.rgb + MaterialID.a
@@ -20,6 +22,16 @@ layout(set = 1, binding = 9) uniform sampler2D g_LtcMatrixLUT;     // (m00, m02,
 layout(set = 1, binding = 10) uniform sampler2D g_LtcAmplitudeLUT; // (magnitude, F0_lerp, F90_lerp, edge)
 
 layout(set = 1, binding = 11, rgba16f) writeonly uniform image2D g_OutSceneTexture;
+
+layout(set = 1, binding = 12) readonly buffer LightGridBuffer
+{
+    uvec2 grid[];      // (offset, count) per cluster
+} g_LightGridBuffer;
+
+layout(set = 1, binding = 13) readonly buffer LightListDataBuffer
+{
+    uint indices[];    // packed (type:3 + idx:29)
+} g_LightListDataBuffer;
 
 const float MIN_ROUGHNESS = 0.045;
 
@@ -75,34 +87,45 @@ void main()
         }
 
         vec3 Lo = vec3(0.0);
-        for (uint i = 0; i < g_LightBuffer.lightingData.numDirectionals; ++i)
+
+        // Directional lights are scene-global: brute-force iterate.
+        for (uint i = 0u; i < g_LightBuffer.lightingData.numDirectionals; ++i)
         {
             Lo += ApplyDirectionalLight(g_LightBuffer.lightingData.directionals[i], N, V, albedo, metallic, roughness, F0);
         }
 
-        for (uint i = 0; i < g_LightBuffer.lightingData.numSpots; ++i)
-        {
-            Lo += ApplySpotLight(g_LightBuffer.lightingData.spots[i], posWORLD, N, V, albedo, metallic, roughness, F0);
-        }
+        // Cluster iteration for local lights — frozen camera so cluster lookup is consistent under freeze.
+        float viewZ      = (g_FrozenCamera.mView * vec4(posWORLD, 1.0)).z;
+        uint  clusterIdx = PixelToClusterIdx(uvec2(pixCoords), viewZ, g_FrozenCamera.zNear, g_FrozenCamera.zFar, uint(imgSize.x), uint(imgSize.y));
 
-        for (uint i = 0; i < g_LightBuffer.lightingData.numSpheres; ++i)
+        uvec2 cell = g_LightGridBuffer.grid[clusterIdx];
+        for (uint i = 0u; i < cell.y; ++i)
         {
-            Lo += ApplySphereLight(g_LightBuffer.lightingData.spheres[i], posWORLD, N, V, albedo, metallic, roughness, F0);
-        }
+            uint packed = g_LightListDataBuffer.indices[cell.x + i];
 
-        for (uint i = 0; i < g_LightBuffer.lightingData.numTubes; ++i)
-        {
-            Lo += ApplyTubeLight(g_LightBuffer.lightingData.tubes[i], posWORLD, N, V, albedo, metallic, roughness, F0);
-        }
+            uint type, idx;
+            DecodeLightIndex(packed, type, idx);
 
-        for (uint i = 0; i < g_LightBuffer.lightingData.numAreas; ++i)
-        {
-            Lo += ApplyAreaLight(g_LightBuffer.lightingData.areas[i], posWORLD, N, V, albedo, metallic, roughness, F0, g_LtcMatrixLUT, g_LtcAmplitudeLUT);
-        }
-
-        for (uint i = 0; i < g_LightBuffer.lightingData.numDisks; ++i)
-        {
-            Lo += ApplyDiskLight(g_LightBuffer.lightingData.disks[i], posWORLD, N, V, albedo, metallic, roughness, F0, g_LtcMatrixLUT, g_LtcAmplitudeLUT);
+            if (type == LIGHT_TYPE_SPOT)
+            {
+                Lo += ApplySpotLight(g_LightBuffer.lightingData.spots[idx], posWORLD, N, V, albedo, metallic, roughness, F0);
+            }
+            else if (type == LIGHT_TYPE_SPHERE)
+            {
+                Lo += ApplySphereLight(g_LightBuffer.lightingData.spheres[idx], posWORLD, N, V, albedo, metallic, roughness, F0);
+            }
+            else if (type == LIGHT_TYPE_TUBE)
+            {
+                Lo += ApplyTubeLight(g_LightBuffer.lightingData.tubes[idx], posWORLD, N, V, albedo, metallic, roughness, F0);
+            }
+            else if (type == LIGHT_TYPE_AREA)
+            {
+                Lo += ApplyAreaLight(g_LightBuffer.lightingData.areas[idx], posWORLD, N, V, albedo, metallic, roughness, F0, g_LtcMatrixLUT, g_LtcAmplitudeLUT);
+            }
+            else if (type == LIGHT_TYPE_DISK)
+            {
+                Lo += ApplyDiskLight(g_LightBuffer.lightingData.disks[idx], posWORLD, N, V, albedo, metallic, roughness, F0, g_LtcMatrixLUT, g_LtcAmplitudeLUT);
+            }
         }
 
         vec3 ambientColor = vec3(g_LightBuffer.lightingData.ambientColorR,

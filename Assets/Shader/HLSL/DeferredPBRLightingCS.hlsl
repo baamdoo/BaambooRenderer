@@ -1,8 +1,10 @@
 #define _CAMERA
+#define _FROZENCAMERA
 #define _LIGHT
 #include "Common.hlsli"
 #include "AtmosphereCommon.hlsli"
 #include "Lighting.hlsli"
+#include "LightCullingCommon.hlsli"
 
 ConstantBuffer< DescriptorHeapIndex > g_Materials            : register(b1, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_GBuffer0             : register(b2, ROOT_CONSTANT_SPACE);  // Albedo.rgb + AO.a
@@ -16,6 +18,9 @@ ConstantBuffer< DescriptorHeapIndex > g_SkyboxLUT            : register(b9, ROOT
 ConstantBuffer< DescriptorHeapIndex > g_OutSceneTexture      : register(b10, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_LtcMatrixLUT         : register(b11, ROOT_CONSTANT_SPACE); // (m00, m02, m11, m20)
 ConstantBuffer< DescriptorHeapIndex > g_LtcAmplitudeLUT      : register(b12, ROOT_CONSTANT_SPACE); // (magnitude, F0_lerp, F90_lerp, edge)
+ConstantBuffer< DescriptorHeapIndex > g_LightGridBuffer      : register(b13, ROOT_CONSTANT_SPACE); // uint2(offset, count) per cluster
+ConstantBuffer< DescriptorHeapIndex > g_LightListDataBuffer  : register(b14, ROOT_CONSTANT_SPACE); // uint (type:3 + idx:29) packed
+
 
 static const float MIN_ROUGHNESS = 0.045;
 
@@ -82,37 +87,50 @@ void main(uint3 tID : SV_DispatchThreadID)
             }
         }
 
+        Texture2D< float4 > LtcMatrix    = GetResource(g_LtcMatrixLUT.index);
+        Texture2D< float4 > LtcAmplitude = GetResource(g_LtcAmplitudeLUT.index);
+
         float3 Lo = float3(0.0, 0.0, 0.0);
+
         for (uint i = 0; i < g_Lights.numDirectionals; ++i)
         {
             Lo += ApplyDirectionalLight(g_Lights.directionals[i], N, V, albedo, metallic, roughness, F0);
         }
 
-        for (uint i = 0; i < g_Lights.numSpots; ++i)
-        {
-            Lo += ApplySpotLight(g_Lights.spots[i], posWORLD, N, V, albedo, metallic, roughness, F0);
-        }
+        float viewZ      = mul(g_FrozenCamera.mView, float4(posWORLD, 1.0)).z;
+        uint  clusterIdx = PixelToClusterIdx(uint2(texCoords), viewZ, g_FrozenCamera.zNear, g_FrozenCamera.zFar, width, height);
 
-        for (uint i = 0; i < g_Lights.numSpheres; ++i)
-        {
-            Lo += ApplySphereLight(g_Lights.spheres[i], posWORLD, N, V, albedo, metallic, roughness, F0);
-        }
+        StructuredBuffer< uint2 > LightGrid     = GetResource(g_LightGridBuffer.index);
+        StructuredBuffer< uint  > LightListData = GetResource(g_LightListDataBuffer.index);
 
-        for (uint i = 0; i < g_Lights.numTubes; ++i)
+        uint2 cell = LightGrid[clusterIdx];
+        [loop] for (uint i = 0; i < cell.y; ++i)
         {
-            Lo += ApplyTubeLight(g_Lights.tubes[i], posWORLD, N, V, albedo, metallic, roughness, F0);
-        }
+            uint packed = LightListData[cell.x + i];
 
-        Texture2D< float4 > LtcMatrix    = GetResource(g_LtcMatrixLUT.index);
-        Texture2D< float4 > LtcAmplitude = GetResource(g_LtcAmplitudeLUT.index);
-        for (uint i = 0; i < g_Lights.numAreas; ++i)
-        {
-            Lo += ApplyAreaLight(g_Lights.areas[i], posWORLD, N, V, albedo, metallic, roughness, F0, LtcMatrix, LtcAmplitude);
-        }
+            uint type, idx;
+            DecodeLightIndex(packed, type, idx);
 
-        for (uint i = 0; i < g_Lights.numDisks; ++i)
-        {
-            Lo += ApplyDiskLight(g_Lights.disks[i], posWORLD, N, V, albedo, metallic, roughness, F0, LtcMatrix, LtcAmplitude);
+            switch (type)
+            {
+            case LIGHT_TYPE_SPOT:
+                Lo += ApplySpotLight(g_Lights.spots[idx], posWORLD, N, V, albedo, metallic, roughness, F0);
+				break;
+            case LIGHT_TYPE_SPHERE:
+            	Lo += ApplySphereLight(g_Lights.spheres[idx], posWORLD, N, V, albedo, metallic, roughness, F0);
+                break;
+            case LIGHT_TYPE_TUBE:
+                Lo += ApplyTubeLight(g_Lights.tubes[idx], posWORLD, N, V, albedo, metallic, roughness, F0);
+                break;
+            case LIGHT_TYPE_AREA:
+				Lo += ApplyAreaLight(g_Lights.areas[idx], posWORLD, N, V, albedo, metallic, roughness, F0, LtcMatrix, LtcAmplitude);
+                break;
+            case LIGHT_TYPE_DISK:
+                Lo += ApplyDiskLight(g_Lights.disks[idx], posWORLD, N, V, albedo, metallic, roughness, F0, LtcMatrix, LtcAmplitude);
+                break;
+            default:
+                break;
+            }
         }
 
         float3 ambientColor = float3(g_Lights.ambientColorR, g_Lights.ambientColorG, g_Lights.ambientColorB);

@@ -59,9 +59,7 @@ void VulkanRenderTarget::Build()
 		attachmentDesc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		attachmentDesc.finalLayout    =
 			tex->Desc().usage & VK_IMAGE_USAGE_SAMPLED_BIT ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-		// LOAD requires the actual current layout so content is preserved during transition;
-		// CLEAR can use UNDEFINED since content is discarded anyway.
-		attachmentDesc.initialLayout  = bLoad ? attachmentDesc.finalLayout : VK_IMAGE_LAYOUT_UNDEFINED;
+		attachmentDesc.initialLayout  = bLoad ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED;
 		attachmentDescs.push_back(attachmentDesc);
 
 		colorReferences.push_back(
@@ -95,9 +93,7 @@ void VulkanRenderTarget::Build()
 			attachmentDesc.stencilLoadOp  = bLoadDepth ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
 			attachmentDesc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 			attachmentDesc.finalLayout    = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			// LOAD: preserve content by specifying the actual current layout.
-			// CLEAR: UNDEFINED is fine since content is discarded.
-			attachmentDesc.initialLayout  = bLoadDepth ? attachmentDesc.finalLayout : VK_IMAGE_LAYOUT_UNDEFINED;
+			attachmentDesc.initialLayout  = bLoadDepth ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED;
 			attachmentDescs.push_back(attachmentDesc);
 
 			depthReference.attachment = static_cast<u32>(attachmentDescs.size()) - 1;

@@ -36,6 +36,7 @@ public:
 
 	Arc< Dx12RootSignature > GetRootSignature() const { return m_pRootSignature; }
 	inline ID3D12PipelineState* GetD3D12PipelineState() const { return m_d3d12PipelineState; }
+	inline D3D_PRIMITIVE_TOPOLOGY GetD3D12PrimitiveTopology() const { return m_D3DPrimitiveTopology; }
 
 protected:
 	void SetVertexInputLayout(ID3D12ShaderReflection* d3d12ShaderReflection);
@@ -49,6 +50,8 @@ private:
 
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC      m_PipelineDesc = {};
 	std::vector< D3D12_INPUT_ELEMENT_DESC > m_InputLayoutDesc;
+
+	D3D_PRIMITIVE_TOPOLOGY m_D3DPrimitiveTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 
 	struct MeshPipelineStream
 	{

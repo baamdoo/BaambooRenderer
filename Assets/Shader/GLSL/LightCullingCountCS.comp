@@ -1,0 +1,107 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#define _CAMERA
+#define _FROZENCAMERA
+#define _LIGHT
+#include "DescriptorCommon.hg"
+#include "LightCullingCommon.hg"
+
+
+layout(push_constant) uniform PushConstants
+{
+    uint tileSize;
+    uint numTilesX;
+    uint numTilesY;
+    uint numSlices;
+} g_Push;
+
+layout(set = 1, binding = 0) readonly buffer ClusterAABBBuffer
+{
+    ClusterAABB clusters[];
+} g_ClusterBuffer;
+
+layout(set = 1, binding = 1) buffer LightGridBuffer
+{
+    uvec2 grid[];   // (offset, count) per cluster — offset filled by Scan pass
+} g_LightGridBuffer;
+
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+void main()
+{
+    uvec3 DTid = gl_GlobalInvocationID;
+    if (DTid.x >= g_Push.numTilesX || DTid.y >= g_Push.numTilesY || DTid.z >= g_Push.numSlices)
+        return;
+
+    uint clusterIdx = ClusterFlatIndex(DTid, g_Push.numTilesX, g_Push.numTilesY);
+
+    vec3 aabbMin, aabbMax;
+    DecodeClusterAABB(g_ClusterBuffer.clusters[clusterIdx], aabbMin, aabbMax);
+
+    uint count = 0u;
+    for (uint si = 0u; si < g_LightBuffer.lightingData.numSpheres; ++si)
+    {
+        SphereLight l = g_LightBuffer.lightingData.spheres[si];
+        vec3  cWorld = vec3(l.posX, l.posY, l.posZ);
+        vec3  cView  = (g_FrozenCamera.mView * vec4(cWorld, 1.0)).xyz;
+        float rMax   = InfluenceRadiusIsotropic(l.luminousFluxLm, l.radius);
+        if (IntersectAabbSphere(aabbMin, aabbMax, cView, rMax))
+            ++count;
+    }
+
+    for (uint pi = 0u; pi < g_LightBuffer.lightingData.numSpots; ++pi)
+    {
+        // Spot cluster cull — use an apex-centered enclosing sphere of radius `range / cos(θ)` so
+        // that the entire cone is bounded. Cone-AABB intersection is intractable to make perfectly
+        // tight, and any false-negative manifests as cluster-aligned hard edges in the shading.
+        // Cone shape is enforced per-pixel by `spotAttenuation` in ApplySpotLight.
+        SpotLight l = g_LightBuffer.lightingData.spots[pi];
+        vec3  cWorld   = vec3(l.posX, l.posY, l.posZ);
+        vec3  cView    = (g_FrozenCamera.mView * vec4(cWorld, 1.0)).xyz;
+        float rCone    = InfluenceRadiusCone(l.luminousFluxLm, l.outerConeAngleRad, l.radiusM);
+        float rBound   = rCone / max(cos(l.outerConeAngleRad), 1e-6);
+        if (IntersectAabbSphere(aabbMin, aabbMax, cView, rBound))
+            ++count;
+    }
+
+    for (uint ai = 0u; ai < g_LightBuffer.lightingData.numAreas; ++ai)
+    {
+        AreaLight l = g_LightBuffer.lightingData.areas[ai];
+        vec3  cWorld    = vec3(l.posX, l.posY, l.posZ);
+        vec3  nWorld    = vec3(l.normalX, l.normalY, l.normalZ);
+        vec3  cView     = (g_FrozenCamera.mView * vec4(cWorld, 1.0)).xyz;
+        vec3  nView     = mat3(g_FrozenCamera.mView) * nWorld;
+        float rPhysical = sqrt(l.halfWidth * l.halfWidth + l.halfHeight * l.halfHeight);
+        float rMax      = InfluenceRadiusIsotropic(l.luminousFluxLm, rPhysical);
+        if (IntersectAabbHemisphere(aabbMin, aabbMax, cView, nView, rMax))
+            ++count;
+    }
+
+    for (uint di = 0u; di < g_LightBuffer.lightingData.numDisks; ++di)
+    {
+        DiskLight l = g_LightBuffer.lightingData.disks[di];
+        vec3  cWorld = vec3(l.posX, l.posY, l.posZ);
+        vec3  nWorld = vec3(l.normalX, l.normalY, l.normalZ);
+        vec3  cView  = (g_FrozenCamera.mView * vec4(cWorld, 1.0)).xyz;
+        vec3  nView  = mat3(g_FrozenCamera.mView) * nWorld;
+        float rMax   = InfluenceRadiusIsotropic(l.luminousFluxLm, l.radius);
+        if (IntersectAabbDisk(aabbMin, aabbMax, cView, nView, rMax))
+            ++count;
+    }
+
+    for (uint ti = 0u; ti < g_LightBuffer.lightingData.numTubes; ++ti)
+    {
+        TubeLight l = g_LightBuffer.lightingData.tubes[ti];
+        vec3  aWorld = vec3(l.posAX, l.posAY, l.posAZ);
+        vec3  bWorld = vec3(l.posBX, l.posBY, l.posBZ);
+        vec3  aView  = (g_FrozenCamera.mView * vec4(aWorld, 1.0)).xyz;
+        vec3  bView  = (g_FrozenCamera.mView * vec4(bWorld, 1.0)).xyz;
+        float rMax   = InfluenceRadiusIsotropic(l.luminousFluxLm, l.radius);
+        if (IntersectAabbCapsule(aabbMin, aabbMax, aView, bView, rMax))
+            ++count;
+    }
+    count = min(count, MAX_LIGHTS_PER_CLUSTER);
+
+    g_LightGridBuffer.grid[clusterIdx] = uvec2(0u, count);  // offset filled by Scan pass
+}

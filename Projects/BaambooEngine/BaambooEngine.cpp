@@ -433,6 +433,10 @@ void Engine::RenderLoop()
 					assert(renderView.pSceneMutex);
 					std::lock_guard< std::mutex > lock(*renderView.pSceneMutex);
 					ImGui::DrawUI(*this);
+					
+					for (auto pNode : m_pScene->GetRenderNodes())
+						if (pNode && pNode->IsEnabled())
+							pNode->DrawUI();
 				}
 
 				for (auto pNode : m_pScene->GetRenderNodes())

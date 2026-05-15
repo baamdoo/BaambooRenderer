@@ -659,6 +659,13 @@ void Dx12CommandContext::Impl::SetRenderPipeline(Dx12GraphicsPipeline* pGraphics
 		}
 
 		m_d3d12CommandList10->SetPipelineState(m_pGraphicsPipeline->GetD3D12PipelineState());
+
+		const D3D_PRIMITIVE_TOPOLOGY topology = m_pGraphicsPipeline->GetD3D12PrimitiveTopology();
+		if (topology != D3D_PRIMITIVE_TOPOLOGY_UNDEFINED && m_PrimitiveTopology != topology)
+		{
+			m_PrimitiveTopology = topology;
+			m_d3d12CommandList10->IASetPrimitiveTopology(topology);
+		}
 	}
 }
 

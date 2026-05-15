@@ -72,6 +72,22 @@ struct CameraData
 };
 
 
+// Frozen camera — debug purpose
+struct FrozenCameraData
+{
+    mat4 mView;
+    mat4 mProj;
+    mat4 mViewProj;
+    mat4 mViewProjInv;
+
+    float3 position;
+    float  zNear;
+    float2 viewport;     // frozen-snapshot viewport (px) — placed before zFar so std140 8-byte align lands on offset 272
+    float  zFar;
+    float  padding0;
+};
+
+
 struct CullData
 {
     float4 frustum[6];
@@ -192,12 +208,47 @@ struct TubeLight
     float  temperatureK;
 };
 
+
+// =========================================================================
+// Clustered Lighting (Cluster AABB Build)
+// =========================================================================
+struct ClusterAABB
+{
+    float4 aabbMin; // xyz = view-space min, w = padding (or cluster index encoding)
+    float4 aabbMax; // xyz = view-space max, w = padding
+};
+static_assert(sizeof(ClusterAABB) == 32);
+
+#define CLUSTER_TILE_SIZE_PX 64u
+#define CLUSTER_SLICES_Z     32u
+#define MAX_CLUSTER_X        60u  // 4K viewport upper bound (3840 / 64 = 60)
+#define MAX_CLUSTER_Y        34u  // 4K viewport upper bound (ceil(2160 / 64) = 34)
+#define MAX_CLUSTER_Z        32u
+#define MAX_CLUSTER_COUNT    (MAX_CLUSTER_X * MAX_CLUSTER_Y * MAX_CLUSTER_Z) // 65,280
+
 #define MAX_DIRECTIONAL_LIGHT 2
 #define MAX_SPOT_LIGHT        32
 #define MAX_AREA_LIGHT        16
 #define MAX_SPHERE_LIGHT      16
 #define MAX_DISK_LIGHT        16
 #define MAX_TUBE_LIGHT        16
+
+// =========================================================================
+// Light Culling
+// =========================================================================
+#define MAX_LIGHTS_PER_CLUSTER 64u
+
+#define LIGHT_TYPE_BITS  3u
+#define LIGHT_INDEX_BITS 29u
+#define LIGHT_INDEX_MASK 0x1FFFFFFFu
+
+#define LIGHT_TYPE_DIRECTIONAL 1u
+#define LIGHT_TYPE_SPOT        2u
+#define LIGHT_TYPE_SPHERE      3u
+#define LIGHT_TYPE_DISK        4u
+#define LIGHT_TYPE_TUBE        5u
+#define LIGHT_TYPE_AREA        6u
+
 struct LightData
 {
     DirectionalLight directionals[MAX_DIRECTIONAL_LIGHT];

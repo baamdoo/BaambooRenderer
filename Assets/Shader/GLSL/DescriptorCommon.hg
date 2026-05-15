@@ -149,7 +149,7 @@ layout(set = DESCRIPTORSET_COMMON, binding = 10) readonly buffer LightBuffer
 #endif // _LIGHT
 
 #ifdef _SCENEENVIRONMENT
-layout(set = DESCRIPTORSET_COMMON, binding = 11) uniform SceneEnvironmentData 
+layout(set = DESCRIPTORSET_COMMON, binding = 11) uniform SceneEnvironmentData
 {
     AtmosphereData atmosphere;
     CloudData      cloud;
@@ -158,5 +158,22 @@ layout(set = DESCRIPTORSET_COMMON, binding = 11) uniform SceneEnvironmentData
 AtmosphereData GetAtmosphereData() { return g_SceneEnvironment.atmosphere; }
 CloudData      GetCloudData()      { return g_SceneEnvironment.cloud; }
 #endif // _SCENEENVIRONMENT
+
+#ifdef _FROZENCAMERA
+// HLSL: register(b13, space0) — GLSL binding numbering offset by 1 (SceneEnv == 11 here, == b12 there).
+layout(set = DESCRIPTORSET_COMMON, binding = 12) uniform FrozenCamera
+{
+    mat4 mView;
+    mat4 mProj;
+    mat4 mViewProj;
+    mat4 mViewProjInv;
+
+    vec3  posWORLD;
+    float zNear;
+    vec2  viewport;      // frozen-snapshot viewport (px) — std140 8-byte align lands at offset 272
+    float zFar;
+    float padding0;
+} g_FrozenCamera;
+#endif // _FROZENCAMERA
 
 #endif // _GLSL_SCENE_COMMON_HEADER

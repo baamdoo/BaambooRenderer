@@ -54,6 +54,7 @@ Dx12ResourceManager::Dx12ResourceManager(Dx12RenderDevice& rd)
     m_pGlobalRootSignature->AddConstants(10, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Materials
     m_pGlobalRootSignature->AddCBV(11, GLOBAL_DESCRIPTOR_SPACE);          // g_Lights
     m_pGlobalRootSignature->AddCBV(12, GLOBAL_DESCRIPTOR_SPACE);          // g_SceneEnvironment
+    m_pGlobalRootSignature->AddCBV(13, GLOBAL_DESCRIPTOR_SPACE);          // g_FrozenCamera
     // Local CBVs
     for (u32 i = 0; i < (MAX_VIEWS - 8) / 3; ++i)
     {

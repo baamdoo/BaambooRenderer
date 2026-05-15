@@ -91,6 +91,7 @@ private:
         Arc< VulkanUniformBuffer > pCameraBuffer;
         Arc< VulkanUniformBuffer > pCullBuffer;
         Arc< VulkanUniformBuffer > pSceneEnvironmentBuffer;
+        Arc< VulkanUniformBuffer > pFrozenCameraBuffer;
 
         bool bInitialized = false;
 

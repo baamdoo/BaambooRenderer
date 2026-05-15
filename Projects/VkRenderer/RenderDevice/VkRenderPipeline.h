@@ -80,6 +80,8 @@ public:
 	inline VkPipelineLayout vkPipelineLayout() const { return m_vkPipelineLayout; }
 	[[nodiscard]]
 	inline VkDescriptorSetLayout vkSetLayout(u8 set) const { return m_vkSetLayouts[set]; }
+	[[nodiscard]]
+	inline VkShaderStageFlags vkPushConstantStages() const { return m_PushConstantStages; }
 
 private:
 	VkRenderDevice& m_RenderDevice;
@@ -87,6 +89,7 @@ private:
 	VkPipeline		                     m_vkPipeline = VK_NULL_HANDLE;
 	VkPipelineLayout                     m_vkPipelineLayout = VK_NULL_HANDLE;
 	std::vector< VkDescriptorSetLayout > m_vkSetLayouts;
+	VkShaderStageFlags                   m_PushConstantStages = 0;
 
 	struct PipelineDesc
 	{

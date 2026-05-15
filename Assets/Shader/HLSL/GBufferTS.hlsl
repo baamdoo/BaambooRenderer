@@ -1,4 +1,5 @@
 #define _CAMERA
+#define _FROZENCAMERA
 #define _TRANSFORM
 #define _MESH
 #define _CULL
@@ -138,7 +139,7 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
             {
                 float3 coneAxisWS = normalize(mul(sh_LocalToWorld, float4(meshlet.coneAxisX, meshlet.coneAxisY, meshlet.coneAxisZ, 0.0)).xyz);
 
-                accept = !IsConeCulled(float4(coneAxisWS, meshlet.coneCutoff), meshletCenterWS, meshletRadiusWS, g_Camera.posWORLD);
+                accept = !IsConeCulled(float4(coneAxisWS, meshlet.coneCutoff), meshletCenterWS, meshletRadiusWS, g_FrozenCamera.posWORLD);
             }
 
             // 3) HiZ occlusion cull (Phase 2 only; pyramid rebuilt from Phase 1 depth)

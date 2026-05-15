@@ -87,6 +87,7 @@ private:
         Arc< Dx12ConstantBuffer > pCameraBuffer;
         Arc< Dx12ConstantBuffer > pCullBuffer;
         Arc< Dx12ConstantBuffer > pSceneEnvironmentBuffer;
+        Arc< Dx12ConstantBuffer > pFrozenCameraBuffer;
 
         bool bInitialized = false;
 

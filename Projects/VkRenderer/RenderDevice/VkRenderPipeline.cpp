@@ -169,6 +169,8 @@ VulkanGraphicsPipeline::VulkanGraphicsPipeline(VkRenderDevice& rd, const char* n
 	m_PipelineDesc.multisamplingInfo.sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
 	m_PipelineDesc.multisamplingInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 	m_PipelineDesc.multisamplingInfo.minSampleShading     = 1.f;
+
+	m_PipelineDesc.blendStates.resize(8);
 }
 
 VulkanGraphicsPipeline::~VulkanGraphicsPipeline()
@@ -251,7 +253,6 @@ GraphicsPipeline& VulkanGraphicsPipeline::SetDepthWriteEnable(bool bEnable, eCom
 
 GraphicsPipeline& VulkanGraphicsPipeline::SetBlendEnable(u32 renderTargetIndex, bool bEnable)
 {
-	assert(m_PipelineDesc.blendStates.size() > renderTargetIndex);
 	m_PipelineDesc.blendStates[renderTargetIndex].blendEnable = bEnable ? VK_TRUE : VK_FALSE;
 
 	return *this;
@@ -259,7 +260,6 @@ GraphicsPipeline& VulkanGraphicsPipeline::SetBlendEnable(u32 renderTargetIndex, 
 
 GraphicsPipeline& VulkanGraphicsPipeline::SetColorBlending(u32 renderTargetIndex, eBlendFactor srcBlend, eBlendFactor dstBlend, eBlendOp blendOp)
 {
-	assert(m_PipelineDesc.blendStates.size() > renderTargetIndex);
 	m_PipelineDesc.blendStates[renderTargetIndex].blendEnable = VK_TRUE;
 	m_PipelineDesc.blendStates[renderTargetIndex].srcColorBlendFactor = VK_PIPELINE_BLENDFACTOR(srcBlend);
 	m_PipelineDesc.blendStates[renderTargetIndex].srcColorBlendFactor = VK_PIPELINE_BLENDFACTOR(dstBlend);
@@ -270,7 +270,6 @@ GraphicsPipeline& VulkanGraphicsPipeline::SetColorBlending(u32 renderTargetIndex
 
 GraphicsPipeline& VulkanGraphicsPipeline::SetAlphaBlending(u32 renderTargetIndex, eBlendFactor srcBlend, eBlendFactor dstBlend, eBlendOp blendOp)
 {
-	assert(m_PipelineDesc.blendStates.size() > renderTargetIndex);
 	m_PipelineDesc.blendStates[renderTargetIndex].blendEnable         = VK_TRUE;
 	m_PipelineDesc.blendStates[renderTargetIndex].srcAlphaBlendFactor = VK_PIPELINE_BLENDFACTOR(srcBlend);
 	m_PipelineDesc.blendStates[renderTargetIndex].srcAlphaBlendFactor = VK_PIPELINE_BLENDFACTOR(dstBlend);
@@ -729,6 +728,11 @@ void VulkanGraphicsPipeline::Build()
 			pushConstants.push_back(r);
 		}
 	}
+
+	// Cache combined push-constant stage flags so vkCmdPushConstants stageFlags matches the actual ranges.
+	m_PushConstantStages = 0;
+	for (const auto& r : pushConstants)
+		m_PushConstantStages |= r.stageFlags;
 
 
 	// **

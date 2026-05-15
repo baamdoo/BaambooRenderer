@@ -141,6 +141,9 @@ public:
 	VkPipeline vkGraphicsPipeline() const { return m_pGraphicsPipeline ? m_pGraphicsPipeline->vkPipeline() : nullptr; }
 	VkPipeline vkComputePipeline() const { return m_pComputePipeline ? m_pComputePipeline->vkPipeline() : nullptr; }
 
+	VulkanGraphicsPipeline* GraphicsPipeline() const { return m_pGraphicsPipeline; }
+	VulkanComputePipeline*  ComputePipeline()  const { return m_pComputePipeline; }
+
 	double GetElapsedTime() const;
 
 	void BeginGpuMarker(const char* name, bool bWithStats);
@@ -952,6 +955,19 @@ void VkCommandContext::Impl::SetRenderPipeline(VulkanComputePipeline* pRenderPip
 
 void VkCommandContext::Impl::BeginRenderPass(const VulkanRenderTarget& renderTarget)
 {
+	using namespace render;
+
+	const auto& pAttachments = renderTarget.GetAttachments();
+	for (u32 i = 0; i < eAttachmentPoint::DepthStencil; ++i)
+	{
+		auto pTex = StaticCast<VulkanTexture>(pAttachments[i]);
+		if (!pTex) continue;
+		TransitionImageLayout(pTex, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+	}
+	auto pDepth = StaticCast<VulkanTexture>(pAttachments[eAttachmentPoint::DepthStencil]);
+	if (pDepth)
+		TransitionImageLayout(pDepth, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT);
+
 	FlushBarriers();
 
 	auto viewport = renderTarget.GetViewport();
@@ -1349,7 +1365,12 @@ void VkCommandContext::SetComputeConstants(u32 sizeInBytes, const void* pData, u
 
 void VkCommandContext::SetGraphicsConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes)
 {
-	m_Impl->SetPushConstants(sizeInBytes, pData, VK_SHADER_STAGE_ALL_GRAPHICS, offsetInBytes);
+	VkShaderStageFlags stages = m_Impl->GraphicsPipeline()
+		? m_Impl->GraphicsPipeline()->vkPushConstantStages()
+		: 0;
+	if (stages == 0)
+		return;
+	m_Impl->SetPushConstants(sizeInBytes, pData, stages, offsetInBytes);
 }
 
 void VkCommandContext::SetComputeDynamicUniformBuffer(const std::string& name, u32 sizeInBytes, const void* pData)

@@ -2,6 +2,7 @@
 #extension GL_GOOGLE_include_directive: require
 
 #define _CAMERA
+#define _FROZENCAMERA
 #define _MESH
 #define _CULL
 #define _TRANSFORM
@@ -74,9 +75,10 @@ void main()
     vec4  center = transform.mLocalToWorld * vec4(mesh.centerX, mesh.centerY, mesh.centerZ, 1.0);
     float radius = mesh.radius * maxScale;
 
+    // LOD/frustum/cone cull use FROZEN camera so cluster grid + light culling decisions remain self-consistent under freeze.
     uint lod = CalculateLODLevelSSE(
         mesh, center.xyz, maxScale,
-        g_Camera.posWORLD, g_Camera.mProj[1][1],
+        g_FrozenCamera.posWORLD, g_FrozenCamera.mProj[1][1],
         g_CullData.viewportHeight, g_CullData.sseThresholdPx);
 
     // --- Frustum culling ---

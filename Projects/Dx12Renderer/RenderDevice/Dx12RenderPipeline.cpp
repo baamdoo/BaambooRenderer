@@ -216,6 +216,27 @@ GraphicsPipeline& Dx12GraphicsPipeline::SetCullMode(render::eCullMode cullMode)
 GraphicsPipeline& Dx12GraphicsPipeline::SetTopology(ePrimitiveTopology topology)
 {
     m_PipelineDesc.PrimitiveTopologyType = DX12_PIPELINE_PRIMITIVETOPOLOGY(topology);
+
+    switch (topology)
+    {
+    case ePrimitiveTopology::Point: 
+        m_D3DPrimitiveTopology = D3D_PRIMITIVE_TOPOLOGY_POINTLIST;
+    	break;
+    case ePrimitiveTopology::Line: 
+    	m_D3DPrimitiveTopology = D3D_PRIMITIVE_TOPOLOGY_LINELIST;
+        break;
+    case ePrimitiveTopology::Triangle: 
+    	m_D3DPrimitiveTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST; 
+    	break;
+    case ePrimitiveTopology::Patch: 
+    	m_D3DPrimitiveTopology = D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST; 
+    	break;
+    default: 
+        __debugbreak();
+    	m_D3DPrimitiveTopology = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
+    	break;
+    }
+
     return *this;
 }
 
@@ -246,16 +267,12 @@ GraphicsPipeline& Dx12GraphicsPipeline::SetLogicOp(render::eLogicOp logicOp)
 
 GraphicsPipeline& Dx12GraphicsPipeline::SetBlendEnable(u32 renderTargetIndex, bool bEnable)
 {
-    assert(renderTargetIndex < m_PipelineDesc.NumRenderTargets);
-
     m_PipelineDesc.BlendState.RenderTarget[renderTargetIndex].BlendEnable = bEnable;
     return *this;
 }
 
 GraphicsPipeline& Dx12GraphicsPipeline::SetColorBlending(u32 renderTargetIndex, render::eBlendFactor srcBlend, render::eBlendFactor dstBlend, render::eBlendOp blendOp)
 {
-    assert(renderTargetIndex < m_PipelineDesc.NumRenderTargets);
-
     m_PipelineDesc.BlendState.RenderTarget[renderTargetIndex].BlendOp   = DX12_PIPELINE_BLENDOP(blendOp);
     m_PipelineDesc.BlendState.RenderTarget[renderTargetIndex].SrcBlend  = DX12_PIPELINE_BLENDFACTOR(srcBlend);
     m_PipelineDesc.BlendState.RenderTarget[renderTargetIndex].DestBlend = DX12_PIPELINE_BLENDFACTOR(dstBlend);
@@ -265,8 +282,6 @@ GraphicsPipeline& Dx12GraphicsPipeline::SetColorBlending(u32 renderTargetIndex, 
 
 GraphicsPipeline& Dx12GraphicsPipeline::SetAlphaBlending(u32 renderTargetIndex, render::eBlendFactor srcBlend, render::eBlendFactor dstBlend, render::eBlendOp blendOp)
 {
-    assert(renderTargetIndex < m_PipelineDesc.NumRenderTargets);
-
     m_PipelineDesc.BlendState.RenderTarget[renderTargetIndex].BlendOpAlpha   = DX12_PIPELINE_BLENDOP(blendOp);
     m_PipelineDesc.BlendState.RenderTarget[renderTargetIndex].SrcBlendAlpha  = DX12_PIPELINE_BLENDFACTOR(srcBlend);
     m_PipelineDesc.BlendState.RenderTarget[renderTargetIndex].DestBlendAlpha = DX12_PIPELINE_BLENDFACTOR(dstBlend);

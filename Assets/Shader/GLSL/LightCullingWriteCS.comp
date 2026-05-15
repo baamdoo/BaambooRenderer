@@ -1,0 +1,130 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#define _CAMERA
+#define _FROZENCAMERA
+#define _LIGHT
+#include "DescriptorCommon.hg"
+#include "LightCullingCommon.hg"
+
+
+layout(push_constant) uniform PushConstants
+{
+    uint tileSize;
+    uint numTilesX;
+    uint numTilesY;
+    uint numSlices;
+} g_Push;
+
+layout(set = 1, binding = 0) readonly buffer ClusterAABBBuffer
+{
+    ClusterAABB clusters[];
+} g_ClusterBuffer;
+
+layout(set = 1, binding = 1) readonly buffer LightGridBuffer
+{
+    uvec2 grid[];   // (offset, count) per cluster
+} g_LightGridBuffer;
+
+layout(set = 1, binding = 2) writeonly buffer LightListDataBuffer
+{
+    uint indices[];  // packed (type:3 + idx:29)
+} g_LightListDataBuffer;
+
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+void main()
+{
+    uvec3 DTid = gl_GlobalInvocationID;
+    if (DTid.x >= g_Push.numTilesX || DTid.y >= g_Push.numTilesY || DTid.z >= g_Push.numSlices)
+        return;
+
+    uint clusterIdx = ClusterFlatIndex(DTid, g_Push.numTilesX, g_Push.numTilesY);
+
+    vec3 aabbMin, aabbMax;
+    DecodeClusterAABB(g_ClusterBuffer.clusters[clusterIdx], aabbMin, aabbMax);
+
+    uvec2 cell   = g_LightGridBuffer.grid[clusterIdx];
+    uint  offset = cell.x;
+    uint  cap    = cell.y;
+    uint  local  = 0u;
+
+    for (uint si = 0u; si < g_LightBuffer.lightingData.numSpheres; ++si)
+    {
+        if (local >= cap) return;
+        SphereLight l = g_LightBuffer.lightingData.spheres[si];
+        vec3  cWorld = vec3(l.posX, l.posY, l.posZ);
+        vec3  cView  = (g_FrozenCamera.mView * vec4(cWorld, 1.0)).xyz;
+        float rMax   = InfluenceRadiusIsotropic(l.luminousFluxLm, l.radius);
+        if (IntersectAabbSphere(aabbMin, aabbMax, cView, rMax))
+        {
+            g_LightListDataBuffer.indices[offset + local] = EncodeLightIndex(LIGHT_TYPE_SPHERE, si);
+            ++local;
+        }
+    }
+
+    for (uint pi = 0u; pi < g_LightBuffer.lightingData.numSpots; ++pi)
+    {
+        // Spot cluster cull — sphere bound (see Count pass for rationale).
+        if (local >= cap) return;
+        SpotLight l = g_LightBuffer.lightingData.spots[pi];
+        vec3  cWorld = vec3(l.posX, l.posY, l.posZ);
+        vec3  cView  = (g_FrozenCamera.mView * vec4(cWorld, 1.0)).xyz;
+        float rCone  = InfluenceRadiusCone(l.luminousFluxLm, l.outerConeAngleRad, l.radiusM);
+        float rBound = rCone / max(cos(l.outerConeAngleRad), 1e-6);
+        if (IntersectAabbSphere(aabbMin, aabbMax, cView, rBound))
+        {
+            g_LightListDataBuffer.indices[offset + local] = EncodeLightIndex(LIGHT_TYPE_SPOT, pi);
+            ++local;
+        }
+    }
+
+    for (uint ai = 0u; ai < g_LightBuffer.lightingData.numAreas; ++ai)
+    {
+        if (local >= cap) return;
+        AreaLight l = g_LightBuffer.lightingData.areas[ai];
+        vec3  cWorld    = vec3(l.posX, l.posY, l.posZ);
+        vec3  nWorld    = vec3(l.normalX, l.normalY, l.normalZ);
+        vec3  cView     = (g_FrozenCamera.mView * vec4(cWorld, 1.0)).xyz;
+        vec3  nView     = mat3(g_FrozenCamera.mView) * nWorld;
+        float rPhysical = sqrt(l.halfWidth * l.halfWidth + l.halfHeight * l.halfHeight);
+        float rMax      = InfluenceRadiusIsotropic(l.luminousFluxLm, rPhysical);
+        if (IntersectAabbHemisphere(aabbMin, aabbMax, cView, nView, rMax))
+        {
+            g_LightListDataBuffer.indices[offset + local] = EncodeLightIndex(LIGHT_TYPE_AREA, ai);
+            ++local;
+        }
+    }
+
+    for (uint di = 0u; di < g_LightBuffer.lightingData.numDisks; ++di)
+    {
+        if (local >= cap) return;
+        DiskLight l = g_LightBuffer.lightingData.disks[di];
+        vec3  cWorld = vec3(l.posX, l.posY, l.posZ);
+        vec3  nWorld = vec3(l.normalX, l.normalY, l.normalZ);
+        vec3  cView  = (g_FrozenCamera.mView * vec4(cWorld, 1.0)).xyz;
+        vec3  nView  = mat3(g_FrozenCamera.mView) * nWorld;
+        float rMax   = InfluenceRadiusIsotropic(l.luminousFluxLm, l.radius);
+        if (IntersectAabbDisk(aabbMin, aabbMax, cView, nView, rMax))
+        {
+            g_LightListDataBuffer.indices[offset + local] = EncodeLightIndex(LIGHT_TYPE_DISK, di);
+            ++local;
+        }
+    }
+
+    for (uint ti = 0u; ti < g_LightBuffer.lightingData.numTubes; ++ti)
+    {
+        if (local >= cap) return;
+        TubeLight l = g_LightBuffer.lightingData.tubes[ti];
+        vec3  aWorld = vec3(l.posAX, l.posAY, l.posAZ);
+        vec3  bWorld = vec3(l.posBX, l.posBY, l.posBZ);
+        vec3  aView  = (g_FrozenCamera.mView * vec4(aWorld, 1.0)).xyz;
+        vec3  bView  = (g_FrozenCamera.mView * vec4(bWorld, 1.0)).xyz;
+        float rMax   = InfluenceRadiusIsotropic(l.luminousFluxLm, l.radius);
+        if (IntersectAabbCapsule(aabbMin, aabbMax, aView, bView, rMax))
+        {
+            g_LightListDataBuffer.indices[offset + local] = EncodeLightIndex(LIGHT_TYPE_TUBE, ti);
+            ++local;
+        }
+    }
+}

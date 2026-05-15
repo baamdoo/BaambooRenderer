@@ -1,0 +1,149 @@
+#ifndef _GLSL_LIGHT_CULLING_COMMON_HEADER
+#define _GLSL_LIGHT_CULLING_COMMON_HEADER
+#extension GL_GOOGLE_include_directive: require
+
+#define _GLSL
+#include "../Common.bsh"
+
+
+void DecodeClusterAABB(ClusterAABB raw, out vec3 aabbMin, out vec3 aabbMax)
+{
+    aabbMin = vec3(raw.minX, raw.minY, raw.minZ);
+    aabbMax = vec3(raw.maxX, raw.maxY, raw.maxZ);
+}
+
+uint ClusterFlatIndex(uvec3 tid, uint numTilesX, uint numTilesY)
+{
+    return (tid.z * numTilesY + tid.y) * numTilesX + tid.x;
+}
+
+// -------------------------------------------------------------------------
+// Light index encoding — 32-bit packed (type:3 + idx:29)
+// -------------------------------------------------------------------------
+uint EncodeLightIndex(uint type, uint idx)
+{
+    return (type << LIGHT_INDEX_BITS) | (idx & LIGHT_INDEX_MASK);
+}
+
+void DecodeLightIndex(uint packed, out uint type, out uint idx)
+{
+    type = packed >> LIGHT_INDEX_BITS;
+    idx  = packed & LIGHT_INDEX_MASK;
+}
+
+// -------------------------------------------------------------------------
+// Influence radius
+// Reference: https://blog.selfshadow.com/publications/s2014-shading-course/ [Moving Frostbite to PBR]
+// -------------------------------------------------------------------------
+float InfluenceRadiusIsotropic(float fluxLm, float physRadius)
+{
+    return max(physRadius, sqrt(fluxLm / (4.0 * PI * LIGHT_INFLUENCE_THRESHOLD)));
+}
+
+float InfluenceRadiusCone(float fluxLm, float outerConeAngleRad, float physRadius)
+{
+    if (outerConeAngleRad <= 0.0 || fluxLm <= 0.0)
+        return 0.0;
+    float solidAngle = 2.0 * PI * (1.0 - cos(outerConeAngleRad));
+    return max(physRadius, sqrt(fluxLm / max(solidAngle * LIGHT_INFLUENCE_THRESHOLD, 1e-6)));
+}
+
+float SmoothDistanceAtt(float distSq, float invRMaxSq)
+{
+    float factor = distSq * invRMaxSq;
+    float s      = clamp(1.0 - factor * factor, 0.0, 1.0);
+    return s * s;
+}
+
+bool IntersectAabbSphere(vec3 aabbMin, vec3 aabbMax, vec3 sphereCenter, float sphereRadius)
+{
+    vec3 closest = clamp(sphereCenter, aabbMin, aabbMax);
+    vec3 diff    = closest - sphereCenter;
+    return dot(diff, diff) <= sphereRadius * sphereRadius;
+}
+
+bool IntersectAabbCapsule(vec3 aabbMin, vec3 aabbMax, vec3 segA, vec3 segB, float capRadius)
+{
+    const int K = 8;
+
+    float minDistSq = FLT_MAX;
+    for (int k = 0; k <= K; ++k)
+    {
+        float t = float(k) / float(K);
+        vec3  q = mix(segA, segB, t); // segment point
+
+        vec3 closest = clamp(q, aabbMin, aabbMax);
+        vec3 diff    = closest - q;
+
+        minDistSq = min(minDistSq, dot(diff, diff));
+    }
+
+    return minDistSq <= capRadius * capRadius;
+}
+
+bool IntersectAabbCone(vec3 aabbMin, vec3 aabbMax, vec3 apex, vec3 axisDir, float range, float cosHalfAngle)
+{
+    // Step 1 — fast reject via apex-centered bounding sphere
+    float coneBoundRadius = range / max(cosHalfAngle, 1e-6);
+    if (!IntersectAabbSphere(aabbMin, aabbMax, apex, coneBoundRadius))
+        return false;
+
+    vec3  aabbCenter       = (aabbMin + aabbMax) * 0.5;
+    vec3  aabbExtent       = (aabbMax - aabbMin) * 0.5;
+    float signedDist       = dot(axisDir, aabbCenter - apex);
+    float aabbExtAlongAxis = dot(aabbExtent, abs(axisDir));
+
+    // Step 2 — entire AABB behind apex (cone backward)
+    if (signedDist + aabbExtAlongAxis < 0.0)
+        return false;
+
+    // Step 3 — entire AABB beyond range
+    if (signedDist - aabbExtAlongAxis > range)
+        return false;
+
+    // Step 4 — cone angle test
+    vec3  perpVec    = (aabbCenter - apex) - axisDir * signedDist;
+    float perpDist   = length(perpVec);
+    float sinHalf    = sqrt(max(1.0 - cosHalfAngle * cosHalfAngle, 0.0));
+    float tanHalf    = sinHalf / max(cosHalfAngle, 1e-6);
+    float effDist    = max(signedDist, 0.0);
+    float coneRadius = effDist * tanHalf;
+    float extentPerp = length(aabbExtent);
+
+    return perpDist <= coneRadius + extentPerp;
+}
+
+bool IntersectAabbHemisphere(vec3 aabbMin, vec3 aabbMax, vec3 center, vec3 backNormal, float radius)
+{
+    // Step 1 — sphere fast reject
+    if (!IntersectAabbSphere(aabbMin, aabbMax, center, radius))
+        return false;
+
+    // Step 2 — front-most vertex extreme test
+    vec3 frontVertex = vec3(
+        backNormal.x < 0.0 ? aabbMax.x : aabbMin.x,
+        backNormal.y < 0.0 ? aabbMax.y : aabbMin.y,
+        backNormal.z < 0.0 ? aabbMax.z : aabbMin.z);
+    return dot(backNormal, frontVertex - center) <= 0.0;
+}
+
+bool IntersectAabbDisk(vec3 aabbMin, vec3 aabbMax, vec3 diskCenter, vec3 diskNormal, float diskRadius)
+{
+    return IntersectAabbHemisphere(aabbMin, aabbMax, diskCenter, diskNormal, diskRadius);
+}
+
+uint PixelToClusterIdx(uvec2 pixelXY, float viewZ, float zNear, float zFar, uint screenW, uint screenH)
+{
+    uint tx = pixelXY.x / CLUSTER_TILE_SIZE_PX;
+    uint ty = pixelXY.y / CLUSTER_TILE_SIZE_PX;
+
+    float k  = float(CLUSTER_SLICES_Z) * log(viewZ / zNear) / log(zFar / zNear);
+    uint  tz = uint(clamp(k, 0.0, float(CLUSTER_SLICES_Z - 1)));
+
+    uint numTilesX = (screenW + CLUSTER_TILE_SIZE_PX - 1) / CLUSTER_TILE_SIZE_PX;
+    uint numTilesY = (screenH + CLUSTER_TILE_SIZE_PX - 1) / CLUSTER_TILE_SIZE_PX;
+
+    return ClusterFlatIndex(uvec3(tx, ty, tz), numTilesX, numTilesY);
+}
+
+#endif // _GLSL_LIGHT_CULLING_COMMON_HEADER

@@ -5,6 +5,7 @@
 
 #include "DescriptorCommon.hg"
 #include "HelperFunctions.hg"
+#include "LightCullingCommon.hg"
 
 // =============================================================================
 // LTC LUT layout (Heitz 2016, selfshadow baked DDS)
@@ -234,7 +235,7 @@ void ClipPolygonToHorizon(inout vec3 L[17], int N, out int n)
     n = out_n;
 }
 
-// cosine integral for n-vertex polygon (n <= 17, reused by Phase 2 quad and Phase 2.5 disk)
+// cosine integral for n-vertex polygon
 float PolygonRadiance(vec3 P[17], int n)
 {
     float sum = 0.0;
@@ -269,15 +270,20 @@ vec3 ApplyDirectionalLight(DirectionalLight light, vec3 N, vec3 V, vec3 albedo, 
 
 vec3 ApplySpotLight(SpotLight light, vec3 P, vec3 N, vec3 V, vec3 albedo, float metallic, float roughness, vec3 F0)
 {
+    if (light.outerConeAngleRad <= 0.0)
+        return vec3(0.0);
+
     vec3  L        = vec3(light.posX, light.posY, light.posZ) - P;
     float distance = length(L);
     L             /= distance;
 
-    // cone attenuation
+    // cone attenuation — cubic smoothstep gives derivative=0 at BOTH inner and outer edges.
+    // Squared falloff (cd*cd) leaves a derivative discontinuity at the inner edge that shows up as
+    // hyperbolic streaks on flat surfaces nearly parallel to the cone axis (cube side faces).
     float cosTheta        = dot(L, normalize(vec3(-light.dirX, -light.dirY, -light.dirZ)));
     float cosThetaInner   = cos(light.innerConeAngleRad);
     float cosThetaOuter   = cos(light.outerConeAngleRad);
-    float spotAttenuation = clamp((cosTheta - cosThetaOuter) / (cosThetaInner - cosThetaOuter), 0.0, 1.0);
+    float spotAttenuation = smoothstep(cosThetaOuter, cosThetaInner, cosTheta);
 
     if (spotAttenuation == 0.0)
         return vec3(0.0);
@@ -292,9 +298,12 @@ vec3 ApplySpotLight(SpotLight light, vec3 P, vec3 N, vec3 V, vec3 albedo, float 
     float NoL               = max(dot(N, L), 0.0);
     float solidAngle        = PI_MUL(2.0) * (1.0 - cosThetaOuter);
     float luminousIntensity = light.luminousFluxLm / solidAngle;
-    float attenuation       = 1.0 / max(distance * distance, light.radiusM * light.radiusM);
-    vec3  luminance         = lightColor * luminousIntensity * attenuation * spotAttenuation;
 
+    float rMax        = InfluenceRadiusCone(light.luminousFluxLm, light.outerConeAngleRad, light.radiusM);
+    float window      = SmoothDistanceAtt(distance * distance, 1.0 / max(rMax * rMax, 1e-6));
+    float attenuation = 1.0 / max(distance * distance, light.radiusM * light.radiusM) * window;
+
+    vec3 luminance = lightColor * luminousIntensity * attenuation * spotAttenuation;
     return (kD * albedo / PI + specular) * luminance * NoL;
 }
 
@@ -322,8 +331,11 @@ vec3 ApplySphereLight(SphereLight light, vec3 P, vec3 N, vec3 V, vec3 albedo, fl
     if (light.temperatureK > 0.0)
         lightColor *= ColorTemperatureToRGB(light.temperatureK);
 
-    float I           = light.luminousFluxLm / PI_MUL(4.0);
-    float attenuation = 1.0 / max(d * d, light.radius * light.radius);
+    float I = light.luminousFluxLm / PI_MUL(4.0);
+
+    float rMax        = InfluenceRadiusIsotropic(light.luminousFluxLm, light.radius);
+    float window      = SmoothDistanceAtt(d * d, 1.0 / max(rMax * rMax, 1e-6));
+    float attenuation = 1.0 / max(d * d, light.radius * light.radius) * window;
 
     float NoL = max(dot(N, L / d), 0.0);
 
@@ -363,14 +375,17 @@ vec3 ApplyTubeLight(TubeLight light, vec3 P, vec3 N, vec3 V, vec3 albedo, float 
     vec3  Ldiff = L0 + tDiff * Ld;
 
     float dDiff = length(Ldiff);
-    float NoL   = max(dot(N, Ldiff / dDiff), 0.0);
+    float NoL   = max(dot(N, Ldiff / max(dDiff, 1e-6)), 0.0);
 
     vec3 lightColor = vec3(light.colorR, light.colorG, light.colorB);
     if (light.temperatureK > 0.0)
         lightColor *= ColorTemperatureToRGB(light.temperatureK);
 
-    float I           = light.luminousFluxLm / PI_MUL(4.0);
-    float attenuation = 1.0 / max(dDiff * dDiff, light.radius * light.radius);
+    float I = light.luminousFluxLm / PI_MUL(4.0);
+
+    float rMax        = InfluenceRadiusIsotropic(light.luminousFluxLm, light.radius);
+    float window      = SmoothDistanceAtt(dDiff * dDiff, 1.0 / max(rMax * rMax, 1e-6));
+    float attenuation = 1.0 / max(dDiff * dDiff, light.radius * light.radius) * window;
 
     vec3 luminance = lightColor * I * attenuation;
     return (kD * albedo / PI + specular) * luminance * NoL;
@@ -441,7 +456,9 @@ vec3 ApplyAreaLight(
     float area      = (2.0 * light.halfWidth) * (2.0 * light.halfHeight);
     vec3  luminance = lightColor * light.luminousFluxLm / (PI * area);
 
-    return (diffuse + specular) * luminance;
+    float rMax   = InfluenceRadiusIsotropic(light.luminousFluxLm, sqrt(light.halfWidth * light.halfWidth + light.halfHeight * light.halfHeight));
+    float distSq = dot(P - center, P - center);
+    return (diffuse + specular) * luminance * SmoothDistanceAtt(distSq, 1.0 / max(rMax * rMax, 1e-6));
 }
 
 #define DISK_NUM_SAMPLES 16
@@ -501,7 +518,9 @@ vec3 ApplyDiskLight(
     float area      = PI * light.radius * light.radius;
     vec3  luminance = lightColor * light.luminousFluxLm / (PI * area);
 
-    return (diffuse + specular) * luminance;
+    float rMax   = InfluenceRadiusIsotropic(light.luminousFluxLm, light.radius);
+    float distSq = dot(P - center, P - center);
+    return (diffuse + specular) * luminance * SmoothDistanceAtt(distSq, 1.0 / max(rMax * rMax, 1e-6));
 }
 
 #endif // _GLSL_LIGHTING_HEADER

@@ -9,6 +9,7 @@
 #include "BaambooScene/RenderNodes/SkyboxNode.h"
 #include "BaambooScene/RenderNodes/GBufferNode.h"
 #include "BaambooScene/RenderNodes/LightingNode.h"
+#include "BaambooScene/RenderNodes/DebugDrawNode.h"
 #include "BaambooScene/RenderNodes/PostProcessNode.h"
 
 #include <glm/gtc/type_ptr.hpp>
@@ -164,6 +165,97 @@ void LightingApp::DrawUI()
 {
 	Super::DrawUI();
 
+	if (m_pScene)
+	{
+		ImGui::Begin("Debug Visualization");
+		{
+			// --- Camera Freeze ---
+			bool bFrozenReq = m_pScene->GetCameraFreezeRequest();
+			if (ImGui::Checkbox("Camera Freeze", &bFrozenReq))
+				m_pScene->SetCameraFreezeRequest(bFrozenReq);
+
+			if (m_pScene->IsCameraFrozen())
+			{
+				ImGui::SameLine();
+				ImGui::TextDisabled("(frozen at frame %llu)", (unsigned long long)m_pScene->GetFrozenAtFrame());
+			}
+
+			ImGui::Separator();
+
+			// --- Cluster Wireframe ---
+			if (ImGui::CollapsingHeader("Cluster Wireframe"))
+			{
+				bool bShowCluster = m_pScene->GetDebugClusterWireframe();
+				if (ImGui::Checkbox("Show clusters", &bShowCluster))
+					m_pScene->SetDebugClusterWireframe(bShowCluster);
+
+				bool bHeatmap = m_pScene->GetDebugClusterHeatmap();
+				if (ImGui::Checkbox("Heatmap (light count)", &bHeatmap))
+					m_pScene->SetDebugClusterHeatmap(bHeatmap);
+
+				bool bSkipEmpty = m_pScene->GetDebugSkipEmpty();
+				if (ImGui::Checkbox("Skip empty clusters", &bSkipEmpty))
+					m_pScene->SetDebugSkipEmpty(bSkipEmpty);
+
+				int saturationMax = (int)m_pScene->GetDebugSaturationMax();
+				if (ImGui::SliderInt("Saturation (count)", &saturationMax, 1, 64))
+					m_pScene->SetDebugSaturationMax((u32)saturationMax);
+
+				ImGui::TextUnformatted("Turbo");
+				ImGui::SameLine();
+				const float legendWidth = 200.0f;
+				const float legendHeight = 16.0f;
+				ImVec2 p0 = ImGui::GetCursorScreenPos();
+				ImDrawList* dl = ImGui::GetWindowDrawList();
+				constexpr int N = 32;
+				auto turbo = [](float t) -> ImU32
+				{
+					t = std::clamp(t, 0.0f, 1.0f);
+					float t2 = t * t, t3 = t2 * t, t4 = t3 * t, t5 = t4 * t;
+					float r = 0.13572138f + 4.61539260f * t  - 42.66032258f * t2 + 132.13108234f * t3 - 152.94239396f * t4 + 59.28637943f * t5;
+					float g = 0.09140261f + 2.19418839f * t  +  4.84296658f * t2 -  14.18503333f * t3 +   4.27729857f * t4 +  2.82956604f * t5;
+					float b = 0.10667330f + 12.64194608f * t - 60.58204836f * t2 + 110.36276771f * t3 -  89.90310912f * t4 + 27.34824973f * t5;
+					auto sat = [](float x){ return std::clamp(x, 0.0f, 1.0f); };
+					return IM_COL32(int(sat(r)*255), int(sat(g)*255), int(sat(b)*255), 255);
+				};
+				for (int i = 0; i < N; ++i)
+				{
+					float t0 = float(i) / float(N);
+					float t1 = float(i + 1) / float(N);
+					ImVec2 a(p0.x + t0 * legendWidth, p0.y);
+					ImVec2 b(p0.x + t1 * legendWidth, p0.y + legendHeight);
+					dl->AddRectFilled(a, b, turbo((t0 + t1) * 0.5f));
+				}
+				ImGui::Dummy(ImVec2(legendWidth, legendHeight));
+				ImGui::TextDisabled("0   .25   .50   .75   sat+");
+			}
+
+			ImGui::Separator();
+
+			// --- Light Wireframes ---
+			if (ImGui::CollapsingHeader("Light Wireframes"))
+			{
+				u32 mask = m_pScene->GetDebugLightTypeMask();
+
+				auto toggleBit = [&](const char* label, u32 bit) {
+					bool on = (mask & (1u << bit)) != 0u;
+					if (ImGui::Checkbox(label, &on))
+					{
+						mask = on ? (mask | (1u << bit)) : (mask & ~(1u << bit));
+						m_pScene->SetDebugLightTypeMask(mask);
+					}
+				};
+				toggleBit("Spot",   0);
+				toggleBit("Area",   1);
+				toggleBit("Sphere", 2);
+				toggleBit("Disk",   3);
+				toggleBit("Tube",   4);
+				ImGui::TextDisabled("(Directional has infinite influence — no gizmo)");
+			}
+		}
+		ImGui::End();
+	}
+
 	ImGui::Begin("Editor Camera");
 	{
 		if (ImGui::CollapsingHeader("Transform"))
@@ -242,7 +334,10 @@ void LightingApp::ConfigureRenderGraph()
 {
 	m_pScene->AddRenderNode(MakeArc< StaticSkyboxNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< GBufferNode >(*m_pRendererBackend->GetDevice()));
+	m_pScene->AddRenderNode(MakeArc< ClusterBuildNode >(*m_pRendererBackend->GetDevice()));
+	m_pScene->AddRenderNode(MakeArc< LightCullingNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< LightingNode >(*m_pRendererBackend->GetDevice()));
+	m_pScene->AddRenderNode(MakeArc< DebugDrawNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< PostProcessNode >(*m_pRendererBackend->GetDevice()));
 }
 
@@ -301,42 +396,42 @@ void LightingApp::ConfigureSceneObjects()
 		atmosphere.skybox = TEXTURE_PATH.string() + "Skybox_Field.jpg";
 	}
 
-	// sphere light
+	// sphere light — front-left corner, pink
 	{
-		/*auto sphereLight = m_pScene->CreateEntity("Sphere Light");
+		auto sphereLight = m_pScene->CreateEntity("Sphere Light");
 		sphereLight.AttachComponent< LightComponent >();
 
 		auto& light = sphereLight.GetComponent< LightComponent >();
 		light.type           = eLightType::Sphere;
 		light.color          = float3(1.0f, 0.324f, 0.674f);
 		light.temperatureK   = 10000.0f;
-		light.radiusM        = 1.0f;
-		light.luminousFluxLm = 5000.0f;
+		light.radiusM        = 0.5f;
+		light.luminousFluxLm = 3000.0f;
 
 		auto& transformComponent = sphereLight.GetComponent< TransformComponent >();
-		transformComponent.transform.position = float3(0.0f, 5.0f, 0.0f);*/
+		transformComponent.transform.position = float3(-5.0f, 5.0f, -3.0f);
 	}
 
-	// area light
+	// area light — ceiling, cool blue, single-sided down-emitting
 	{
-		//auto areaLight = m_pScene->CreateEntity("Area Light");
-		//areaLight.AttachComponent <LightComponent >();
+		auto areaLight = m_pScene->CreateEntity("Area Light");
+		areaLight.AttachComponent< LightComponent >();
 
-		//auto& light = areaLight.GetComponent< LightComponent >();
-		//light.type           = eLightType::Area;
-		//light.color          = float3(0.235f, 0.678f, 0.988f);
-		//light.temperatureK   = 10000.0f;
-		//light.luminousFluxLm = 1000.0f;
+		auto& light = areaLight.GetComponent< LightComponent >();
+		light.type           = eLightType::Area;
+		light.color          = float3(0.235f, 0.678f, 0.988f);
+		light.temperatureK   = 10000.0f;
+		light.luminousFluxLm = 1500.0f;
 
-		//auto& transformComponent = areaLight.GetComponent< TransformComponent >();
-		//// -Z forward convention: X axis -90 deg pitch puts emit direction (-Z) onto -Y (ceiling-down).
-		//transformComponent.transform.position = float3(-3.0f, 5.0f, 0.0f);
-		//transformComponent.transform.rotation = float3(90.0f, 0.0f, 0.0f);
-		//transformComponent.transform.scale    = float3(1.0f, 1.0f, 1.0f);
+		auto& transformComponent = areaLight.GetComponent< TransformComponent >();
+		// -Z forward convention: X axis -90 deg pitch puts emit direction (-Z) onto -Y (ceiling-down).
+		transformComponent.transform.position = float3(0.0f, 7.0f, 0.0f);
+		transformComponent.transform.rotation = float3(90.0f, 0.0f, 0.0f);
+		transformComponent.transform.scale    = float3(1.0f, 1.0f, 1.0f);
 	}
 
-	// disk light
-	/*{
+	// disk light — right side, magenta
+	{
 		auto diskLight = m_pScene->CreateEntity("Disk Light");
 		diskLight.AttachComponent< LightComponent >();
 
@@ -348,12 +443,31 @@ void LightingApp::ConfigureSceneObjects()
 		light.diskRadiusM    = 1.0f;
 
 		auto& transformComponent = diskLight.GetComponent< TransformComponent >();
-		transformComponent.transform.position = float3(3.0f, 5.0f, 0.0f);
+		transformComponent.transform.position = float3(5.0f, 5.0f, 0.0f);
 		transformComponent.transform.rotation = float3(90.0f, 0.0f, 0.0f);
 		transformComponent.transform.scale    = float3(1.0f, 1.0f, 1.0f);
-	}*/
+	}
 
-	// tube light
+	// spot light — back-right, downward, warm tungsten
+	{
+		auto spotLight = m_pScene->CreateEntity("Spot Light");
+		spotLight.AttachComponent< LightComponent >();
+
+		auto& light = spotLight.GetComponent< LightComponent >();
+		light.type              = eLightType::Spot;
+		light.color             = float3(1.0f, 0.85f, 0.65f);
+		light.temperatureK      = 3200.0f;
+		light.radiusM           = 0.05f;
+		light.luminousFluxLm    = 800.0f;
+		light.innerConeAngleRad = PI_DIV(8.0f);
+		light.outerConeAngleRad = PI_DIV(4.0f);
+
+		auto& transform              = spotLight.GetComponent< TransformComponent >();
+		transform.transform.position = float3(3.0f, 8.0f, 5.0f);
+		transform.transform.rotation = float3(60.0f, 0.0f, 0.0f); // pitch downward
+	}
+
+	// tube light — back-left ceiling, neutral white
 	{
 		auto tubeLight = m_pScene->CreateEntity("Tube Light");
 		tubeLight.AttachComponent< LightComponent >();
@@ -361,34 +475,15 @@ void LightingApp::ConfigureSceneObjects()
 		auto& light = tubeLight.GetComponent< LightComponent >();
 		light.type           = eLightType::Tube;
 		light.color          = float3(1.0f, 1.0f, 1.0f);
-		light.temperatureK   = 4000.0f;
-		light.luminousFluxLm = 2000.0f;
+		light.temperatureK   = 6500.0f;
+		light.luminousFluxLm = 1200.0f;
 		light.tubeLengthM    = 4.0f;
-		light.tubeRadiusM    = 0.5f;
+		light.tubeRadiusM    = 0.05f;
 
 		auto& transformComponent = tubeLight.GetComponent< TransformComponent >();
-		// rotate so transform forward (-Z) aligns with world +X — tube spans (-2, 5, 5) → (+2, 5, 5)
-		transformComponent.transform.position = float3(0.0f, 5.0f, 5.0f);
-		transformComponent.transform.rotation = float3(0.0f, 90.0f, 0.0f);
+		transformComponent.transform.position = float3(-4.0f, 8.0f, 4.0f);
+		transformComponent.transform.rotation = float3(0.0f, 0.0f, 90.0f); // align along X axis
 		transformComponent.transform.scale    = float3(1.0f, 1.0f, 1.0f);
-	}
-
-	// spot light
-	{
-		/*auto spotLight = m_pScene->CreateEntity("Spot Light");
-		spotLight.AttachComponent <LightComponent >();
-
-		auto& light = spotLight.GetComponent< LightComponent >();
-		light.type              = eLightType::Spot;
-		light.color             = float3(1.0f, 1.0f, 1.0f);
-		light.temperatureK      = 3200.0f;
-		light.radiusM           = 0.05f;
-		light.luminousFluxLm    = 25.0f * 10.0f;
-		light.outerConeAngleRad = PI_DIV(2.0f);
-
-		auto& transform              = spotLight.GetComponent< TransformComponent >();
-		transform.transform.position = float3(0.0f, 10.0f, 0.0f);
-		transform.transform.rotation = float3(90.0f, 0.0f, 0.0f);*/
 	}
 
 	// post-process volume

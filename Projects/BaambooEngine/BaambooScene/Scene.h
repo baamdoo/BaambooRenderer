@@ -4,6 +4,8 @@
 #include "ModelLoader.h"
 #include "RenderGraph.h"
 
+#include <atomic>
+
 namespace baamboo
 {
 
@@ -46,6 +48,11 @@ struct FrameData
 	Weak< render::Texture > pGBuffer3;
 	Weak< render::Texture > pColor;
 	Weak< render::Texture > pDepth;
+
+	// Light culling buffers
+	Weak< render::Buffer > pClusterAABBBuffer;
+	Weak< render::Buffer > pLightGridBuffer;
+	Weak< render::Buffer > pLightListDataBuffer;
 
 	// samplers
 	Arc< render::Sampler > pPointClamp;
@@ -122,6 +129,23 @@ public:
 
 	const std::vector< Arc< render::RenderNode > >& GetRenderNodes() const { return m_RenderGraph.GetRenderNodes(); }
 
+	
+	void SetCameraFreezeRequest(bool bFreeze) { m_CameraFreezeRequest.store(bFreeze); }
+	bool GetCameraFreezeRequest() const { return m_CameraFreezeRequest.load(); }
+	bool IsCameraFrozen() const { return m_bCameraFrozen; }
+	u64  GetFrozenAtFrame() const { return m_FrozenAtFrame; }
+
+	void SetDebugClusterWireframe(bool b) { m_DebugShowCluster.store(b); }
+	bool GetDebugClusterWireframe() const { return m_DebugShowCluster.load(); }
+	void SetDebugClusterHeatmap(bool b) { m_DebugClusterHeatmap.store(b); }
+	bool GetDebugClusterHeatmap() const { return m_DebugClusterHeatmap.load(); }
+	void SetDebugSkipEmpty(bool b) { m_DebugSkipEmpty.store(b); }
+	bool GetDebugSkipEmpty() const { return m_DebugSkipEmpty.load(); }
+	void SetDebugSaturationMax(u32 v) { m_DebugSaturationMax.store(v); }
+	u32  GetDebugSaturationMax() const { return m_DebugSaturationMax.load(); }
+	void SetDebugLightTypeMask(u32 m) { m_DebugLightTypeMask.store(m); }
+	u32  GetDebugLightTypeMask() const { return m_DebugLightTypeMask.load(); }
+
 	const MeshData* GetMeshData(u32 meshID) const { auto it = m_MeshData.find(meshID); return (it != m_MeshData.end()) ? &it->second : nullptr;  }
 	const Skeleton* GetSkeleton(u32 skeletonID) const { auto it = m_Skeletons.find(skeletonID); return (it != m_Skeletons.end()) ? &it->second : nullptr; }
 	const AnimationClip* GetAnimationClip(u32 clipID) const { auto it = m_AnimationClips.find(clipID); return (it != m_AnimationClips.end()) ? &it->second : nullptr; }
@@ -167,6 +191,18 @@ private:
 	std::unordered_map< std::string, ModelLoader* > m_ModelLoaderCache;
 
 	mutable std::mutex m_SceneMutex;
+
+	std::atomic< bool >      m_CameraFreezeRequest{ false };
+	mutable bool             m_bCameraFrozen   = false;
+	mutable CameraRenderView m_FrozenCamera    = {};
+	mutable float2           m_FrozenViewport  = float2(0.0f, 0.0f);
+	mutable u64              m_FrozenAtFrame   = 0;
+
+	std::atomic< bool > m_DebugShowCluster{ false };
+	std::atomic< bool > m_DebugClusterHeatmap{ false };
+	std::atomic< bool > m_DebugSkipEmpty{ true };
+	std::atomic< u32 >  m_DebugSaturationMax{ 16u};
+	std::atomic< u32 >  m_DebugLightTypeMask{ 0u };
 };
 
 } // namespace baamboo 

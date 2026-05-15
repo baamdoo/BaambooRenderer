@@ -267,12 +267,47 @@ struct TubeLight
 	float temperatureK;
 };
 
+//-------------------------------------------------------------------------
+// Cluster AABB
+//-------------------------------------------------------------------------
+struct ClusterAABB
+{
+	float minX, minY, minZ, minW; // xyz = view-space min, w = padding
+	float maxX, maxY, maxZ, maxW; // xyz = view-space max, w = padding
+};
+
+#define CLUSTER_TILE_SIZE_PX 64u
+#define CLUSTER_SLICES_Z     32u
+#define MAX_CLUSTER_X        60u  // 4K viewport upper bound (3840 / 64 = 60)
+#define MAX_CLUSTER_Y        34u  // 4K viewport upper bound (ceil(2160 / 64) = 34)
+#define MAX_CLUSTER_Z        32u
+#define MAX_CLUSTER_COUNT    (MAX_CLUSTER_X * MAX_CLUSTER_Y * MAX_CLUSTER_Z)
+
 #define MAX_DIRECTIONAL_LIGHT 2
 #define MAX_SPOT_LIGHT        32
 #define MAX_AREA_LIGHT        16
 #define MAX_SPHERE_LIGHT      16
 #define MAX_DISK_LIGHT        16
 #define MAX_TUBE_LIGHT        16
+
+//-------------------------------------------------------------------------
+// Light Culling
+//-------------------------------------------------------------------------
+#define MAX_LIGHTS_PER_CLUSTER 64u
+
+#define LIGHT_TYPE_BITS  3u
+#define LIGHT_INDEX_BITS 29u
+#define LIGHT_INDEX_MASK 0x1FFFFFFFu  // (1u << 29) - 1u
+
+#define LIGHT_TYPE_DIRECTIONAL 1u
+#define LIGHT_TYPE_SPOT        2u
+#define LIGHT_TYPE_SPHERE      3u
+#define LIGHT_TYPE_DISK        4u
+#define LIGHT_TYPE_TUBE        5u
+#define LIGHT_TYPE_AREA        6u
+
+#define LIGHT_INFLUENCE_THRESHOLD 0.01
+
 struct LightingData
 {
 	DirectionalLight directionals[MAX_DIRECTIONAL_LIGHT];
