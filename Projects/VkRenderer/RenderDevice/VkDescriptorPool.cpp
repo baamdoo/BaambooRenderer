@@ -24,25 +24,33 @@ DescriptorPool::DescriptorPool(VkRenderDevice& rd, std::vector< VkDescriptorPool
 
 DescriptorPool::~DescriptorPool()
 {
-	for (auto& [_, pSet] : m_DescriptorSetCache)
+	for (auto& [_, descriptorSets] : m_DescriptorSetCache)
 	{
-		RELEASE(pSet);
+		for (auto pSet : descriptorSets)
+		{
+			RELEASE(pSet);
+		}
 	}
 	vkDestroyDescriptorPool(m_RenderDevice.vkDevice(), m_vkDescriptorPool, nullptr);
 }
 
-DescriptorSet& DescriptorPool::AllocateSet(VkDescriptorSetLayout vkSetLayout, u32* variableCounts)
+DescriptorSet& DescriptorPool::AllocateSet(VkDescriptorSetLayout vkSetLayout, u32* variableCounts, u32 cacheIndex)
 {
 	assert(vkSetLayout);
 
-	auto it = m_DescriptorSetCache.find(vkSetLayout);
-	if (it != m_DescriptorSetCache.end())
+	auto& descriptorSets = m_DescriptorSetCache[vkSetLayout];
+	if (descriptorSets.size() <= cacheIndex)
 	{
-		return *it->second;
+		descriptorSets.resize(cacheIndex + 1, nullptr);
+	}
+
+	if (descriptorSets[cacheIndex])
+	{
+		return *descriptorSets[cacheIndex];
 	}
 
 	auto pDescriptorSet = new DescriptorSet(m_RenderDevice);
-	m_DescriptorSetCache.emplace(vkSetLayout, pDescriptorSet);
+	descriptorSets[cacheIndex] = pDescriptorSet;
 	
 	return pDescriptorSet->Allocate(vkSetLayout, m_vkDescriptorPool, variableCounts);
 }

@@ -420,12 +420,6 @@ void Engine::RenderLoop()
 					g_FrameData.componentMarker |= (*renderView.pEntityDirtyMarks)[renderView.cloud.id] & (1 << eComponentType::CCloud);
 					g_FrameData.componentMarker |= (*renderView.pEntityDirtyMarks)[renderView.atmosphere.id] & (1 << eComponentType::CAtmosphere);
 					// .. process other markers if needed
-
-					// reset marks once it is consumed by renderer
-					for (auto& mark : (*renderView.pEntityDirtyMarks))
-					{
-						mark.second = 0;
-					}
 				}
 
 				if (m_pRendererBackend->GetDevice()->GetDeviceSettings().bDrawUI)
@@ -454,6 +448,12 @@ void Engine::RenderLoop()
 
 				m_Frame++;
 				g_FrameData.componentMarker = 0;
+				if (renderView.pEntityDirtyMarks)
+				{
+					std::lock_guard< std::mutex > lock(*renderView.pSceneMutex);
+					for (auto& mark : (*renderView.pEntityDirtyMarks)) 
+						mark.second = 0;
+				}
 			}
 
 			// Close the CPU-side "Frame" scope.

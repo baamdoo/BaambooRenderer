@@ -14,6 +14,9 @@ inline u32 GetFormatElementSizeInBytes(VkFormat format)
 	u32 result = 0;
 	switch (format)
 	{
+	case VK_FORMAT_R16_SFLOAT:
+		return 2;
+		break;
 	case VK_FORMAT_R8G8B8A8_UNORM:
 	case VK_FORMAT_B8G8R8A8_UNORM:
 	case VK_FORMAT_R8G8B8A8_SNORM:
@@ -321,6 +324,8 @@ void VulkanTexture::SetResource(VkImage vkImage, VkImageView vkImageView, VkImag
 	m_vmaAllocation  = vmaAllocation;
 	m_AllocationInfo = vmaAllocInfo;
 	m_AspectFlags    = aspectMask;
+
+	m_CreationInfo.resolution = { createInfo.extent.width, createInfo.extent.height, createInfo.extent.depth };
 
 	SetDeviceObjectName((u64)m_vkImage, VK_OBJECT_TYPE_IMAGE);
 }

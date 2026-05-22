@@ -110,6 +110,30 @@ struct DynamicMeshComponent
 
 
 //-------------------------------------------------------------------------
+// TerrainComponent : GPU mesh-shader heightmap patches
+//-------------------------------------------------------------------------
+struct TerrainComponent
+{
+	std::string heightmapPath;
+
+	u32 gridN = 9u;
+
+	float rootSizeMeter      = 8192.0f; // root node world extent (m). Patch sizes per depth = rootSizeM / 2^d
+	float lodRangeBaseMeter  = 1024.0f; // r_e at leaf (depth = maxDepth). Coarser depths scale by 2^(maxDepth - d).
+
+	float lodMorphK = 0.85f; // morph zone start ratio: r_s = k * r_e
+	u32   maxDepth  = 5u;    // 0 = root, maxDepth = leaf
+
+	// TODO: move to .dds.meta sidecar once nlohmann json lands.
+	float terrainSizeMeter = 8192.0f; // T: world span the heightmap covers (m). Defaults match rootSizeM.
+	float heightMinMeter   = 0.0f;    // minY: world height at h01 = 0
+	float heightRangeMeter = 2500.0f; // R: world height delta across h01 = [0,1]
+
+	bool bDirtyMark = true;
+};
+
+
+//-------------------------------------------------------------------------
 // MaterialComponent : Determines surface of mesh (mesh-dependent)
 //-------------------------------------------------------------------------
 struct MaterialComponent

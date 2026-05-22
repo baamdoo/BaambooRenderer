@@ -15,11 +15,12 @@ public:
     struct Allocation
 	{
         Arc< VulkanBuffer > pBuffer;
+        u64                 sizeInBytes;
         u64                 offsetInBytes;
         void*               cpuHandle;
     };
 
-    DynamicBufferAllocator(VkRenderDevice& rd, VkDeviceSize pageSize = _1MB);
+    DynamicBufferAllocator(VkRenderDevice& rd, VkDeviceSize pageSize = _64KB);
     ~DynamicBufferAllocator();
 
     [[nodiscard]]

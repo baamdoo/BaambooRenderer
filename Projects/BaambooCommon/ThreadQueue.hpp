@@ -20,7 +20,11 @@ public:
     // pop & push
     void replace(T&& value)
     {
-        assert(!empty());
+        if (empty())
+        {
+            __debugbreak();
+            return;
+        }
 
         std::unique_lock< std::mutex > lock(m_mutex);
         m_queue.pop();

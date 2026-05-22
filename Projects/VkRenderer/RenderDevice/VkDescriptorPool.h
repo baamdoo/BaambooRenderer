@@ -16,7 +16,7 @@ public:
 	~DescriptorPool();
 
 	[[nodiscard]]
-	DescriptorSet& AllocateSet(VkDescriptorSetLayout vkSetLayout, u32* variableCounts = nullptr);
+	DescriptorSet& AllocateSet(VkDescriptorSetLayout vkSetLayout, u32* variableCounts = nullptr, u32 cacheIndex = 0);
 	void Reset();
 
 	[[nodiscard]]
@@ -29,7 +29,7 @@ private:
 	u32                         m_MaxSets = 0;
 	VkDescriptorPoolCreateFlags m_Flags = 0;
 
-	std::unordered_map< VkDescriptorSetLayout, DescriptorSet* > m_DescriptorSetCache;
+	std::unordered_map< VkDescriptorSetLayout, std::vector< DescriptorSet* > > m_DescriptorSetCache;
 };
 
 } // namespace vk

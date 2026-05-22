@@ -128,6 +128,7 @@ public:
 	TransformSystem* GetTransformSystem() const { return m_pTransformSystem; }
 
 	const std::vector< Arc< render::RenderNode > >& GetRenderNodes() const { return m_RenderGraph.GetRenderNodes(); }
+	const Arc< render::RenderNode >& GetRenderNodeByName(const std::string& nodeName) const { return m_RenderGraph.GetRenderNodeByName(nodeName); }
 
 	
 	void SetCameraFreezeRequest(bool bFreeze) { m_CameraFreezeRequest.store(bFreeze); }

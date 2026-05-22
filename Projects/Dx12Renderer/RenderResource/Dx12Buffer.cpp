@@ -10,12 +10,17 @@ namespace dx12
 namespace
 {
 
-	inline D3D12_RESOURCE_FLAGS ConvertToDx12BufferResourceFlags(RenderFlags usage)
+	inline D3D12_RESOURCE_FLAGS ConvertToDx12BufferResourceFlags(RenderFlags usage, u8 mapDirection)
 	{
 		D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
 
-		if (usage & render::eBufferUsage_Storage)
+		const bool bUAVCapableHeap = mapDirection == 0;
+		if (bUAVCapableHeap &&
+			((usage & render::eBufferUsage_Storage) ||
+			 (usage & render::eBufferUsage_ShaderDeviceAddress)))
+		{
 			flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+		}
 
 		return flags;
 	}
@@ -75,7 +80,7 @@ Dx12Buffer::Dx12Buffer(Dx12RenderDevice& rd, const char* name, CreationInfo&& in
 		{
 			.desc = CD3DX12_RESOURCE_DESC1::Buffer(
 					baamboo::math::AlignUp(m_CreationInfo.count * m_CreationInfo.elementSizeInBytes, (u64)D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
-					(m_CreationInfo.bufferUsage & render::eBufferUsage_Storage) || (m_CreationInfo.bufferUsage & render::eBufferUsage_ShaderDeviceAddress) ? D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS : D3D12_RESOURCE_FLAG_NONE
+					ConvertToDx12BufferResourceFlags(m_CreationInfo.bufferUsage, m_CreationInfo.mapDirection)
 				),
 			.heapProps     = HeapType(info.mapDirection),
 			.initialLayout = D3D12_BARRIER_LAYOUT_COMMON // Buffers are effectively created in state D3D12_RESOURCE_STATE_COMMON
@@ -125,7 +130,7 @@ void Dx12Buffer::Resize(u64 sizeInBytes, bool bReset)
 
 	auto d3d12Device = m_RenderDevice.GetD3D12Device();
 
-	auto desc      = CD3DX12_RESOURCE_DESC1::Buffer(alignedSize, ConvertToDx12BufferResourceFlags(m_CreationInfo.bufferUsage));
+	auto desc      = CD3DX12_RESOURCE_DESC1::Buffer(alignedSize, ConvertToDx12BufferResourceFlags(m_CreationInfo.bufferUsage, m_CreationInfo.mapDirection));
 	auto heapProps = CD3DX12_HEAP_PROPERTIES(HeapType(m_CreationInfo.mapDirection));
 
 	ThrowIfFailed(d3d12Device->CreateCommittedResource3(

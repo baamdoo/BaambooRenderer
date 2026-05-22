@@ -85,10 +85,24 @@ public:
 	[[nodiscard]]
 	virtual float3 GetPosition() const override { return m_Transform.position; }
 
-	void SetLookAt(const float3& pos, const float3& target) 
+	void SetLookAt(const float3& pos, const float3& target)
 	{
 		m_Transform.position = pos;
-		m_Transform.SetOrientation(glm::lookAtLH(float3(0.0f), target - pos, float3(0, 1, 0)));
+
+		float3 forward = target - pos;
+		const float fLen = glm::length(forward);
+		if (fLen < 1e-6f)
+		{
+			m_Transform.SetOrientation(mat4(1.0f));
+			return;
+		}
+		forward /= fLen;
+
+		float3 up = float3(0.0f, 1.0f, 0.0f);
+		if (std::abs(glm::dot(forward, up)) > 0.9999f)
+			up = float3(0.0f, 0.0f, 1.0f);
+
+		m_Transform.SetOrientation(glm::transpose(glm::lookAtLH(float3(0.0f), forward, up)));
 	}
 
 	struct

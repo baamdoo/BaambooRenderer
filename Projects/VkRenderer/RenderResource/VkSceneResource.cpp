@@ -177,7 +177,7 @@ VkSceneResource::VkSceneResource(VkRenderDevice& rd)
 	{
 		auto& poolSize = poolSizeMap[binding.descriptorType];
 		poolSize.type             = binding.descriptorType;
-		poolSize.descriptorCount += binding.descriptorCount;
+		poolSize.descriptorCount += binding.descriptorCount * MAX_FRAMES_IN_FLIGHT;
 	}
 
 	std::vector< VkDescriptorPoolSize > poolSizes;
@@ -186,7 +186,7 @@ VkSceneResource::VkSceneResource(VkRenderDevice& rd)
 		std::move_iterator(poolSizeMap.end()),
 		std::back_inserter(poolSizes),
 		[](std::pair< VkDescriptorType, VkDescriptorPoolSize >&& entry) { return std::move(entry.second); });
-	m_pDescriptorPool = new DescriptorPool(m_RenderDevice, std::move(poolSizes), 1, VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
+	m_pDescriptorPool = new DescriptorPool(m_RenderDevice, std::move(poolSizes), MAX_FRAMES_IN_FLIGHT, VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
 
 	std::vector < VkDescriptorBindingFlags > flags =
 	{
@@ -315,8 +315,8 @@ void VkSceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneVie
 	memcpy(m_FrameData[m_ContextIndex].pSceneEnvironmentBuffer->MappedMemory(), &sceneEnvironmentData, sizeof(SceneEnvironmentData));
 
 	// Re-stage descriptors (imageInfos retains last full-update's textures; per-frame allocators retain their data)
-	u32 variableDescCounts[] = { static_cast<u32>(imageInfos.size()) };
-	auto& descriptorSet = m_pDescriptorPool->AllocateSet(m_vkSetLayout, variableDescCounts);
+	u32 variableDescCounts[] = { MAX_BINDLESS_DESCRIPTOR_RESOURCE_COUNT };
+	auto& descriptorSet = m_pDescriptorPool->AllocateSet(m_vkSetLayout, variableDescCounts, m_ContextIndex);
 	descriptorSet.StageDescriptor({ m_FrameData[m_ContextIndex].pCameraBuffer->vkBuffer(), 0, m_FrameData[m_ContextIndex].pCameraBuffer->SizeInBytes() }, eCommonSetBindingIndex_Camera, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 	descriptorSet.StageDescriptor({ m_FrameData[m_ContextIndex].pCullBuffer->vkBuffer(), 0, m_FrameData[m_ContextIndex].pCullBuffer->SizeInBytes() }, eCommonSetBindingIndex_Cull, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 	descriptorSet.StageDescriptor({ m_FrameData[m_ContextIndex].pSceneEnvironmentBuffer->vkBuffer(), 0, m_FrameData[m_ContextIndex].pSceneEnvironmentBuffer->SizeInBytes() }, eCommonSetBindingIndex_Environment, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
@@ -347,11 +347,11 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 			frameData.bInitialized = false;
 		}
 	}
-	else if (m_FrameData[m_ContextIndex].bInitialized)
+	/*else if (m_FrameData[m_ContextIndex].bInitialized)
 	{
 		UpdateCameraAndEnvironment(sceneView, ctx);
 		return;
-	}
+	}*/
 
 	ResetFrameBuffers();
 
@@ -646,7 +646,8 @@ void VkSceneResource::BindSceneResources(render::CommandContext& context)
 {
 	VkCommandContext& rhiContext = static_cast<VkCommandContext&>(context);
 	
-	auto vkDescriptorSet = m_pDescriptorPool->AllocateSet(m_vkSetLayout).vkDescriptorSet();
+	u32 variableDescCounts[] = { MAX_BINDLESS_DESCRIPTOR_RESOURCE_COUNT };
+	auto vkDescriptorSet = m_pDescriptorPool->AllocateSet(m_vkSetLayout, variableDescCounts, m_ContextIndex).vkDescriptorSet();
 	if (rhiContext.IsGraphicsContext())
 	{
 		vkCmdBindDescriptorSets(
@@ -838,7 +839,8 @@ void VkSceneResource::UpdateFrameBuffer(VkCommandContext& context, const void* p
 
 VkDescriptorSet VkSceneResource::GetSceneDescriptorSet() const
 {
-	return m_pDescriptorPool->AllocateSet(m_vkSetLayout).vkDescriptorSet();
+	u32 variableDescCounts[] = { MAX_BINDLESS_DESCRIPTOR_RESOURCE_COUNT };
+	return m_pDescriptorPool->AllocateSet(m_vkSetLayout, variableDescCounts, m_ContextIndex).vkDescriptorSet();
 }
 
 VkDescriptorBufferInfo VkSceneResource::GetIndexBufferInfo() const

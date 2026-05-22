@@ -404,6 +404,8 @@ void Dx12Texture::SetD3D12Resource(ID3D12Resource2* d3d12Resource, const Barrier
     m_Height = static_cast<u32>(m_ResourceDesc.Height);
     m_Format = m_ResourceDesc.Format;
 
+    m_CreationInfo.resolution = { m_Width, m_Height, 1u };
+
     CreateViews();
 }
 

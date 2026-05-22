@@ -75,9 +75,9 @@ void DebugNode::ApplyBoundingLines(render::CommandContext& context, const SceneR
 
 	context.BeginRenderPass(m_Bounding.pRenderTarget);
 	{
-		//context.SetRenderPipeline(m_Bounding.pBoundingLinePSO.get());
+		context.SetRenderPipeline(m_Bounding.pBoundingLinePSO.get());
 
-		context.DrawMeshTasksIndirect(sr.GetArgumentBuffer(), 0, sr.NumInstances(), sizeof(IndirectCommandData));
+		context.DrawMeshTasksIndirect(sr.GetArgumentBuffer(), offsetof(IndirectCommandData, groupCountX), sr.NumInstances(), sizeof(IndirectCommandData));
 	}
 	context.EndRenderPass();
 

@@ -78,14 +78,16 @@ DynamicBufferAllocator::Page::~Page()
 
 DynamicBufferAllocator::Allocation DynamicBufferAllocator::Page::Allocate(VkDeviceSize sizeInBytes, VkDeviceSize alignment)
 {
-	VkDeviceSize alignedSize = baamboo::math::AlignUp(sizeInBytes, alignment);
+	VkDeviceSize alignedSize   = baamboo::math::AlignUp(sizeInBytes, alignment);
+	VkDeviceSize alignedOffset = baamboo::math::AlignUp(m_OffsetInBytes, alignment);
 
 	Allocation allocation = {};
 	allocation.pBuffer       = m_pBuffer;
-	allocation.offsetInBytes = m_OffsetInBytes;
-	allocation.cpuHandle     = static_cast<u8*>(m_pBuffer->MappedMemory()) + m_OffsetInBytes;
+	allocation.sizeInBytes   = alignedSize;
+	allocation.offsetInBytes = alignedOffset;
+	allocation.cpuHandle     = static_cast<u8*>(m_pBuffer->MappedMemory()) + alignedOffset;
 
-	m_OffsetInBytes += alignedSize;
+	m_OffsetInBytes = alignedOffset + alignedSize;
 
 	return allocation;
 }
@@ -99,7 +101,7 @@ void DynamicBufferAllocator::Page::Reset()
 bool DynamicBufferAllocator::Page::HasSpace(VkDeviceSize sizeInBytes, VkDeviceSize alignment) const
 {
 	VkDeviceSize alignedSize   = baamboo::math::AlignUp(sizeInBytes, alignment);
-	VkDeviceSize alignedOffset = baamboo::math::AlignUp(sizeInBytes, m_OffsetInBytes);
+	VkDeviceSize alignedOffset = baamboo::math::AlignUp(m_OffsetInBytes, alignment);
 
 	return alignedOffset + alignedSize <= m_pBuffer->SizeInBytes();
 }

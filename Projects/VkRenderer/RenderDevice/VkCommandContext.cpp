@@ -227,7 +227,7 @@ VkCommandContext::Impl::Impl(VkRenderDevice& rd, VkCommandContext& context, VkCo
 	// **
 	// Create buffer pools
 	// **
-	//m_pUniformBufferPool = MakeBox< DynamicBufferAllocator >(m_RenderDevice);
+	m_pUniformBufferPool = MakeBox< DynamicBufferAllocator >(m_RenderDevice);
 	m_pStagingBufferPool = MakeBox< DynamicBufferAllocator >(m_RenderDevice, _MB(128));
 
 
@@ -279,7 +279,7 @@ void VkCommandContext::Impl::Open(VkCommandBufferUsageFlags flags)
 	beginInfo.flags = flags;
 	VK_CHECK(vkBeginCommandBuffer(m_vkCommandBuffer, &beginInfo));
 
-	//m_pUniformBufferPool->Reset();
+	m_pUniformBufferPool->Reset();
 	m_pStagingBufferPool->Reset();
 	m_PushAllocations.clear();
 
@@ -719,8 +719,8 @@ void VkCommandContext::Impl::SetDynamicUniformBuffer(u32 set, u32 binding, VkDev
 
 	VkDescriptorBufferInfo bufferInfo = {};
 	bufferInfo.buffer = allocation.pBuffer->vkBuffer();
+	bufferInfo.range  = allocation.sizeInBytes;
 	bufferInfo.offset = allocation.offsetInBytes;
-	bufferInfo.range  = allocation.pBuffer->SizeInBytes();
 
 	m_PushAllocations[set].push_back({ binding, bufferInfo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER });
 }

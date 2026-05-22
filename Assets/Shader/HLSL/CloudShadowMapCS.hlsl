@@ -5,6 +5,7 @@
 struct CloudShadowData
 {
     float4x4 mSunView;
+    float4x4 mSunViewInv;
     float4x4 mSunViewProj;
     float4x4 mSunViewProjInv;
 };
