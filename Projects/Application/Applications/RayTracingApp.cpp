@@ -10,8 +10,9 @@
 #include "BaambooScene/RenderNodes/RaytracingNode.h"
 #include "BaambooScene/RenderNodes/PathTracerNode.h"
 #include "BaambooScene/RenderNodes/PostProcessNode.h"
+#include "BaambooScene/MitsubaLoader.h"
 
-#include <imgui/imgui.h>
+#include <glm/gtc/type_ptr.hpp>
 #include <imgui/backends/imgui_impl_glfw.h>
 
 using namespace baamboo;
@@ -23,8 +24,18 @@ void RayTracingApp::Initialize(eRendererAPI api)
 
 	Super::Initialize(api);
 
-	m_CameraController.SetLookAt(float3(0.0, 0.0f, -5.0f), float3(0.0f, 0.0f, 1.0f));
+	if (m_MitsubaSensor.bValid)
+		m_CameraController.SetLookAt(m_MitsubaSensor.position, m_MitsubaSensor.target);
+	else
+		m_CameraController.SetLookAt(float3(0.0, 0.0f, -5.0f), float3(0.0f, 0.0f, 1.0f));
+
 	m_pCamera = new EditorCamera(m_CameraController, m_pWindow->Width(), m_pWindow->Height());
+	if (m_MitsubaSensor.bValid)
+	{
+		m_pCamera->fov   = m_MitsubaSensor.fovYDeg;
+		m_pCamera->zNear = m_MitsubaSensor.nearClip;
+		m_pCamera->zFar  = m_MitsubaSensor.farClip;
+	}
 }
 
 void RayTracingApp::Update(float dt)
@@ -37,6 +48,7 @@ void RayTracingApp::Update(float dt)
 void RayTracingApp::Release()
 {
 	m_CameraController.Reset();
+	m_pPathTracerNode = Weak< PathTracerNode >();
 
 	Super::Release();
 }
@@ -165,61 +177,199 @@ void RayTracingApp::DrawUI()
 {
 	Super::DrawUI();
 
-	for (auto& node : m_pScene->GetRenderNodes())
+	ImGui::Begin("Editor Camera");
 	{
-		if (node)
-			node->DrawUI();
+		if (ImGui::CollapsingHeader("Transform"))
+		{
+			auto& transform = m_CameraController.GetTransform();
+
+			ImGui::Text("Position");
+			ImGui::DragFloat3("##Position", glm::value_ptr(transform.position), 0.1f, 0.0f, 0.0f, "%.1f");
+
+			ImGui::Text("Rotation");
+			ImGui::DragFloat3("##Rotation", glm::value_ptr(transform.rotation), 0.1f, 0.0f, 0.0f, "%.1f");
+		}
+
+		if (ImGui::CollapsingHeader("Camera"))
+		{
+			float width = (ImGui::GetWindowWidth() - ImGui::GetStyle().ItemSpacing.x);
+
+			ImGui::PushItemWidth(width * 0.3f);
+			ImGui::Text("ClippingRange");
+			ImGui::InputFloat("##ClipNear", &m_pCamera->zNear, 0, 0, "%.2f");
+
+			ImGui::PushItemWidth(width * 0.7f);
+			ImGui::SameLine();
+			ImGui::InputFloat("##ClipFar", &m_pCamera->zFar, 0, 0, "%.2f");
+
+			ImGui::Text("FoV");
+			ImGui::DragFloat("##FoV", &m_pCamera->fov, 0.1f, 1.0f, 90.0f, "%.1f");
+		}
+
+		if (ImGui::CollapsingHeader("Controller"))
+		{
+			auto& cameraConfig = m_CameraController.config;
+
+			ImGui::Text("Rotation Acceleration");
+			ImGui::DragFloat("##RAcceleration", &cameraConfig.rotationAcceleration, 10.0f, 10.0f, 300.0f, "%.1f");
+
+			ImGui::Text("Rotation Damping");
+			ImGui::DragFloat("##RDamping", &cameraConfig.rotationDamping, 0.1f, 1.0f, 10.0f, "%.1f");
+
+			ImGui::Text("Move Acceleration");
+			ImGui::DragFloat("##MAcceleration", &cameraConfig.moveAcceleration, 1.0f, 10.0f, 100.0f, "%.1f");
+
+			ImGui::Text("Move Damping");
+			ImGui::DragFloat("##MDamping", &cameraConfig.moveDamping, 0.1f, 1.0f, 10.0f, "%.1f");
+
+			ImGui::Text("Boosting Speed");
+			ImGui::DragFloat("##Boosting", &cameraConfig.boostingSpeed, 1.0f, 1.0f, 100.0f, "%.1f");
+
+			static eWorldDistanceScaleType cameraScaleCache = eWorldDistanceScaleType::M;
+			if (ImGui::BeginCombo("##Scale", "Movement Scale"))
+			{
+				if (ImGui::Selectable("cm", cameraScaleCache == eWorldDistanceScaleType::CM))
+				{
+					cameraConfig.movementScale = 0.01f;
+					cameraScaleCache = eWorldDistanceScaleType::CM;
+				}
+				if (ImGui::Selectable("m", cameraScaleCache == eWorldDistanceScaleType::M))
+				{
+					cameraConfig.movementScale = 1.0f;
+					cameraScaleCache = eWorldDistanceScaleType::M;
+				}
+				if (ImGui::Selectable("km", cameraScaleCache == eWorldDistanceScaleType::KM))
+				{
+					cameraConfig.movementScale = 1000.0f;
+					cameraScaleCache = eWorldDistanceScaleType::KM;
+				}
+
+				ImGui::EndCombo();
+			}
+		}
 	}
+	ImGui::End();
 }
 
 void RayTracingApp::ConfigureRenderGraph()
 {
 	m_pScene->AddRenderNode(MakeArc< StaticSkyboxNode >(*m_pRendererBackend->GetDevice()));
-	m_pScene->AddRenderNode(MakeArc< PathTracerNode >(*m_pRendererBackend->GetDevice()));
+	auto pPathTracerNode = MakeArc< PathTracerNode >(*m_pRendererBackend->GetDevice());
+	m_pPathTracerNode = pPathTracerNode;
+	m_pScene->AddRenderNode(pPathTracerNode);
 	m_pScene->AddRenderNode(MakeArc< PostProcessNode >(*m_pRendererBackend->GetDevice()));
 }
 
 void RayTracingApp::ConfigureSceneObjects()
 {
+	const auto createPostProcessVolume = [this]()
+		{
+			auto  volume = m_pScene->CreateEntity("PostProcessVolume");
+			auto& pp     = volume.AttachComponent< PostProcessComponent >();
+
+			pp.tonemap.op    = eToneMappingOp::ACES;
+			pp.tonemap.ev100 = 0.0f;
+			pp.tonemap.gamma = 1.0f;
+		};
+
+	/*const fs::path mitsubaScenePath = MODEL_PATH / "staircase2" / "scene_v3.xml";
+	if (fs::exists(mitsubaScenePath))
+	{
+		MitsubaLoadSettings settings = {};
+		settings.meshDescriptor.rootPath          = GetModelPath();
+		settings.meshDescriptor.bOptimize         = true;
+		settings.meshDescriptor.rendererAPI       = s_RendererAPI;
+		settings.meshDescriptor.bWindingCW        = true;
+		settings.meshDescriptor.bGenerateMeshlets = false;
+		settings.meshDescriptor.numLODs           = 1;
+
+		MitsubaLoadResult result = MitsubaLoader::Load(*m_pScene, mitsubaScenePath, settings);
+		if (result.bSuccess)
+		{
+			m_MitsubaSensor = result.sensor;
+			Arc< PathTracerNode > pPathTracerNode = m_pPathTracerNode.lock();
+			if (pPathTracerNode && result.integrator.bValid && result.integrator.maxDepth > 0)
+			{
+				pPathTracerNode->settings.maxDepth = result.integrator.maxDepth;
+				pPathTracerNode->settings.bRequestReset = true;
+			}
+
+			for (const std::string& warning : result.warnings)
+				printf("[MitsubaLoader] %s\n", warning.c_str());
+
+			createPostProcessVolume();
+			return;
+		}
+
+		for (const std::string& warning : result.warnings)
+			printf("[MitsubaLoader] %s\n", warning.c_str());
+	}*/
+	/*MeshDescriptor descriptor = {};
+	descriptor.rootPath = GetModelPath();
+	descriptor.bOptimize = true;
+	descriptor.rendererAPI = s_RendererAPI;
+	descriptor.bWindingCW = true;
+	descriptor.bGenerateMeshlets = false;
+
+	auto entity = m_pScene->ImportModel(MODEL_PATH.append("GlamVelvetSofa.glb"), descriptor);
+	entity.AttachComponent< ScriptComponent >();
+
+	auto sunLight = m_pScene->CreateEntity("Skybox");
+	auto& atmosphere = sunLight.AttachComponent< AtmosphereComponent >();
+	atmosphere.skybox = TEXTURE_PATH.string() + "studio_small.exr";
+
+	auto light = m_pScene->CreateEntity("Punctual Light");
+	light.AttachComponent< LightComponent >();
+
+	auto& lc = light.GetComponent< LightComponent >();
+	lc.type           = eLightType::Sphere;
+	lc.temperatureK   = 10000.0f;
+	lc.color          = float3(1.0f, 0.95f, 0.8f);
+	lc.radiusM        = 0.5f;
+	lc.luminousFluxLm = 800.0f;
+
+	auto& lightXform = light.GetComponent< TransformComponent >().transform;
+	lightXform.position = float3(0.0f, 3.0f, 0.0f);*/
+
 	// static mesh
 	{
 		MeshDescriptor descriptor = {};
-		descriptor.rootPath          = GetModelPath();
-		descriptor.bOptimize         = true;
-		descriptor.rendererAPI       = s_RendererAPI;
-		descriptor.bWindingCW        = true;
+		descriptor.rootPath = GetModelPath();
+		descriptor.bOptimize = true;
+		descriptor.rendererAPI = s_RendererAPI;
+		descriptor.bWindingCW = true;
 		descriptor.bGenerateMeshlets = false;
 
 		auto entity = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
 		entity.AttachComponent< ScriptComponent >();
 
-		const float3 scaleFloor = float3(10.0f,  0.4f, 10.0f);
-		const float3 scaleSide  = float3( 0.4f, 10.0f, 10.0f);
-		const float3 scaleEnd   = float3(10.0f, 10.0f,  0.4f);
+		const float3 scaleFloor = float3(10.0f, 0.4f, 10.0f);
+		const float3 scaleSide = float3(0.4f, 10.0f, 10.0f);
+		const float3 scaleEnd = float3(10.0f, 10.0f, 0.4f);
 
 		auto floor = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
 		floor.GetComponent< TransformComponent >().transform.position = float3(0.0f, -5.0f, 0.0f);
-		floor.GetComponent< TransformComponent >().transform.scale    = scaleFloor;
+		floor.GetComponent< TransformComponent >().transform.scale = scaleFloor;
 
 		auto ceiling = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
 		ceiling.GetComponent< TransformComponent >().transform.position = float3(0.0f, 5.0f, 0.0f);
-		ceiling.GetComponent< TransformComponent >().transform.scale    = scaleFloor;
+		ceiling.GetComponent< TransformComponent >().transform.scale = scaleFloor;
 
 		auto leftWall = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
 		leftWall.GetComponent< TransformComponent >().transform.position = float3(-10.0f, 0.0f, 0.0f);
-		leftWall.GetComponent< TransformComponent >().transform.scale    = scaleSide;
+		leftWall.GetComponent< TransformComponent >().transform.scale = scaleSide;
 
 		auto rightWall = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
 		rightWall.GetComponent< TransformComponent >().transform.position = float3(10.0f, 0.0f, 0.0f);
-		rightWall.GetComponent< TransformComponent >().transform.scale    = scaleSide;
+		rightWall.GetComponent< TransformComponent >().transform.scale = scaleSide;
 
 		auto backWall = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
 		backWall.GetComponent< TransformComponent >().transform.position = float3(0.0f, 0.0f, 10.0f);
-		backWall.GetComponent< TransformComponent >().transform.scale    = scaleEnd;
+		backWall.GetComponent< TransformComponent >().transform.scale = scaleEnd;
 
 		auto frontWall = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
 		frontWall.GetComponent< TransformComponent >().transform.position = float3(0.0f, 0.0f, -10.0f);
-		frontWall.GetComponent< TransformComponent >().transform.scale    = scaleEnd;
+		frontWall.GetComponent< TransformComponent >().transform.scale = scaleEnd;
 
 		auto areaLight = m_pScene->CreateEntity("AreaLight");
 		auto& areaXform = areaLight.GetComponent< TransformComponent >().transform;
@@ -227,32 +377,11 @@ void RayTracingApp::ConfigureSceneObjects()
 		areaXform.rotation = float3(90.0f, 0.0f, 0.0f);
 		auto& areaLC = areaLight.AttachComponent< LightComponent >();
 		areaLC.SetDefaultArea();
-		areaLC.color          = float3(1.0f, 1.0f, 1.0f);
+		areaLC.color = float3(1.0f, 1.0f, 1.0f);
 		areaLC.luminousFluxLm = 50.0f;
-	}
-	// environment
-	{
-		auto environment = m_pScene->CreateEntity("Environment");
-		auto& transformComponent = environment.GetComponent< TransformComponent >();
-		transformComponent.transform.position = float3(-0.22427f, 0.84396f, -0.48726);
-
-		auto& light = environment.AttachComponent< LightComponent >();
-		light.type             = eLightType::Directional;
-		light.color            = float3(1.0f, 0.95f, 0.8f);
-		light.temperatureK     = 10000.0f;
-		light.illuminanceLux   = 5.0f;
-		light.angularRadiusRad = 0.00465f;
-
-		auto& atmosphere = environment.AttachComponent< AtmosphereComponent >();
-		atmosphere.skybox = TEXTURE_PATH.string() + "Skybox_Field.jpg";
 	}
 	// post-process volume
 	{
-		auto  volume = m_pScene->CreateEntity("PostProcessVolume");
-		auto& pp     = volume.AttachComponent< PostProcessComponent >();
-
-		pp.tonemap.op    = eToneMappingOp::ACES;
-		pp.tonemap.ev100 = 0.0f;
-		pp.tonemap.gamma = 1.0f;
+		createPostProcessVolume();
 	}
 }

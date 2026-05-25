@@ -140,6 +140,13 @@ namespace BarrierStates
 		D3D12_BARRIER_LAYOUT_GENERIC_READ
 	};
 
+	inline constexpr BarrierState RayTraceRead
+	{
+		D3D12_BARRIER_SYNC_RAYTRACING,
+		D3D12_BARRIER_ACCESS_SHADER_RESOURCE,
+		D3D12_BARRIER_LAYOUT_GENERIC_READ
+	};
+
 	// ---- Buffer-only states (no layout) ----
 	inline constexpr BarrierState BufferCommon
 	{

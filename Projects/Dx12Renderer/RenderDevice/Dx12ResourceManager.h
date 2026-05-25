@@ -1,6 +1,8 @@
 #pragma once
 #include "RenderCommon/RenderResources.h"
 
+namespace baamboo { struct EmbeddedImage; }   // fwd — defined in BaambooCommon/EmbeddedImageRegistry.h
+
 namespace dx12
 {
 
@@ -18,7 +20,7 @@ public:
     Dx12ResourceManager(Dx12RenderDevice& rd);
     ~Dx12ResourceManager();
 
-    virtual Arc< render::Texture > LoadTexture(const std::string& filepath, bool bGenerateMips = false) override;
+    virtual Arc< render::Texture > LoadTexture(const std::string& filepath, bool bGenerateMips = false, render::eTextureColorSpace colorSpace = render::eTextureColorSpace::Linear) override;
 
     void UploadData(Dx12Resource* pResource, const void* pData, u64 sizeInBytes, u64 dstOffsetInBytes, const BarrierState& stateAfter);
     void UploadData(Arc< Dx12Buffer > pBuffer, const void* pData, u64 sizeInBytes, u64 dstOffsetInBytes, const BarrierState& stateAfter);
@@ -49,7 +51,7 @@ private:
     Arc< Dx12Texture > CreateFlat3DTexture(const char* name, u32 color);
     Arc< Dx12Texture > CreateFlatCubeTexture(const char* name, u32 color);
 
-    Arc< Dx12Texture > LoadTextureArray(const fs::path& dirpath, bool bGenerateMips);
+    Arc< Dx12Texture > LoadTextureArray(const fs::path& dirpath, bool bGenerateMips, render::eTextureColorSpace colorSpace);
 
 private:
     Dx12RenderDevice& m_RenderDevice;

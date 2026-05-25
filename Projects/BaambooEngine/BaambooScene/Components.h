@@ -154,13 +154,19 @@ struct MaterialComponent
 	float anisotropy         = 0.0f;
 	float anisotropyRotation = 0.0f;
 
-	float3 sheenColor     = float3(0.0f);
+	float3 specularColor   = float3(1.0f);
+	float  specularStrength = 1.0f;
+
+	float3 sheenColor = float3(0.0f);
 	float  sheenRoughness = 0.0f;
 
-	float subsurface       = 0.0f;
-	float transmission     = 0.0f;
-	float specularStrength = 1.0f;
-	float emissivePower    = 0.0f;
+	float3 emissionColor   = float3(1.0f);
+	float  emissivePower    = 0.0f;
+
+	float subsurface   = 0.0f;
+	float transmission = 0.0f;
+
+	bool bFaceNormals = false;
 
 	std::string albedoTex;
 	std::string normalTex;

@@ -1,6 +1,7 @@
 #include "RendererPch.h"
 #include "VkResourceManager.h"
 #include "VkCommandContext.h"
+
 #include "RenderResource/VkBuffer.h"
 #include "RenderResource/VkSceneResource.h"
 #include "RenderDevice/VkDescriptorPool.h"
@@ -12,6 +13,16 @@
 
 namespace vk
 {
+
+namespace
+{
+	render::eFormat GetRgba8Format(render::eTextureColorSpace colorSpace)
+	{
+		return colorSpace == render::eTextureColorSpace::SRGB
+			? render::eFormat::RGBA8_SRGB
+			: render::eFormat::RGBA8_UNORM;
+	}
+}
 
 VkResourceManager::VkResourceManager(VkRenderDevice& rd)
 	: m_RenderDevice(rd)
@@ -35,7 +46,7 @@ VkResourceManager::~VkResourceManager()
 {
 }
 
-Arc< render::Texture > VkResourceManager::LoadTexture(const std::string& filepath, bool bGenerateMips)
+Arc< render::Texture > VkResourceManager::LoadTexture(const std::string& filepath, bool bGenerateMips, render::eTextureColorSpace colorSpace)
 {
 	using namespace render;
 
@@ -44,7 +55,7 @@ Arc< render::Texture > VkResourceManager::LoadTexture(const std::string& filepat
 	fs::path path = filepath;
 	if (fs::is_directory(path))
 	{
-		return LoadTextureArray(filepath, bGenerateMips);
+		return LoadTextureArray(filepath, bGenerateMips, colorSpace);
 	}
 
 	std::string extension = path.extension().string();
@@ -165,8 +176,9 @@ Arc< render::Texture > VkResourceManager::LoadTexture(const std::string& filepat
 		auto pTex = VulkanTexture::Create(m_RenderDevice, path.filename().string().c_str(),
 			{
 				.resolution    = { width, height, 1 },
-				.format        = eFormat::RGBA8_UNORM,
+				.format        = GetRgba8Format(colorSpace),
 				.imageUsage    = DefaultUsage,
+				.bGenerateMips = bGenerateMips,
 			});
 
 		// **
@@ -193,7 +205,7 @@ Arc< render::Texture > VkResourceManager::LoadTexture(const std::string& filepat
 	}
 }
 
-Arc< render::Texture > VkResourceManager::LoadTextureArray(const fs::path& dirpath, bool bGenerateMips)
+Arc< render::Texture > VkResourceManager::LoadTextureArray(const fs::path& dirpath, bool bGenerateMips, render::eTextureColorSpace colorSpace)
 {
 	using namespace render;
 
@@ -297,7 +309,7 @@ Arc< render::Texture > VkResourceManager::LoadTextureArray(const fs::path& dirpa
 		{
 			.imageType   = eImageType::Texture2D,
 			.resolution  = { static_cast<u32>(baseWidth), static_cast<u32>(baseHeight), 1 },
-			.format      = eFormat::RGBA8_UNORM,
+			.format      = GetRgba8Format(colorSpace),
 			.imageUsage  = eTextureUsage_Sample | eTextureUsage_TransferDest,
 			.arrayLayers = layerCount
 		});

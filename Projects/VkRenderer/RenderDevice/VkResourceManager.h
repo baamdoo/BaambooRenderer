@@ -21,7 +21,7 @@ public:
     VkResourceManager(VkRenderDevice& rd);
     ~VkResourceManager();
 
-    virtual Arc< render::Texture > LoadTexture(const std::string& filepath, bool bGenerateMips = false) override;
+    virtual Arc< render::Texture > LoadTexture(const std::string& filepath, bool bGenerateMips = false, render::eTextureColorSpace colorSpace = render::eTextureColorSpace::Linear) override;
 
     void UploadData(Arc< VulkanBuffer > pBuffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes);
     void UploadData(Arc< VulkanTexture > pTexture, const void* pData, u64 sizeInBytes, VkBufferImageCopy region, bool bGenerateMips = false);
@@ -33,7 +33,7 @@ private:
     Arc< render::Texture > CreateFlatWhiteTexture();
     Arc< render::Texture > CreateFlatBlackTexture();
 
-    Arc< render::Texture > LoadTextureArray(const fs::path& dirpath, bool bGenerateMips = false);
+    Arc< render::Texture > LoadTextureArray(const fs::path& dirpath, bool bGenerateMips = false, render::eTextureColorSpace colorSpace = render::eTextureColorSpace::Linear);
 
 private:
     VkRenderDevice& m_RenderDevice;

@@ -8,7 +8,6 @@
 namespace vk
 {
 
-
 //-------------------------------------------------------------------------
 // Dynamic-Buffer Allocator
 //-------------------------------------------------------------------------
@@ -128,21 +127,34 @@ StaticBufferAllocator::~StaticBufferAllocator()
 
 StaticBufferAllocator::Allocation StaticBufferAllocator::Allocate(u32 numElements, u64 elementSizeInBytes)
 {
-	auto sizeInBytes = numElements * elementSizeInBytes;
+	if (m_ElementSizeInBytes == 0)
+		m_ElementSizeInBytes = elementSizeInBytes;
 
-	if (m_Offset + sizeInBytes > m_pAllocatedBuffer->SizeInBytes())
+	BB_ASSERT(elementSizeInBytes == m_ElementSizeInBytes,
+	          "StaticBufferAllocator was created for stride %llu but allocation requested stride %llu",
+	          m_ElementSizeInBytes, elementSizeInBytes);
+
+	// This buffer is bound as one storage buffer. Shader offsets are element
+	// indices, so byte padding between allocations would corrupt reads.
+	const u64 offsetInBytes      = m_Offset;
+	const u64 sizeInBytes        = numElements * elementSizeInBytes;
+	const u64 allocationEndBytes = offsetInBytes + sizeInBytes;
+	BB_ASSERT(offsetInBytes % elementSizeInBytes == 0,
+	          "StaticBufferAllocator produced a non-element-aligned offset");
+
+	if (allocationEndBytes > m_pAllocatedBuffer->SizeInBytes())
 	{
-		VkDeviceSize newSize = (m_Offset + sizeInBytes) * 2;
+		VkDeviceSize newSize = allocationEndBytes * 2;
 		Resize(newSize);
 	}
 
 	Allocation allocation = {};
 	allocation.pBuffer     = m_pAllocatedBuffer;
-	allocation.offset      = (u32)(m_Offset / elementSizeInBytes);
+	allocation.offset      = (u32)(offsetInBytes / elementSizeInBytes);
 	allocation.sizeInBytes = sizeInBytes;
-	allocation.gpuHandle   = m_pAllocatedBuffer->DeviceAddress() + m_Offset;
+	allocation.gpuHandle   = m_pAllocatedBuffer->DeviceAddress() + offsetInBytes;
 
-	m_Offset += sizeInBytes;
+	m_Offset = allocationEndBytes;
 
 	return allocation;
 }

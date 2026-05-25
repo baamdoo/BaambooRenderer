@@ -1,4 +1,5 @@
 #pragma once
+#include "Primitives.h"
 
 enum class eCloudUprezRatio
 {
@@ -22,6 +23,7 @@ enum class eAntiAliasingType
 
 enum class eToneMappingOp
 {
+	None,
 	Reinhard,
 	ACES,
 	Uncharted2,

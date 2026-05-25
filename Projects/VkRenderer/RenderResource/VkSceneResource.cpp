@@ -41,6 +41,12 @@ enum
 };
 
 static VulkanComputePipeline* s_CombineTexturesPipeline = nullptr;
+
+static std::string MakeTextureCacheKey(const std::string& filepath, render::eTextureColorSpace colorSpace)
+{
+	return filepath + (colorSpace == render::eTextureColorSpace::SRGB ? "|srgb" : "|linear");
+}
+
 Arc< VulkanTexture > CombineTextures(VkRenderDevice& rd, const char* name, Arc< VulkanTexture > pTextureR, Arc< VulkanTexture > pTextureG, Arc< VulkanTexture > pTextureB, Arc< VulkanSampler > pSampler)
 {
 	using namespace render;
@@ -381,12 +387,27 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 		material.roughness     = materialView.roughness;
 		material.metallic      = materialView.metallic;
 		material.ior           = materialView.ior;
+		material.emissionColor = materialView.emissionColor;
 		material.emissivePower = materialView.emissivePower;
+
+		material.alphaCutoff        = materialView.alphaCutoff;
+		material.clearcoat          = materialView.clearcoat;
+		material.clearcoatRoughness = materialView.clearcoatRoughness;
+		material.anisotropy         = materialView.anisotropy;
+		material.anisotropyRotation = materialView.anisotropyRotation;
+
+		material.specularColor    = materialView.specularColor;
+		material.specularStrength = materialView.specularStrength;
+		material.sheenColor       = materialView.sheenColor;
+		material.sheenRoughness   = materialView.sheenRoughness;
+
+		material.subsurface   = materialView.subsurface;
+		material.transmission = materialView.transmission;
 
 		material.albedoID = INVALID_INDEX;
 		if (!materialView.albedoTex.empty())
 		{
-			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.albedoTex);
+			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.albedoTex, render::eTextureColorSpace::SRGB);
 			if (srvIndexCache.contains(pMaterialTex.get()))
 			{
 				material.albedoID = srvIndexCache[pMaterialTex.get()];
@@ -412,6 +433,22 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pMaterialTex->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
 				material.normalID = (u32)imageInfos.size() - 1;
 				srvIndexCache.emplace(pMaterialTex.get(), material.normalID);
+			}
+		}
+
+		material.specularID = INVALID_INDEX;
+		if (!materialView.specularTex.empty())
+		{
+			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.specularTex, render::eTextureColorSpace::SRGB);
+			if (srvIndexCache.contains(pMaterialTex.get()))
+			{
+				material.specularID = srvIndexCache[pMaterialTex.get()];
+			}
+			else
+			{
+				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pMaterialTex->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
+				material.specularID = (u32)imageInfos.size() - 1;
+				srvIndexCache.emplace(pMaterialTex.get(), material.specularID);
 			}
 		}
 
@@ -467,7 +504,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 		material.emissiveID = INVALID_INDEX;
 		if (!materialView.emissionTex.empty())
 		{
-			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.emissionTex);
+			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.emissionTex, render::eTextureColorSpace::SRGB);
 			if (srvIndexCache.contains(pMaterialTex.get()))
 			{
 				material.emissiveID = srvIndexCache[pMaterialTex.get()];
@@ -483,7 +520,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 		material.clearcoatID = INVALID_INDEX;
 		if (!materialView.clearcoatTex.empty())
 		{
-			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.emissionTex);
+			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.clearcoatTex);
 			if (srvIndexCache.contains(pMaterialTex.get()))
 			{
 				material.clearcoatID = srvIndexCache[pMaterialTex.get()];
@@ -499,7 +536,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 		material.sheenID = INVALID_INDEX;
 		if (!materialView.sheenTex.empty())
 		{
-			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.sheenTex);
+			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.sheenTex, render::eTextureColorSpace::SRGB);
 			if (srvIndexCache.contains(pMaterialTex.get()))
 			{
 				material.sheenID = srvIndexCache[pMaterialTex.get()];
@@ -793,18 +830,19 @@ BufferHandle VkSceneResource::GetOrUpdateMeshletTriangles(u64 entity, const std:
 	return handle;
 }
 
-Arc< VulkanTexture > VkSceneResource::GetOrLoadTexture(u64 entity, const std::string& filepath)
+Arc< VulkanTexture > VkSceneResource::GetOrLoadTexture(u64 entity, const std::string& filepath, render::eTextureColorSpace colorSpace)
 {
 	auto& rm = m_RenderDevice.GetResourceManager();
 
-	auto it = m_TextureCache.find(filepath);
+	const std::string cacheKey = MakeTextureCacheKey(filepath, colorSpace);
+	auto it = m_TextureCache.find(cacheKey);
 	if (it != m_TextureCache.end())
 		return it->second;
 
-	auto tex   = rm.LoadTexture(filepath);
+	auto tex   = rm.LoadTexture(filepath, false, colorSpace);
 	auto vkTex = StaticCast<VulkanTexture>(tex);
 
-	m_TextureCache.emplace(filepath, vkTex);
+	m_TextureCache.emplace(cacheKey, vkTex);
 
 	return vkTex;
 }

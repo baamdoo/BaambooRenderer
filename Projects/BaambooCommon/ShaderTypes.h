@@ -1,5 +1,6 @@
 #pragma once
 #include "MathTypes.h"
+#include "ComponentTypes.h"
 
 struct MeshLOD
 {
@@ -107,25 +108,31 @@ struct MaterialData
 
     float roughness;
     float ior;
-    float emissivePower;
     float alphaCutoff;
+    float padding0;
 
     float clearcoat;
     float clearcoatRoughness;
     float anisotropy;
     float anisotropyRotation;
 
+    float3 emissionColor;
+    float  emissivePower;
+
+    float3 specularColor;
+    float  specularStrength;
+
     float3 sheenColor;
     float  sheenRoughness;
 
     float subsurface;
     float transmission;
-    float specularStrength;
     u32   materialType;
+    u32   padding1;
 
     u32 albedoID;
     u32 normalID;
-    u32 specularTexID;
+    u32 specularID;
     u32 metallicRoughnessAoID;
 
     u32 emissiveID;
@@ -135,10 +142,9 @@ struct MaterialData
 
     u32 subsurfaceID;
     u32 transmissionID;
-    u32 padding0;
-    u32 padding1;
+    u32 padding2;
+    u32 padding3;
 };
-static_assert(sizeof(MaterialData) == 128);
 
 
 struct DirectionalLight
@@ -332,7 +338,7 @@ struct CloudData
 
     float3 windDirection;
     float  windSpeedMps;
-    
+
 };
 struct SceneEnvironmentData
 {

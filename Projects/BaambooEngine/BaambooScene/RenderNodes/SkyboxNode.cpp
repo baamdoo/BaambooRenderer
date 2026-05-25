@@ -46,7 +46,7 @@ void StaticSkyboxNode::Apply(render::CommandContext& context, const SceneRenderV
 {
 	using namespace render;
 
-	if (m_SkyboxPathCache != renderView.atmosphere.skybox)
+	if (m_SkyboxPathCache != renderView.atmosphere.skybox && !renderView.atmosphere.skybox.empty())
 	{
 		m_SkyboxPathCache = renderView.atmosphere.skybox;
 

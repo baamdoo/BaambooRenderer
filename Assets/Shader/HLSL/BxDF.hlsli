@@ -1,510 +1,572 @@
-//*********************************************************
-//
-// Copyright (c) Microsoft. All rights reserved.
-// This code is licensed under the MIT License (MIT).
-// THIS CODE IS PROVIDED *AS IS* WITHOUT WARRANTY OF
-// ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING ANY
-// IMPLIED WARRANTIES OF FITNESS FOR A PARTICULAR
-// PURPOSE, MERCHANTABILITY, OR NON-INFRINGEMENT.
-//
-//*********************************************************
+// Conventions
+//   * Lobe-internal math is in LOCAL FRAME (N = +z, T = +x, B = +y)
 
-// A family of BRDF, BSDF and BTDF functions.
-// BRDF, BSDF, BTDF - bidirectional reflectance, scattering, transmission distribution function.
-// Ref: Ray Tracing from the Ground Up (RTG), Suffern
-// Ref: Real-Time Rendering (RTR), Fourth Edition
-// Ref: Real Shading in Unreal Engine 4 (Karis_UE4), Karis2013
-// Ref: PBR Diffuse Lighting for GGX+Smith Microsurfaces, Hammon2017
+#ifndef _HLSL_BXDF_HEADER
+#define _HLSL_BXDF_HEADER
 
-// BRDF terms generally include 1 / PI factor, but this is removed in the implementations below as it cancels out
-// with the omitted PI factor in the reflectance equation. Ref: eq 9.14, RTR
-
-// Parameters:
-// iorIn - ior of media ray is coming from
-// iorOut - ior of media ray is going to
-// eta - relative index of refraction, namely iorIn / iorOut
-// G - shadowing/masking function.
-// Fo - specular reflectance at normal incidence (AKA specular color).
-// Albedo - material color
-// Roughness - material roughness
-// N - surface normal
-// V - direction to viewer
-// L - incoming "to-light" direction
-// T - transmission scale factor (aka transmission color)
-// thetai - incident angle
-
-#ifndef BXDF_HLSL
-#define BXDF_HLSL
 #include "Common.hlsli"
+#include "HelperFunctions.hlsli"
 
-namespace BxDF 
+namespace BxDF
 {
 
-bool IsBlack(float3 color)
+// â”€â”€ Common types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+// Tangent-space basis at a shading point. T x B == N (right-handed local).
+struct Frame
 {
-    return !any(color);
+    float3 T;
+    float3 B;
+    float3 N;
+};
+
+struct SurfaceParameters
+{
+    float3 P;          // shading position (world)
+    float3 Ng;         // geometric normal (world); used for ray offset
+    Frame  frame;      // tangent-space basis at P
+
+    float3 baseColor;  // dielectric diffuse / metal F0 tint
+    float  metallic;   // [0, 1]
+    float  roughness;  // perceptual; lobe alpha = roughness * roughness
+    float  ior;        // index of refraction (dielectric Fresnel / BTDF)
+
+    float  clearcoat;          // [0,1] presence of a clear top coat
+    float  clearcoatRoughness; // perceptual roughness of that coat
+    float  transmission;       // [0,1] dielectric refract-vs-reflect fraction
+    float3 sheenColor;         // grazing-angle retroreflective fuzz tint
+    float  sheenRoughness;     // perceptual roughness of the sheen lobe
+    float3 specularColor;      // KHR_materials_specular: dielectric F0 tint, default (1,1,1)
+    float  specularStrength;   // KHR_materials_specular: F0 scalar magnitude, default 1.0
+};
+
+struct BSDFSample
+{
+    float3 wi;
+    float3 weight;
+    float  pdf;
+    uint   lobe;
+    uint   isDelta;   // 1 â‡” pdf is a discrete probability on a Î´-direction (smooth dielectric R/T);
+                      //     integrator must skip MIS for emission seen via this bounce
+                      //     (PBRT-v4 specularBounce flag â€” integrators.cpp:671-676)
+};
+
+// Lobe IDs â€” used for MIS lobe-tagging in the path tracer.
+static const uint LOBE_DIFFUSE      = 0u;
+static const uint LOBE_SPECULAR     = 1u;
+static const uint LOBE_CLEARCOAT    = 2u;
+static const uint LOBE_TRANSMISSION = 3u;
+static const uint LOBE_SHEEN        = 4u;
+static const uint LOBE_SUBSURFACE   = 5u;
+
+// â”€â”€ Local-frame trig (operate on local vectors; w.z == cos Î¸) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+float CosTheta    (float3 w) { return w.z; }
+float Cos2Theta   (float3 w) { return w.z * w.z; }
+float AbsCosTheta (float3 w) { return abs(w.z); }
+float Sin2Theta   (float3 w) { return max(0.0, 1.0 - Cos2Theta(w)); }
+
+bool SameHemisphere(float3 wo, float3 wi) { return wo.z * wi.z > 0.0; }
+
+// â”€â”€ World â†” Local conversion â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+float3 ToLocal(Frame f, float3 vW)
+{
+    return float3(dot(vW, f.T), dot(vW, f.B), dot(vW, f.N));
 }
+
+float3 ToWorld(Frame f, float3 vL)
+{
+    return f.T * vL.x + f.B * vL.y + f.N * vL.z;
+}
+
+
+// â”€â”€ Lobe namespaces â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Reference: https://seblagarde.wordpress.com/2013/04/29/memo-on-fresnel-equations/
+namespace Fresnel
+{
+
+float3 Schlick(float3 F0, float cosTheta)
+{
+    float a  = saturate(1.0 - cosTheta);
+    float a2 = a * a;
+    float a5 = a2 * a2 * a;
+    return F0 + (1.0 - F0) * a5;
+}
+
+// Exact unpolarized Fresnel reflectance for a dielectric/dielectric interface.
+float Dielectric(float cosThetaI, float iorI, float iorT)
+{
+    float eta = iorT / iorI;
+    cosThetaI = clamp(cosThetaI, -1.0, 1.0);
+
+    // Back face: ray exiting denser side. Swap so the math runs as "entering".
+    if (cosThetaI < 0.0)
+    {
+        eta = 1.0 / eta;
+        cosThetaI = -cosThetaI;
+    }
+
+    // Snell: sinÎ¸_t = (Î·_i / Î·_t) Â· sinÎ¸_i.
+    float sinThetaI = sqrt(max(0.0, 1.0 - cosThetaI * cosThetaI));
+    float sinThetaT = sinThetaI * (1.0 / eta);
+
+    // TIR: full reflection (no transmittance).
+    if (sinThetaT >= 1.0)
+        return 1.0;
+            
+    float cosThetaT = safeSqrt(1.0 - sinThetaT * sinThetaT);
+            
+    float Rparl = (eta * cosThetaI - cosThetaT) / (eta * cosThetaI + cosThetaT);
+    float Rperp = (cosThetaI - eta * cosThetaT) / (cosThetaI + eta * cosThetaT);
+
+    return (Rparl * Rparl + Rperp * Rperp) / 2.0;
+}
+
+} // namespace Fresnel
+
+
+// Reference: https://blog.selfshadow.com/publications/s2012-shading-course/burley/s2012_pbs_disney_brdf_notes_v3.pdf    
+namespace Diffuse
+{
+
+float3 Lambert(float3 albedo)
+{
+    return albedo * (1.0 / PI);
+}
+
+float EvaluatePDF(float3 wo, float3 wi)
+{
+    if (!SameHemisphere(wo, wi))
+        return 0.0;
+    return AbsCosTheta(wi) * (1.0 / PI);
+}
+
+// Disney "Burley" diffuse â€” 5.3 Diffuse model details
+float3 EvaluateBRDF(float3 albedo, float roughness, float3 wo, float3 wi)
+{
+    float3 H  = normalize(wo + wi);
+    float LoH = saturate(dot(wi, H));
     
-// Fresnel reflectance - schlick approximation.
-float3 Fresnel(in float3 F0, in float cosTheta)
-{
-    return F0 + (1 - F0) * pow(1 - cosTheta, 5);
+    float FD90 = 0.5 + 2.0 * roughness * LoH * LoH;
+    
+    float a = 1.0 - wi.z; float a2 = a * a; float a5 = a2 * a2 * a;
+    float b = 1.0 - wo.z; float b2 = b * b; float b5 = b2 * b2 * b;
+    return (albedo / PI) * (1.0 + (FD90 - 1.0) * a5) * (1.0 + (FD90 - 1.0) * b5);
 }
 
-float3 ComputeF0(float3 albedo, float metallic, float ior)
+float3 SampleRay(float3 wo, float2 u)
 {
-    float  f0           = pow((ior - 1.0) / (ior + 1.0), 2.0);
-    float3 dielectricF0 = float3(f0, f0, f0);
-
-    return lerp(dielectricF0, albedo, metallic);
+    float  r   = safeSqrt(u.x);
+    float  phi = 2.0 * PI * u.y;
+    float3 wi  = float3(r * cos(phi), r * sin(phi), safeSqrt(1.0 - u.x));
+    return (wo.z < 0.0) ? float3(wi.x, wi.y, -wi.z) : wi;
 }
 
-namespace Diffuse 
+} // namespace Diffuse
+
+
+namespace GGX
 {
 
-    namespace Lambert 
-    {
-            
-    float3 F(in float3 albedo)
-    {
-        return albedo;
-    }
-            
-    }
+// Reference: https://schuttejoe.github.io/post/disneybsdf/
+float2 ComputeAnisotropicAlpha(float roughness, float anisotropy)
+{
+    float a = roughness * roughness;
+    float s = sqrt(max(0.0, 1.0 - 0.9 * anisotropy));
+    return float2(a / max(s, 1e-4), a * s);   // (Î±T, Î±B)
+}
 
-    namespace Hammon 
-    {
-            
-    // Compute the value of BRDF
-    // Ref: Hammon2017
-    float3 F(in float3 Albedo, in float Roughness, in float3 N, in float3 V, in float3 L, in float3 Fo)
-    {
-        float3 diffuse = 0;
+float D(float3 h, float aT, float aB)
+{
+    float d = sq(h.x / aT) + sq(h.y / aB) + sq(h.z);
+    return 1.0 / (PI * aT * aB * sq(d));
+}
 
-        float3 H   = normalize(V + L);
-        float  NoH = dot(N, H);
-        if (NoH > 0)
-        {
-            float a = Roughness * Roughness;
+float Lambda(float3 w, float aT, float aB)
+{
+    float a2Inv = (sq(aT * w.x) + sq(aB * w.y));
+    return (sqrt(1.0 + a2Inv / sq(w.z)) - 1.0) * 0.5;
+}
 
-            float NoV = saturate(dot(N, V));
-            float NoL = saturate(dot(N, L));
-            float VoL = saturate(dot(V, L));
-
-            float  facing = 0.5 + 0.5 * VoL;
-            float  rough  = facing * (0.9 - 0.4 * facing) * ((0.5 + NoH) / NoH);
-            float3 smooth = 1.05 * (1 - pow(1 - NoL, 5)) * (1 - pow(1 - NoV, 5));
-
-            // Extract 1 / PI from the single equation since it's ommited in the reflectance function.
-            float  multi  = 0.3641 * a; // 0.3641 = PI * 0.1159
-            float3 single = lerp(smooth, rough, a);
-
-            diffuse = Albedo * (single + Albedo * multi);
-        }
-        return diffuse;
-    }
-            
-    }
+float G1(float3 w, float aT, float aB)
+{
+    return 1.0 / (1.0 + Lambda(w, aT, aB));
+}
         
-}
-
-namespace Specular 
+float G2(float3 wo, float3 wi, float aT, float aB)
 {
-
-    // Perfect/Specular reflection.
-    namespace Reflection 
-    {
-    
-    // Calculates L and returns BRDF value for that direction.
-    // Assumptions: V and N are in the same hemisphere.
-    // Note: to avoid unnecessary precision issues and for the sake of performance the function doesn't divide by the cos term
-    // so as to nullify the cos term in the rendering equation. Therefore the caller should skip the cos term in the rendering equation.
-    float3 Sample_Fr(in float3 V, out float3 L, in float3 N, in float3 Fo)
-    {
-        L = reflect(-V, N);
-        float cos_thetai = dot(N, L);
-        return Fresnel(Fo, cos_thetai);
-    }
-    
-    // Calculate whether a total reflection occurs at a given V and a normal
-    // Ref: eq 27.5, Ray Tracing from the Ground Up
-    bool IsTotalInternalReflection(
-        in float3 V,
-        in float3 normal)
-    {
-        float ior = 1; 
-        float eta = ior;
-        float cos_thetai = dot(normal, V); // Incident angle
-
-        return 1 - 1 * (1 - cos_thetai * cos_thetai) / (eta * eta) < 0;
-    }
-
-    }
-
-    // Perfect/Specular trasmission.
-    namespace Transmission 
-    {
-
-    // Calculates transmitted ray wt and return BRDF value for that direction.
-    // Assumptions: V and N are in the same hemisphere.
-    // Note: to avoid unnecessary precision issues and for the sake of performance the function doesn't divide by the cos term
-    // so as to nullify the cos term in the rendering equation. Therefore the caller should skip the cos term in the rendering equation.
-    float3 Sample_Ft(in float3 V, out float3 wt, in float3 N, in float3 Fo)
-    {
-        float ior = 1;
-        wt = -V; // TODO: refract(-V, N, ior);
-        float cos_thetai = dot(V, N);
-        float3 Kr = Fresnel(Fo, cos_thetai);
-
-        return (1 - Kr);
-    }
-            
-    }
-
-    // Ref: Chapter 9.8, RTR
-    namespace GGX 
-    {
-
-        // Compute the value of BRDF
-        float3 F(in float Roughness, in float3 N, in float3 V, in float3 L, in float3 Fo)
-        {
-            float3 H = V + L;
-            float NoL = dot(N, L);
-            float NoV = dot(N, V);
-            float3 specular = 0;
-
-            if (NoL > 0 && NoV > 0 && all(H))
-            {
-                H = normalize(H);
-                float a = Roughness;        // The roughness has already been remapped to alpha.
-                float3 M = H;               // microfacet normal, equals h, since BRDF is 0 for all m =/= h. Ref: 9.34, RTR
-                float NoM = saturate(dot(N, M));
-                float HoL = saturate(dot(H, L));
-
-                // D
-                // Ref: eq 9.41, RTR
-                float denom = 1 + NoM * NoM * (a * a - 1);
-                float D = a * a / (denom * denom);  // Karis
-
-                // F
-                // Fresnel reflectance - Schlick approximation for F(h,l)
-                // Ref: 9.16, RTR
-                float3 F = Fresnel(Fo , HoL);
-
-                // G
-                // Visibility due to shadowing/masking of a microfacet.
-                // G coupled with BRDF's {1 / 4 DotNL * DotNV} factor.
-                // Ref: eq 9.45, RTR
-                float G =  0.5 / lerp(2 * NoL * NoV, NoL + NoV, a);
-
-                // Specular BRDF term
-                // Ref: eq 9.34, RTR
-                specular = F * G * D;
-            }
-
-            return specular;
-        }
-    }
+    return 1.0 / (1.0 + Lambda(wo, aT, aB) + Lambda(wi, aT, aB));
 }
-    
-namespace Clearcoat
+
+float EvaluatePDF(float3 wo, float3 wi, float aT, float aB)
 {
-
-    float V_Kelemen(float LoH)
-    {
-        return 0.25 / max(LoH * LoH, 1e-4);
-    }
-        
-    float3 Evaluate(
-        in float clearcoatFactor,
-        in float clearcoatRoughness,
-        in float3 N,
-        in float3 V,
-        in float3 L,
-        out float attenuation)
-    {
-        attenuation = 1.0;
-        if (clearcoatFactor <= 0.0)
-            return float3(0, 0, 0);
-
-        float3 H = normalize(V + L);
-            
-        float NoH = saturate(dot(N, H));
-        float NoL = saturate(dot(N, L));
-        float NoV = saturate(dot(N, V));
-        float LoH = saturate(dot(L, H));
-
-        if (NoL <= 0.0 || NoV <= 0.0)
-            return float3(0, 0, 0);
-
-        float a = max(clearcoatRoughness, 0.045);
-        float a2 = a * a;
-
-        float denom = NoH * NoH * (a2 - 1.0) + 1.0;
-        float D = a2 / (PI * denom * denom);
-
-        float3 F0_cc = float3(0.04, 0.04, 0.04);
-        float3 F = Fresnel(F0_cc, LoH);
-
-        float Vis = V_Kelemen(LoH);
-
-        float3 ccSpecular = D * F * Vis;
-
-        float Fc = 0.04 + 0.96 * pow(1.0 - NoV, 5.0);
-        attenuation = 1.0 - clearcoatFactor * Fc;
-
-        return clearcoatFactor * ccSpecular;
-    }
-        
-}
+    if (!SameHemisphere(wo, wi))
+        return 0.0;
     
-namespace Anisotropic
+    float3 wh = normalize(wi + wo);
+            
+    float D_ = D(wh, aT, aB);
+    float G  = G1(wo, aT, aB);
+    
+    return D_ * G / (4.0 * AbsCosTheta(wo));
+}
+
+float3 EvaluateBRDF(float3 wo, float3 wi, float3 F0, float aT, float aB)
 {
-
-    float D_GGX_Anisotropic(float NoH, float ToH, float BoH, float at, float ab)
-    {
-        float d = ToH * ToH / (at * at) + BoH * BoH / (ab * ab) + NoH * NoH;
-        return 1.0 / (PI * at * ab * d * d);
-    }
-
-    float V_SmithGGX_Anisotropic(float NoV, float NoL, float ToV, float BoV, float ToL, float BoL, float at, float ab)
-    {
-        float lambdaV = NoL * length(float3(at * ToV, ab * BoV, NoV));
-        float lambdaL = NoV * length(float3(at * ToL, ab * BoL, NoL));
-        return 0.5 / max(lambdaV + lambdaL, 1e-7);
-    }
-
-    void ComputeAnisotropicRoughness(float roughness, float anisotropyFactor, out float at, out float ab)
-    {
-        float a = roughness * roughness;
-        at = max(a * (1.0 + anisotropyFactor), 0.001);
-        ab = max(a * (1.0 - anisotropyFactor), 0.001);
-    }
-
-    float3 Evaluate(
-        in float roughness,
-        in float anisotropyFactor,
-        in float anisotropyRotation,
-        in float3 N,
-        in float3 V,
-        in float3 L,
-        in float3 T,
-        in float3 B,
-        in float3 F0)
-    {
-        if (anisotropyFactor <= 0.0)
-            return Specular::GGX::F(roughness, N, V, L, F0);
-
-        float cosR = cos(anisotropyRotation);
-        float sinR = sin(anisotropyRotation);
-            
-        float3 T2 = T * cosR + B * sinR;
-        float3 B2 = B * cosR - T * sinR;
-
-        float3 H = normalize(V + L);
-
-        float NoV = max(dot(N, V), 1e-4);
-        float NoL = saturate(dot(N, L));
-        float NoH = saturate(dot(N, H));
-        float LoH = saturate(dot(L, H));
-
-        if (NoL <= 0.0)
-            return float3(0, 0, 0);
-
-        float ToH = dot(T2, H);
-        float BoH = dot(B2, H);
-        float ToV = dot(T2, V);
-        float BoV = dot(B2, V);
-        float ToL = dot(T2, L);
-        float BoL = dot(B2, L);
-
-        float at, ab;
-        ComputeAnisotropicRoughness(roughness, anisotropyFactor, at, ab);
-
-        float  D   = D_GGX_Anisotropic(NoH, ToH, BoH, at, ab);
-        float  Vis = V_SmithGGX_Anisotropic(NoV, NoL, ToV, BoV, ToL, BoL, at, ab);
-        float3 F   = Fresnel(F0, LoH);
-
-        return D * Vis * F;
-    }
-        
-}
+    if (!SameHemisphere(wo, wi))
+        return float3(0.0, 0.0, 0.0);
     
+    float3 H = normalize(wi + wo);
+    
+    float  D_ = D(H, aT, aB);
+    float  G  = G2(wo, wi, aT, aB);
+    float3 F  = Fresnel::Schlick(F0, saturate(dot(wo, H)));
+            
+    return F * D_ * G / (4.0 * CosTheta(wo) * CosTheta(wi));
+}
+
+// Reference: https://jcgt.org/published/0007/04/01/paper.pdf
+float3 SampleRay(float3 wo, float aT, float aB, float2 u)
+{
+    float3 Vh = normalize(float3(aT * wo.x, aB * wo.y, wo.z));
+    
+    float  len2 = Vh.x * Vh.x + Vh.y * Vh.y;
+    float3 T1 = len2 > 0.0 ? 
+            float3(-Vh.y, Vh.x, 0.0) * (1.0 / safeSqrt(len2)) : float3(1.0, 0.0, 0.0); // cross-product
+    float3 T2 = cross(Vh, T1);
+            
+    float r   = safeSqrt(u.x);
+    float phi = 2.0 * PI * u.y;
+    float t1 = r * cos(phi);
+    float t2 = r * sin(phi);
+    
+    float s = 0.5 * (1.0 + Vh.z); // shrink-scale
+    t2 = (1.0 - s) * safeSqrt(1.0 - t1 * t1) + s * t2;
+            
+    float3 Nh = t1 * T1 + t2 * T2 + safeSqrt(1.0 - t1 * t1 - t2 * t2) * Vh; // eq.hemisphere
+    float3 Ne = normalize(float3(aT * Nh.x, aB * Nh.y, max(0.0, Nh.z)));
+    return Ne;
+}
+
+} // namespace GGX
+
+
+// Reference: https://blog.selfshadow.com/publications/s2017-shading-course/imageworks/s2017_pbs_imageworks_slides_v2.pdf
 namespace Sheen
 {
 
-    float D_Charlie(float roughness, float NoH)
-    {
-        float a        = roughness * roughness;
-        float invAlpha = 1.0 / a;
-            
-        float cos2h = NoH * NoH;
-        float sin2h = max(1.0 - cos2h, 0.0078125);
-        return (2.0 + invAlpha) * pow(sin2h, invAlpha * 0.5) / (2.0 * PI);
-    }
-
-    float V_Ashikhmin(float NoV, float NoL)
-    {
-        return 1.0 / (4.0 * (NoL + NoV - NoL * NoV));
-    }
-
-    float3 Evaluate(
-        in float3 sheenColor,
-        in float sheenRoughness,
-        in float3 N,
-        in float3 V,
-        in float3 L)
-    {
-        if (all(sheenColor <= float3(0, 0, 0)))
-            return float3(0, 0, 0);
-
-        float3 H = normalize(V + L);
-            
-        float NoH = saturate(dot(N, H));
-        float NoV = max(dot(N, V), 1e-4);
-        float NoL = saturate(dot(N, L));
-
-        if (NoL <= 0.0)
-            return float3(0, 0, 0);
-
-        float D   = D_Charlie(max(sheenRoughness, 0.045), NoH);
-        float Vis = V_Ashikhmin(NoV, NoL);
-
-        return sheenColor * D * Vis;
-    }
-
-    float EnergyAttenuation(float3 sheenColor, float sheenRoughness, float NoV)
-    {
-        // Simplified approximation without LUT
-        float fresnel  = pow(1.0 - NoV, 5.0);
-        float maxSheen = max(sheenColor.r, max(sheenColor.g, sheenColor.b));
-        return saturate(1.0 - maxSheen * (0.5 + 0.5 * fresnel) * (1.0 - sheenRoughness));
-    }
-
+float D_Charlie(float roughness, float NoH)
+{
+    float a    = max(roughness * roughness, 0.0078125);   // min Î±Â² guard (~0.0078 = 1/128)
+    float invA = 1.0 / a;
+    float sin2 = max(1.0 - NoH * NoH, 0.0078125);
+    return (2.0 + invA) * pow(sin2, invA * 0.5) / (2.0 * PI);
 }
-    
-namespace Subsurface
+
+float V_Ashikhmin(float NoL, float NoV)
 {
-
-    float3 WrapDiffuse(
-        in float3 albedo,
-        in float subsurfaceFactor,
-        in float3 N,
-        in float3 L)
-    {
-        float NoL  = dot(N, L);
-        float wrap = subsurfaceFactor;
-
-        float wrapNoL = (NoL + wrap) / ((1.0 + wrap) * (1.0 + wrap));
-              wrapNoL = max(wrapNoL, 0.0);
-
-        return albedo * wrapNoL;
-    }
-
-    float3 Evaluate(
-        in float3 albedo,
-        in float subsurfaceFactor,
-        in float3 N,
-        in float3 V,
-        in float3 L)
-    {
-        if (subsurfaceFactor <= 0.0)
-            return float3(0, 0, 0);
-
-        float3 H_back      = normalize(L + N * 0.6);
-        float  VoH_back    = saturate(dot(V, -H_back));
-        float  backScatter = pow(VoH_back, 3.0) * subsurfaceFactor;
-
-        float3 wrapDiffuse = WrapDiffuse(albedo, subsurfaceFactor * 0.5, N, L);
-
-        return wrapDiffuse + albedo * backScatter * 0.25;
-    }
-
+    return 1.0 / (4.0 * (NoL + NoV - NoL * NoV) + 1e-7);
 }
-    
-    
-struct MaterialParams
-{
-    float3 albedo;
-    float3 F0;
-        
-    float roughness;
-    float metallic;
 
-    float clearcoat;
-    float clearcoatRoughness;
-    float anisotropy;
-    float anisotropyRotation;
-        
-    float3 sheenColor;
-    float  sheenRoughness;
-    float  subsurface;
-    float  specularStrength;
-};
-    
-float3 Evaluate(
-    in MaterialParams mp,
-    in float3 N,
-    in float3 V,
-    in float3 L,
-    in float3 T,
-    in float3 B)
+float3 EvaluateBRDF(float3 sheenColor, float sheenRoughness, float3 wo, float3 wi)
 {
-    float NoL = saturate(dot(N, L));
-    if (NoL <= 0.0 && mp.subsurface <= 0.0)
-        return float3(0, 0, 0);
-        
-    // ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡ Base Diffuse ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡
-    float3 diffuse = Diffuse::Hammon::F(mp.albedo, mp.roughness, N, V, L, mp.F0);
+    if (!SameHemisphere(wo, wi))
+        return 0.0;
+            
+    float3 H = normalize(wo + wi);
+            
+    float NoH = saturate(H.z);
+    float NoL = saturate(wi.z);
+    float NoV = saturate(wo.z);
+            
+    float D = D_Charlie(sheenRoughness, NoH);
+    float V = V_Ashikhmin(NoL, NoV);
+    return sheenColor * D * V;
+}
+
+} // namespace Sheen
+
+
+// Reference: https://blog.selfshadow.com/publications/s2017-shading-course/imageworks/s2017_pbs_imageworks_slides_v2.pdf
+namespace Clearcoat
+{
+
+float D_GTR1(float NoH, float alpha)
+{
+    float a2 = alpha * alpha;
+    float c  = (a2 - 1.0) / (PI * log(a2));
+            
+    return c / (1.0 + (a2 - 1.0) * NoH * NoH);
+}
+
+float EvaluatePDF(float3 wo, float3 wi, float alpha)
+{
+    if (!SameHemisphere(wo, wi))
+        return 0.0;
+
+    float3 H = normalize(wo + wi);
+
+    float cosTheta = AbsCosTheta(H);
+    return D_GTR1(cosTheta, alpha) * cosTheta / (4.0 * abs(dot(wo, H)));
+}
+      
+float3 EvaluateBRDF(float3 wo, float3 wi, float alpha)
+{
+    if (!SameHemisphere(wo, wi))
+        return 0.0;
+            
+    float3 H = normalize(wo + wi);
     
-    float3 sssContrib = float3(0, 0, 0);
-    if (mp.subsurface > 0.0)
+    float  D = D_GTR1(AbsCosTheta(H), alpha);
+    float  G = GGX::G2(wo, wi, 0.25, 0.25);
+    float3 F = Fresnel::Schlick(float3(0.04, 0.04, 0.04), saturate(dot(wo, H)));
+    return D * G * F / (4.0 * CosTheta(wo) * CosTheta(wi));
+}
+
+float3 SampleRay(float3 wo, float alpha, float2 u)
+{
+    float a2 = alpha * alpha;
+    
+    float phi       = 2.0 * PI * u.y;
+    float cos2Theta = (1.0 - pow(a2, 1.0 - u.x)) / (1.0 - a2);
+            
+    float cosTheta = safeSqrt(cos2Theta);
+    float sinTheta = safeSqrt(1.0 - cos2Theta);
+            
+    float3 H = float3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
+    if (!SameHemisphere(wo, H))
+        H = -H;
+    
+    float3 wi = reflect(-wo, H);
+    return wi;
+}
+
+} // namespace Clearcoat
+
+
+// Reference: https://www.graphics.cornell.edu/~bjw/microfacetbsdf.pdf
+namespace Dielectric
+{
+
+bool IsSmooth(float aT, float aB)
+{
+    return max(aT, aB) < 1.0e-3;
+}
+
+bool Refract(float3 wi, float3 n, float eta, out float3 wt, out float eta_p)
+{
+    float cosThetaI = dot(n, wi);
+    if (cosThetaI < 0.0)
     {
-        diffuse    *= (1.0 - mp.subsurface);
-        sssContrib = Subsurface::Evaluate(mp.albedo, mp.subsurface, N, V, L);
+        n = -n;
+        eta = 1.0 / eta;
+        cosThetaI = -cosThetaI;
     }
-        
-    // ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡ Base Specular ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡
-    float3 specular;
-    if (mp.anisotropy > 0.0 && any(T))
+    
+    float sin2ThetaT = max(0.0, (1.0 - cosThetaI * cosThetaI)) / (eta * eta);
+    if (sin2ThetaT >= 1.0)
     {
-        specular = Anisotropic::Evaluate(
-            mp.roughness, mp.anisotropy, mp.anisotropyRotation,
-            N, V, L, T, B, mp.F0);
+        // TIR
+        wt = 0.0;
+        eta_p = eta;
+        return false;
+    }
+
+    float cosThetaT = safeSqrt(1.0 - sin2ThetaT);
+
+    wt   = -wi / eta + (cosThetaI / eta - cosThetaT) * n;
+    eta_p = eta;
+    return true;
+}
+
+float3 HalfVector(float3 wo, float3 wi, float eta, out float eta_p)
+{
+    float cosThetaO = CosTheta(wo);
+
+    eta_p = 1.0;
+    if (!SameHemisphere(wo, wi))
+    {
+        eta_p = (cosThetaO > 0.0) ? eta : (1.0 / eta);
+    }
+
+    float3 wh = wi * eta_p + wo;
+    if (dot(wh, wh) == 0.0)
+        return 0.0;
+
+    wh = normalize(wh);
+    return (wh.z > 0.0) ? wh : -wh;
+}
+
+float Jacobian(float3 wo, float3 wi, float3 wh, float eta_p)
+{
+    float H2 = sq(dot(wi, wh) + dot(wo, wh) / eta_p);
+    if (H2 == 0.0)
+        return 0.0;
+
+    return abs(dot(wi, wh)) / H2;
+}
+
+bool IsTransmittable(float3 wo, float3 wi, float eta, out float3 wh, out float eta_p)
+{
+    wh    = float3(0.0, 0.0, 0.0);
+    eta_p = 1.0;
+
+    if (eta == 1.0)
+        return false;
+
+    if (SameHemisphere(wo, wi))
+        return false;
+
+    float cosThetaO = CosTheta(wo);
+    float cosThetaI = CosTheta(wi);
+    if (cosThetaO == 0.0 || cosThetaI == 0.0)
+        return false;
+
+    wh = HalfVector(wo, wi, eta, eta_p);
+    if (dot(wh, wh) == 0.0)
+        return false;
+
+    if (dot(wh,wi) * cosThetaI < 0.0 || dot(wh,wo) * cosThetaO < 0.0)
+        return false; // back-facing
+
+    return true;
+}
+
+float EvaluatePDF(float3 wo, float3 wi, float aT, float aB, float eta)
+{
+    if (IsSmooth(aT, aB))
+        return 0.0;
+
+    float  eta_p;
+    float3 wh;
+    if (!IsTransmittable(wo, wi, eta, wh, eta_p))
+        return 0.0;
+
+    float D = GGX::D(wh, aT, aB);
+    float G = GGX::G1(wo, aT, aB);
+    float J = Jacobian(wo, wi, wh, eta_p);
+    return D * G * abs(dot(wo, wh)) * J / abs(CosTheta(wo));
+}
+
+float3 EvaluateBTDF(float3 wo, float3 wi, float aT, float aB, float eta)
+{
+    if (IsSmooth(aT, aB))
+        return 0.0;
+
+    float  eta_p;
+    float3 wh;
+    if (!IsTransmittable(wo, wi, eta, wh, eta_p))
+        return 0.0;
+
+    float D = GGX::D(wh, aT, aB);
+    float G = GGX::G2(wo, wi, aT, aB);
+    float F = Fresnel::Dielectric(dot(wo, wh), 1.0, eta);
+    float J = Jacobian(wo, wi, wh, eta_p);
+    return D * G * (1.0 - F) * J * abs(dot(wo, wh)) / (abs(CosTheta(wo) * CosTheta(wi)) * sq(eta_p));
+}
+
+BSDFSample SampleRay(float3 wo, float aT, float aB, float eta, float uc, float2 u)
+{
+    BSDFSample bs;
+    bs.wi      = float3(0.0, 0.0, 0.0);
+    bs.pdf     = 0.0;                 // default == INVALID
+    bs.weight  = float3(0.0, 0.0, 0.0);
+    bs.lobe    = LOBE_TRANSMISSION;
+    bs.isDelta = 0u;                  // overridden to 1u in the smooth (delta) branch below
+
+    bool isSmooth = (eta == 1.0) || IsSmooth(aT, aB);
+    if (isSmooth)
+    {
+        float R = Fresnel::Dielectric(CosTheta(wo), 1.0, eta);
+        float T = 1.0 - R;
+
+        if (uc < R / (R + T))
+        {
+            // reflect branch
+            float3 wi = float3(-wo.x, -wo.y, wo.z);
+            float  f  = R / AbsCosTheta(wi);
+
+            bs.wi      = wi;
+            bs.pdf     = R / (R + T);
+            bs.weight  = f * AbsCosTheta(wi) / bs.pdf;
+            bs.lobe    = LOBE_SPECULAR;
+            bs.isDelta = 1u;          // Î´-reflect (PBRT-v4 BxDFFlags::SpecularReflection)
         }
+        else
+        {
+            // transmission branch
+            float  eta_p;
+            float3 wi;
+            if (!Refract(wo, float3(0.0, 0.0, 1.0), eta, wi, eta_p))
+                return bs;
+
+            float f = T / (AbsCosTheta(wi) * eta_p * eta_p);
+
+            bs.wi      = wi;
+            bs.pdf     = T / (R + T);
+            bs.weight  = f * AbsCosTheta(wi) / bs.pdf;
+            bs.lobe    = LOBE_TRANSMISSION;
+            bs.isDelta = 1u;          // Î´-transmit (PBRT-v4 BxDFFlags::SpecularTransmission)
+        }
+
+        return bs;
+    }
+
+    // rough surface branch
+    float3 wh = GGX::SampleRay(wo,aT,aB,u);
+
+    float R = Fresnel::Dielectric(dot(wo, wh), 1.0, eta);
+    float T = 1.0 - R;
+    if (uc < R / (R + T))
+    {
+        // reflect branch
+        float3 wi = reflect(-wo, wh);
+        if (!SameHemisphere(wo, wi))
+            return bs;
+
+        float D  = GGX::D(wh, aT, aB);
+        float G2 = GGX::G2(wo, wi, aT, aB);
+        float G1 = GGX::G1(wo, aT, aB);
+
+        float3 f = D * G2 * R / (4.0 * CosTheta(wo) * CosTheta(wi));
+
+        bs.wi     = wi;
+        bs.pdf    = D * G1 / (4.0 * AbsCosTheta(wo)) * (R / (R + T));
+        bs.weight = f * AbsCosTheta(wi) / bs.pdf;
+        bs.lobe   = LOBE_SPECULAR;
+    }
     else
     {
-        specular = Specular::GGX::F(mp.roughness, N, V, L, mp.F0);
-    }
-    specular *= mp.specularStrength;
-    
-    // ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡ Sheen Layer ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡
-    float3 sheen            = float3(0, 0, 0);
-    float  sheenAttenuation = 1.0;
-    if (any(mp.sheenColor > float3(0, 0, 0)))
-    {
-        sheen            = Sheen::Evaluate(mp.sheenColor, mp.sheenRoughness, N, V, L);
-        sheenAttenuation = Sheen::EnergyAttenuation(mp.sheenColor, mp.sheenRoughness, max(dot(N, V), 1e-4));
+        // transmission branch
+        float  eta_p;
+        float3 wi;
+        if (!Refract(wo, wh, eta, wi, eta_p))
+            return bs;
+
+        if (wi.z == 0.0)
+            return bs;
+
+        if (SameHemisphere(wo, wi))
+            return bs;
+
+        float D  = GGX::D(wh, aT, aB);
+        float G2 = GGX::G2(wo, wi, aT, aB);
+        float G1 = GGX::G1(wo, aT, aB);
+        float J  = Jacobian(wo, wi, wh, eta_p);
+
+        float3 f = D * G2 * T * abs(dot(wo, wh)) * J / (abs(CosTheta(wo) * CosTheta(wi)) * sq(eta_p));
+
+        bs.wi     = wi;
+        bs.pdf    = D * G1 * abs(dot(wo, wh)) * J / AbsCosTheta(wo) * (T / (R + T));
+        bs.weight = f * AbsCosTheta(wi) / bs.pdf;
+        bs.lobe   = LOBE_TRANSMISSION;
     }
 
-    // ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡ Clearcoat Layer ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡
-    float3 clearcoatSpec = float3(0, 0, 0);
-    float  ccAttenuation = 1.0;
-    if (mp.clearcoat > 0.0)
-    {
-        clearcoatSpec = Clearcoat::Evaluate(mp.clearcoat, mp.clearcoatRoughness, N, V, L, ccAttenuation);
-    }
-
-    // ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡ Compose ¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡¦¡
-    // Energy conservation: base is attenuated by clearcoat and sheen
-    float3 H = normalize(V + L);
-    float3 F = BxDF::Fresnel(mp.F0, saturate(dot(H, V)));
-    float3 baseBRDF = (diffuse * (1.0 - F) + specular) * ccAttenuation * sheenAttenuation;
-
-    return NoL * (baseBRDF + sheen) + sssContrib * ccAttenuation * sheenAttenuation + clearcoatSpec;
-}
-    
+    return bs;
 }
 
+} // namespace Dielectric
 
-#endif // BXDF_HLSL
+
+}  // namespace BxDF
+
+#endif // _HLSL_BXDF_HEADER

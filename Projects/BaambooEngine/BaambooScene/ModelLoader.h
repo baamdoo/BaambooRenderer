@@ -68,7 +68,8 @@ struct MaterialData
 	std::string name;
 
 	float3 diffuse;
-	float3 specular;
+	float3 specularColor;
+	float  specularStrength;
 
 	float shininess;
 	float metallic;

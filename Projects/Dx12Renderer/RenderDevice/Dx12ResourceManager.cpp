@@ -8,9 +8,111 @@
 #include "RenderResource/Dx12SceneResource.h"
 
 #include <DirectXTex.h>
+#include <tinyexr/tinyexr.h>
 
 namespace dx12
 {
+
+namespace
+{
+    HRESULT GenerateMipChainIfRequested(DirectX::ScratchImage& image, DirectX::TexMetadata& metadata, bool bGenerateMips)
+    {
+        if (!bGenerateMips || metadata.mipLevels > 1 || (metadata.width == 1 && metadata.height == 1))
+            return S_OK;
+
+        const DirectX::Image* baseImage = image.GetImage(0, 0, 0);
+        if (!baseImage)
+            return E_FAIL;
+
+        DirectX::ScratchImage mips;
+        HRESULT hr = DirectX::GenerateMipMaps(*baseImage, DirectX::TEX_FILTER_DEFAULT, 0, mips);
+        if (SUCCEEDED(hr))
+        {
+            image    = std::move(mips);
+            metadata = image.GetMetadata();
+        }
+        return hr;
+    }
+
+    DirectX::WIC_FLAGS GetWicFlags(render::eTextureColorSpace colorSpace)
+    {
+        return colorSpace == render::eTextureColorSpace::SRGB
+            ? DirectX::WIC_FLAGS_FORCE_SRGB
+            : DirectX::WIC_FLAGS_IGNORE_SRGB;
+    }
+
+    DXGI_FORMAT GetRgba8Format(render::eTextureColorSpace colorSpace)
+    {
+        return colorSpace == render::eTextureColorSpace::SRGB
+            ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
+            : DXGI_FORMAT_R8G8B8A8_UNORM;
+    }
+
+    Arc< Dx12Texture > CreateTextureFromScratchImage(
+        Dx12RenderDevice&           renderDevice,
+        const char*                 name,
+        const DirectX::ScratchImage& image)
+    {
+        const DirectX::TexMetadata metadata = image.GetMetadata();
+        if (metadata.dimension != DirectX::TEX_DIMENSION_TEXTURE2D || metadata.depth != 1)
+        {
+            BB_ASSERT(false, "Only 2D WIC textures are supported: %s", name);
+            return nullptr;
+        }
+
+        D3D12_RESOURCE_DESC1 desc = {};
+        desc.Dimension          = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        desc.Alignment          = 0;
+        desc.Width              = static_cast<UINT64>(metadata.width);
+        desc.Height             = static_cast<UINT>(metadata.height);
+        desc.DepthOrArraySize   = static_cast<UINT16>(metadata.arraySize);
+        desc.MipLevels          = static_cast<UINT16>(metadata.mipLevels);
+        desc.Format             = metadata.format;
+        desc.SampleDesc.Count   = 1;
+        desc.SampleDesc.Quality = 0;
+        desc.Layout             = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+        desc.Flags              = D3D12_RESOURCE_FLAG_NONE;
+
+        ID3D12Resource2* d3d12Resource = nullptr;
+        auto heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+        DX_CHECK(renderDevice.GetD3D12Device()->CreateCommittedResource3(
+            &heapProps,
+            D3D12_HEAP_FLAG_NONE,
+            &desc,
+            D3D12_BARRIER_LAYOUT_COMMON,
+            nullptr,
+            nullptr,
+            0, nullptr,
+            IID_PPV_ARGS(&d3d12Resource)));
+
+        std::vector< D3D12_SUBRESOURCE_DATA > subresourceData;
+        subresourceData.reserve(metadata.arraySize * metadata.mipLevels);
+        for (size_t arraySlice = 0; arraySlice < metadata.arraySize; ++arraySlice)
+        {
+            for (size_t mipLevel = 0; mipLevel < metadata.mipLevels; ++mipLevel)
+            {
+                const DirectX::Image* mip = image.GetImage(mipLevel, arraySlice, 0);
+                if (!mip)
+                {
+                    BB_ASSERT(false, "Missing mip data while loading texture: %s", name);
+                    COM_RELEASE(d3d12Resource);
+                    return nullptr;
+                }
+
+                D3D12_SUBRESOURCE_DATA subresource = {};
+                subresource.pData      = mip->pixels;
+                subresource.RowPitch   = static_cast<LONG_PTR>(mip->rowPitch);
+                subresource.SlicePitch = static_cast<LONG_PTR>(mip->slicePitch);
+                subresourceData.push_back(subresource);
+            }
+        }
+
+        auto pTex = Dx12Texture::CreateEmpty(renderDevice, name);
+        pTex->SetD3D12Resource(d3d12Resource);
+        renderDevice.UpdateSubresources(pTex.get(), 0, static_cast<UINT>(subresourceData.size()), subresourceData.data());
+        return pTex;
+    }
+}
 
 Dx12ResourceManager::Dx12ResourceManager(Dx12RenderDevice& rd)
     : m_RenderDevice(rd)
@@ -82,7 +184,7 @@ Dx12ResourceManager::~Dx12ResourceManager()
     ResourceManager::~ResourceManager();
 }
 
-Arc< render::Texture > Dx12ResourceManager::LoadTexture(const std::string& filepath, bool bGenerateMips)
+Arc< render::Texture > Dx12ResourceManager::LoadTexture(const std::string& filepath, bool bGenerateMips, render::eTextureColorSpace colorSpace)
 {
     auto d3d12Device = m_RenderDevice.GetD3D12Device();
 
@@ -90,7 +192,7 @@ Arc< render::Texture > Dx12ResourceManager::LoadTexture(const std::string& filep
     auto extension = path.extension().string();
     if (fs::is_directory(path))
     {
-        return LoadTextureArray(filepath, bGenerateMips);
+        return LoadTextureArray(filepath, bGenerateMips, colorSpace);
     }
 
     std::unique_ptr< u8[] > rawData;
@@ -111,26 +213,88 @@ Arc< render::Texture > Dx12ResourceManager::LoadTexture(const std::string& filep
         pTex->SetD3D12Resource(d3d12TexResource2);
         m_RenderDevice.UpdateSubresources(pTex.get(), 0, subresourceSize, subresourceDatas.data());
     }
+    else if (extension == ".hdr" || extension == ".HDR")
+    {
+        DirectX::TexMetadata metadata = {};
+        DirectX::ScratchImage image;
+        HRESULT hr = DirectX::LoadFromHDRFile(path.c_str(), &metadata, image);
+        if (SUCCEEDED(hr))
+            hr = GenerateMipChainIfRequested(image, metadata, bGenerateMips);
+        if (FAILED(hr))
+        {
+            __debugbreak();
+            return nullptr;
+        }
+
+        pTex = CreateTextureFromScratchImage(m_RenderDevice, path.string().c_str(), image);
+    }
+    else if (extension == ".exr" || extension == ".EXR")
+    {
+        float*      exrPixels = nullptr;
+        int         exrWidth  = 0;
+        int         exrHeight = 0;
+        const char* exrErr    = nullptr;
+
+        int loadResult = LoadEXR(&exrPixels, &exrWidth, &exrHeight, path.string().c_str(), &exrErr);
+        if (loadResult != TINYEXR_SUCCESS || exrPixels == nullptr)
+        {
+            if (exrErr)
+            {
+                BB_ASSERT(false, "EXR load failed: %s - %s", path.string().c_str(), exrErr);
+                FreeEXRErrorMessage(exrErr);
+            }
+            else
+            {
+                BB_ASSERT(false, "EXR load failed: %s (no error message)", path.string().c_str());
+            }
+            return nullptr;
+        }
+
+        DirectX::ScratchImage image;
+        HRESULT hr = image.Initialize2D(DXGI_FORMAT_R32G32B32A32_FLOAT, (size_t)exrWidth, (size_t)exrHeight, 1, 1);
+        if (FAILED(hr))
+        {
+            free(exrPixels);
+            __debugbreak();
+            return nullptr;
+        }
+
+        const DirectX::Image* destImage = image.GetImage(0, 0, 0);
+        const size_t          byteCount = (size_t)exrWidth * (size_t)exrHeight * sizeof(float) * 4;
+        memcpy(destImage->pixels, exrPixels, byteCount);
+        free(exrPixels);
+
+        DirectX::TexMetadata metadata = image.GetMetadata();
+        hr = GenerateMipChainIfRequested(image, metadata, bGenerateMips);
+        if (FAILED(hr))
+        {
+            __debugbreak();
+            return nullptr;
+        }
+
+        pTex = CreateTextureFromScratchImage(m_RenderDevice, path.string().c_str(), image);
+    }
     else
     {
-        D3D12_SUBRESOURCE_DATA subresouceData = {};
-        DX_CHECK(DirectX::LoadWICTextureFromFile(
-            d3d12Device, path.c_str(), &d3d12TexResource, rawData, subresouceData));
+        DirectX::TexMetadata metadata = {};
+        DirectX::ScratchImage image;
+        HRESULT hr = DirectX::LoadFromWICFile(path.c_str(), GetWicFlags(colorSpace), &metadata, image);
+        if (SUCCEEDED(hr))
+            hr = GenerateMipChainIfRequested(image, metadata, bGenerateMips);
+        if (FAILED(hr))
+        {
+            __debugbreak();
+            return nullptr;
+        }
 
-        ID3D12Resource2* d3d12TexResource2 = nullptr;
-        d3d12TexResource->QueryInterface(IID_PPV_ARGS(&d3d12TexResource2));
-
-        pTex->SetD3D12Resource(d3d12TexResource2);
-
-        UINT subresouceSize = 1;
-        m_RenderDevice.UpdateSubresources(pTex.get(), 0, subresouceSize, &subresouceData);
+        pTex = CreateTextureFromScratchImage(m_RenderDevice, path.string().c_str(), image);
     }
     COM_RELEASE(d3d12TexResource);
 
     return pTex;
 }
 
-Arc< Dx12Texture > Dx12ResourceManager::LoadTextureArray(const fs::path& dirpath, bool bGenerateMips)
+Arc< Dx12Texture > Dx12ResourceManager::LoadTextureArray(const fs::path& dirpath, bool bGenerateMips, render::eTextureColorSpace colorSpace)
 {
     using namespace render;
 
@@ -207,7 +371,7 @@ Arc< Dx12Texture > Dx12ResourceManager::LoadTextureArray(const fs::path& dirpath
         }
         else // WIC (PNG, JPG, etc.)
         {
-            hr = DirectX::LoadFromWICFile((dirpath.wstring() + L"/" + imgPath + ext).c_str(), DirectX::WIC_FLAGS_NONE, &metadata, image);
+            hr = DirectX::LoadFromWICFile((dirpath.wstring() + L"/" + imgPath + ext).c_str(), GetWicFlags(colorSpace), &metadata, image);
             if (SUCCEEDED(hr) && bGenerateMips && metadata.mipLevels == 1)
             {
                 DirectX::ScratchImage mips;

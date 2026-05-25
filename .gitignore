@@ -49,12 +49,15 @@ Output
 packages/
 packages.config
 
-# Contexts
+# Agents
 Docs/
 shrimp_data/
 .claude/
 CLAUDE.md
+.codex/
+AGENTS.md
 .env
 .mcp.json
 .shrimp_rules.md
-.cgcignore.md
+.cgcignore
+shrimp-rules.md

@@ -164,6 +164,19 @@ float2 NextFloat2(inout RngState rng)
     return float2(a, b);
 }
 
+float SamplePixelTent1D(float u)
+{
+    // Triangular sub-pixel filter with support inside the current pixel.
+    return (u < 0.5)
+        ? 0.5 * (sqrt(2.0 * u) - 1.0)
+        : 0.5 * (1.0 - sqrt(2.0 - 2.0 * u));
+}
+
+float2 SamplePixelTent(float2 u)
+{
+    return float2(SamplePixelTent1D(u.x), SamplePixelTent1D(u.y));
+}
+
 
 // ───────────────────────────────────────────────────────────────────
 // Branchless Orthonormal Basis (Duff et al. 2017,

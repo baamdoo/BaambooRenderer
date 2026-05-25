@@ -88,29 +88,32 @@ std::vector< u64 > StaticMeshSystem::UpdateRenderData(const EditorCamera& edCame
             entry.material.roughness     = materialComponent.roughness;
             entry.material.metallic      = materialComponent.metallic;
             entry.material.ior           = materialComponent.ior;
+            entry.material.emissionColor = materialComponent.emissionColor;
             entry.material.emissivePower = materialComponent.emissivePower;
-            entry.material.albedoTex     = materialComponent.albedoTex;
-            entry.material.normalTex     = materialComponent.normalTex;
-            entry.material.aoTex         = materialComponent.aoTex;
-            entry.material.roughnessTex  = materialComponent.roughnessTex;
-            entry.material.metallicTex   = materialComponent.metallicTex;
-            entry.material.emissionTex   = materialComponent.emissionTex;
 
             entry.material.alphaCutoff        = materialComponent.alphaCutoff;
             entry.material.clearcoat          = materialComponent.clearcoat;
             entry.material.clearcoatRoughness = materialComponent.clearcoatRoughness;
             entry.material.anisotropy         = materialComponent.anisotropy;
             entry.material.anisotropyRotation = materialComponent.anisotropyRotation;
+            entry.material.specularColor      = materialComponent.specularColor;
+            entry.material.specularStrength   = materialComponent.specularStrength;
             entry.material.sheenColor         = materialComponent.sheenColor;
             entry.material.sheenRoughness     = materialComponent.sheenRoughness;
             entry.material.subsurface         = materialComponent.subsurface;
             entry.material.transmission       = materialComponent.transmission;
-            entry.material.specularStrength   = materialComponent.specularStrength;
-            entry.material.clearcoatTex       = materialComponent.clearcoatTex;
-            entry.material.sheenTex           = materialComponent.sheenTex;
-            entry.material.anisotropyTex      = materialComponent.anisotropyTex;
-            entry.material.subsurfaceTex      = materialComponent.subsurfaceTex;
-            entry.material.transmissionTex    = materialComponent.transmissionTex;
+
+            entry.material.albedoTex       = materialComponent.albedoTex;
+            entry.material.normalTex       = materialComponent.normalTex;
+            entry.material.aoTex           = materialComponent.aoTex;
+            entry.material.roughnessTex    = materialComponent.roughnessTex;
+            entry.material.metallicTex     = materialComponent.metallicTex;
+            entry.material.emissionTex     = materialComponent.emissionTex;
+            entry.material.clearcoatTex    = materialComponent.clearcoatTex;
+            entry.material.sheenTex        = materialComponent.sheenTex;
+            entry.material.anisotropyTex   = materialComponent.anisotropyTex;
+            entry.material.subsurfaceTex   = materialComponent.subsurfaceTex;
+            entry.material.transmissionTex = materialComponent.transmissionTex;
         }
 
         markedEntities.emplace_back(id);

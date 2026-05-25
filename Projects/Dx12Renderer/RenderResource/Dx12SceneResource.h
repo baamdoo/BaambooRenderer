@@ -40,7 +40,7 @@ struct Dx12SceneResource : public render::SceneResource
 
     Arc< Dx12BottomLevelAS > GetOrCreateBLAS(const std::string& tag, const BufferHandle& vHandle, const BufferHandle& iHandle);
 
-    Arc< Dx12Texture > GetOrLoadTexture(u64 entity, const std::string& filepath);
+    Arc< Dx12Texture > GetOrLoadTexture(u64 entity, const std::string& filepath, render::eTextureColorSpace colorSpace = render::eTextureColorSpace::Linear);
     Arc< Dx12Texture > GetTexture(const std::string& filepath);
 
     void SetCurrentContextIndex(u32 index) { m_ContextIndex = index; }

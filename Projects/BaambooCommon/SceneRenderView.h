@@ -79,6 +79,8 @@ struct MaterialRenderView
 	float  metallic;
 	float  roughness;
 	float  ior;
+
+	float3 emissionColor = float3(1.0f);
 	float  emissivePower;
 
 	float  alphaCutoff;
@@ -87,15 +89,17 @@ struct MaterialRenderView
 	float  anisotropy;
 	float  anisotropyRotation;
 
+	float3 specularColor;
+	float  specularStrength;
 	float3 sheenColor;
 	float  sheenRoughness;
 
 	float  subsurface;
 	float  transmission;
-	float  specularStrength;
 
 	std::string albedoTex;
 	std::string normalTex;
+	std::string specularTex;
 	std::string aoTex;
 	std::string roughnessTex;
 	std::string metallicTex;

@@ -72,7 +72,11 @@ void ParseDescriptors(TReflection* pReflection, Dx12Shader::ShaderReflection& re
                     Dx12Shader::DescriptorInfo& info = descriptors.emplace_back();
                     info.name           = bindDesc.Name;
                     info.baseRegister   = bindDesc.BindPoint;
-                    info.numDescriptors = bindDesc.Space == ROOT_CONSTANT_SPACE || MISS_ARGUMENT_SPACE || HITGROUP_ARGUMENT_SPACE ? cbDesc.Size / 4 : bindDesc.BindCount;
+                    const bool bRootConstantSpace =
+                        bindDesc.Space == ROOT_CONSTANT_SPACE ||
+                        bindDesc.Space == MISS_ARGUMENT_SPACE ||
+                        bindDesc.Space == HITGROUP_ARGUMENT_SPACE;
+                    info.numDescriptors = bRootConstantSpace ? cbDesc.Size / 4 : bindDesc.BindCount;
                     info.inputType      = bindDesc.Type;
                     info.rangeType      = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
                 }

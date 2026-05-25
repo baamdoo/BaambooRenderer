@@ -2,7 +2,7 @@
 
 cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
-    uint  g_TonemapOperator; // 0: Reinhard, 1: ACES, 2: Uncharted2
+    uint  g_TonemapOperator; // 0: None, 1: Reinhard, 2: ACES, 3: Uncharted2
     float g_EV100;
     float g_Gamma;
 };
@@ -11,14 +11,33 @@ ConstantBuffer< DescriptorHeapIndex > g_SceneTexture : register(b1, ROOT_CONSTAN
 ConstantBuffer< DescriptorHeapIndex > g_OutputImage  : register(b2, ROOT_CONSTANT_SPACE);
 
 
+float3 RRTAndODTFit(float3 v)
+{
+    float3 a = v * (v + 0.0245786) - 0.000090537;
+    float3 b = v * (0.983729 * v + 0.4329510) + 0.238081;
+    return a / b;
+}
+
 float3 ACESFilm(float3 x)
 {
-    const float a = 2.51;
-    const float b = 0.03;
-    const float c = 2.43;
-    const float d = 0.59;
-    const float e = 0.14;
-    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+    const float3x3 ACESInputMat =
+    {
+        0.59719, 0.35458, 0.04823,
+        0.07600, 0.90834, 0.01566,
+        0.02840, 0.13383, 0.83777
+    };
+
+    const float3x3 ACESOutputMat =
+    {
+         1.60475, -0.53108, -0.07367,
+        -0.10208,  1.10813, -0.00605,
+        -0.00327, -0.07276,  1.07602
+    };
+
+    x = mul(ACESInputMat, x);
+    x = RRTAndODTFit(x);
+    x = mul(ACESOutputMat, x);
+    return saturate(x);
 }
 
 float3 Uncharted2Tonemap(float3 x)
@@ -56,15 +75,19 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     float3 toneMapped;
     switch (g_TonemapOperator)
     {
-    case 0: // Reinhard
+    case 0: // None
+        toneMapped = hdrColor;
+        break;
+
+    case 1: // Reinhard
         toneMapped = hdrColor / (1.0 + hdrColor);
         break;
 
-    case 1: // ACES
+    case 2: // ACES
         toneMapped = ACESFilm(hdrColor);
         break;
 
-    case 2: // Uncharted2
+    case 3: // Uncharted2
     {
         const float W = 11.2;
         float3 curr       = Uncharted2Tonemap(hdrColor);

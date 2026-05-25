@@ -34,3 +34,12 @@
 [submodule "Projects/ThirdParties/meshoptimizer"]
 	path = Projects/ThirdParties/meshoptimizer
 	url = https://github.com/zeux/meshoptimizer.git
+[submodule "Projects/ThirdParties/json"]
+	path = Projects/ThirdParties/json
+	url = https://github.com/nlohmann/json.git
+[submodule "Projects/ThirdParties/pugixml"]
+	path = Projects/ThirdParties/pugixml
+	url = https://github.com/zeux/pugixml.git
+[submodule "Projects/ThirdParties/tinyexr"]
+	path = Projects/ThirdParties/tinyexr
+	url = https://github.com/syoyo/tinyexr.git

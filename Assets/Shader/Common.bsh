@@ -164,21 +164,27 @@ struct MaterialData
 	
 	float roughness;
 	float ior;
-	float emissivePower;
 	float alphaCutoff;
+	float padding0;
 
 	float clearcoat;
     float clearcoatRoughness;
     float anisotropy;
     float anisotropyRotation;
 
+	float emissionColorR, emissionColorG, emissionColorB;
+    float emissivePower;
+
+    float specularColorR, specularColorG, specularColorB;
+    float specularStrength;
+
 	float sheenColorR, sheenColorG, sheenColorB;
     float sheenRoughness;
 
 	float subsurface;
     float transmission;
-    float specularStrength;
     uint  materialType;
+	uint  padding1;
 
 	uint albedoID;
 	uint normalID;
@@ -192,8 +198,8 @@ struct MaterialData
 
 	uint subsurfaceID;
     uint transmissionID;
-    uint padding0;
-    uint padding1;
+    uint padding2;
+    uint padding3;
 };
 
 

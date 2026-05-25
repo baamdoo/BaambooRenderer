@@ -108,6 +108,8 @@ project "BaambooEngine"
 		"%{Path.Solution}Projects/ThirdParties/assimp/include",
 		"%{Path.Solution}Projects/ThirdParties/magic_enum/include",
 		"%{Path.Solution}Projects/ThirdParties/meshoptimizer/src",
+		"%{Path.Solution}Projects/ThirdParties/json/single_include",
+		"%{Path.Solution}Projects/ThirdParties/pugixml/src",
 	}
 
 	libdirs {
@@ -227,8 +229,10 @@ project "Dx12Renderer"
 		"%{Path.Solution}Projects/ThirdParties/imgui/*.cpp",
 		"%{Path.Solution}Projects/ThirdParties/imgui/backends/imgui_impl_dx12.h",
 		"%{Path.Solution}Projects/ThirdParties/imgui/backends/imgui_impl_dx12.cpp",
+		"%{Path.Solution}Projects/ThirdParties/tinyexr/deps/miniz/miniz.h",
+		"%{Path.Solution}Projects/ThirdParties/tinyexr/deps/miniz/miniz.c",
 	}
-	removefiles { 
+	removefiles {
 		"%{prj.name}/RenderDevice/D3D12MemoryAllocator/src/D3D12Sample.cpp",
 		"%{prj.name}/RenderDevice/D3D12MemoryAllocator/src/Tests.h",
 		"%{prj.name}/RenderDevice/D3D12MemoryAllocator/src/Tests.cpp",
@@ -243,6 +247,7 @@ project "Dx12Renderer"
 		"%{Path.Solution}Projects/ThirdParties/glm",
 		"%{Path.Solution}Projects/ThirdParties/glfw/include",
 		"%{Path.Solution}Projects/ThirdParties/imgui",
+		"%{Path.Solution}Projects/ThirdParties/tinyexr/deps/miniz",  -- miniz.h for tinyexr
 	}
 
 	libdirs {
@@ -283,15 +288,19 @@ project "Dx12Renderer"
 
 	filter { "files:Dx12Renderer/RenderDevice/D3D12MemoryAllocator/src/**.cpp" }
 		flags "NoPCH"
+	filter { "files:Dx12Renderer/RenderDevice/Dx12EXRSupport.cpp" }
+		flags "NoPCH"
 	filter { "files:ThirdParties/imgui/**.cpp" }
+		flags "NoPCH"
+	filter { "files:ThirdParties/tinyexr/deps/miniz/**.c" }
 		flags "NoPCH"
 
 	filter "system:windows"
 		systemversion "latest"
-		defines { 
+		defines {
 		}
 
-		nuget { 
+		nuget {
 			"Microsoft.Direct3D.D3D12:1.618.5",
 			"directxtk12_desktop_win10:2026.4.1.1",
 			"directxtex_desktop_win10:2026.4.1.1",

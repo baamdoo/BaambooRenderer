@@ -114,7 +114,6 @@ private:
     u64 m_SizeInBytes        = 0;
     u64 m_ElementSizeInBytes = 0;
     u64 m_OffsetInBytes      = 0;
-    u64 m_Alignment          = 0;
 };
 
 }

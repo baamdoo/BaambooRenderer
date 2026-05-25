@@ -814,7 +814,10 @@ void Dx12CommandContext::Impl::SetGraphicsRootConstants(u32 srcSizeInBytes, cons
 	u32 size      = srcSizeInBytes / 4;
 	u32 dstOffset = dstOffsetInBytes / 4;
 
-	m_d3d12CommandList10->SetGraphicsRoot32BitConstants(1, size, pSrcData, dstOffset);
+	assert(m_pRootSignature);
+	const u32 rootIndex = m_pRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, ROOT_CONSTANT_SPACE, 0);
+	assert(rootIndex != INVALID_INDEX);
+	m_d3d12CommandList10->SetGraphicsRoot32BitConstants(rootIndex, size, pSrcData, dstOffset);
 }
 
 void Dx12CommandContext::Impl::SetComputeRootConstant(u32 rootIdx, u32 srcValue, u32 dstOffset)
@@ -827,7 +830,10 @@ void Dx12CommandContext::Impl::SetComputeRootConstants(u32 srcSizeInBytes, const
 	u32 size      = srcSizeInBytes / 4;
 	u32 dstOffset = dstOffsetInBytes / 4;
 
-	m_d3d12CommandList10->SetComputeRoot32BitConstants(1, size, pSrcData, dstOffset);
+	assert(m_pRootSignature);
+	const u32 rootIndex = m_pRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, ROOT_CONSTANT_SPACE, 0);
+	assert(rootIndex != INVALID_INDEX);
+	m_d3d12CommandList10->SetComputeRoot32BitConstants(rootIndex, size, pSrcData, dstOffset);
 }
 
 void Dx12CommandContext::Impl::SetGraphicsDynamicConstantBuffer(const std::string& name, size_t sizeInBytes, const void* pData)
@@ -1057,6 +1063,7 @@ void Dx12CommandContext::Impl::DrawIndexed(u32 indexCount, u32 instanceCount, u3
 
 void Dx12CommandContext::Impl::DrawIndirect(const Arc< Dx12Buffer >& pArgumentBuffer, u64 offsetInBytes, u32 numDraws)
 {
+	UNUSED(offsetInBytes);
 	FlushBarriers();
 
 	auto& sr = static_cast<Dx12SceneResource&>(m_RenderDevice.GetResourceManager().GetSceneResource());
@@ -1064,7 +1071,7 @@ void Dx12CommandContext::Impl::DrawIndirect(const Arc< Dx12Buffer >& pArgumentBu
 		sr.GetSceneD3D12CommandSignature(), 
 		numDraws,
 		pArgumentBuffer->GetD3D12Resource(),
-		offsetInBytes,
+		0,
 		nullptr,
 		0
 	);
@@ -1072,6 +1079,7 @@ void Dx12CommandContext::Impl::DrawIndirect(const Arc< Dx12Buffer >& pArgumentBu
 
 void Dx12CommandContext::Impl::DrawIndirectWithCount(const Arc< Dx12Buffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< Dx12Buffer >& pCountBuffer, u32 numDraws)
 {
+	UNUSED(offsetInBytes);
 	FlushBarriers();
 
 	auto& sr = static_cast<Dx12SceneResource&>(m_RenderDevice.GetResourceManager().GetSceneResource());

@@ -454,9 +454,9 @@ void VkCommandContext::Impl::GenerateMips(const Arc< VulkanTexture >& pTexture)
 
 	for (u32 level = 0; level < desc.mipLevels - 1; ++level)
 	{
-		i32 srcWidth  = desc.extent.width >> level;
-		i32 srcHeight = desc.extent.height >> level;
-		i32 srcDepth  = desc.extent.depth >> level;
+		i32 srcWidth  = std::max(1u, desc.extent.width >> level);
+		i32 srcHeight = std::max(1u, desc.extent.height >> level);
+		i32 srcDepth  = std::max(1u, desc.extent.depth >> level);
 
 		i32 dstWidth  = srcWidth > 1 ? srcWidth / 2 : 1;
 		i32 dstHeight = srcHeight > 1 ? srcHeight / 2 : 1;
@@ -714,6 +714,10 @@ void VkCommandContext::Impl::SetPushConstants(u32 sizeInBytes, const void* pData
 
 void VkCommandContext::Impl::SetDynamicUniformBuffer(u32 set, u32 binding, VkDeviceSize sizeInBytes, const void* pData)
 {
+	BB_ASSERT(sizeInBytes <= m_RenderDevice.DeviceProps().limits.maxUniformBufferRange,
+	          "Dynamic uniform buffer size %llu exceeds maxUniformBufferRange %u",
+	          sizeInBytes, m_RenderDevice.DeviceProps().limits.maxUniformBufferRange);
+
 	auto allocation = m_pUniformBufferPool->Allocate(sizeInBytes);
 	memcpy(allocation.cpuHandle, pData, sizeInBytes);
 

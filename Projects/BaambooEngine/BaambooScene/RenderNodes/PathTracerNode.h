@@ -4,25 +4,13 @@
 namespace baamboo
 {
 
-enum class eSamplingStrategy : u32
-{
-    UniformHemisphere = 0,
-    CosineWeighted    = 1,
-    // GGX_VNDF       = 2,   // reserved for microfacet sampling
-};
-
-enum class eMisHeuristic : u32
-{
-    Balance = 0,
-    Power2  = 1,   // beta = 2
-};
-
-enum class eMisForceWeight : u32
+enum class ePathTracerDebugMode : u32
 {
     Off          = 0,
-    NeeOnly      = 1,   // w_NEE = 1   (recovers Phase 3 NEE-only)
-    BsdfOnly     = 2,   // w_NEE = 0   (BSDF-only with double-counting absent here)
-    UnbiasedHalf = 3,   // w_NEE = 0.5 (uniform average, no IS)
+    Albedo       = 1,
+    Emission     = 2,
+    MaterialType = 3,
+    SelectedLobe = 4,
 };
 
 class PathTracerNode : public render::RenderNode
@@ -34,33 +22,15 @@ public:
 
     virtual void Apply(render::CommandContext& context, const SceneRenderView& renderView) override;
     virtual void DrawUI() override;
-
     virtual void Resize(u32 width, u32 height, u32 depth = 1) override;
 
     struct Settings
     {
-        u32 samplesPerFrame = 1;
+        u32  samplesPerFrame = 1;
+        u32  maxDepth        = 8;
+        bool bRequestReset   = false;
 
-        u32 maxDepth = 8;
-
-        eSamplingStrategy samplingStrategy = eSamplingStrategy::CosineWeighted;
-
-        bool bEnableRussianRoulette = true;
-        u32  rrMinDepth             = 2;
-
-        bool bFurnaceMode = false;
-
-        float3 furnaceLenv = { 1.0f, 1.0f, 1.0f };
-
-        float testAlbedo = 0.8f;
-
-        bool bEnableNEE = true;
-
-        bool            bEnableMIS     = true;
-        eMisHeuristic   misHeuristic   = eMisHeuristic::Balance;
-        eMisForceWeight misForceWeight = eMisForceWeight::Off;
-
-        bool bRequestReset = false;
+        ePathTracerDebugMode debugMode = ePathTracerDebugMode::Off;
     } settings;
 
 private:

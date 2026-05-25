@@ -20,6 +20,12 @@ namespace dx12
 {
 
 static Dx12ComputePipeline* s_CombineTexturesPSO = nullptr;
+
+static std::string MakeTextureCacheKey(const std::string& filepath, render::eTextureColorSpace colorSpace)
+{
+    return filepath + (colorSpace == render::eTextureColorSpace::SRGB ? "|srgb" : "|linear");
+}
+
 Arc< Dx12Texture > CombineTextures(Dx12RenderDevice& rd, const char* name, Arc< Dx12Texture > pTextureR, Arc< Dx12Texture > pTextureG, Arc< Dx12Texture > pTextureB)
 {
     using namespace render;
@@ -259,6 +265,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
         material.roughness     = materialView.roughness;
         material.metallic      = materialView.metallic;
         material.ior           = materialView.ior;
+        material.emissionColor = materialView.emissionColor;
         material.emissivePower = materialView.emissivePower;
 
         material.alphaCutoff        = materialView.alphaCutoff;
@@ -266,17 +273,17 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
         material.clearcoatRoughness = materialView.clearcoatRoughness;
         material.anisotropy         = materialView.anisotropy;
         material.anisotropyRotation = materialView.anisotropyRotation;
+        material.specularColor      = materialView.specularColor;
+        material.specularStrength   = materialView.specularStrength;
         material.sheenColor         = materialView.sheenColor;
         material.sheenRoughness     = materialView.sheenRoughness;
         material.subsurface         = materialView.subsurface;
         material.transmission       = materialView.transmission;
-        material.specularStrength   = materialView.specularStrength;
-        material.materialType       = 0; // Default
 
         material.albedoID = INVALID_INDEX;
         if (!materialView.albedoTex.empty())
         {
-            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.albedoTex);
+            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.albedoTex, render::eTextureColorSpace::SRGB);
             if (srvIndexCache.contains(pMaterialTex.get()))
             {
                 material.albedoID = srvIndexCache[pMaterialTex.get()];
@@ -300,6 +307,21 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
             {
                 material.normalID = pMaterialTex->GetShaderResourceHandle();
                 srvIndexCache.emplace(pMaterialTex.get(), material.normalID);
+            }
+        }
+
+        material.specularID = INVALID_INDEX;
+        if (!materialView.specularTex.empty())
+        {
+            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.specularTex, render::eTextureColorSpace::SRGB);
+            if (srvIndexCache.contains(pMaterialTex.get()))
+            {
+                material.specularID = srvIndexCache[pMaterialTex.get()];
+            }
+            else if (pMaterialTex)
+            {
+                material.specularID = pMaterialTex->GetShaderResourceHandle();
+                srvIndexCache.emplace(pMaterialTex.get(), material.specularID);
             }
         }
 
@@ -354,7 +376,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
         material.emissiveID = INVALID_INDEX;
         if (!materialView.emissionTex.empty())
         {
-            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.emissionTex);
+            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.emissionTex, render::eTextureColorSpace::SRGB);
             if (srvIndexCache.contains(pMaterialTex.get()))
             {
                 material.emissiveID = srvIndexCache[pMaterialTex.get()];
@@ -369,7 +391,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
         material.clearcoatID = INVALID_INDEX;
         if (!materialView.clearcoatTex.empty())
         {
-            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.emissionTex);
+            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.clearcoatTex);
             if (srvIndexCache.contains(pMaterialTex.get()))
             {
                 material.clearcoatID = srvIndexCache[pMaterialTex.get()];
@@ -384,7 +406,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
         material.sheenID = INVALID_INDEX;
         if (!materialView.sheenTex.empty())
         {
-            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.sheenTex);
+            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.sheenTex, render::eTextureColorSpace::SRGB);
             if (srvIndexCache.contains(pMaterialTex.get()))
             {
                 material.sheenID = srvIndexCache[pMaterialTex.get()];
@@ -453,7 +475,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
     std::vector< MeshData > meshes;
     for (const auto& meshView : sceneView.meshes)
     {
-        auto vHandle  = GetOrUpdateVertex(meshView.id, meshView.tag, meshView.vData, meshView.vCount);
+        auto vHandle = GetOrUpdateVertex(meshView.id, meshView.tag, meshView.vData, meshView.vCount);
 
         MeshData mesh = {};
         mesh.vOffset = vHandle.offset;
@@ -768,17 +790,18 @@ Arc< Dx12BottomLevelAS > Dx12SceneResource::GetOrCreateBLAS(const std::string& t
     return pBLAS;
 }
 
-Arc< Dx12Texture > Dx12SceneResource::GetOrLoadTexture(u64 entity, const std::string& filepath)
+Arc< Dx12Texture > Dx12SceneResource::GetOrLoadTexture(u64 entity, const std::string& filepath, render::eTextureColorSpace colorSpace)
 {
-    if (m_TextureCache.contains(filepath))
+    const std::string cacheKey = MakeTextureCacheKey(filepath, colorSpace);
+    if (m_TextureCache.contains(cacheKey))
     {
-        return m_TextureCache.find(filepath)->second;
+        return m_TextureCache.find(cacheKey)->second;
     }
 
     auto& rm   = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
-    auto  pTex = StaticCast<Dx12Texture>(rm.LoadTexture(filepath));
+    auto  pTex = StaticCast<Dx12Texture>(rm.LoadTexture(filepath, true, colorSpace));
 
-    m_TextureCache.emplace(filepath, pTex);
+    m_TextureCache.emplace(cacheKey, pTex);
     return pTex;
 }
 

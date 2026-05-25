@@ -4,6 +4,21 @@
 #define _HLSL
 #include "../Common.bsh"
 
+float sq(float x)
+{
+    return x * x;
+}
+
+float2 sq(float2 x)
+{
+    return x * x;
+}
+
+float3 sq(float3 x)
+{
+    return x * x;
+}
+
 float3 modulo(float3 x, float y)
 {
     return x - y * floor(x / y);

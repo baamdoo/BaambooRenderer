@@ -228,7 +228,7 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
             if (aiMat->Get(AI_MATKEY_COLOR_DIFFUSE, color) == AI_SUCCESS)
                 material.diffuse = float3(color.r, color.g, color.b);
             if (aiMat->Get(AI_MATKEY_COLOR_SPECULAR, color) == AI_SUCCESS)
-                material.specular = float3(color.r, color.g, color.b);
+                material.specularColor = float3(color.r, color.g, color.b);
             if (aiMat->Get(AI_MATKEY_SHEEN_COLOR_FACTOR, color) == AI_SUCCESS)
                 material.sheenColor = float3(color.r, color.g, color.b);
 

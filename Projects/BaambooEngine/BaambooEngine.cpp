@@ -67,7 +67,6 @@ void DrawUI(baamboo::Engine& engine)
 	ImGui::NewFrame();
 
 	engine.DrawUI();
-	ImGui::Render();
 }
 
 void Destroy()
@@ -426,11 +425,13 @@ void Engine::RenderLoop()
 				{
 					assert(renderView.pSceneMutex);
 					std::lock_guard< std::mutex > lock(*renderView.pSceneMutex);
+
 					ImGui::DrawUI(*this);
-					
 					for (auto pNode : m_pScene->GetRenderNodes())
 						if (pNode && pNode->IsEnabled())
 							pNode->DrawUI();
+
+					ImGui::Render();
 				}
 
 				for (auto pNode : m_pScene->GetRenderNodes())
@@ -1320,6 +1321,8 @@ void Engine::DrawUI()
 							bMark |= ImGui::DragFloat("##AlphaCutoff", &component.alphaCutoff, 0.01f, 0.0f, 1.0f);
 							ImGui::Text("SpecularStrength");
 							bMark |= ImGui::DragFloat("##Specular", &component.specularStrength, 0.01f, 0.0f, 1.0f);
+							ImGui::Text("SpecularColor");
+							bMark |= ImGui::ColorEdit3("##SpecColor", glm::value_ptr(component.specularColor));
 							ImGui::Text("IOR");
 							bMark |= ImGui::DragFloat("##IOR", &component.ior, 0.01f, 1.0f, 10.0f, "%.2f");
 						}
@@ -1806,6 +1809,12 @@ void Engine::DrawUI()
 							auto svCurrentOp = magic_enum::enum_name(component.tonemap.op);
 							if (ImGui::BeginCombo("ToneMap Operation", svCurrentOp.data()))
 							{
+								if (ImGui::Selectable("None", component.tonemap.op == eToneMappingOp::None))
+								{
+									component.tonemap.op = eToneMappingOp::None;
+
+									bMark = true;
+								}
 								if (ImGui::Selectable("Reinhard", component.tonemap.op == eToneMappingOp::Reinhard))
 								{
 									component.tonemap.op = eToneMappingOp::Reinhard;

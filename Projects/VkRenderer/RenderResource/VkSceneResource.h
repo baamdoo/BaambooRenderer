@@ -34,7 +34,7 @@ struct VkSceneResource : public render::SceneResource
     BufferHandle GetOrUpdateMeshletVertices(u64 entity, const std::string& filepath, const void* pData, u32 count);
     BufferHandle GetOrUpdateMeshletTriangles(u64 entity, const std::string& filepath, const void* pData, u32 count);
 
-    Arc< VulkanTexture > GetOrLoadTexture(u64 entity, const std::string& filepath);
+    Arc< VulkanTexture > GetOrLoadTexture(u64 entity, const std::string& filepath, render::eTextureColorSpace colorSpace = render::eTextureColorSpace::Linear);
     Arc< VulkanTexture > GetTexture(const std::string& filepath);
 
     void SetCurrentContextIndex(u32 index) { m_ContextIndex = index; }

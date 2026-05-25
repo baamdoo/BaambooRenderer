@@ -49,10 +49,10 @@ void CameraController_FirstPerson::Update(f32 dt)
 
 	const float maxSpeed = 
 		Input::Inst()->IsKeyPressed(GLFW_KEY_LEFT_CONTROL) ? config.maxMoveSpeed * config.boostingSpeed : config.maxMoveSpeed;
-	if (m_MoveVelocity.length() > maxSpeed * config.movementScale)
-		m_MoveVelocity = glm::normalize(m_MoveVelocity) * maxSpeed;
+	if (glm::length(m_MoveVelocity) > maxSpeed * config.movementScale)
+		m_MoveVelocity = glm::normalize(m_MoveVelocity) * maxSpeed * config.movementScale;
 
-	if (m_MoveVelocity.length() < 1e-3)
+	if (glm::length(m_MoveVelocity) < 1e-3)
 	{
 		m_MoveVelocity = glm::zero< float3 >();
 	}

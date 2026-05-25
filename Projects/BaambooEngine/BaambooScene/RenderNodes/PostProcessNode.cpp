@@ -163,7 +163,7 @@ void PostProcessNode::ApplyAntiAliasing(render::CommandContext& context, const S
 		context.StageDescriptor("g_AntiAliasedTexture", m_TAA.pAntiAliasedTexture, g_FrameData.pLinearClamp);
 		context.StageDescriptor("g_OutputImage", g_FrameData.pColor.lock());
 
-		context.Dispatch2D< 16, 16 >(g_FrameData.pColor->Width(), g_FrameData.pColor->Width());
+		context.Dispatch2D< 16, 16 >(g_FrameData.pColor->Width(), g_FrameData.pColor->Height());
 	}
 
 	m_TAA.ApplyCounter++;
@@ -187,7 +187,7 @@ void PostProcessNode::ApplyToneMapping(render::CommandContext& context, const Sc
 	// Tone mapping push constants
 	struct
 	{
-		u32   tonemapOp; // 0: Reinhard, 1: ACES, 2: Uncharted2
+		u32   tonemapOp; // 0: None, 1: Reinhard, 2: ACES, 3: Uncharted2
 		float ev100;
 		float gamma;
 	} constant = { (u32)renderView.postProcess.tonemap.op, renderView.postProcess.tonemap.ev100, renderView.postProcess.tonemap.gamma };

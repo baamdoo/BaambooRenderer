@@ -104,8 +104,9 @@ private:
 
     Arc< VulkanBuffer > m_pAllocatedBuffer;
 
-    u64 m_Offset    = 0;
-    u64 m_Alignment = 0;
+    u64 m_Offset             = 0;
+    u64 m_Alignment          = 0;
+    u64 m_ElementSizeInBytes = 0;
 
     VkBufferUsageFlags2 m_UsageFlags = 0;
 };
