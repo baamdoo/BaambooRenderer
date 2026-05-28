@@ -213,6 +213,10 @@ void Dx12SceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneV
 
     m_CullData.sseThresholdPx = sceneView.sseThresholdPx;
     m_CullData.viewportHeight = frozenVp.y;
+    m_CullData.cullFlags      = sceneView.cullFlags;
+    m_CullData.hiZMipCount    = sceneView.hiZMipCount;
+    m_CullData.hiZWidth       = sceneView.hiZWidth;
+    m_CullData.hiZHeight      = sceneView.hiZHeight;
     memcpy(m_FrameData[m_ContextIndex].pCullBuffer->MappedMemory(), &m_CullData, sizeof(CullData));
 
     SceneEnvironmentData sceneEnvironmentData =

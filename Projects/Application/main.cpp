@@ -12,11 +12,11 @@ int main()
 	//eRendererAPI rendererAPI = eRendererAPI::D3D12;
 	eRendererAPI rendererAPI = eRendererAPI::Vulkan;
 
-	ExampleApp app = {};
+	//ExampleApp app = {};
 	//BistroApp app = {};
 	//LightingApp app = {};
 	//RayTracingApp app = {};
-	//TerrainApp app = {};
+	TerrainApp app = {};
 	try
 	{
 		app.Initialize(rendererAPI);

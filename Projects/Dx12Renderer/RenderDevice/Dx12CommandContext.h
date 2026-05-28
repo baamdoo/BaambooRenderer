@@ -36,7 +36,7 @@ public:
 	void AliasingBarrier(Dx12Resource* pResourceBefore, Dx12Resource* pResourceAfter, bool bFlushImmediate = false);
 
 	// ---- Copy ----
-	void UploadData(const Arc< render::Buffer >& pDstBuffer, const void* pData, u32 numElements, u64 elemSizeInBytes, u64 dstOffsetInBytes);
+	virtual void UploadData(const Arc< render::Buffer >& pDstBuffer, const void* pData, u32 numElements, u64 elemSizeInBytes, u64 dstOffsetInBytes = 0) override;
 
 	virtual void CopyBuffer(const Arc< render::Buffer >& pDstBuffer, const Arc< render::Buffer >& pSrcBuffer, SIZE_T dstOffsetInBytes = 0, SIZE_T srcOffsetInBytes = 0) override;
 	virtual void CopyBufferRegion(const Arc< render::Buffer >& pDstBuffer, const Arc< render::Buffer >& pSrcBuffer, u64 sizeInBytes, u64 dstOffsetInBytes = 0, u64 srcOffsetInBytes = 0) override;

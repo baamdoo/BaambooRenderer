@@ -36,7 +36,7 @@ public:
     void Open(VkCommandBufferUsageFlags flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 	void Close();
 
-	void UploadData(const Arc< render::Buffer >& pDstBuffer, const void* pData, u32 numElements, u64 elemSizeInBytes, u64 dstOffsetInBytes);
+	virtual void UploadData(const Arc< render::Buffer >& pDstBuffer, const void* pData, u32 numElements, u64 elemSizeInBytes, u64 dstOffsetInBytes = 0) override;
 
     virtual void CopyBuffer(const Arc< render::Buffer >& dstBuffer, const Arc< render::Buffer >& srcBuffer, u64 dstOffsetInBytes = 0, u64 srcOffsetInBytes = 0) override;
     virtual void CopyBufferRegion(const Arc< render::Buffer >& pDstBuffer, const Arc< render::Buffer >& pSrcBuffer, u64 sizeInBytes, u64 dstOffsetInBytes = 0, u64 srcOffsetInBytes = 0) override;

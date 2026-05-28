@@ -16,10 +16,6 @@ cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
     uint g_NumInstances;
     uint g_CullingPhase;
-    uint g_HiZMipCount;
-    uint g_HiZWidth;
-    uint g_HiZHeight;
-    uint g_CullFlags;
 };
 
 ConstantBuffer< DescriptorHeapIndex > g_IndirectCommands : register(b1, ROOT_CONSTANT_SPACE);
@@ -101,8 +97,8 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
             g_Camera.zNear,
             HiZ,
             g_LinearClampMinSampler,
-            g_HiZWidth,
-            g_HiZHeight);
+            g_CullData.hiZWidth,
+            g_CullData.hiZHeight);
         bVisible = bVisible && !bOccluded;
 
         VisibilityBuffer[instanceID] = bVisible ? 1u : 0u; // Update visibility bit for next frame (Phase 1 read)
@@ -113,7 +109,7 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
     // Phase 2: depends on CULL_FLAG_MESHLET_OCCLUSION.
     //   OFF → classic 2-pass: emit only newly-visible (prevVisibility == 0).
     //   ON  → meshlet persistence: emit ALL visible so task shader can disocclude newly-exposed meshlets inside old-visible instances.
-    bool bMeshletOcclusion = (g_CullFlags & CULL_FLAG_MESHLET_OCCLUSION) != 0u;
+    bool bMeshletOcclusion = (g_CullData.cullFlags & CULL_FLAG_MESHLET_OCCLUSION) != 0u;
     bool bEmitLate         = bMeshletOcclusion || (prevVisibility == 0u);
 
     if (bVisible && (g_CullingPhase == PHASE1_CULL || bEmitLate))

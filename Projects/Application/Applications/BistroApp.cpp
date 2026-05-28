@@ -6,6 +6,7 @@
 #include "BaambooScene/Components.h"
 #include "BaambooScene/RenderNodes/AtmosphereNode.h"
 #include "BaambooScene/RenderNodes/GBufferNode.h"
+#include "BaambooScene/RenderNodes/CullingNode.h"
 #include "BaambooScene/RenderNodes/CloudNode.h"
 #include "BaambooScene/RenderNodes/SkyboxNode.h"
 #include "BaambooScene/RenderNodes/LightingNode.h"
@@ -259,7 +260,12 @@ void BistroApp::DrawUI()
 void BistroApp::ConfigureRenderGraph()
 {
 	m_pScene->AddRenderNode(MakeArc< StaticSkyboxNode >(*m_pRendererBackend->GetDevice()));
-	m_pScene->AddRenderNode(MakeArc< GBufferNode >(*m_pRendererBackend->GetDevice()));
+	{
+		auto pGBufferNode = MakeArc< GBufferNode >(*m_pRendererBackend->GetDevice());
+		auto pCullingNode = MakeArc< CullingNode >(*m_pRendererBackend->GetDevice());
+		pCullingNode->SetGBufferNode(pGBufferNode);
+		m_pScene->AddRenderNode(pCullingNode);
+	}
 	m_pScene->AddRenderNode(MakeArc< LightingNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< PostProcessNode >(*m_pRendererBackend->GetDevice()));
 }
@@ -277,7 +283,7 @@ void BistroApp::ConfigureSceneObjects()
 		descriptor.numLODs			 = 8;
 
 		srand(42);
-		const u32 meshCount = 100'000;
+		const u32 meshCount = 10'000;
 		for (u32 i = 0; i < meshCount; ++i)
 		{
 			auto entity = m_pScene->ImportModel(MODEL_PATH.append("kitten.obj"), descriptor);

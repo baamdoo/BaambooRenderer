@@ -8,6 +8,7 @@
 #include "BaambooScene/Components.h"
 #include "BaambooScene/RenderNodes/SkyboxNode.h"
 #include "BaambooScene/RenderNodes/GBufferNode.h"
+#include "BaambooScene/RenderNodes/CullingNode.h"
 #include "BaambooScene/RenderNodes/LightingNode.h"
 #include "BaambooScene/RenderNodes/DebugDrawNode.h"
 #include "BaambooScene/RenderNodes/PostProcessNode.h"
@@ -167,21 +168,8 @@ void LightingApp::DrawUI()
 
 	if (m_pScene)
 	{
-		ImGui::Begin("Debug Visualization");
+		ImGui::Begin("Light Cluster Visualization");
 		{
-			// --- Camera Freeze ---
-			bool bFrozenReq = m_pScene->GetCameraFreezeRequest();
-			if (ImGui::Checkbox("Camera Freeze", &bFrozenReq))
-				m_pScene->SetCameraFreezeRequest(bFrozenReq);
-
-			if (m_pScene->IsCameraFrozen())
-			{
-				ImGui::SameLine();
-				ImGui::TextDisabled("(frozen at frame %llu)", (unsigned long long)m_pScene->GetFrozenAtFrame());
-			}
-
-			ImGui::Separator();
-
 			// --- Cluster Wireframe ---
 			if (ImGui::CollapsingHeader("Cluster Wireframe"))
 			{
@@ -333,7 +321,12 @@ void LightingApp::DrawUI()
 void LightingApp::ConfigureRenderGraph()
 {
 	m_pScene->AddRenderNode(MakeArc< StaticSkyboxNode >(*m_pRendererBackend->GetDevice()));
-	m_pScene->AddRenderNode(MakeArc< GBufferNode >(*m_pRendererBackend->GetDevice()));
+	{
+		auto pGBufferNode = MakeArc< GBufferNode >(*m_pRendererBackend->GetDevice());
+		auto pCullingNode = MakeArc< CullingNode >(*m_pRendererBackend->GetDevice());
+		pCullingNode->SetGBufferNode(pGBufferNode);
+		m_pScene->AddRenderNode(pCullingNode);
+	}
 	m_pScene->AddRenderNode(MakeArc< ClusterBuildNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< LightCullingNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< LightingNode >(*m_pRendererBackend->GetDevice()));

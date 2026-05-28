@@ -7,6 +7,11 @@
 #include "BaambooScene/Entity.h"
 #include "BaambooScene/Components.h"
 #include "BaambooScene/RenderNodes/TerrainNode.h"
+#include "BaambooScene/RenderNodes/GBufferNode.h"
+#include "BaambooScene/RenderNodes/CullingNode.h"
+#include "BaambooScene/RenderNodes/SkyboxNode.h"
+#include "BaambooScene/RenderNodes/LightingNode.h"
+#include "BaambooScene/RenderNodes/DebugDrawNode.h"
 #include "BaambooScene/RenderNodes/PostProcessNode.h"
 
 #include <glm/gtc/type_ptr.hpp>
@@ -225,8 +230,24 @@ void TerrainApp::DrawUI()
 
 void TerrainApp::ConfigureRenderGraph()
 {
-	m_pScene->AddRenderNode(MakeArc< TerrainNode >(*m_pRendererBackend->GetDevice()));
-	m_pScene->AddRenderNode(MakeArc< PostProcessNode >(*m_pRendererBackend->GetDevice()));
+	auto& device = *m_pRendererBackend->GetDevice();
+
+	m_pScene->AddRenderNode(MakeArc< StaticSkyboxNode >(device));
+	{
+		auto pGBufferNode = MakeArc< GBufferNode >(device);
+		auto pCullingNode = MakeArc< CullingNode >(device);
+		auto pTerrainNode = MakeArc< TerrainNode >(device);
+
+		pCullingNode->SetGBufferNode(pGBufferNode);
+		pCullingNode->SetTerrainNode(pTerrainNode);
+		pTerrainNode->SetGBufferNode(pGBufferNode);
+
+		m_pScene->AddRenderNode(pCullingNode);
+		m_pScene->AddRenderNode(pTerrainNode);
+	}
+	m_pScene->AddRenderNode(MakeArc< LightingNode >(device));
+	m_pScene->AddRenderNode(MakeArc< DebugDrawNode >(device));
+	m_pScene->AddRenderNode(MakeArc< PostProcessNode >(device));
 }
 
 void TerrainApp::ConfigureSceneObjects()
@@ -239,8 +260,9 @@ void TerrainApp::ConfigureSceneObjects()
 		tc.rootSizeMeter     = 8192.0f;
 		tc.terrainSizeMeter  = 8192.0f;
 		tc.lodRangeBaseMeter = 1024.0f;
-		tc.lodMorphK         = 0.85f;
-		tc.maxDepth          = 5u;
+		tc.lodMorphK         = 0.5f;
+		tc.maxDepth          = 7u;
+		tc.bForceFinestLOD   = false;
 
 		auto& transform = terrain.GetComponent< TransformComponent >();
 		transform.transform.position = float3(0.0f, 0.0f, 0.0f);
@@ -252,6 +274,7 @@ void TerrainApp::ConfigureSceneObjects()
 		cfg.lodRangeBaseMeter = tc.lodRangeBaseMeter;
 		cfg.lodMorphK         = tc.lodMorphK;
 		cfg.maxDepth          = tc.maxDepth;
+		cfg.bForceFinestLOD   = tc.bForceFinestLOD;
 		cfg.terrainSizeMeter  = tc.terrainSizeMeter;
 		cfg.heightMinMeter    = tc.heightMinMeter;
 		cfg.heightRangeMeter  = tc.heightRangeMeter;
@@ -259,6 +282,34 @@ void TerrainApp::ConfigureSceneObjects()
 		cfg.rootOriginZ       = transform.transform.position.z - tc.rootSizeMeter * 0.5f;
 		if (const auto& pTerrainNode = StaticCast<TerrainNode>(m_pScene->GetRenderNodeByName("TerrainPass")))
 			pTerrainNode->SetQuadtreeConfig(cfg);
+	}
+
+	{
+		auto skybox = m_pScene->CreateEntity("Skybox");
+		auto& transform = skybox.GetComponent< TransformComponent >();
+		transform.transform.position = float3(0.0f, 1.0f, 0.0f);
+
+		auto& light = skybox.AttachComponent< LightComponent >();
+		light.SetDefaultDirectionalLight();
+
+		auto& atmosphere = skybox.AttachComponent< AtmosphereComponent >();
+		atmosphere.skybox = TEXTURE_PATH.string() + "Skybox_Field.jpg";
+		
+	}
+
+	{
+		MeshDescriptor descriptor = {};
+		descriptor.rootPath          = GetModelPath();
+		descriptor.bOptimize         = true;
+		descriptor.rendererAPI       = s_RendererAPI;
+		descriptor.bWindingCW        = true;
+		descriptor.bGenerateMeshlets = true;
+		descriptor.numLODs           = 8;
+
+		auto helmet = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
+		auto& tc = helmet.GetComponent< TransformComponent >();
+		tc.transform.position = float3(2000.0f, 1500.0f, 2000.0f);
+		tc.transform.scale    = float3(300.0f, 300.0f, 300.0f);
 	}
 
 	{

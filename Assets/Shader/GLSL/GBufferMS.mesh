@@ -4,6 +4,7 @@
 
 #define _CAMERA
 #define _MESH
+#define _CULL
 #define _TRANSFORM
 #include "DescriptorCommon.hg"
 
@@ -14,10 +15,7 @@
 layout(push_constant) uniform PushConstants
 {
     vec2 viewportSize;
-    uint cullFlags;
     uint phase;
-    uint hiZWidth;
-    uint hiZHeight;
 } g_Push;
 
 
@@ -68,7 +66,7 @@ bool TriangleCull(vec4 ca, vec4 cb, vec4 cc)
 
 	bool culled = false;
 
-	if ((g_Push.cullFlags & CULL_FLAG_BACKFACE) != 0u)
+	if ((g_CullData.cullFlags & CULL_FLAG_BACKFACE) != 0u)
 	{
 		// Backface + zero-area via 2D signed area
 		vec2 eb = b - a;
@@ -78,7 +76,7 @@ bool TriangleCull(vec4 ca, vec4 cb, vec4 cc)
 			culled = true;
 	}
 
-	if ((g_Push.cullFlags & CULL_FLAG_SUBPIXEL) != 0u && !culled)
+	if ((g_CullData.cullFlags & CULL_FLAG_SUBPIXEL) != 0u && !culled)
 	{
 		// NDC [-1,1] → pixel coords [0, viewportSize]
 		vec2 sa = (a * 0.5 + 0.5) * g_Push.viewportSize;

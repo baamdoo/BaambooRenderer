@@ -83,7 +83,7 @@ struct FrozenCameraData
 
     float3 position;
     float  zNear;
-    float2 viewport;     // frozen-snapshot viewport (px) — placed before zFar so std140 8-byte align lands on offset 272
+    float2 viewport;
     float  zFar;
     float  padding0;
 };
@@ -93,12 +93,17 @@ struct CullData
 {
     float4 frustum[6];
 
-	float sseThresholdPx; // for lod selection in culling and mesh shading
+    float sseThresholdPx; // for LOD selection in culling
     float viewportHeight;
-    float padding0;
-    float padding1;
+    u32   cullFlags;
+    u32   hiZMipCount;
+
+    u32 hiZWidth;
+    u32 hiZHeight;
+    u32 padding0;
+    u32 padding1;
 };
-static_assert(sizeof(CullData) == 6 * sizeof(float4) + 16);
+static_assert(sizeof(CullData) == 6 * sizeof(float4) + 32);
 
 
 struct MaterialData

@@ -1068,7 +1068,7 @@ void Dx12CommandContext::Impl::DrawIndirect(const Arc< Dx12Buffer >& pArgumentBu
 
 	auto& sr = static_cast<Dx12SceneResource&>(m_RenderDevice.GetResourceManager().GetSceneResource());
 	m_d3d12CommandList10->ExecuteIndirect(
-		sr.GetSceneD3D12CommandSignature(), 
+		sr.GetSceneD3D12CommandSignature(),
 		numDraws,
 		pArgumentBuffer->GetD3D12Resource(),
 		0,

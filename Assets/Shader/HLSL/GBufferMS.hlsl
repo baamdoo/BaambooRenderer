@@ -1,6 +1,7 @@
 #define _CAMERA
 #define _MESH
 #define _TRANSFORM
+#define _CULL
 #include "Common.hlsli"
 
 #define CULL_FLAG_BACKFACE 1u
@@ -16,11 +17,7 @@ cbuffer CommandSignatureParam : register(b0, COMMMANDSIGNATURE_SPACE)
 cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
     float2 g_Viewport;
-
-    uint g_CullFlags;
-    uint g_Phase;
-    uint g_HiZWidth;
-    uint g_HiZHeight;
+    uint   g_Phase;
 };
 
 static StructuredBuffer< Vertex >  Vertices         = GetResource(g_Vertices.index);
@@ -95,7 +92,7 @@ bool TriangleCull(float4 ca, float4 cb, float4 cc)
 
     bool culled = false;
 
-    if ((g_CullFlags & CULL_FLAG_BACKFACE) != 0u)
+    if ((g_CullData.cullFlags & CULL_FLAG_BACKFACE) != 0u)
     {
         // Backface + zero-area via 2D signed area
         float2 eb = b - a;
@@ -105,7 +102,7 @@ bool TriangleCull(float4 ca, float4 cb, float4 cc)
             culled = true;
     }
 
-    if ((g_CullFlags & CULL_FLAG_SUBPIXEL) != 0u && !culled)
+    if ((g_CullData.cullFlags & CULL_FLAG_SUBPIXEL) != 0u && !culled)
     {
         // NDC [-1,1] → pixel coords [0, viewportSize]
         float2 sa = (a * 0.5 + 0.5) * g_Viewport;

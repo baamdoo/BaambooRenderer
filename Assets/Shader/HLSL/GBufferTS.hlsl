@@ -24,11 +24,7 @@ cbuffer CommandSignatureParam : register(b0, COMMMANDSIGNATURE_SPACE)
 cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
     float2 g_Viewport;
-
-    uint g_CullFlags;
-    uint g_Phase;    
-    uint g_HiZWidth; 
-    uint g_HiZHeight;
+    uint   g_Phase;
 };
 
 ConstantBuffer< DescriptorHeapIndex > g_HiZTexture              : register(b1, ROOT_CONSTANT_SPACE);
@@ -114,7 +110,7 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
         RWStructuredBuffer< uint > MeshletVisibility = GetResource(g_MeshletVisibilityBuffer.index);
 
         bool bPrevVis   = (MeshletVisibility[visWord] & visBitMsk) != 0u;
-        bool bOcclusion = (g_CullFlags & CULL_FLAG_MESHLET_OCCLUSION) != 0u;
+        bool bOcclusion = (g_CullData.cullFlags & CULL_FLAG_MESHLET_OCCLUSION) != 0u;
 
         // Phase 1 skip: only emit meshlets that were visible last frame.
         bool bSkipPhase1 = (g_Phase == PHASE1_CULL) && bOcclusion && !bPrevVis;
@@ -129,13 +125,13 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
             accept = true;
 
             // 1) Frustum cull
-            if ((g_CullFlags & CULL_FLAG_MESHLET_FRUSTUM) != 0u && accept)
+            if ((g_CullData.cullFlags & CULL_FLAG_MESHLET_FRUSTUM) != 0u && accept)
             {
                 accept = !IsFrustumCulled(g_CullData.frustum, meshletCenterWS, meshletRadiusWS);
             }
 
             // 2) Backface cone cull
-            if ((g_CullFlags & CULL_FLAG_MESHLET_CONE) != 0u && accept)
+            if ((g_CullData.cullFlags & CULL_FLAG_MESHLET_CONE) != 0u && accept)
             {
                 float3 coneAxisWS = normalize(mul(sh_LocalToWorld, float4(meshlet.coneAxisX, meshlet.coneAxisY, meshlet.coneAxisZ, 0.0)).xyz);
 
@@ -155,8 +151,8 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
                     g_Camera.zNear,
                     HiZ,
                     g_LinearClampMinSampler,
-                    g_HiZWidth,
-                    g_HiZHeight);
+                    g_CullData.hiZWidth,
+                    g_CullData.hiZHeight);
                 accept = !bOccluded;
             }
 

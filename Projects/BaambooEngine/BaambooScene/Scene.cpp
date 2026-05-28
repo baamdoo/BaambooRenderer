@@ -348,6 +348,20 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport,
 	view.frame          = frame;
 	view.viewport       = viewport;
 	view.sseThresholdPx = g_FrameData.sseThresholdPx;
+	view.cullFlags      = g_FrameData.cullFlags;
+
+	if (auto pHiZ = g_FrameData.pHiZ.lock())
+	{
+		view.hiZMipCount = pHiZ->MipLevels();
+		view.hiZWidth    = pHiZ->Width();
+		view.hiZHeight   = pHiZ->Height();
+	}
+	else
+	{
+		view.hiZMipCount = 0u;
+		view.hiZWidth    = 0u;
+		view.hiZHeight   = 0u;
+	}
 
 	view.rg = m_RenderGraph.GetRenderNodes();
 

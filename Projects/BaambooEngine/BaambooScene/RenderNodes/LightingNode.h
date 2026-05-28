@@ -69,6 +69,8 @@ private:
 	Arc< render::Texture > m_pSceneTexture;
 	Arc< render::Texture > m_pLtcLut1;
 	Arc< render::Texture > m_pLtcLut2;
+	Arc< render::Buffer >  m_pFallbackLightGridBuffer;
+	Arc< render::Buffer >  m_pFallbackLightListDataBuffer;
 
 	Box< render::ComputePipeline > m_pLightingPSO;
 };

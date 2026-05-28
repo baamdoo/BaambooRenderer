@@ -1,0 +1,102 @@
+#pragma once
+#include "TerrainNode.h"
+#include "GBufferNode.h"
+
+namespace baamboo
+{
+
+
+struct MeshCullOutputs
+{
+	Arc< render::Buffer >  pIndirectCommands;
+	Arc< render::Buffer >  pDrawCount;
+	Arc< render::Buffer >  pDrawIndex;
+	Arc< render::Buffer >  pMeshletVisibility;
+	Arc< render::Buffer >  pMeshletStats;
+	Arc< render::Texture > pHiZ;
+
+	u32 numInstances = 0u;
+	u32 phase        = 0u;
+};
+
+
+class CullingNode : public render::RenderNode
+{
+using Super = render::RenderNode;
+public:
+	static constexpr u32 PHASE1_CULL = 0u;
+	static constexpr u32 PHASE2_CULL = 1u;
+
+	CullingNode(render::RenderDevice& rd);
+	virtual ~CullingNode();
+
+	CullingNode(const CullingNode& other);
+	CullingNode& operator=(const CullingNode& other);
+	CullingNode(CullingNode&& other) noexcept;
+	CullingNode& operator=(CullingNode&& other) noexcept;
+
+	// --- Sub-node registration (app constructs both, links here) ---
+	void SetGBufferNode(const Arc< GBufferNode >& pNode) { m_pGBufferNode = pNode; }
+	void SetTerrainNode(const Arc< TerrainNode >& pNode) { m_pTerrainNode = pNode; }
+
+	// --- Shared HiZ exposure (for future SSAO/reflections that need depth pyramid) ---
+	Arc< render::Texture > GetHiZTexture() const { return m_pHiZTexture; }
+
+	virtual void Apply(render::CommandContext& context, const SceneRenderView& renderView) override;
+	virtual void Resize(u32 width, u32 height, u32 depth = 1) override;
+
+private:
+	void DispatchMeshCull(render::CommandContext& context, u32 numInstances, u32 phase);
+	void BuildHiZ(render::CommandContext& context);
+	void EnsureMeshletVisibility(u32 numRequiredWords);
+	void PublishReadbackStats();
+
+	MeshCullOutputs MakeMeshCullOutputs(u32 numInstances, u32 phase) const;
+
+private:
+	// --- Sub-nodes (draw responsibility, owned via Arc) ---
+	Arc< GBufferNode > m_pGBufferNode;
+	Arc< TerrainNode > m_pTerrainNode;
+
+	// --- Mesh cull resources ---
+	Arc< render::Buffer > m_DrawIndexBuffer;
+	Arc< render::Buffer > m_DrawCountBuffer;
+	Arc< render::Buffer > m_CulledIndirectCommandBuffer;
+	Arc< render::Buffer > m_VisibilityBuffer;
+	Arc< render::Buffer > m_MeshletVisibilityBuffer;
+	u32                   m_NumMeshletVisibilityWords = 0;
+	static constexpr u32  NUM_INITIAL_MESHLET_VISIBILITY_WORDS = _KB(2);
+
+	// --- HiZ pyramid + SPD ---
+	Arc< render::Texture > m_pHiZTexture;
+	Arc< render::Buffer >  m_pSPDCounterBuffer;
+
+	// --- Compute pipelines ---
+	Box< render::ComputePipeline > m_pInstanceCullingPSO;
+	Box< render::ComputePipeline > m_pHiZGenerationPSO;
+
+	// --- Readback ring ---
+	static constexpr u32  READBACK_SLOTS = MAX_FRAMES_IN_FLIGHT;
+	Arc< render::Buffer > m_Phase1CountReadback;
+	Arc< render::Buffer > m_Phase2CountReadback;
+
+#if PROFILING_LEVEL >= 1
+	static constexpr u32  MESHLET_STATS_FIELDS = 3;
+	Arc< render::Buffer > m_MeshletStatsBuffer;
+	Arc< render::Buffer > m_Phase1MeshletStatsReadback;
+	Arc< render::Buffer > m_Phase2MeshletStatsReadback;
+#endif
+
+	Arc< render::Buffer > m_TerrainPhase1CountReadback;
+	Arc< render::Buffer > m_TerrainPhase2CountReadback;
+#if PROFILING_LEVEL >= 1
+	Arc< render::Buffer > m_TerrainPhase1LodStatsReadback;
+	Arc< render::Buffer > m_TerrainPhase2LodStatsReadback;
+#endif
+
+	bool m_bNeedsClear          = true;
+	u32  m_ReadbackIdx          = 0;
+	u32  m_ReadbackFrameCounter = 0;
+};
+
+} // namespace baamboo

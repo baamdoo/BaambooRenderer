@@ -2,19 +2,6 @@
 #extension GL_EXT_mesh_shader : require
 #extension GL_GOOGLE_include_directive : require
 
-// =========================================================================
-// TerrainMS.mesh — GLSL/Vulkan port of TerrainMS.hlsl (Quadtree CDLOD MS).
-//
-//   Docs/Terrain/02-QuadtreeCDLOD.md
-//
-// Logic is identical to the HLSL version (per-vertex morph + perimeter skirt).
-// Only the API surface differs:
-//   - g_DrawID cbuffer (D3D12 command-signature root constant) -> gl_DrawID.
-//     TerrainNode emits one indirect command per patch with drawID == i, so
-//     gl_DrawID is exactly the patch index.
-//   - bindless ResourceDescriptorHeap -> explicit set/binding (TerrainCommon.hg).
-// =========================================================================
-
 #define _CAMERA
 #include "DescriptorCommon.hg"   // g_Camera (set 0)
 #include "HelperFunctions.hg"    // saturate(), EPSILON_MIN
@@ -24,28 +11,23 @@
 #define TERRAIN_MAX_PRIMS  256
 #define TERRAIN_MS_THREADS 128
 
-// Gaea heightmap — combined image+sampler (linear-clamp baked in by the
-// engine's StageDescriptor). Per-pass descriptor set 1, see TerrainCommon.hg.
 layout(set = 1, binding = 2) uniform sampler2D g_Heightmap;
 
-// MS -> PS interface (mirrors HLSL MSOutput; gl_Position carries positionCS).
-layout(location = 0) out vec3 outNormalWS[];
-layout(location = 1) out vec2 outUv[];
+layout(location = 0) out vec2      outUv[];
+layout(location = 1) out float     outSkirtBlend[];
+layout(location = 2) flat out uint outPatchDepth[];
 
 struct SurfaceVertex
 {
     vec3 posWS;
-    vec3 normalWS;
     vec2 uv;
 };
 
-// Patch-local morphed surface sample — the skirt reuses the EXACT same morphed
-// world position as its edge vertex so it hangs directly below the seam.
 SurfaceVertex ComputeSurfaceVertex(uint gx, uint gz, PatchInstance pi)
 {
     float patchOriginX = pi.patchOriginX;
     float patchOriginZ = pi.patchOriginZ;
-    float patchSizeM   = pi.patchSizeM;
+    float patchSizeM   = pi.patchSizeMeter;
     uint  gridN        = pi.gridDim;
     float rStart       = GetLodRangeStart(pi.depth);
     float rEnd         = GetLodRangeEnd  (pi.depth);
@@ -72,23 +54,12 @@ SurfaceVertex ComputeSurfaceVertex(uint gx, uint gz, PatchInstance pi)
     float h01 = textureLod(g_Heightmap, vec2(tu, tv), 0.0).r;
     vec3  posWS = vec3(xWORLD, h01 * g_Terrain.HeightRangeMeter + g_Terrain.HeightMinMeter, zWORLD);
 
-    float hL = textureLod(g_Heightmap, vec2(tu - g_Terrain.HeightmapTexel, tv), 0.0).r;
-    float hR = textureLod(g_Heightmap, vec2(tu + g_Terrain.HeightmapTexel, tv), 0.0).r;
-    float hD = textureLod(g_Heightmap, vec2(tu, tv - g_Terrain.HeightmapTexel), 0.0).r;
-    float hU = textureLod(g_Heightmap, vec2(tu, tv + g_Terrain.HeightmapTexel), 0.0).r;
-
-    // Sampled heights are in [0,1]; differentials carry the world-space scale.
-    float dhdx = (hR - hL) * g_Terrain.HeightRangeMeter / (2.0 * g_Terrain.WorldPerTexel);
-    float dhdz = (hU - hD) * g_Terrain.HeightRangeMeter / (2.0 * g_Terrain.WorldPerTexel);
-
     SurfaceVertex sv;
     sv.posWS    = posWS;
-    sv.normalWS = normalize(vec3(-dhdx, 1.0, -dhdz));
     sv.uv       = vec2(tu, tv);
     return sv;
 }
 
-// Skirt index s in [0, 4*(gridN-1)) -> grid coord of the perimeter edge vertex.
 uvec2 PerimGridCoord(uint s, uint gridN)
 {
     uint P = gridN - 1u;
@@ -103,7 +74,7 @@ uvec2 PerimGridCoord(uint s, uint gridN)
 
 float ComputeSkirtDepth(PatchInstance pi)
 {
-    float gap   = pi.patchSizeM / float(pi.gridDim - 1u);
+    float gap   = pi.patchSizeMeter / float(pi.gridDim - 1u);
     float slope = g_Terrain.HeightRangeMeter / g_Terrain.TerrainSizeMeter;
     return 1.0 * slope * gap;
 }
@@ -112,12 +83,10 @@ layout(local_size_x = TERRAIN_MS_THREADS, local_size_y = 1, local_size_z = 1) in
 layout(triangles, max_vertices = TERRAIN_MAX_VERTS, max_primitives = TERRAIN_MAX_PRIMS) out;
 void main()
 {
-    // gl_DrawID == patch index: TerrainNode emits one indirect command per
-    // patch with drawID == i (see TerrainNode::UploadPatches).
-    PatchInstance pi = g_PatchInstances[gl_DrawID];
+    PatchInstance pi = g_PatchInstanceData[gl_DrawID];
 
     uint gridN = pi.gridDim;
-    uint P     = gridN - 1u;             // cells / quads per edge
+    uint P     = gridN - 1u;
 
     uint surfVerts  = gridN * gridN;
     uint surfPrims  = 2u * P * P;
@@ -136,19 +105,24 @@ void main()
         {
             SurfaceVertex sv = ComputeSurfaceVertex(v % gridN, v / gridN, pi);
             gl_MeshVerticesEXT[v].gl_Position = g_Camera.mViewProj * vec4(sv.posWS, 1.0);
-            outNormalWS[v] = sv.normalWS;
-            outUv[v]       = sv.uv;
+            outUv        [v] = sv.uv;
+            outSkirtBlend[v] = 0.0; // surface: pure ground material
+            outPatchDepth[v] = pi.depth;
         }
         else
         {
             // Skirt vertex: same morphed surface sample as its edge vertex, pushed straight down.
-            uvec2 g = PerimGridCoord(v - surfVerts, gridN);
+            uint  s = v - surfVerts;
+            uvec2 g = PerimGridCoord(s, gridN);
 
             SurfaceVertex sv = ComputeSurfaceVertex(g.x, g.y, pi);
+
             vec3 skirtPos = vec3(sv.posWS.x, sv.posWS.y - skirtDepth, sv.posWS.z);
+
             gl_MeshVerticesEXT[v].gl_Position = g_Camera.mViewProj * vec4(skirtPos, 1.0);
-            outNormalWS[v] = sv.normalWS;
-            outUv[v]       = sv.uv;
+            outUv        [v] = sv.uv;
+            outSkirtBlend[v] = 1.0;
+            outPatchDepth[v] = pi.depth;
         }
     }
 

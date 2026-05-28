@@ -21,6 +21,15 @@ static PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR;
 static PFN_vkCmdDrawMeshTasksIndirectEXT vkCmdDrawMeshTasksIndirectEXT;
 static PFN_vkCmdDrawMeshTasksIndirectCountEXT vkCmdDrawMeshTasksIndirectCountEXT;
 
+static bool ValidateResourceBinding(const std::string& name, u32 set, u32 binding)
+{
+	if (set != INVALID_INDEX && binding != INVALID_INDEX)
+		return true;
+
+	BB_ASSERT(false, "Descriptor '%s' was not found in the current Vulkan pipeline.", name.c_str());
+	return false;
+}
+
 //-------------------------------------------------------------------------
 // Impl
 //-------------------------------------------------------------------------
@@ -692,16 +701,18 @@ void VkCommandContext::Impl::SetComputeDynamicUniformBuffer(const std::string& n
 {
 	assert(IsComputeContext());
 	auto [set, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
-	if (IsValidIndex(set))
-	{
-		SetDynamicUniformBuffer(set, binding, sizeInBytes, pData);
-	}
+	if (!ValidateResourceBinding(name, set, binding))
+		return;
+
+	SetDynamicUniformBuffer(set, binding, sizeInBytes, pData);
 }
 
 void VkCommandContext::Impl::SetGraphicsDynamicUniformBuffer(const std::string& name, u32 sizeInBytes, const void* pData)
 {
 	assert(IsGraphicsContext());
 	auto [set, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
+	if (!ValidateResourceBinding(name, set, binding))
+		return;
 
 	SetDynamicUniformBuffer(set, binding, sizeInBytes, pData);
 }
@@ -733,6 +744,8 @@ void VkCommandContext::Impl::SetComputeShaderResource(const std::string& name, A
 {
 	assert(IsComputeContext());
 	auto [set, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
+	if (!ValidateResourceBinding(name, set, binding))
+		return;
 
 	PushDescriptor(
 		set,
@@ -748,6 +761,8 @@ void VkCommandContext::Impl::SetGraphicsShaderResource(const std::string& name, 
 {
 	assert(IsGraphicsContext());
 	auto [set, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
+	if (!ValidateResourceBinding(name, set, binding))
+		return;
 
 	PushDescriptor(
 		set,
@@ -763,6 +778,8 @@ void VkCommandContext::Impl::SetComputeShaderResource(const std::string& name, A
 {
 	assert(IsComputeContext());
 	auto [set, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
+	if (!ValidateResourceBinding(name, set, binding))
+		return;
 
 	auto layout = pTexture->GetState().GetSubresourceState().layout;
 
@@ -782,6 +799,8 @@ void VkCommandContext::Impl::SetGraphicsShaderResource(const std::string& name, 
 {
 	assert(IsGraphicsContext());
 	auto [set, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
+	if (!ValidateResourceBinding(name, set, binding))
+		return;
 
 	auto layout = pTexture->GetState().GetSubresourceState().layout;
 
@@ -802,6 +821,8 @@ void VkCommandContext::Impl::StageDescriptor(const std::string& name, Arc< Vulka
 	if (IsGraphicsContext())
 	{
 		auto [set, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
+		if (!ValidateResourceBinding(name, set, binding))
+			return;
 
 		PushDescriptor(
 			set,
@@ -815,6 +836,8 @@ void VkCommandContext::Impl::StageDescriptor(const std::string& name, Arc< Vulka
 	else if (IsComputeContext())
 	{
 		auto [set, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
+		if (!ValidateResourceBinding(name, set, binding))
+			return;
 
 		PushDescriptor(
 			set,
@@ -838,10 +861,8 @@ void VkCommandContext::Impl::StageDescriptor(const std::string& name, Arc< Vulka
 	if (IsGraphicsContext())
 	{
 		auto [set, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
-		if (set == INVALID_INDEX || binding == INVALID_INDEX)
-		{
-			__debugbreak();
-		}
+		if (!ValidateResourceBinding(name, set, binding))
+			return;
 
 		auto layout = pTexture->GetState().GetSubresourceState().layout;
 
@@ -859,10 +880,8 @@ void VkCommandContext::Impl::StageDescriptor(const std::string& name, Arc< Vulka
 	else if (IsComputeContext())
 	{
 		auto [set, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
-		if (set == INVALID_INDEX || binding == INVALID_INDEX)
-		{
-			__debugbreak();
-		}
+		if (!ValidateResourceBinding(name, set, binding))
+			return;
 
 		auto layout = pTexture->GetState().GetSubresourceState().layout;
 
@@ -898,6 +917,8 @@ void VkCommandContext::Impl::StageDescriptorMip(const std::string& name, Arc< Vu
 	}
 
 	auto [set, binding] = bindingPair;
+	if (!ValidateResourceBinding(name, set, binding))
+		return;
 
 	// With sampler: bind per-mip view as SRV (ShaderReadOnly) — for reading a specific mip
 	// Without sampler: bind per-mip view as UAV (General) — for writing a specific mip

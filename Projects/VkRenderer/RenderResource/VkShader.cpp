@@ -120,109 +120,87 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, VulkanShader::Sh
 	// **
 	// Parse descriptors
 	// **
-	for (const auto& resource : resources.uniform_buffers)
-	{
-		auto buffers = compiler.get_active_buffer_ranges(resource.id);
-		if (!buffers.empty())
-		{
-			std::string instanceName = compiler.get_name(resource.id);
-			if (instanceName.empty())
-			{
-				const spirv_cross::SPIRType& type = compiler.get_type(resource.base_type_id);
-				if (!type.member_types.empty())
-				{
-					instanceName = compiler.get_member_name(resource.base_type_id, 0);
-				}
-			}
-
-			const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
-			u32 set       = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
-			u32 binding   = compiler.get_decoration(resource.id, spv::DecorationBinding);
-			// u32 size = (u32)compiler.get_declared_struct_size(type);
-			u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_SHADERRESOURCE_ARRAY_SIZE + 1 : type.array[0]; // assume utilize only 1d-array for now
-
-			VulkanShader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
-			descriptorInfo.binding        = binding;
-			descriptorInfo.name           = instanceName;
-			descriptorInfo.arraySize      = arraySize;
-			descriptorInfo.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		}
-	}
-
-	for (const auto& resource : resources.storage_buffers)
-	{
-		auto buffers = compiler.get_active_buffer_ranges(resource.id);
-		if (!buffers.empty())
-		{
-			std::string instanceName = compiler.get_name(resource.id);
-			if (instanceName.empty())
-			{
-				const spirv_cross::SPIRType& type = compiler.get_type(resource.base_type_id);
-				if (!type.member_types.empty())
-				{
-					instanceName = compiler.get_member_name(resource.base_type_id, 0);
-				}
-			}
-
-			const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
-			u32 set       = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
-			u32 binding   = compiler.get_decoration(resource.id, spv::DecorationBinding);
-			u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_SHADERRESOURCE_ARRAY_SIZE + 1 : type.array[0]; // assume utilize only 1d-array for now
-
-			VulkanShader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
-			descriptorInfo.binding        = binding;
-			descriptorInfo.name           = instanceName;
-			descriptorInfo.arraySize      = arraySize;
-			descriptorInfo.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-		}
-	}
-
-	for (const auto& resource : resources.sampled_images)
-	{
-		std::string instanceName = compiler.get_name(resource.id);
-		if (instanceName.empty())
+	auto getFirstMemberName = [&](const spirv_cross::Resource& resource) -> std::string
 		{
 			const spirv_cross::SPIRType& type = compiler.get_type(resource.base_type_id);
 			if (!type.member_types.empty())
 			{
-				instanceName = compiler.get_member_name(resource.base_type_id, 0);
+				return compiler.get_member_name(resource.base_type_id, 0);
 			}
-		}
 
+			return {};
+		};
+
+	auto appendDescriptor = [&](u32 set, u32 binding, const std::string& name, u32 arraySize, VkDescriptorType descriptorType)
+		{
+			if (name.empty())
+				return;
+
+			auto& descriptors = reflection.descriptors[set];
+			for (const auto& descriptorInfo : descriptors)
+			{
+				if (descriptorInfo.binding == binding
+					&& descriptorInfo.name == name
+					&& descriptorInfo.descriptorType == descriptorType)
+				{
+					return;
+				}
+			}
+
+			VulkanShader::DescriptorInfo& descriptorInfo = descriptors.emplace_back();
+			descriptorInfo.binding        = binding;
+			descriptorInfo.name           = name;
+			descriptorInfo.arraySize      = arraySize;
+			descriptorInfo.descriptorType = descriptorType;
+		};
+
+	auto appendDescriptorAliases = [&](const spirv_cross::Resource& resource, u32 set, u32 binding, u32 arraySize, VkDescriptorType descriptorType)
+		{
+			appendDescriptor(set, binding, resource.name, arraySize, descriptorType);
+			appendDescriptor(set, binding, compiler.get_name(resource.id), arraySize, descriptorType);
+			appendDescriptor(set, binding, compiler.get_name(resource.base_type_id), arraySize, descriptorType);
+			appendDescriptor(set, binding, getFirstMemberName(resource), arraySize, descriptorType);
+		};
+
+	for (const auto& resource : resources.uniform_buffers)
+	{
+		const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
+		u32 set       = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
+		u32 binding   = compiler.get_decoration(resource.id, spv::DecorationBinding);
+		// u32 size = (u32)compiler.get_declared_struct_size(type);
+		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_SHADERRESOURCE_ARRAY_SIZE + 1 : type.array[0]; // assume utilize only 1d-array for now
+
+		appendDescriptorAliases(resource, set, binding, arraySize, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+	}
+
+	for (const auto& resource : resources.storage_buffers)
+	{
 		const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
 		u32 set       = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
 		u32 binding   = compiler.get_decoration(resource.id, spv::DecorationBinding);
 		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_SHADERRESOURCE_ARRAY_SIZE + 1 : type.array[0]; // assume utilize only 1d-array for now
 
-		VulkanShader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
-		descriptorInfo.binding        = binding;
-		descriptorInfo.name           = instanceName;
-		descriptorInfo.arraySize      = arraySize;
-		descriptorInfo.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		appendDescriptorAliases(resource, set, binding, arraySize, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+	}
+
+	for (const auto& resource : resources.sampled_images)
+	{
+		const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
+		u32 set       = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
+		u32 binding   = compiler.get_decoration(resource.id, spv::DecorationBinding);
+		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_SHADERRESOURCE_ARRAY_SIZE + 1 : type.array[0]; // assume utilize only 1d-array for now
+
+		appendDescriptorAliases(resource, set, binding, arraySize, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 	}
 
 	for (const auto& resource : resources.storage_images)
 	{
-		std::string instanceName = compiler.get_name(resource.id);
-		if (instanceName.empty())
-		{
-			const spirv_cross::SPIRType& type = compiler.get_type(resource.base_type_id);
-			if (!type.member_types.empty())
-			{
-				instanceName = compiler.get_member_name(resource.base_type_id, 0);
-			}
-		}
-
 		const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
 		u32 set = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
 		u32 binding = compiler.get_decoration(resource.id, spv::DecorationBinding);
 		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_SHADERRESOURCE_ARRAY_SIZE + 1 : type.array[0]; // assume utilize only 1d-array for now
 
-		VulkanShader::DescriptorInfo& descriptorInfo = reflection.descriptors[set].emplace_back();
-		descriptorInfo.binding        = binding;
-		descriptorInfo.name           = instanceName;
-		descriptorInfo.arraySize      = arraySize;
-		descriptorInfo.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		appendDescriptorAliases(resource, set, binding, arraySize, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 	}
 
 	for (const auto& resource : resources.push_constant_buffers)

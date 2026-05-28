@@ -218,7 +218,12 @@ struct SceneRenderView
 
 	float2 viewport;
 
-	float sseThresholdPx; // for lod selection in culling and mesh shader
+	float sseThresholdPx; // for lod selection
+
+	u32 cullFlags;
+	u32 hiZMipCount;
+	u32 hiZWidth;
+	u32 hiZHeight;
 
 	std::vector< Arc< render::RenderNode > > rg;
 

@@ -10,7 +10,6 @@
 #include "BaambooScene/RenderNodes/RaytracingNode.h"
 #include "BaambooScene/RenderNodes/PathTracerNode.h"
 #include "BaambooScene/RenderNodes/PostProcessNode.h"
-#include "BaambooScene/MitsubaLoader.h"
 
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui/backends/imgui_impl_glfw.h>
@@ -24,7 +23,7 @@ void RayTracingApp::Initialize(eRendererAPI api)
 
 	Super::Initialize(api);
 
-	if (m_MitsubaSensor.bValid)
+	/*if (m_MitsubaSensor.bValid)
 		m_CameraController.SetLookAt(m_MitsubaSensor.position, m_MitsubaSensor.target);
 	else
 		m_CameraController.SetLookAt(float3(0.0, 0.0f, -5.0f), float3(0.0f, 0.0f, 1.0f));
@@ -35,7 +34,7 @@ void RayTracingApp::Initialize(eRendererAPI api)
 		m_pCamera->fov   = m_MitsubaSensor.fovYDeg;
 		m_pCamera->zNear = m_MitsubaSensor.nearClip;
 		m_pCamera->zFar  = m_MitsubaSensor.farClip;
-	}
+	}*/
 }
 
 void RayTracingApp::Update(float dt)

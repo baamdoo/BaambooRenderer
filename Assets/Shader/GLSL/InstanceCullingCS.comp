@@ -41,10 +41,6 @@ layout(push_constant) uniform PushConstants
 {
     uint numInstances;
     uint cullingPhase;
-    uint hiZMipCount;
-    uint hiZWidth;
-    uint hiZHeight;
-    uint cullFlags;
 } g_Push;
 
 
@@ -96,8 +92,8 @@ void main()
             g_Camera.mProj[1][1],
             g_Camera.zNear,
             g_HiZTexture,
-            float(g_Push.hiZWidth),
-            float(g_Push.hiZHeight));
+            float(g_CullData.hiZWidth),
+            float(g_CullData.hiZHeight));
         bVisible = bVisible && !bOccluded;
 
         g_VisibilityBuffer[instanceID] = bVisible ? 1u : 0u; // Update visibility bit for next frame (Phase 1 read)
@@ -108,7 +104,7 @@ void main()
     // Phase 2: depends on CULL_FLAG_MESHLET_OCCLUSION.
     //   OFF → classic 2-pass: emit only newly-visible (prevVisibility == 0).
     //   ON  → meshlet persistence: emit ALL visible so task shader can disocclude newly-exposed meshlets inside old-visible instances.
-    bool bEmitLate = (g_Push.cullFlags & CULL_FLAG_MESHLET_OCCLUSION) != 0u || (prevVisibility == 0u);
+    bool bEmitLate = (g_CullData.cullFlags & CULL_FLAG_MESHLET_OCCLUSION) != 0u || (prevVisibility == 0u);
     if (bVisible && (g_Push.cullingPhase == PHASE1_CULL || bEmitLate))
     {
         uint outID = atomicAdd(g_DrawCount, 1);

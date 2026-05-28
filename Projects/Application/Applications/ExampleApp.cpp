@@ -9,6 +9,7 @@
 
 #include "BaambooScene/RenderNodes/AtmosphereNode.h"
 #include "BaambooScene/RenderNodes/GBufferNode.h"
+#include "BaambooScene/RenderNodes/CullingNode.h"
 #include "BaambooScene/RenderNodes/CloudNode.h"
 #include "BaambooScene/RenderNodes/SkyboxNode.h"
 #include "BaambooScene/RenderNodes/LightingNode.h"
@@ -247,7 +248,12 @@ void ExampleApp::ConfigureRenderGraph()
 	m_pScene->AddRenderNode(MakeArc< AtmosphereNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< ClusterBuildNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< LightCullingNode >(*m_pRendererBackend->GetDevice()));
-	m_pScene->AddRenderNode(MakeArc< GBufferNode >(*m_pRendererBackend->GetDevice()));
+	{
+		auto pGBufferNode = MakeArc< GBufferNode >(*m_pRendererBackend->GetDevice());
+		auto pCullingNode = MakeArc< CullingNode >(*m_pRendererBackend->GetDevice());
+		pCullingNode->SetGBufferNode(pGBufferNode);
+		m_pScene->AddRenderNode(pCullingNode);
+	}
 	m_pScene->AddRenderNode(MakeArc< CloudScatteringNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< DynamicSkyboxNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< LightingNode >(*m_pRendererBackend->GetDevice()));

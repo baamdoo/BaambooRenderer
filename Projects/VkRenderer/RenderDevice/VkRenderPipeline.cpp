@@ -367,9 +367,9 @@ void VulkanGraphicsPipeline::Build()
 					layoutBinding.descriptorType  = info.descriptorType;
 					layoutBinding.stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
 					descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
-
-					m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
 				}
+
+				m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
 			}
 
 			maxSet = maxSet < (i32)set ? (i32)set : maxSet;
@@ -394,9 +394,9 @@ void VulkanGraphicsPipeline::Build()
 						layoutBinding.descriptorType  = info.descriptorType;
 						layoutBinding.stageFlags      = VK_SHADER_STAGE_TASK_BIT_NV;
 						descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
-
-						m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
 					}
+
+					m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
 				}
 
 				maxSet = maxSet < (i32)set ? (i32)set : maxSet;
@@ -551,9 +551,9 @@ void VulkanGraphicsPipeline::Build()
 						layoutBinding.descriptorType  = info.descriptorType;
 						layoutBinding.stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
 						descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
-
-						m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
 					}
+
+					m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
 				}
 
 				maxSet = maxSet < (i32)set ? (i32)set : maxSet;
@@ -580,9 +580,9 @@ void VulkanGraphicsPipeline::Build()
 						layoutBinding.descriptorType  = info.descriptorType;
 						layoutBinding.stageFlags      = VK_SHADER_STAGE_GEOMETRY_BIT;
 						descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
-
-						m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
 					}
+
+					m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
 				}
 
 				maxSet = maxSet < (i32)set ? (i32)set : maxSet;
@@ -609,9 +609,9 @@ void VulkanGraphicsPipeline::Build()
 						layoutBinding.descriptorType  = info.descriptorType;
 						layoutBinding.stageFlags      = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
 						descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
-
-						m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
 					}
+
+					m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
 				}
 
 				maxSet = maxSet < (i32)set ? (i32)set : maxSet;
@@ -638,9 +638,9 @@ void VulkanGraphicsPipeline::Build()
 						layoutBinding.descriptorType  = info.descriptorType;
 						layoutBinding.stageFlags      = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
 						descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
-
-						m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
 					}
+
+					m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
 				}
 
 				maxSet = maxSet < (i32)set ? (i32)set : maxSet;

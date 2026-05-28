@@ -24,10 +24,7 @@
 layout(push_constant) uniform PushConstants
 {
     vec2 viewportSize;
-    uint cullFlags;
     uint phase;
-    uint hiZWidth;
-    uint hiZHeight;
 } g_Push;
 
 
@@ -121,7 +118,7 @@ void main()
 	if (bValid)
 	{
 		bool bPrevVis   = (g_MeshletVisibilityBuffer[visWord] & visBitMsk) != 0u;
-	    bool bOcclusion = (g_Push.cullFlags & CULL_FLAG_MESHLET_OCCLUSION) != 0u;
+	    bool bOcclusion = (g_CullData.cullFlags & CULL_FLAG_MESHLET_OCCLUSION) != 0u;
 
 		// Phase 1 skip: only emit meshlets that were visible last frame.
 		bool bSkipPhase1 = (g_Push.phase == PHASE1_CULL) && bOcclusion && !bPrevVis;
@@ -137,11 +134,11 @@ void main()
 			accept = true;
 
 			// 1) Frustum cull
-			if ((g_Push.cullFlags & CULL_FLAG_MESHLET_FRUSTUM) != 0u && accept)
+			if ((g_CullData.cullFlags & CULL_FLAG_MESHLET_FRUSTUM) != 0u && accept)
 				accept = !IsFrustumCulled(g_CullData.frustum, meshletCenterWS, meshletRadiusWS);
 
 			// 2) Backface cone cull — frozen viewpoint so culling matches the frozen frustum
-			if ((g_Push.cullFlags & CULL_FLAG_MESHLET_CONE) != 0u && accept)
+			if ((g_CullData.cullFlags & CULL_FLAG_MESHLET_CONE) != 0u && accept)
 			{
 				vec3 coneAxisWS = normalize((sh_LocalToWorld * vec4(meshlet.coneAxisX, meshlet.coneAxisY, meshlet.coneAxisZ, 0.0)).xyz);
 
@@ -159,8 +156,8 @@ void main()
 					g_Camera.mProj[1][1],
 					g_Camera.zNear,
 					g_HiZTexture,
-					float(g_Push.hiZWidth),
-					float(g_Push.hiZHeight));
+					float(g_CullData.hiZWidth),
+					float(g_CullData.hiZHeight));
 				accept = !bOccluded;
 			}
 

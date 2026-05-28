@@ -1,6 +1,5 @@
 #pragma once
 #include "BaambooEngine.h"
-#include "BaambooScene/MitsubaLoader.h"
 
 namespace baamboo
 {
@@ -24,6 +23,5 @@ private:
 	void ConfigureSceneObjects();
 
 	baamboo::CameraController_FirstPerson m_CameraController;
-	baamboo::MitsubaSensorDesc m_MitsubaSensor;
 	Weak< baamboo::PathTracerNode > m_pPathTracerNode;
 };

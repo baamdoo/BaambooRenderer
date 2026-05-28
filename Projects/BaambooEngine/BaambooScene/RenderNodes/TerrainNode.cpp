@@ -1,5 +1,6 @@
 #include "BaambooPch.h"
 #include "TerrainNode.h"
+#include "GBufferNode.h"
 
 #include "RenderCommon/RenderDevice.h"
 #include "RenderCommon/CommandContext.h"
@@ -9,61 +10,96 @@
 namespace baamboo
 {
 
+namespace
+{
+	constexpr float FORCE_FINEST_LOD_RANGE_METER = 1.0e20f;
+}
+
 TerrainNode::TerrainNode(render::RenderDevice& rd)
 	: Super(rd, "TerrainPass")
 {
 	using namespace render;
 
-	auto pColor = Texture::Create(rd, "TerrainPass::Color",
+	m_pQuadtreeNodesBuffer = Buffer::Create(rd, "TerrainPass::QuadtreeNodes",
 		{
-			.resolution = { rd.WindowWidth(), rd.WindowHeight(), 1 },
-			.format     = eFormat::RG11B10_UFLOAT,
-			.imageUsage = eTextureUsage_ColorAttachment | eTextureUsage_Sample,
-		});
-	auto pDepth = Texture::Create(rd, "TerrainPass::Depth",
-		{
-			.resolution      = { rd.WindowWidth(), rd.WindowHeight(), 1 },
-			.format          = eFormat::D32_FLOAT,
-			.imageUsage      = eTextureUsage_DepthStencilAttachment | eTextureUsage_Sample,
-			.depthClearValue = 0.0f, // reversed-Z
+			.count              = MAX_QUADTREE_NODES,
+			.elementSizeInBytes = sizeof(TerrainNodeGPU),
+			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest,
 		});
 
-	m_pRenderTarget = RenderTarget::CreateEmpty(rd, "TerrainPass::RenderPass");
-	m_pRenderTarget->AttachTexture(eAttachmentPoint::Color0, pColor)
-	                .AttachTexture(eAttachmentPoint::DepthStencil, pDepth).Build();
-
-	{
-		auto pMS = Shader::Create(rd, "TerrainMS", { .stage = eShaderStage::Mesh,     .filename = "TerrainMS" });
-		auto pPS = Shader::Create(rd, "TerrainPS", { .stage = eShaderStage::Fragment, .filename = "TerrainPS" });
-
-		m_pTerrainPSO = GraphicsPipeline::Create(rd, "TerrainPSO");
-		m_pTerrainPSO->SetMeshShaders(pMS, pPS)
-		             .SetRenderTarget(m_pRenderTarget)
-		             .SetCullMode(eCullMode::None)
-		             .SetDepthWriteEnable(true, eCompareOp::Greater).Build();
-	}
-
-	m_pPatchInstances = Buffer::Create(rd, "TerrainPass::PatchInstances",
+	m_pCulledPatches = Buffer::Create(rd, "TerrainPass::CulledPatches",
 		{
-			.count              = MAX_PATCHES_PER_FRAME,
+			.count              = MAX_CULLED_PATCHES,
 			.elementSizeInBytes = sizeof(PatchInstance),
-			.mapDirection       = 1, // host-write (UPLOAD heap)
-			.bufferUsage        = eBufferUsage_Storage, // SRV in shader (bindless index)
+			.bufferUsage        = eBufferUsage_Storage, // UAV (cull CS writes) + SRV (TerrainMS reads)
 		});
 
-	m_pDispatchArgs = Buffer::Create(rd, "TerrainPass::DispatchArgs",
+	m_pIndirectCommands = Buffer::Create(rd, "TerrainPass::IndirectCommands",
 		{
-			.count              = MAX_PATCHES_PER_FRAME,
+			.count              = MAX_CULLED_PATCHES,
 			.elementSizeInBytes = sizeof(IndirectCommandData),
-			.mapDirection       = 1, // host-write (UPLOAD heap)
-			.bufferUsage        = eBufferUsage_Indirect,
+			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_Indirect,
 		});
+
+	m_pDrawCountBuffer = Buffer::Create(rd, "TerrainPass::DrawCount",
+		{
+			.count              = 1,
+			.elementSizeInBytes = sizeof(u32),
+			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_Indirect
+			                    | eBufferUsage_TransferSource | eBufferUsage_TransferDest
+			                    | eBufferUsage_ShaderDeviceAddress,
+		});
+
+#if PROFILING_LEVEL >= 1
+	m_pLodStatsBuffer = Buffer::Create(rd, "TerrainPass::LodStats",
+		{
+			.count              = TERRAIN_MAX_LOD_DEPTHS,
+			.elementSizeInBytes = sizeof(u32),
+			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferSource | eBufferUsage_TransferDest,
+		});
+#endif
+
+	m_pNodeVisibilityBuffer = Buffer::Create(rd, "TerrainPass::NodeVisibility",
+		{
+			.count              = MAX_QUADTREE_NODES,
+			.elementSizeInBytes = sizeof(u32),
+			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest,
+		});
+
+	auto pCullingCS = Shader::Create(rd, "TerrainPatchCullingCS",
+		{ .stage = eShaderStage::Compute, .filename = "TerrainPatchCullingCS" });
+	m_pCullingPSO = ComputePipeline::Create(rd, "TerrainPatchCullingPSO");
+	m_pCullingPSO->SetComputeShader(pCullingCS).Build();
+}
+
+void TerrainNode::SetGBufferNode(const Arc< GBufferNode >& pNode)
+{
+	using namespace render;
+
+	m_pGBufferNode = pNode;
+	if (!m_pGBufferNode)
+		return;
+
+	auto pSharedRT = m_pGBufferNode->GetPhase2RenderTarget();
+	if (!pSharedRT)
+		return;
+
+	auto pMS = Shader::Create(m_RenderDevice, "TerrainMS", { .stage = eShaderStage::Mesh,     .filename = "TerrainMS" });
+	auto pPS = Shader::Create(m_RenderDevice, "TerrainPS", { .stage = eShaderStage::Fragment, .filename = "TerrainPS" });
+
+	m_pTerrainPSO = GraphicsPipeline::Create(m_RenderDevice, "TerrainPSO");
+	m_pTerrainPSO->SetMeshShaders(pMS, pPS)
+	             .SetRenderTarget(pSharedRT)
+	             .SetCullMode(eCullMode::None) // skirts + quad-patch
+	             .SetDepthWriteEnable(true, eCompareOp::Greater).Build(); // reversed-Z
 }
 
 void TerrainNode::SetQuadtreeConfig(const QuadtreeConfig& cfg)
 {
 	m_Config = cfg;
 	m_bConfigDirty = true;
+	m_bQuadtreeUploaded = false;
+	m_bVisibilityNeedsClear = true;
 }
 
 void TerrainNode::BuildQuadtree()
@@ -73,14 +109,14 @@ void TerrainNode::BuildQuadtree()
 	qc.rootSizeMeter = m_Config.rootSizeMeter;
 	qc.terrainMinY   = m_Config.heightMinMeter;
 	qc.terrainMaxY   = m_Config.heightMinMeter + m_Config.heightRangeMeter;
-	qc.lodRangeBase  = m_Config.lodRangeBaseMeter;
-	qc.lodMorphK     = m_Config.lodMorphK;
+	qc.lodRangeBase  = m_Config.bForceFinestLOD ? FORCE_FINEST_LOD_RANGE_METER : m_Config.lodRangeBaseMeter;
+	qc.lodMorphK     = m_Config.bForceFinestLOD ? 1.0f : m_Config.lodMorphK;
 	qc.maxDepth      = std::min(m_Config.maxDepth, TERRAIN_MAX_LOD_DEPTHS - 1u);
 	qc.gridN         = m_Config.gridN;
 	m_Quadtree.Build(qc);
 }
 
-void TerrainNode::FillTerrainParams(TerrainParams& params, u32 numPatches) const
+void TerrainNode::FillTerrainParams(TerrainParams& params) const
 {
 	std::memset(&params, 0, sizeof(TerrainParams));
 
@@ -99,7 +135,7 @@ void TerrainNode::FillTerrainParams(TerrainParams& params, u32 numPatches) const
 
 	params.heightmapRes = rho;
 	params.maxDepth     = m_Quadtree.GetConfig().maxDepth;
-	params.numPatches   = numPatches;
+	params.numPatches   = 0u;
 
 	const auto& rs = m_Quadtree.RangeStarts();
 	const auto& re = m_Quadtree.RangeEnds();
@@ -110,110 +146,189 @@ void TerrainNode::FillTerrainParams(TerrainParams& params, u32 numPatches) const
 	}
 }
 
-void TerrainNode::UploadPatches(const std::vector< PatchInstance >& patches)
+void TerrainNode::EnsureHeightmap()
 {
-	const u32 count = std::min< u32 >(static_cast< u32 >(patches.size()), MAX_PATCHES_PER_FRAME);
+	using namespace render;
 
-	if (auto* p = static_cast< PatchInstance* >(m_pPatchInstances->MappedMemory()))
-	{
-		if (count > 0u)
-			std::memcpy(p, patches.data(), count * sizeof(PatchInstance));
-	}
+	if (m_pHeightmap && m_Config.heightmapPath == m_HeightmapPathCache)
+		return;
 
-	if (auto* p = static_cast< IndirectCommandData* >(m_pDispatchArgs->MappedMemory()))
+	m_HeightmapPathCache = m_Config.heightmapPath;
+
+	auto& rm = m_RenderDevice.GetResourceManager();
+	if (!m_Config.heightmapPath.empty() && fs::exists(m_Config.heightmapPath))
 	{
-		for (u32 i = 0u; i < count; ++i)
-		{
-			p[i].drawID      = i;
-			p[i].groupCountX = 1u;
-			p[i].groupCountY = 1u;
-			p[i].groupCountZ = 1u;
-		}
+		m_pHeightmap = rm.LoadTexture(m_Config.heightmapPath);
 	}
+	else
+	{
+		fprintf(stderr,
+			"[TerrainNode] heightmap not found: \"%s\" — flat placeholder. "
+			"Export a Gaea R16_UNORM .dds there (Docs/Terrain/01 Step 7).\n",
+			m_Config.heightmapPath.c_str());
+		m_pHeightmap = rm.GetFlatBlackTexture();
+	}
+	BB_ASSERT(m_pHeightmap != nullptr, "TerrainNode: heightmap is null");
+}
+
+void TerrainNode::EnsureQuadtreeUpload(render::CommandContext& context)
+{
+	if (m_bQuadtreeUploaded)
+		return;
+
+	const auto& gpuNodes = m_Quadtree.GetGPUNodes();
+	const u32   nodeCount = static_cast< u32 >(gpuNodes.size());
+	if (nodeCount == 0u)
+		return;
+
+	BB_ASSERT(nodeCount <= MAX_QUADTREE_NODES,
+		"TerrainNode: quadtree node count exceeds MAX_QUADTREE_NODES; bump the constant");
+
+	context.UploadData(m_pQuadtreeNodesBuffer, gpuNodes.data(), nodeCount, sizeof(TerrainNodeGPU));
+	m_bQuadtreeUploaded = true;
 }
 
 void TerrainNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)
 {
+	UNUSED(context);
+	UNUSED(renderView);
+}
+
+void TerrainNode::DispatchTerrainCull(render::CommandContext&    context,
+                                       u32                        phase,
+                                       const Arc< render::Texture >& pHiZTexture,
+                                       const SceneRenderView&     renderView)
+{
+	UNUSED(renderView);
 	using namespace render;
 
-	// --- Import the Gaea heightmap once (lazy; reload on path change) ---
-	if (!m_pHeightmap || m_Config.heightmapPath != m_HeightmapPathCache)
-	{
-		m_HeightmapPathCache = m_Config.heightmapPath;
+	if (!m_pCullingPSO)
+		return;
 
-		auto& rm = m_RenderDevice.GetResourceManager();
-		if (!m_Config.heightmapPath.empty() && fs::exists(m_Config.heightmapPath))
-		{
-			m_pHeightmap = rm.LoadTexture(m_Config.heightmapPath);
-		}
-		else
-		{
-			fprintf(stderr,
-				"[TerrainNode] heightmap not found: \"%s\" — flat placeholder. "
-				"Export a Gaea R16_UNORM .dds there (Docs/Terrain/01 Step 7).\n",
-				m_Config.heightmapPath.c_str());
-			m_pHeightmap = rm.GetFlatBlackTexture();
-		}
-		BB_ASSERT(m_pHeightmap != nullptr, "TerrainNode: heightmap is null");
-	}
-
-	context.TransitionBarrier(m_pHeightmap, eTextureLayout::ShaderReadOnly);
-
-	// --- (Re)build the quadtree on config change ---
+	// --- Lazy heightmap + quadtree setup ---
+	EnsureHeightmap();
 	if (m_bConfigDirty)
 	{
 		BuildQuadtree();
 		m_bConfigDirty = false;
 	}
+	EnsureQuadtreeUpload(context);
 
-	// --- Per-frame LOD selection ---
-	const float3 cameraPos = renderView.camera.pos;
-	const mat4   viewProj  = renderView.camera.mProj * renderView.camera.mView;
-
-	const TerrainQuadtree::Frustum frustum = TerrainQuadtree::ExtractFrustum(viewProj);
-	m_Quadtree.SelectLOD(cameraPos, frustum);
-
-	const auto& emit = m_Quadtree.EmitList();
-	const u32   numPatches = std::min< u32 >(static_cast< u32 >(emit.size()), MAX_PATCHES_PER_FRAME);
-	if (numPatches == 0u)
-	{
-		context.BeginRenderPass(m_pRenderTarget);
-		context.EndRenderPass();
-
-		m_pRenderTarget->InvalidateImageLayout();
-		g_FrameData.pColor = m_pRenderTarget->Attachment(eAttachmentPoint::Color0);
-		g_FrameData.pDepth = m_pRenderTarget->Attachment(eAttachmentPoint::DepthStencil);
+	const u32 numNodes = m_Quadtree.NumNodes();
+	if (numNodes == 0u)
 		return;
+
+	if (m_bVisibilityNeedsClear)
+	{
+		context.ClearBuffer(m_pNodeVisibilityBuffer, 0);
+		m_bVisibilityNeedsClear = false;
 	}
 
-	UploadPatches(emit);
+	context.ClearBuffer(m_pDrawCountBuffer, 0);
+#if PROFILING_LEVEL >= 1
+	context.ClearBuffer(m_pLodStatsBuffer, 0);
+#endif
+
+	context.SetRenderPipeline(m_pCullingPSO.get());
+
+	context.TransitionBufferToRead (m_pQuadtreeNodesBuffer,   ePipelineStage::ComputeShader);
+	context.TransitionBufferToWrite(m_pCulledPatches,         ePipelineStage::ComputeShader);
+	context.TransitionBufferToWrite(m_pIndirectCommands,      ePipelineStage::ComputeShader);
+	context.TransitionBufferToWrite(m_pDrawCountBuffer,       ePipelineStage::ComputeShader);
+#if PROFILING_LEVEL >= 1
+	context.TransitionBufferToWrite(m_pLodStatsBuffer,        ePipelineStage::ComputeShader);
+#endif
+	context.TransitionBufferToWrite(m_pNodeVisibilityBuffer,  ePipelineStage::ComputeShader);
+	if (pHiZTexture)
+		context.TransitionBarrier(pHiZTexture, eTextureLayout::ShaderReadOnly);
+
+	struct
+	{
+		u32   numNodes;
+		u32   cullingPhase;
+		float lodRangeBase;
+		float lodMorphK;
+		u32   maxDepth;
+	} constants = {
+		.numNodes     = numNodes,
+		.cullingPhase = phase,
+		.lodRangeBase = m_Quadtree.GetConfig().lodRangeBase,
+		.lodMorphK    = m_Quadtree.GetConfig().lodMorphK,
+		.maxDepth     = m_Quadtree.GetConfig().maxDepth,
+	};
+	context.SetComputeConstants(sizeof(constants), &constants);
+
+	context.StageDescriptor("g_TerrainNodes",     m_pQuadtreeNodesBuffer);
+	context.StageDescriptor("g_CulledPatches",    m_pCulledPatches);
+	context.StageDescriptor("g_IndirectCommands", m_pIndirectCommands);
+	context.StageDescriptor("g_DrawCount",        m_pDrawCountBuffer);
+	context.StageDescriptor("g_NodeVisibility",   m_pNodeVisibilityBuffer);
+#if PROFILING_LEVEL >= 1
+	context.StageDescriptor("g_LodStats",         m_pLodStatsBuffer);
+#endif
+	if (pHiZTexture)
+		context.StageDescriptor("g_HiZTexture", pHiZTexture, g_FrameData.pLinearClampMin);
+
+	context.Dispatch1D< 64 >(numNodes);
+
+	context.TransitionBufferToRead(m_pIndirectCommands, ePipelineStage::DrawIndirect);
+	context.TransitionBufferToRead(m_pDrawCountBuffer,  ePipelineStage::DrawIndirect);
+#if PROFILING_LEVEL >= 1
+	context.TransitionBufferToRead(m_pLodStatsBuffer,   ePipelineStage::Copy);
+#endif
+	context.TransitionBufferToRead(m_pCulledPatches,    ePipelineStage::MeshShader);
+}
+
+void TerrainNode::DrawTerrainPhase1(render::CommandContext& context, Arc< render::RenderTarget > rt, const SceneRenderView& renderView)
+{
+	DrawTerrainImpl(context, rt, renderView);
+}
+
+void TerrainNode::DrawTerrainPhase2(render::CommandContext& context, Arc< render::RenderTarget > rt, const SceneRenderView& renderView)
+{
+	DrawTerrainImpl(context, rt, renderView);
+}
+
+void TerrainNode::DrawTerrainImpl(render::CommandContext& context, Arc< render::RenderTarget > rt, const SceneRenderView& renderView)
+{
+	using namespace render;
+	UNUSED(renderView);
+
+	if (!m_pTerrainPSO || !rt || !m_pHeightmap)
+		return;
+
+	context.TransitionBarrier(m_pHeightmap, eTextureLayout::ShaderReadOnly);
 
 	TerrainParams params{};
-	FillTerrainParams(params, numPatches);
+	FillTerrainParams(params);
 
-	context.BeginRenderPass(m_pRenderTarget);
+	context.BeginRenderPass(rt);
 	{
 		context.SetRenderPipeline(m_pTerrainPSO.get());
 
 		context.SetGraphicsDynamicUniformBuffer("g_Terrain", sizeof(TerrainParams), &params);
 
-		context.StageDescriptor("g_Heightmap", m_pHeightmap, g_FrameData.pLinearClamp);
-		context.StageDescriptor("g_PatchInstances", m_pPatchInstances);
+		context.StageDescriptor("g_Heightmap",      m_pHeightmap, g_FrameData.pLinearClamp);
+		context.StageDescriptor("g_HeightmapPS",    m_pHeightmap, g_FrameData.pLinearClamp);
+		context.StageDescriptor("g_PatchInstances", m_pCulledPatches); // GPU-written by cull CS, read here
 
-		context.DrawMeshTasksIndirect(m_pDispatchArgs, offsetof(IndirectCommandData, groupCountX), numPatches, sizeof(IndirectCommandData));
+		context.DrawMeshTasksIndirectCount(
+			m_pIndirectCommands,
+			offsetof(IndirectCommandData, groupCountX),
+			m_pDrawCountBuffer,
+			MAX_CULLED_PATCHES,
+			sizeof(IndirectCommandData));
 	}
 	context.EndRenderPass();
 
-	m_pRenderTarget->InvalidateImageLayout();
-
-	g_FrameData.pColor = m_pRenderTarget->Attachment(eAttachmentPoint::Color0);
-	g_FrameData.pDepth = m_pRenderTarget->Attachment(eAttachmentPoint::DepthStencil);
+	rt->InvalidateImageLayout();
 }
 
 void TerrainNode::Resize(u32 width, u32 height, u32 depth)
 {
-	if (m_pRenderTarget)
-		m_pRenderTarget->Resize(width, height, depth);
+	UNUSED(width);
+	UNUSED(height);
+	UNUSED(depth);
 }
 
 

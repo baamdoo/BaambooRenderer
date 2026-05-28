@@ -945,6 +945,112 @@ void Engine::DrawUI()
 				ImGui::Text("Throughput : %s  (%.2f ms total draw)", tbuf, msTotal);
 			}
 
+			// =====================================================================
+			// Terrain Cull — separate funnel (per-patch, not per-instance).
+			//   Total      = quadtree node count (config-dependent, see TerrainNode::QuadtreeConfig).
+			//   Drawn      = Phase 1 + Phase 2 emit count from TerrainPatchCullingCS.
+			//   Triangles  = drawnPatches × per-patch tris (surface 2*(N-1)² + skirt 8*(N-1)).
+			//                These triangles also appear in the main Clip(HW) row above (terrain
+			//                draws into the shared GBuffer RT) — this row breaks them out by source.
+			// =====================================================================
+			const u32 terrainTotal     = g_FrameData.terrainTotalPatches;
+			const u32 terrainP1Patches = g_FrameData.terrainPhase1DrawCount;
+			const u32 terrainP2Patches = g_FrameData.terrainPhase2DrawCount;
+			const u32 terrainDrawn     = terrainP1Patches + terrainP2Patches;
+			const u32 terrainP1Tris    = g_FrameData.terrainPhase1Triangles;
+			const u32 terrainP2Tris    = g_FrameData.terrainPhase2Triangles;
+			const u32 terrainTotalTris = terrainP1Tris + terrainP2Tris;
+
+			if (terrainTotal > 0u)
+			{
+				ImGui::Spacing();
+				ImGui::SeparatorText("Terrain Cull");
+				if (ImGui::BeginTable("##terrain_cull", 4,
+					ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH))
+				{
+					ImGui::TableSetupColumn("Phase",      ImGuiTableColumnFlags_WidthFixed, 100.0f);
+					ImGui::TableSetupColumn("Patches",    ImGuiTableColumnFlags_WidthFixed, 110.0f);
+					ImGui::TableSetupColumn("Triangles",  ImGuiTableColumnFlags_WidthFixed, 110.0f);
+					ImGui::TableSetupColumn("Cull %",     ImGuiTableColumnFlags_WidthFixed, 90.0f);
+					ImGui::TableHeadersRow();
+
+					char buf[32];
+					auto formatNum = [&](u32 v)
+					{
+						if (v >= 1'000'000u) snprintf(buf, sizeof(buf), "%.2fM", v * 1e-6);
+						else if (v >= 1'000u) snprintf(buf, sizeof(buf), "%.1fK", v * 1e-3);
+						else                  snprintf(buf, sizeof(buf), "%u",   v);
+					};
+
+					auto cellNum = [&](u32 v)
+					{
+						if (v > 0u) { formatNum(v); ImGui::TextUnformatted(buf); }
+						else        { ImGui::TextDisabled("-"); }
+					};
+
+					auto row = [&](const char* phase, u32 patches, i64 tris /* -1 = hide */, bool bShowCull, u32 cullIn, u32 cullOut)
+					{
+						ImGui::TableNextRow();
+						ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(phase);
+						ImGui::TableSetColumnIndex(1); cellNum(patches);
+						ImGui::TableSetColumnIndex(2);
+						if (tris < 0) ImGui::TextDisabled("-");
+						else          cellNum(static_cast< u32 >(tris));
+						ImGui::TableSetColumnIndex(3);
+						if (!bShowCull)
+							ImGui::TextDisabled("-");
+						else if (cullIn > 0u)
+						{
+							const u32 culled = (cullIn > cullOut) ? (cullIn - cullOut) : 0u;
+							ImGui::Text("%.1f%%", 100.0 * double(culled) / double(cullIn));
+						}
+						else
+							ImGui::TextDisabled("-");
+					};
+
+					row("Phase 1", terrainP1Patches, terrainP1Tris,    false, 0u, 0u);
+					row("Phase 2", terrainP2Patches, terrainP2Tris,    false, 0u, 0u);
+					row("Drawn",   terrainDrawn,     terrainTotalTris, true,  terrainTotal, terrainDrawn);
+					row("Total",   terrainTotal,     -1,               false, 0u, 0u);
+
+					ImGui::EndTable();
+				}
+
+#if PROFILING_LEVEL >= 1
+				if (ImGui::BeginTable("##terrain_lod_depths", TERRAIN_LOD_STATS_DEPTHS + 1,
+					ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH))
+				{
+					ImGui::TableSetupColumn("Phase", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+					for (u32 d = 0u; d < TERRAIN_LOD_STATS_DEPTHS; ++d)
+					{
+						char label[8];
+						snprintf(label, sizeof(label), "D%u", d);
+						ImGui::TableSetupColumn(label, ImGuiTableColumnFlags_WidthFixed, 54.0f);
+					}
+					ImGui::TableHeadersRow();
+
+					auto depthRow = [&](const char* phase, const u32* counts)
+					{
+						ImGui::TableNextRow();
+						ImGui::TableSetColumnIndex(0);
+						ImGui::TextUnformatted(phase);
+						for (u32 d = 0u; d < TERRAIN_LOD_STATS_DEPTHS; ++d)
+						{
+							ImGui::TableSetColumnIndex(static_cast<int>(d + 1u));
+							if (counts[d] > 0u)
+								ImGui::Text("%u", counts[d]);
+							else
+								ImGui::TextDisabled("-");
+						}
+					};
+					depthRow("Phase 1", g_FrameData.terrainPhase1LodPatches);
+					depthRow("Phase 2", g_FrameData.terrainPhase2LodPatches);
+
+					ImGui::EndTable();
+				}
+#endif
+			}
+
 			ImGui::Spacing();
 			ImGui::TextDisabled("(GPU stats are %u frames stale)", u32(3));
 		}
@@ -1029,6 +1135,24 @@ void Engine::DrawUI()
 			}
 		}
 
+	ImGui::End();
+
+	// --- Camera Freeze ---
+	ImGui::Begin("Frustum Visualization");
+	{
+		if (m_pScene)
+		{
+			bool bFrozenReq = m_pScene->GetCameraFreezeRequest();
+			if (ImGui::Checkbox("Camera Freeze", &bFrozenReq))
+				m_pScene->SetCameraFreezeRequest(bFrozenReq);
+
+			if (m_pScene->IsCameraFrozen())
+			{
+				ImGui::SameLine();
+				ImGui::TextDisabled("(frozen at frame %llu)", (unsigned long long)m_pScene->GetFrozenAtFrame());
+			}
+		}
+	}
 	ImGui::End();
 
 	// **

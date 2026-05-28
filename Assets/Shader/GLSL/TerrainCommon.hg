@@ -1,25 +1,10 @@
 #ifndef _GLSL_TERRAIN_COMMON_HEADER
 #define _GLSL_TERRAIN_COMMON_HEADER
 
-// =========================================================================
-// TerrainCommon.hg — GLSL/Vulkan mirror of TerrainCommon.hlsli.
-//
-//   Docs/Terrain/02-QuadtreeCDLOD.md
-//
-// HLSL (D3D12) uses a bindless ResourceDescriptorHeap + register spaces; GLSL
-// (Vulkan) uses explicit set/binding. Per-pass resources live in descriptor
-// set 1 (set 0 == DESCRIPTORSET_COMMON, the camera/scene set), matching
-// GBufferTS.task. The engine's StageDescriptor / SetGraphicsDynamicUniformBuffer
-// resolve these by reflected name, so the names (g_Terrain, g_PatchInstances)
-// must match the C++ TerrainNode side exactly.
-// =========================================================================
+#define TERRAIN_MAX_LOD_DEPTHS 8
+#define TERRAIN_LOD_FLOAT4S    (TERRAIN_MAX_LOD_DEPTHS / 4)
 
-#define TERRAIN_MAX_LOD_DEPTHS 8                            // mirrors TerrainPatch.h
-#define TERRAIN_LOD_FLOAT4S    (TERRAIN_MAX_LOD_DEPTHS / 4) // 2 x vec4 packs 8 floats
-
-// Mirrors C++ TerrainNode::TerrainParams. std140 layout (12 scalars = 3 rows,
-// then 2 + 2 vec4s = 112 bytes) matches the C++ struct and the HLSL cbuffer.
-layout(set = 1, binding = 0) uniform TerrainParamsBuffer
+layout(set = 1, binding = 0) uniform g_Terrain
 {
     float TerrainOriginX;
     float TerrainOriginZ;
@@ -31,32 +16,32 @@ layout(set = 1, binding = 0) uniform TerrainParamsBuffer
     float HeightmapTexel;
     float WorldPerTexel;
 
-    uint  HeightmapRez;
-    uint  MaxDepth;
-    uint  NumPatches;
-    uint  _pad0;
+    uint HeightmapRez;
+    uint MaxDepth;
+    uint NumPatches;
+    uint _pad0;
 
-    vec4  LodRangeStartPacked[TERRAIN_LOD_FLOAT4S];
-    vec4  LodRangeEndPacked  [TERRAIN_LOD_FLOAT4S];
-} g_Terrain;
+    vec4 LodRangeStartPacked[TERRAIN_LOD_FLOAT4S];
+    vec4 LodRangeEndPacked  [TERRAIN_LOD_FLOAT4S];
+} g_TerrainData;
+
+#define g_Terrain g_TerrainData
 
 float GetLodRangeStart(uint depth) { return g_Terrain.LodRangeStartPacked[depth >> 2][depth & 3]; }
 float GetLodRangeEnd  (uint depth) { return g_Terrain.LodRangeEndPacked  [depth >> 2][depth & 3]; }
 
-// Mirrors C++ struct PatchInstance (TerrainPatch.h) — 20 bytes / element
-// (std430 array stride 20, matches the D3D12 StructuredBuffer stride).
 struct PatchInstance
 {
     float patchOriginX;
     float patchOriginZ;
-    float patchSizeM;
+    float patchSizeMeter;
     uint  depth;
     uint  gridDim;
 };
 
-layout(set = 1, binding = 1) readonly buffer PatchInstanceBuffer
+layout(set = 1, binding = 1) readonly buffer g_PatchInstances
 {
-    PatchInstance g_PatchInstances[];
+    PatchInstance g_PatchInstanceData[];
 };
 
 #endif // _GLSL_TERRAIN_COMMON_HEADER

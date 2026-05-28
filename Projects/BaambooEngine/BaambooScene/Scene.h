@@ -9,6 +9,8 @@
 namespace baamboo
 {
 
+inline constexpr u32 TERRAIN_LOD_STATS_DEPTHS = 8u;
+
 class RenderGraph;
 class EditorCamera;
 class TransformSystem;
@@ -48,6 +50,7 @@ struct FrameData
 	Weak< render::Texture > pGBuffer3;
 	Weak< render::Texture > pColor;
 	Weak< render::Texture > pDepth;
+	Weak< render::Texture > pHiZ;
 
 	// Light culling buffers
 	Weak< render::Buffer > pClusterAABBBuffer;
@@ -67,7 +70,7 @@ struct FrameData
 	u32 phase2InstanceDrawCount = 0; // instances emitted by Phase2 cull (newly visible after HZB)
 
 #if PROFILING_LEVEL >= 1
-	// Per-phase meshlet/triangle counters populated by GBufferNode atomics in the task shader. 
+	// Per-phase meshlet/triangle counters populated by GBufferNode atomics in the task shader.
 	//   meshletTotal       — meshlet candidates examined by task shader (post-LOD, per emitted instance).
 	//   meshletDrawn       — meshlets that passed every task-shader cull and survived to launch a mesh shader workgroup.
 	//   triangleCandidates — triangles that ENTER the mesh shader.
@@ -77,6 +80,21 @@ struct FrameData
 	u32 phase2MeshletDrawn       = 0;
 	u32 phase1TriangleCandidates = 0;
 	u32 phase2TriangleCandidates = 0;
+#endif
+
+	// --- Terrain cull stats (TerrainPatchCullingCS) ---
+	//   totalPatches        — quadtree node count this frame (= TerrainQuadtree::NumNodes()).
+	//   phase1DrawCount     — patches emitted by Phase 1 terrain cull (prev-visible survivors).
+	//   phase2DrawCount     — patches emitted by Phase 2 terrain cull (newly visible after HZB).
+	//   phase{1,2}Triangles — drawCount × per-patch tris (surface 2*(N-1)² + skirt 8*(N-1))
+	u32 terrainTotalPatches    = 0;
+	u32 terrainPhase1DrawCount = 0;
+	u32 terrainPhase2DrawCount = 0;
+	u32 terrainPhase1Triangles = 0;
+	u32 terrainPhase2Triangles = 0;
+#if PROFILING_LEVEL >= 1
+	u32 terrainPhase1LodPatches[TERRAIN_LOD_STATS_DEPTHS] = {};
+	u32 terrainPhase2LodPatches[TERRAIN_LOD_STATS_DEPTHS] = {};
 #endif
 
 	// Runtime culling toggles — bitmask consumed by task + mesh shaders per-frame as push constant.
@@ -206,4 +224,4 @@ private:
 	std::atomic< u32 >  m_DebugLightTypeMask{ 0u };
 };
 
-} // namespace baamboo 
+} // namespace baamboo

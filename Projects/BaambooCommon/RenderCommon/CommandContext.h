@@ -77,6 +77,7 @@ public:
     virtual ~CommandContext() = default;
 
     // === Resource Operations ===
+    virtual void UploadData(const Arc< Buffer >& pDstBuffer, const void* pData, u32 numElements, u64 elemSizeInBytes, u64 dstOffsetInBytes = 0) = 0;
     virtual void CopyBuffer(const Arc< Buffer >& pDstBuffer, const Arc< Buffer >& pSrcBuffer, u64 dstOffsetInBytes = 0, u64 srcOffsetInBytes = 0) = 0;
     virtual void CopyBufferRegion(const Arc< Buffer >& pDstBuffer, const Arc< Buffer >& pSrcBuffer, u64 sizeInBytes, u64 dstOffsetInBytes = 0, u64 srcOffsetInBytes = 0) = 0;
     virtual void CopyTexture(const Arc< Texture >& pDstTexture, const Arc< Texture >& pSrcTexture, u64 offsetInBytes = 0) = 0;

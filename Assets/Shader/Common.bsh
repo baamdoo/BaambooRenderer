@@ -108,10 +108,15 @@ struct CullData
 {
 	float4 frustum[6];
 
-	float sseThresholdPx; // for lod selection
+	float sseThresholdPx; // for LOD selection
 	float viewportHeight;
-	float padding0;
-	float padding1;
+	uint  cullFlags;
+	uint  hiZMipCount;
+
+	uint  hiZWidth;
+	uint  hiZHeight;
+	uint  padding0;
+	uint  padding1;
 };
 
 #elif defined(_GLSL)
@@ -119,10 +124,15 @@ struct CullData
 {
 	vec4 frustum[6];
 
-	float sseThresholdPx; // for lod selection
+	float sseThresholdPx; // for LOD selection
 	float viewportHeight;
-	float padding0;
-	float padding1;
+	uint  cullFlags;
+	uint  hiZMipCount;
+
+	uint  hiZWidth;
+	uint  hiZHeight;
+	uint  padding0;
+	uint  padding1;
 };
 #endif
 

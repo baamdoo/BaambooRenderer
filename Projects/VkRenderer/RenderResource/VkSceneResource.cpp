@@ -169,7 +169,7 @@ VkSceneResource::VkSceneResource(VkRenderDevice& rd)
 		{ eCommonSetBindingIndex_MeshletTriangle, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT, VK_NULL_HANDLE },
 		{ eCommonSetBindingIndex_MeshData, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT, VK_NULL_HANDLE },
 		{ eCommonSetBindingIndex_Instance, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT, VK_NULL_HANDLE },
-		{ eCommonSetBindingIndex_Cull, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_TASK_BIT_EXT, VK_NULL_HANDLE },
+		{ eCommonSetBindingIndex_Cull, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT, VK_NULL_HANDLE },
 		{ eCommonSetBindingIndex_Transform, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT, VK_NULL_HANDLE },
 		{ eCommonSetBindingIndex_Material, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, VK_NULL_HANDLE },
 		{ eCommonSetBindingIndex_Light, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, VK_NULL_HANDLE },
@@ -311,6 +311,10 @@ void VkSceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneVie
 
 	m_CullData.sseThresholdPx = sceneView.sseThresholdPx;
 	m_CullData.viewportHeight = frozenVp.y;
+	m_CullData.cullFlags      = sceneView.cullFlags;
+	m_CullData.hiZMipCount    = sceneView.hiZMipCount;
+	m_CullData.hiZWidth       = sceneView.hiZWidth;
+	m_CullData.hiZHeight      = sceneView.hiZHeight;
 	memcpy(m_FrameData[m_ContextIndex].pCullBuffer->MappedMemory(), &m_CullData, sizeof(CullData));
 
 	SceneEnvironmentData sceneEnvironmentData =

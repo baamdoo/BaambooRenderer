@@ -24,13 +24,7 @@ bool IsConeCulled(vec4 cone, vec3 sphereCenterWS, float sphereRadius, vec3 viewP
 
 
 // =========================================================================
-// Occlusion Culling : 
-//     Sphere-vs-HiZ occlusion test for reversed-Z depth (0=far, 1=near).
-//
-// Uses Mara/McGuire 2013 tight AABB projection for correct screen-space
-// bounds regardless of aspect ratio. The HiZ sampler must use MIN
-// reduction mode so that a single textureLod returns the conservative
-// minimum depth within the sampled region.
+// Sphere-vs-HiZ occlusion
 // =========================================================================
 bool IsOccluded(vec3      centerWS,
                 float     radius,
@@ -85,6 +79,64 @@ bool IsOccluded(vec3      centerWS,
 
     // Occluded if sphere's nearest depth < HiZ minimum (farther in reversed-Z)
     return depthSphere < depth;
+}
+
+// =========================================================================
+// AABB-vs-HiZ occlusion
+// =========================================================================
+bool IsAABBOccluded(vec3      aabbMin,
+                    vec3      aabbMax,
+                    mat4      view,
+                    mat4      proj,
+                    float     zNear,
+                    sampler2D hiZ,
+                    float     pyramidWidth,
+                    float     pyramidHeight)
+{
+    vec2 ndcMin = vec2( 10000.0);
+    vec2 ndcMax = vec2(-10000.0);
+    float viewZMin = 1.0e30;
+
+    for (uint i = 0u; i < 8u; ++i)
+    {
+        vec3 cornerWS = vec3(
+            ((i & 1u) != 0u) ? aabbMax.x : aabbMin.x,
+            ((i & 2u) != 0u) ? aabbMax.y : aabbMin.y,
+            ((i & 4u) != 0u) ? aabbMax.z : aabbMin.z);
+
+        vec4 cornerVS = view * vec4(cornerWS, 1.0);
+        if (cornerVS.z < zNear)
+            return false;
+
+        viewZMin = min(viewZMin, cornerVS.z);
+
+        vec4 cornerCS = proj * cornerVS;
+        vec2 cornerND = cornerCS.xy / cornerCS.w;
+        ndcMin = min(ndcMin, cornerND);
+        ndcMax = max(ndcMax, cornerND);
+    }
+
+    vec2 uvA = ndcMin * 0.5 + 0.5;
+    vec2 uvB = ndcMax * 0.5 + 0.5;
+    vec2 uvMin = clamp(min(uvA, uvB), vec2(0.0), vec2(1.0));
+    vec2 uvMax = clamp(max(uvA, uvB), vec2(0.0), vec2(1.0));
+
+    if (uvMin.x >= uvMax.x || uvMin.y >= uvMax.y)
+        return false;
+
+    float widthPx  = (uvMax.x - uvMin.x) * pyramidWidth;
+    float heightPx = (uvMax.y - uvMin.y) * pyramidHeight;
+    float level    = floor(log2(max(max(widthPx, heightPx), 1.0)));
+
+    vec2 uvCenter = (uvMin + uvMax) * 0.5;
+    float hiZDepth = textureLod(hiZ, uvCenter, level).x;
+    hiZDepth = min(hiZDepth, textureLod(hiZ, uvMin, level).x);
+    hiZDepth = min(hiZDepth, textureLod(hiZ, uvMax, level).x);
+    hiZDepth = min(hiZDepth, textureLod(hiZ, vec2(uvMin.x, uvMax.y), level).x);
+    hiZDepth = min(hiZDepth, textureLod(hiZ, vec2(uvMax.x, uvMin.y), level).x);
+
+    float depthAABB = zNear / viewZMin;
+    return depthAABB < hiZDepth - 1.0e-5;
 }
 
 #endif // _GLSL_CULLING_COMMON_HEADER

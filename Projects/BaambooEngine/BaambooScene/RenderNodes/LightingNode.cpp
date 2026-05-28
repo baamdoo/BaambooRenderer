@@ -236,6 +236,20 @@ LightingNode::LightingNode(render::RenderDevice& rd)
 	m_pLtcLut1 = rm.LoadTexture(TEXTURE_PATH.string() + "ltc_1.dds");
 	m_pLtcLut2 = rm.LoadTexture(TEXTURE_PATH.string() + "ltc_2.dds");
 
+	m_pFallbackLightGridBuffer = Buffer::Create(rd, "LightingPass::FallbackLightGrid",
+		{
+			.count              = MAX_CLUSTER_COUNT,
+			.elementSizeInBytes = sizeof(u32) * 2,
+			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest,
+		});
+
+	m_pFallbackLightListDataBuffer = Buffer::Create(rd, "LightingPass::FallbackLightListData",
+		{
+			.count              = 1,
+			.elementSizeInBytes = sizeof(u32),
+			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest,
+		});
+
 	m_pLightingPSO = ComputePipeline::Create(m_RenderDevice, "LightingPSO");
 	m_pLightingPSO->SetComputeShader(
 		Shader::Create(m_RenderDevice, "DeferredPBRLightingCS",
@@ -247,6 +261,7 @@ LightingNode::LightingNode(render::RenderDevice& rd)
 
 void LightingNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)
 {
+	UNUSED(renderView);
 	using namespace render;
 	auto& rm = m_RenderDevice.GetResourceManager();
 
@@ -289,10 +304,21 @@ void LightingNode::Apply(render::CommandContext& context, const SceneRenderView&
 	context.StageDescriptor("g_LtcAmplitudeLUT", m_pLtcLut2, g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_OutSceneTexture", m_pSceneTexture);
 
-	if (g_FrameData.pLightGridBuffer)
-		context.StageDescriptor("g_LightGridBuffer", g_FrameData.pLightGridBuffer.lock());
-	if (g_FrameData.pLightListDataBuffer)
-		context.StageDescriptor("g_LightListDataBuffer", g_FrameData.pLightListDataBuffer.lock());
+	auto pLightGridBuffer     = g_FrameData.pLightGridBuffer ? g_FrameData.pLightGridBuffer.lock() : nullptr;
+	auto pLightListDataBuffer = g_FrameData.pLightListDataBuffer ? g_FrameData.pLightListDataBuffer.lock() : nullptr;
+	if (!pLightGridBuffer || !pLightListDataBuffer)
+	{
+		context.ClearBuffer(m_pFallbackLightGridBuffer, 0);
+		context.ClearBuffer(m_pFallbackLightListDataBuffer, 0);
+		context.TransitionBufferToRead(m_pFallbackLightGridBuffer, ePipelineStage::ComputeShader);
+		context.TransitionBufferToRead(m_pFallbackLightListDataBuffer, ePipelineStage::ComputeShader);
+
+		pLightGridBuffer     = m_pFallbackLightGridBuffer;
+		pLightListDataBuffer = m_pFallbackLightListDataBuffer;
+	}
+
+	context.StageDescriptor("g_LightGridBuffer", pLightGridBuffer);
+	context.StageDescriptor("g_LightListDataBuffer", pLightListDataBuffer);
 
 	context.Dispatch2D< 16, 16 >(m_pSceneTexture->Width(), m_pSceneTexture->Height());
 
@@ -304,5 +330,6 @@ void LightingNode::Resize(u32 width, u32 height, u32 depth)
 	if (m_pSceneTexture)
 		m_pSceneTexture->Resize(width, height, depth);
 }
+
 
 } // namespace baamboo

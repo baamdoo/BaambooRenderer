@@ -2,6 +2,9 @@
 #include "TerrainCommon.hlsli"
 #include "HelperFunctions.hlsli"
 
+ConstantBuffer< DescriptorHeapIndex > g_Heightmap      : register(b0, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_PatchInstances : register(b1, ROOT_CONSTANT_SPACE);
+
 cbuffer CommandSignatureParam : register(b0, COMMMANDSIGNATURE_SPACE)
 {
     uint g_DrawID;
@@ -15,7 +18,6 @@ cbuffer CommandSignatureParam : register(b0, COMMMANDSIGNATURE_SPACE)
 struct SurfaceVertex
 {
     float3 posWS;
-    float3 normalWS;
     float2 uv;
 };
 
@@ -25,7 +27,7 @@ SurfaceVertex ComputeSurfaceVertex(uint gx, uint gz, PatchInstance pi)
 
     const float patchOriginX = pi.patchOriginX;
     const float patchOriginZ = pi.patchOriginZ;
-    const float patchSizeM   = pi.patchSizeM;
+    const float patchSizeM   = pi.patchSizeMeter;
     const uint  gridN        = pi.gridDim;
     const float rStart       = GetLodRangeStart(pi.depth);
     const float rEnd         = GetLodRangeEnd  (pi.depth);
@@ -52,19 +54,9 @@ SurfaceVertex ComputeSurfaceVertex(uint gx, uint gz, PatchInstance pi)
     float h01 = Heightmap.SampleLevel(g_LinearClampSampler, float2(tu, tv), 0);
     float3 posWS = float3(xWORLD, h01 * g_Terrain.HeightRangeMeter + g_Terrain.HeightMinMeter, zWORLD);
 
-    float hL = Heightmap.SampleLevel(g_LinearClampSampler, float2(tu - g_Terrain.HeightmapTexel, tv), 0);
-    float hR = Heightmap.SampleLevel(g_LinearClampSampler, float2(tu + g_Terrain.HeightmapTexel, tv), 0);
-    float hD = Heightmap.SampleLevel(g_LinearClampSampler, float2(tu, tv - g_Terrain.HeightmapTexel), 0);
-    float hU = Heightmap.SampleLevel(g_LinearClampSampler, float2(tu, tv + g_Terrain.HeightmapTexel), 0);
-
-    // Sampled heights are in [0,1]; differentials carry the world-space scale.
-    float dhdx = (hR - hL) * g_Terrain.HeightRangeMeter / (2.0 * g_Terrain.WorldPerTexel);
-    float dhdz = (hU - hD) * g_Terrain.HeightRangeMeter / (2.0 * g_Terrain.WorldPerTexel);
-
     SurfaceVertex sv;
-    sv.posWS    = posWS;
-    sv.normalWS = normalize(float3(-dhdx, 1.0, -dhdz));
-    sv.uv       = float2(tu, tv);
+    sv.posWS = posWS;
+    sv.uv    = float2(tu, tv);
     return sv;
 }
 
@@ -82,7 +74,7 @@ uint2 PerimGridCoord(uint s, uint gridN)
 
 float ComputeSkirtDepth(PatchInstance pi)
 {
-    float gap   = pi.patchSizeM / (pi.gridDim - 1);
+    float gap   = pi.patchSizeMeter / (pi.gridDim - 1);
     float slope = g_Terrain.HeightRangeMeter / g_Terrain.TerrainSizeMeter;
     return 1.0 * slope * gap;
 }
@@ -91,8 +83,8 @@ float ComputeSkirtDepth(PatchInstance pi)
 [outputtopology("triangle")]
 void main(
     uint3 GTid : SV_GroupThreadID,
-    out vertices MSOutput verts [TERRAIN_MAX_VERTS],
-    out indices  uint3    prims [TERRAIN_MAX_PRIMS])
+    out vertices MSOutput verts[TERRAIN_MAX_VERTS],
+    out indices  uint3    prims[TERRAIN_MAX_PRIMS])
 {
     StructuredBuffer< PatchInstance > patches = GetResource(g_PatchInstances.index);
     const PatchInstance pi = patches[g_DrawID];
@@ -117,18 +109,20 @@ void main(
         {
             SurfaceVertex sv = ComputeSurfaceVertex(v % gridN, v / gridN, pi);
             verts[v].positionCS = mul(g_Camera.mViewProj, float4(sv.posWS, 1.0));
-            verts[v].normalWS   = sv.normalWS;
             verts[v].uv         = sv.uv;
+            verts[v].skirtBlend = 0.0; // surface: pure ground material
+            verts[v].patchDepth = pi.depth;      // debug
         }
         else
         {
-            // Skirt vertex: same morphed surface sample as its edge vertex, pushed straight down by skirtDepth.
-            uint2 g  = PerimGridCoord(v - surfVerts, gridN);
+            const uint s = v - surfVerts;
+            uint2 g  = PerimGridCoord(s, gridN);
 
             SurfaceVertex sv = ComputeSurfaceVertex(g.x, g.y, pi);
             verts[v].positionCS = mul(g_Camera.mViewProj, float4(sv.posWS.x, sv.posWS.y - skirtDepth, sv.posWS.z, 1.0));
-            verts[v].normalWS   = sv.normalWS;
             verts[v].uv         = sv.uv;
+            verts[v].skirtBlend = 1.0;
+            verts[v].patchDepth = pi.depth;      // debug
         }
     }
 

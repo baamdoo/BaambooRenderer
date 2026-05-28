@@ -121,8 +121,9 @@ struct TerrainComponent
 	float rootSizeMeter      = 8192.0f; // root node world extent (m). Patch sizes per depth = rootSizeM / 2^d
 	float lodRangeBaseMeter  = 1024.0f; // r_e at leaf (depth = maxDepth). Coarser depths scale by 2^(maxDepth - d).
 
-	float lodMorphK = 0.85f; // morph zone start ratio: r_s = k * r_e
-	u32   maxDepth  = 5u;    // 0 = root, maxDepth = leaf
+	float lodMorphK = 0.5f;       // morph zone start ratio: r_s = k * r_e
+	u32   maxDepth  = 5u;         // 0 = root, maxDepth = leaf
+	bool  bForceFinestLOD = true; // debug/review mode: render visible terrain from leaf patches only
 
 	// TODO: move to .dds.meta sidecar once nlohmann json lands.
 	float terrainSizeMeter = 8192.0f; // T: world span the heightmap covers (m). Defaults match rootSizeM.

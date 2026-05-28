@@ -31,14 +31,11 @@ ConstantBuffer<TerrainParams> g_Terrain : register(b0, space1);
 float GetLodRangeStart(uint depth) { return g_Terrain.LodRangeStartPacked[depth >> 2][depth & 3]; }
 float GetLodRangeEnd  (uint depth) { return g_Terrain.LodRangeEndPacked  [depth >> 2][depth & 3]; }
 
-ConstantBuffer< DescriptorHeapIndex > g_Heightmap      : register(b0, ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_PatchInstances : register(b1, ROOT_CONSTANT_SPACE);
-
 struct PatchInstance
 {
     float patchOriginX;
     float patchOriginZ;
-    float patchSizeM;
+    float patchSizeMeter;
     uint  depth;
     uint  gridDim;
 };
@@ -46,8 +43,10 @@ struct PatchInstance
 struct MSOutput
 {
     float4 positionCS : SV_Position;
-    float3 normalWS   : TEXCOORD0;
-    float2 uv         : TEXCOORD1; // patch-local (u,v) — debug overlay 용
+    float2 uv         : TEXCOORD1;
+    float  skirtBlend : TEXCOORD2;
+
+    nointerpolation uint patchDepth : TEXCOORD4;
 };
 
 #endif // _TERRAIN_COMMON_HEADER
