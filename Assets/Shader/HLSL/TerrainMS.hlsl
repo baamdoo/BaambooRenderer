@@ -109,9 +109,6 @@ void main(
         {
             SurfaceVertex sv = ComputeSurfaceVertex(v % gridN, v / gridN, pi);
             verts[v].positionCS = mul(g_Camera.mViewProj, float4(sv.posWS, 1.0));
-            verts[v].uv         = sv.uv;
-            verts[v].skirtBlend = 0.0; // surface: pure ground material
-            verts[v].patchDepth = pi.depth;      // debug
         }
         else
         {
@@ -120,9 +117,6 @@ void main(
 
             SurfaceVertex sv = ComputeSurfaceVertex(g.x, g.y, pi);
             verts[v].positionCS = mul(g_Camera.mViewProj, float4(sv.posWS.x, sv.posWS.y - skirtDepth, sv.posWS.z, 1.0));
-            verts[v].uv         = sv.uv;
-            verts[v].skirtBlend = 1.0;
-            verts[v].patchDepth = pi.depth;      // debug
         }
     }
 

@@ -13,6 +13,7 @@
 #include "BaambooScene/RenderNodes/CloudNode.h"
 #include "BaambooScene/RenderNodes/SkyboxNode.h"
 #include "BaambooScene/RenderNodes/LightingNode.h"
+#include "BaambooScene/RenderNodes/SurfaceResolveNode.h"
 #include "BaambooScene/RenderNodes/PostProcessNode.h"
 
 #include <glm/gtc/type_ptr.hpp>
@@ -254,6 +255,7 @@ void ExampleApp::ConfigureRenderGraph()
 		pCullingNode->SetGBufferNode(pGBufferNode);
 		m_pScene->AddRenderNode(pCullingNode);
 	}
+	m_pScene->AddRenderNode(MakeArc< SurfaceResolveNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< CloudScatteringNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< DynamicSkyboxNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< LightingNode >(*m_pRendererBackend->GetDevice()));

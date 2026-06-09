@@ -397,6 +397,7 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport,
 	view.debugFlags.bSkipEmptyClusters    = m_DebugSkipEmpty.load(std::memory_order_relaxed);
 	view.debugFlags.saturationMax         = m_DebugSaturationMax.load(std::memory_order_relaxed);
 	view.debugFlags.lightTypeMask         = m_DebugLightTypeMask.load(std::memory_order_relaxed);
+	view.debugFlags.surfaceDebugView      = m_DebugSurfaceView.load(std::memory_order_relaxed);
 
 	m_pTransformSystem->CollectRenderData(view);
 	m_pStaticMeshSystem->CollectRenderData(view);

@@ -261,24 +261,27 @@ LightingNode::LightingNode(render::RenderDevice& rd)
 
 void LightingNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)
 {
-	UNUSED(renderView);
 	using namespace render;
 	auto& rm = m_RenderDevice.GetResourceManager();
 
 	context.SetRenderPipeline(m_pLightingPSO.get());
 
+	u32 debugView = renderView.debugFlags.surfaceDebugView;
+	context.SetComputeConstants(sizeof(u32), &debugView);
+
+	assert(g_FrameData.pDepth);
 	assert(
-		g_FrameData.pGBuffer0 &&
-		g_FrameData.pGBuffer1 &&
-		g_FrameData.pGBuffer2 &&
-		g_FrameData.pGBuffer3 &&
-		g_FrameData.pDepth
+		g_FrameData.pVBuf0 &&
+		g_FrameData.pVBuf1 &&
+		g_FrameData.pCoreNormal &&
+		g_FrameData.pCoreMaterial &&
+		"LightingNode requires the SurfaceResolve pass (VBuf + CoreCache) to run first"
 	);
-	context.TransitionBarrier(g_FrameData.pGBuffer0.lock(), eTextureLayout::ShaderReadOnly);
-	context.TransitionBarrier(g_FrameData.pGBuffer1.lock(), eTextureLayout::ShaderReadOnly);
-	context.TransitionBarrier(g_FrameData.pGBuffer2.lock(), eTextureLayout::ShaderReadOnly);
-	context.TransitionBarrier(g_FrameData.pGBuffer3.lock(), eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(g_FrameData.pDepth.lock(), eTextureLayout::ShaderReadOnly);
+	context.TransitionBarrier(g_FrameData.pVBuf0.lock(), eTextureLayout::ShaderReadOnly);
+	context.TransitionBarrier(g_FrameData.pVBuf1.lock(), eTextureLayout::ShaderReadOnly);
+	context.TransitionBarrier(g_FrameData.pCoreNormal.lock(), eTextureLayout::ShaderReadOnly);
+	context.TransitionBarrier(g_FrameData.pCoreMaterial.lock(), eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(g_FrameData.pAerialPerspectiveLUT ?
 		g_FrameData.pAerialPerspectiveLUT.lock() : rm.GetFlatBlackTexture3D(), eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(g_FrameData.pCloudScatteringLUT ?
@@ -289,11 +292,11 @@ void LightingNode::Apply(render::CommandContext& context, const SceneRenderView&
 	context.TransitionBarrier(m_pLtcLut2, eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(m_pSceneTexture, eTextureLayout::General);
 
-	context.StageDescriptor("g_GBuffer0", g_FrameData.pGBuffer0.lock(), g_FrameData.pLinearClamp);
-	context.StageDescriptor("g_GBuffer1", g_FrameData.pGBuffer1.lock(), g_FrameData.pLinearClamp);
-	context.StageDescriptor("g_GBuffer2", g_FrameData.pGBuffer2.lock(), g_FrameData.pLinearClamp);
-	context.StageDescriptor("g_GBuffer3", g_FrameData.pGBuffer3.lock(), g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_DepthBuffer", g_FrameData.pDepth.lock(), g_FrameData.pPointClamp);
+	context.StageDescriptor("g_VBuf0", g_FrameData.pVBuf0.lock(), g_FrameData.pPointClampNearest);
+	context.StageDescriptor("g_VBuf1", g_FrameData.pVBuf1.lock(), g_FrameData.pPointClampNearest);
+	context.StageDescriptor("g_CoreNormal", g_FrameData.pCoreNormal.lock(), g_FrameData.pPointClamp);
+	context.StageDescriptor("g_CoreMaterial", g_FrameData.pCoreMaterial.lock(), g_FrameData.pPointClamp);
 	context.StageDescriptor("g_AerialPerspectiveLUT", g_FrameData.pAerialPerspectiveLUT ?
 		g_FrameData.pAerialPerspectiveLUT.lock() : rm.GetFlatBlackTexture3D(), g_FrameData.pLinearWrap);
 	context.StageDescriptor("g_CloudScatteringLUT", g_FrameData.pCloudScatteringLUT ?

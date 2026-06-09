@@ -15,6 +15,4 @@ struct PatchInstance
 static_assert(sizeof(PatchInstance) == 20, "PatchInstance must stay in sync with the HLSL StructuredBuffer layout");
 
 
-constexpr u32 TERRAIN_MAX_LOD_DEPTHS = 8u; // depth 0..7 inclusive
-
 } // namespace baamboo

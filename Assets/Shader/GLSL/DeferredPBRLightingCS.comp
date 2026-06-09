@@ -4,21 +4,20 @@
 
 #define _CAMERA
 #define _FROZENCAMERA
+#define _MESH
+#define _TRANSFORM
 #define _MATERIAL
 #define _LIGHT
 #include "Lighting.hg"
 #include "AtmosphereCommon.hg"
 #include "LightCullingCommon.hg"
+#include "SurfaceResolve.hg"
 
-layout(set = 1, binding = 1) uniform sampler2D g_GBuffer0;    // Albedo.rgb + AO.a
-layout(set = 1, binding = 2) uniform sampler2D g_GBuffer1;    // Normal.rgb + MaterialID.a
-layout(set = 1, binding = 3) uniform sampler2D g_GBuffer2;    // Emissive.rgb
-layout(set = 1, binding = 4) uniform sampler2D g_GBuffer3;    // MotionVectors.rg + Roughness.b + Metallic.a
-layout(set = 1, binding = 5) uniform sampler2D g_DepthBuffer;
-layout(set = 1, binding = 6) uniform sampler3D g_AerialPerspectiveLUT;
-layout(set = 1, binding = 7) uniform sampler2D g_CloudScatteringLUT;
-layout(set = 1, binding = 8) uniform samplerCube g_SkyboxLUT;
-layout(set = 1, binding = 9) uniform sampler2D g_LtcMatrixLUT;     // (m00, m02, m11, m20)
+layout(set = 1, binding = 5)  uniform sampler2D g_DepthBuffer;
+layout(set = 1, binding = 6)  uniform sampler3D g_AerialPerspectiveLUT;
+layout(set = 1, binding = 7)  uniform sampler2D g_CloudScatteringLUT;
+layout(set = 1, binding = 8)  uniform samplerCube g_SkyboxLUT;
+layout(set = 1, binding = 9)  uniform sampler2D g_LtcMatrixLUT;    // (m00, m02, m11, m20)
 layout(set = 1, binding = 10) uniform sampler2D g_LtcAmplitudeLUT; // (magnitude, F0_lerp, F90_lerp, edge)
 
 layout(set = 1, binding = 11, rgba16f) writeonly uniform image2D g_OutSceneTexture;
@@ -33,6 +32,16 @@ layout(set = 1, binding = 13) readonly buffer LightListDataBuffer
     uint indices[];    // packed (type:3 + idx:29)
 } g_LightListDataBuffer;
 
+layout(set = 1, binding = 14) uniform usampler2D g_VBuf0;        // visibility surface ID
+layout(set = 1, binding = 15) uniform usampler2D g_VBuf1;        // visibility primitive ID
+layout(set = 1, binding = 16) uniform sampler2D  g_CoreNormal;   // RG16_SNORM signed oct normal
+layout(set = 1, binding = 17) uniform sampler2D  g_CoreMaterial; // R roughness | G matClass | BA spare
+
+layout(push_constant) uniform DebugConstants
+{
+    uint debugView;
+} g_Debug;
+
 const float MIN_ROUGHNESS = 0.045;
 
 layout (local_size_x = 16, local_size_y = 16) in;
@@ -43,15 +52,10 @@ void main()
     if (any(greaterThanEqual(pixCoords, imgSize)))
         return;
 
-    vec2  uv        = (vec2(pixCoords) + 0.5) / vec2(imgSize);
-
-    vec4  gbuffer0 = texture(g_GBuffer0, uv);
-    vec4  gbuffer1 = texture(g_GBuffer1, uv);
-    vec4  gbuffer2 = texture(g_GBuffer2, uv);
-    vec4  gbuffer3 = texture(g_GBuffer3, uv);
-
-    vec3  color = vec3(0.0);
+    vec2  uv    = (vec2(pixCoords) + 0.5) / vec2(imgSize);
     float depth = texture(g_DepthBuffer, uv).r;
+
+    vec3 color = vec3(0.0);
     if (depth == 0.0)
     {
         vec3 rayDir = normalize(ReconstructWorldPos(uv, 0.0, g_Camera.mViewProjInv));
@@ -60,22 +64,54 @@ void main()
     }
     else
     {
-        vec3  albedo = gbuffer0.rgb;
-        float ao     = gbuffer0.a;
+        uint v0 = texelFetch(g_VBuf0, pixCoords, 0).r;
 
-        vec3 N          = gbuffer1.xyz;
-        uint materialID = uint(gbuffer1.w * 255.0);
-        vec3 emissive   = gbuffer2.rgb;
+        vec3  albedo;
+        float ao;
+        vec3  N;
+        uint  materialID;
+        vec3  emissive;
+        float roughness;
+        float metallic;
 
-        float roughness = max(gbuffer3.z, MIN_ROUGHNESS);
-        float metallic  = gbuffer3.w;
+        if (VisIsTerrain(v0))
+        {
+            N = OctDecode(texelFetch(g_CoreNormal, pixCoords, 0).xy);
+
+            const vec3  surfaceAlbedo = vec3(0.45, 0.38, 0.28);
+            const float surfaceRough  = 0.85;
+            const vec3  cliffAlbedo   = vec3(0.30, 0.27, 0.22);
+            const float cliffRough    = 0.95;
+            float s = smoothstep(0.35, 0.65, clamp(1.0 - N.y, 0.0, 1.0)); // 0 flat .. 1 vertical
+
+            albedo     = mix(surfaceAlbedo, cliffAlbedo, s);
+            ao         = 1.0;
+            materialID = INVALID_INDEX;
+            emissive   = vec3(0.0);
+            roughness  = max(mix(surfaceRough, cliffRough, s), MIN_ROUGHNESS);
+            metallic   = 0.0;
+        }
+        else
+        {
+            N         = OctDecode(texelFetch(g_CoreNormal, pixCoords, 0).xy);
+            roughness = max(texelFetch(g_CoreMaterial, pixCoords, 0).r, MIN_ROUGHNESS);
+
+            uint v1 = texelFetch(g_VBuf1, pixCoords, 0).r;
+            ResolvedMaterial m = ResolveMaterial(v0, v1, vec2(pixCoords) + 0.5, vec2(imgSize));
+
+            albedo     = m.baseColor;
+            ao         = m.ao;
+            materialID = m.materialID;
+            emissive   = m.emissive;
+            metallic   = m.metallic;
+        }
 
         vec3 posWORLD = ReconstructWorldPos(uv, depth, g_Camera.mViewProjInv);
 
         vec3 V  = normalize(posWORLD - g_Camera.posWORLD);
         vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
-        if (materialID != INVALID_INDEX && materialID < 256)
+        if (materialID != INVALID_INDEX)
         {
             MaterialData material = g_MaterialBuffer.materials[materialID];
             if (material.ior > 1.0)
@@ -86,15 +122,53 @@ void main()
             }
         }
 
+        if (g_Debug.debugView != 0u)
+        {
+            vec3 dbg = vec3(0.0);
+            if (g_Debug.debugView == 1u)
+            {
+                if (VisIsSky(v0))          dbg = vec3(0.0, 0.0, 1.0);
+                else if (VisIsTerrain(v0)) dbg = vec3(1.0, 0.0, 0.0);
+                else                       dbg = vec3(0.0, 1.0, 0.0);
+            }
+            else if (g_Debug.debugView == 2u)
+            {
+                dbg = N * 0.5 + 0.5;
+            }
+            else if (g_Debug.debugView == 3u)
+            {
+                vec3 nLive = N;
+                if (VisIsMesh(v0))
+                {
+                    uint v1dbg = texelFetch(g_VBuf1, pixCoords, 0).r;
+                    nLive = ResolveMeshSurface(v0, v1dbg, vec2(pixCoords) + 0.5, vec2(imgSize)).N;
+                }
+                dbg = nLive * 0.5 + 0.5;
+            }
+            else if (g_Debug.debugView == 4u) dbg = albedo;
+            else if (g_Debug.debugView == 5u) dbg = vec3(roughness);
+            else if (g_Debug.debugView == 6u) dbg = vec3(ao);
+            else if (g_Debug.debugView == 7u)
+            {
+                vec3 bcol = vec3(0.0);
+                if (VisIsMesh(v0))
+                {
+                    uint v1bg = texelFetch(g_VBuf1, pixCoords, 0).r;
+                    bcol = DebugVisBary(v0, v1bg, vec2(pixCoords) + 0.5, vec2(imgSize));
+                }
+                dbg = bcol;
+            }
+            imageStore(g_OutSceneTexture, pixCoords, vec4(dbg, 1.0));
+            return;
+        }
+
         vec3 Lo = vec3(0.0);
 
-        // Directional lights are scene-global: brute-force iterate.
         for (uint i = 0u; i < g_LightBuffer.lightingData.numDirectionals; ++i)
         {
             Lo += ApplyDirectionalLight(g_LightBuffer.lightingData.directionals[i], N, V, albedo, metallic, roughness, F0);
         }
 
-        // Cluster iteration for local lights — frozen camera so cluster lookup is consistent under freeze.
         float viewZ      = (g_FrozenCamera.mView * vec4(posWORLD, 1.0)).z;
         uint  clusterIdx = PixelToClusterIdx(uvec2(pixCoords), viewZ, g_FrozenCamera.zNear, g_FrozenCamera.zFar, uint(imgSize.x), uint(imgSize.y));
 

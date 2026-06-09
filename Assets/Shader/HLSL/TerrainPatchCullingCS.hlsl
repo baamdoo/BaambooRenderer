@@ -42,6 +42,7 @@ ConstantBuffer< DescriptorHeapIndex > g_HiZTexture       : register(b6, ROOT_CON
 ConstantBuffer< DescriptorHeapIndex > g_LodStats         : register(b7, ROOT_CONSTANT_SPACE);
 #endif
 
+
 float DistanceToAABB(float3 cameraPos, float3 aabbMin, float3 aabbMax)
 {
     const float3 clamped = clamp(cameraPos, aabbMin, aabbMax);

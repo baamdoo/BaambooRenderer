@@ -3,6 +3,7 @@
 #define _TRANSFORM
 #define _CULL
 #include "Common.hlsli"
+#include "VisibilityBuffer.hlsli"
 
 #define CULL_FLAG_BACKFACE 1u
 #define CULL_FLAG_SUBPIXEL 2u
@@ -58,18 +59,15 @@ struct MSOutput
     float4 position  : SV_Position;
     float4 posCurrCS : POSITION0;
     float4 posPrevCS : POSITION1;
-    float2 uv        : TEXCOORD0;
-    float3 normalWS  : TEXCOORD1;
-    float3 tangentWS : TEXCOORD2;
-
-    nointerpolation uint materialID : ID0;
 };
 #endif
 
-// Per-primitive cull marker (mirrors GLSL gl_CullPrimitiveEXT).
 struct MSPrimitive
 {
     bool cullPrimitive : SV_CullPrimitive;
+
+    nointerpolation uint visID0 : ID1; // (valid|lod|instanceID)
+    nointerpolation uint visID1 : ID2; // (meshletIndex<<7)|triLocal
 };
 
 // =========================================================================
@@ -189,11 +187,6 @@ void main(
 #else
         vertices[i].posCurrCS = mul(g_Camera.mViewProjUnjittered, posWS);
         vertices[i].posPrevCS = mul(g_Camera.mViewProjUnjitteredPrev, posWS);
-        vertices[i].uv        = float2(vertex.u, vertex.v);
-        vertices[i].normalWS  = mul((float3x3)sh_LocalToWorld, float3(vertex.normalX, vertex.normalY, vertex.normalZ));
-		vertices[i].tangentWS = mul((float3x3)sh_LocalToWorld, float3(vertex.tangentX, vertex.tangentY, vertex.tangentZ));
-
-        vertices[i].materialID = sh_MaterialID;
 #endif
     }
 
@@ -215,5 +208,8 @@ void main(
         float4 cb = s_ClipPos[t1];
         float4 cc = s_ClipPos[t2];
         prims[i].cullPrimitive = TriangleCull(ca, cb, cc);
+
+        prims[i].visID0 = PackVisID0Mesh(g_DrawID & 0x00FFFFFFu, Payload.lod, 0u);
+        prims[i].visID1 = PackVisID1(mi, i);
     }
 }

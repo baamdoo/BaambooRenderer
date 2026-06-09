@@ -11,6 +11,7 @@
 #include "BaambooScene/RenderNodes/CullingNode.h"
 #include "BaambooScene/RenderNodes/SkyboxNode.h"
 #include "BaambooScene/RenderNodes/LightingNode.h"
+#include "BaambooScene/RenderNodes/SurfaceResolveNode.h"
 #include "BaambooScene/RenderNodes/DebugDrawNode.h"
 #include "BaambooScene/RenderNodes/PostProcessNode.h"
 
@@ -240,11 +241,11 @@ void TerrainApp::ConfigureRenderGraph()
 
 		pCullingNode->SetGBufferNode(pGBufferNode);
 		pCullingNode->SetTerrainNode(pTerrainNode);
-		pTerrainNode->SetGBufferNode(pGBufferNode);
 
 		m_pScene->AddRenderNode(pCullingNode);
 		m_pScene->AddRenderNode(pTerrainNode);
 	}
+	m_pScene->AddRenderNode(MakeArc< SurfaceResolveNode >(device));
 	m_pScene->AddRenderNode(MakeArc< LightingNode >(device));
 	m_pScene->AddRenderNode(MakeArc< DebugDrawNode >(device));
 	m_pScene->AddRenderNode(MakeArc< PostProcessNode >(device));

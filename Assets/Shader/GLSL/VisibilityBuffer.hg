@@ -1,0 +1,43 @@
+#ifndef VISIBILITY_BUFFER_HG
+#define VISIBILITY_BUFFER_HG
+
+// =========================================================================
+// Visibility buffer (VBuf0 / VBuf1) packing — single source of truth shared by
+// the geometry pass (writer) and SurfaceResolve / Lighting (readers).
+//
+// VBuf0 (R32_UINT):
+//   bit 31      : valid (covered by geometry).  VBuf0 == 0  => sky / empty.
+//   bit 30      : isTerrain.
+//   bits 27..29 : reserved coarse flags (alpha-test, two-sided, ...).
+//   bits 24..26 : LOD (0..7).
+//   bits  0..23 : instanceID (mirrors g_DrawID low 24 bits).
+// VBuf1 (R32_UINT):  mesh only — (meshletIndex << 7) | triLocal (0..126).
+// =========================================================================
+
+#define VISID_VALID_BIT   (1u << 31)
+#define VISID_TERRAIN_BIT (1u << 30)
+#define VISID_TERRAIN     (VISID_VALID_BIT | VISID_TERRAIN_BIT)
+
+uint PackVisID0Mesh(uint instanceID, uint lod, uint flags)
+{
+    return VISID_VALID_BIT
+         | ((flags & 0x7u) << 27)
+         | ((lod   & 0x7u) << 24)
+         | (instanceID & 0x00FFFFFFu);
+}
+uint PackVisID1(uint meshletIndex, uint triLocal)
+{
+    return (meshletIndex << 7) | (triLocal & 0x7Fu);
+}
+
+bool VisIsSky(uint v0)        { return v0 == 0u; }
+bool VisIsTerrain(uint v0)    { return (v0 & VISID_TERRAIN_BIT) != 0u; }
+bool VisIsMesh(uint v0)       { return (v0 & VISID_VALID_BIT) != 0u && (v0 & VISID_TERRAIN_BIT) == 0u; }
+
+uint VisInstanceID(uint v0)   { return v0 & 0x00FFFFFFu; }
+uint VisLOD(uint v0)          { return (v0 >> 24) & 0x7u; }
+uint VisFlags(uint v0)        { return (v0 >> 27) & 0x7u; }
+uint VisMeshletIndex(uint v1) { return v1 >> 7; }
+uint VisTriLocal(uint v1)     { return v1 & 0x7Fu; }
+
+#endif // VISIBILITY_BUFFER_HG

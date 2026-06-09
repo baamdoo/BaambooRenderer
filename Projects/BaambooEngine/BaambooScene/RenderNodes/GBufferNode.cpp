@@ -16,33 +16,25 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 {
 	using namespace render;
 
-	// --- GBuffer attachments ---
-	auto pAttachment0 =
-		Texture::Create(rd, "GBufferPass::Attachment0/RGB_Albedo/A_AO",
+	auto pAttachmentVBuf0 =
+		Texture::Create(rd, "GBufferPass::VBuf0/SurfaceID",
 			{
 				.resolution = { rd.WindowWidth(), rd.WindowHeight(), 1 },
-				.format     = eFormat::RGBA8_UNORM,
-				.imageUsage = eTextureUsage_ColorAttachment | eTextureUsage_Sample | eTextureUsage_TransferSource
-			});
-	auto pAttachment1 =
-		Texture::Create(rd, "GBufferPass::Attachment1/RGB_Normal/A_MaterialID",
-			{
-				.resolution = { rd.WindowWidth(), rd.WindowHeight(), 1 },
-				.format     = eFormat::RGBA8_SNORM,
+				.format     = eFormat::R32_UINT,
 				.imageUsage = eTextureUsage_ColorAttachment | eTextureUsage_Sample
 			});
-	auto pAttachment2 =
-		Texture::Create(rd, "GBufferPass::Attachment2/RGB_Emissive",
+	auto pAttachmentVBuf1 =
+		Texture::Create(rd, "GBufferPass::VBuf1/PrimitiveID",
 			{
 				.resolution = { rd.WindowWidth(), rd.WindowHeight(), 1 },
-				.format     = eFormat::RG11B10_UFLOAT,
+				.format     = eFormat::R32_UINT,
 				.imageUsage = eTextureUsage_ColorAttachment | eTextureUsage_Sample
 			});
-	auto pAttachment3 =
-		Texture::Create(rd, "GBufferPass::Attachment3/RG_Velocity/B_Roughness/A_Metallic",
+	auto pAttachmentVelocity =
+		Texture::Create(rd, "GBufferPass::Velocity",
 			{
 				.resolution = { rd.WindowWidth(), rd.WindowHeight(), 1 },
-				.format     = eFormat::RGBA16_FLOAT,
+				.format     = eFormat::RG16_FLOAT,
 				.imageUsage = eTextureUsage_ColorAttachment | eTextureUsage_Sample
 			});
 	auto pAttachmentDepth =
@@ -56,23 +48,20 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 
 	// Phase 1 render target (CLEAR all attachments)
 	m_pRenderTargetPhase1 = RenderTarget::CreateEmpty(rd, "GBufferPass::RenderPass");
-	m_pRenderTargetPhase1->AttachTexture(eAttachmentPoint::Color0, pAttachment0)
-		                  .AttachTexture(eAttachmentPoint::Color1, pAttachment1)
-		                  .AttachTexture(eAttachmentPoint::Color2, pAttachment2)
-		                  .AttachTexture(eAttachmentPoint::Color3, pAttachment3)
+	m_pRenderTargetPhase1->AttachTexture(eAttachmentPoint::Color0, pAttachmentVBuf0)
+		                  .AttachTexture(eAttachmentPoint::Color1, pAttachmentVBuf1)
+		                  .AttachTexture(eAttachmentPoint::Color2, pAttachmentVelocity)
 		                  .AttachTexture(eAttachmentPoint::DepthStencil, pAttachmentDepth).Build();
 
 	// Phase 2 render target (LOAD all attachments — same textures, different load ops)
 	m_pRenderTargetPhase2 = RenderTarget::CreateEmpty(rd, "GBufferPass::RenderPassPhase2");
-	m_pRenderTargetPhase2->AttachTexture(eAttachmentPoint::Color0, pAttachment0)
-		                  .AttachTexture(eAttachmentPoint::Color1, pAttachment1)
-		                  .AttachTexture(eAttachmentPoint::Color2, pAttachment2)
-		                  .AttachTexture(eAttachmentPoint::Color3, pAttachment3)
+	m_pRenderTargetPhase2->AttachTexture(eAttachmentPoint::Color0, pAttachmentVBuf0)
+		                  .AttachTexture(eAttachmentPoint::Color1, pAttachmentVBuf1)
+		                  .AttachTexture(eAttachmentPoint::Color2, pAttachmentVelocity)
 		                  .AttachTexture(eAttachmentPoint::DepthStencil, pAttachmentDepth)
 		                  .SetLoadAttachment(eAttachmentPoint::Color0)
 		                  .SetLoadAttachment(eAttachmentPoint::Color1)
 		                  .SetLoadAttachment(eAttachmentPoint::Color2)
-		                  .SetLoadAttachment(eAttachmentPoint::Color3)
 		                  .SetLoadAttachment(eAttachmentPoint::DepthStencil).Build();
 
 	// --- GBuffer PSO ---
@@ -96,6 +85,9 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 			          .SetRenderTarget(m_pRenderTargetPhase1)
 			          .SetDepthWriteEnable(true, eCompareOp::Greater).Build();
 	}
+
+	//
+	g_FrameData.pPhase2Draw = m_pRenderTargetPhase2;
 }
 
 void GBufferNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)
@@ -117,11 +109,9 @@ void GBufferNode::DrawGBufferPhase2(render::CommandContext& context, const MeshC
 	DrawGBufferImpl(context, m_pRenderTargetPhase2, cullOutputs);
 	m_pRenderTargetPhase2->InvalidateImageLayout();
 
-	g_FrameData.pColor    = m_pRenderTargetPhase2->Attachment(eAttachmentPoint::Color0);
-	g_FrameData.pGBuffer0 = m_pRenderTargetPhase2->Attachment(eAttachmentPoint::Color0);
-	g_FrameData.pGBuffer1 = m_pRenderTargetPhase2->Attachment(eAttachmentPoint::Color1);
-	g_FrameData.pGBuffer2 = m_pRenderTargetPhase2->Attachment(eAttachmentPoint::Color2);
-	g_FrameData.pGBuffer3 = m_pRenderTargetPhase2->Attachment(eAttachmentPoint::Color3);
+	g_FrameData.pVBuf0    = m_pRenderTargetPhase2->Attachment(eAttachmentPoint::Color0);
+	g_FrameData.pVBuf1    = m_pRenderTargetPhase2->Attachment(eAttachmentPoint::Color1);
+	g_FrameData.pVelocity = m_pRenderTargetPhase2->Attachment(eAttachmentPoint::Color2);
 	g_FrameData.pDepth    = m_pRenderTargetPhase2->Attachment(eAttachmentPoint::DepthStencil);
 }
 

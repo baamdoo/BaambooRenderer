@@ -34,37 +34,37 @@ struct PatchInstance
     uint gridDim;
 };
 
-layout(set = 1, binding = 0) readonly buffer g_TerrainNodes
+layout(set = 1, binding = 0) readonly buffer TerrainNodeBuffer
 {
-    TerrainNodeGPU g_TerrainNodeData[];
+    TerrainNodeGPU g_TerrainNodes[];
 };
 
-layout(set = 1, binding = 1) buffer g_CulledPatches
+layout(set = 1, binding = 1) buffer CulledPatchBuffer
 {
-    PatchInstance g_CulledPatchData[];
+    PatchInstance g_CulledPatches[];
 };
 
-layout(set = 1, binding = 2) buffer g_IndirectCommands
+layout(set = 1, binding = 2) buffer IndirectCommandBuffer
 {
-    IndirectCommandData g_IndirectCommandData[];
+    IndirectCommandData g_IndirectCommands[];
 };
 
-layout(set = 1, binding = 3) buffer g_DrawCount
+layout(set = 1, binding = 3) buffer DrawCountBuffer
 {
-    uint g_DrawCountData;
+    uint g_DrawCount;
 };
 
-layout(set = 1, binding = 4) buffer g_NodeVisibility
+layout(set = 1, binding = 4) buffer NodeVisibilityBuffer
 {
-    uint g_NodeVisibilityData[];
+    uint g_NodeVisibility[];
 };
 
 layout(set = 1, binding = 5) uniform sampler2D g_HiZTexture;
 
 #if PROFILING_LEVEL >= 1
-layout(set = 1, binding = 6) buffer g_LodStats
+layout(set = 1, binding = 6) buffer LodStatsBuffer
 {
-    uint g_LodStatsData[];
+    uint g_LodStats[];
 };
 #endif
 
@@ -108,7 +108,7 @@ bool DoesNodeDelegateToChildren(TerrainNodeGPU node)
     float childRange = g_Push.g_LodRangeBase * exp2(float(int(g_Push.g_MaxDepth) - int(node.depth + 1u)));
     for (uint c = 0u; c < 4u; ++c)
     {
-        TerrainNodeGPU child = g_TerrainNodeData[node.childIdx[c]];
+        TerrainNodeGPU child = g_TerrainNodes[node.childIdx[c]];
         float distChild = DistanceToAABB(g_FrozenCamera.posWORLD, child.aabbMin, child.aabbMax);
         if (distChild > childRange)
             return false;
@@ -117,6 +117,7 @@ bool DoesNodeDelegateToChildren(TerrainNodeGPU node)
     return true;
 }
 
+
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 void main()
 {
@@ -124,11 +125,11 @@ void main()
     if (nodeID >= g_Push.g_NumNodes)
         return;
 
-    bool bPrevVis = (g_NodeVisibilityData[nodeID] != 0u);
+    bool bPrevVis = (g_NodeVisibility[nodeID] != 0u);
     if (g_Push.g_CullingPhase == TERRAIN_CULL_PHASE1 && !bPrevVis)
         return;
 
-    TerrainNodeGPU node = g_TerrainNodeData[nodeID];
+    TerrainNodeGPU node = g_TerrainNodes[nodeID];
 
     float re = g_Push.g_LodRangeBase * exp2(float(int(g_Push.g_MaxDepth) - int(node.depth)));
     float distToNode = DistanceToAABB(g_FrozenCamera.posWORLD, node.aabbMin, node.aabbMax);
@@ -137,7 +138,7 @@ void main()
 
     if (node.parentIdx != 0xFFFFFFFFu)
     {
-        TerrainNodeGPU parent = g_TerrainNodeData[node.parentIdx];
+        TerrainNodeGPU parent = g_TerrainNodes[node.parentIdx];
         if (!DoesNodeDelegateToChildren(parent))
             return;
     }
@@ -155,19 +156,19 @@ void main()
                            g_HiZTexture,
                            float(g_CullData.hiZWidth), float(g_CullData.hiZHeight)))
         {
-            g_NodeVisibilityData[nodeID] = 0u;
+            g_NodeVisibility[nodeID] = 0u;
             return;
         }
 
-        g_NodeVisibilityData[nodeID] = 1u;
+        g_NodeVisibility[nodeID] = 1u;
     }
 
     if (g_Push.g_CullingPhase == TERRAIN_CULL_PHASE1 || !bPrevVis)
     {
-        uint outID = atomicAdd(g_DrawCountData, 1u);
+        uint outID = atomicAdd(g_DrawCount, 1u);
 
 #if PROFILING_LEVEL >= 1
-        atomicAdd(g_LodStatsData[node.depth], 1u);
+        atomicAdd(g_LodStats[node.depth], 1u);
 #endif
 
         PatchInstance instance;
@@ -176,11 +177,11 @@ void main()
         instance.patchSizeMeter = node.sizeMeter;
         instance.depth          = node.depth;
         instance.gridDim        = node.gridN;
-        g_CulledPatchData[outID] = instance;
+        g_CulledPatches[outID] = instance;
 
-        g_IndirectCommandData[outID].drawID      = outID;
-        g_IndirectCommandData[outID].groupCountX = 1u;
-        g_IndirectCommandData[outID].groupCountY = 1u;
-        g_IndirectCommandData[outID].groupCountZ = 1u;
+        g_IndirectCommands[outID].drawID      = outID;
+        g_IndirectCommands[outID].groupCountX = 1u;
+        g_IndirectCommands[outID].groupCountY = 1u;
+        g_IndirectCommands[outID].groupCountZ = 1u;
     }
 }

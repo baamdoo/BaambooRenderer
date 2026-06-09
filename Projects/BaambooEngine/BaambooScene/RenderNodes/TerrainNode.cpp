@@ -70,28 +70,25 @@ TerrainNode::TerrainNode(render::RenderDevice& rd)
 		{ .stage = eShaderStage::Compute, .filename = "TerrainPatchCullingCS" });
 	m_pCullingPSO = ComputePipeline::Create(rd, "TerrainPatchCullingPSO");
 	m_pCullingPSO->SetComputeShader(pCullingCS).Build();
-}
 
-void TerrainNode::SetGBufferNode(const Arc< GBufferNode >& pNode)
-{
-	using namespace render;
-
-	m_pGBufferNode = pNode;
-	if (!m_pGBufferNode)
-		return;
-
-	auto pSharedRT = m_pGBufferNode->GetPhase2RenderTarget();
+	// Set GBuffer
+	auto pSharedRT = g_FrameData.pPhase2Draw.lock();
 	if (!pSharedRT)
 		return;
 
-	auto pMS = Shader::Create(m_RenderDevice, "TerrainMS", { .stage = eShaderStage::Mesh,     .filename = "TerrainMS" });
+	auto pMS = Shader::Create(m_RenderDevice, "TerrainMS", { .stage = eShaderStage::Mesh, .filename = "TerrainMS" });
 	auto pPS = Shader::Create(m_RenderDevice, "TerrainPS", { .stage = eShaderStage::Fragment, .filename = "TerrainPS" });
 
 	m_pTerrainPSO = GraphicsPipeline::Create(m_RenderDevice, "TerrainPSO");
 	m_pTerrainPSO->SetMeshShaders(pMS, pPS)
-	             .SetRenderTarget(pSharedRT)
-	             .SetCullMode(eCullMode::None) // skirts + quad-patch
-	             .SetDepthWriteEnable(true, eCompareOp::Greater).Build(); // reversed-Z
+		          .SetRenderTarget(pSharedRT)
+		          .SetCullMode(eCullMode::None) // skirts + quad-patch
+		          .SetDepthWriteEnable(true, eCompareOp::Greater).Build(); // reversed-Z
+
+	g_FrameData.pGetTerrainParams = [this]()
+		{
+			return m_TerrainParams;
+		};
 }
 
 void TerrainNode::SetQuadtreeConfig(const QuadtreeConfig& cfg)
@@ -194,10 +191,7 @@ void TerrainNode::Apply(render::CommandContext& context, const SceneRenderView& 
 	UNUSED(renderView);
 }
 
-void TerrainNode::DispatchTerrainCull(render::CommandContext&    context,
-                                       u32                        phase,
-                                       const Arc< render::Texture >& pHiZTexture,
-                                       const SceneRenderView&     renderView)
+void TerrainNode::DispatchTerrainCull(render::CommandContext& context, u32 phase, const Arc< render::Texture >& pHiZTexture, const SceneRenderView& renderView)
 {
 	UNUSED(renderView);
 	using namespace render;
@@ -210,6 +204,8 @@ void TerrainNode::DispatchTerrainCull(render::CommandContext&    context,
 	if (m_bConfigDirty)
 	{
 		BuildQuadtree();
+		FillTerrainParams(m_TerrainParams);
+
 		m_bConfigDirty = false;
 	}
 	EnsureQuadtreeUpload(context);
@@ -299,18 +295,14 @@ void TerrainNode::DrawTerrainImpl(render::CommandContext& context, Arc< render::
 
 	context.TransitionBarrier(m_pHeightmap, eTextureLayout::ShaderReadOnly);
 
-	TerrainParams params{};
-	FillTerrainParams(params);
-
 	context.BeginRenderPass(rt);
 	{
 		context.SetRenderPipeline(m_pTerrainPSO.get());
 
-		context.SetGraphicsDynamicUniformBuffer("g_Terrain", sizeof(TerrainParams), &params);
+		context.SetGraphicsDynamicUniformBuffer("g_Terrain", sizeof(TerrainParams), &m_TerrainParams);
 
-		context.StageDescriptor("g_Heightmap",      m_pHeightmap, g_FrameData.pLinearClamp);
-		context.StageDescriptor("g_HeightmapPS",    m_pHeightmap, g_FrameData.pLinearClamp);
-		context.StageDescriptor("g_PatchInstances", m_pCulledPatches); // GPU-written by cull CS, read here
+		context.StageDescriptor("g_Heightmap", m_pHeightmap, g_FrameData.pLinearClamp);
+		context.StageDescriptor("g_PatchInstances", m_pCulledPatches);
 
 		context.DrawMeshTasksIndirectCount(
 			m_pIndirectCommands,
@@ -322,6 +314,8 @@ void TerrainNode::DrawTerrainImpl(render::CommandContext& context, Arc< render::
 	context.EndRenderPass();
 
 	rt->InvalidateImageLayout();
+
+	g_FrameData.pHeightmap = m_pHeightmap;
 }
 
 void TerrainNode::Resize(u32 width, u32 height, u32 depth)

@@ -131,12 +131,19 @@ void Engine::Initialize(eRendererAPI eApi)
 
 	g_FrameData.componentMarker = 0;
 
-	g_FrameData.pPointClamp    = render::Sampler::CreatePointClamp(*pDevice);
-	g_FrameData.pPointWrap     = render::Sampler::CreatePointRepeat(*pDevice);
-	g_FrameData.pLinearClamp   = render::Sampler::CreateLinearClamp(*pDevice);
-	g_FrameData.pLinearWrap    = render::Sampler::CreateLinearRepeat(*pDevice);
-	g_FrameData.pPointClampMin  = render::Sampler::CreatePointClampMin(*pDevice);
-	g_FrameData.pLinearClampMin = render::Sampler::CreateLinearClampMin(*pDevice);
+	g_FrameData.pPointClamp        = render::Sampler::CreatePointClamp(*pDevice);
+	g_FrameData.pPointWrap         = render::Sampler::CreatePointRepeat(*pDevice);
+	g_FrameData.pLinearClamp       = render::Sampler::CreateLinearClamp(*pDevice);
+	g_FrameData.pLinearWrap        = render::Sampler::CreateLinearRepeat(*pDevice);
+	g_FrameData.pPointClampMin     = render::Sampler::CreatePointClampMin(*pDevice);
+	g_FrameData.pLinearClampMin    = render::Sampler::CreateLinearClampMin(*pDevice);
+	g_FrameData.pPointClampNearest = render::Sampler::Create(*pDevice, "PointClampNearest",
+		{
+			.filter        = render::eFilterMode::Point,
+			.mipmapMode    = render::eMipmapMode::Nearest,
+			.addressMode   = render::eAddressMode::ClampEdge,
+			.maxAnisotropy = 0.0f,
+		});
 }
 
 i32 Engine::Run()
@@ -203,6 +210,7 @@ void Engine::Release()
 	RELEASE(m_pScene);
 	RELEASE(m_pWindow);
 
+	g_FrameData.pPointClampNearest.reset();
 	g_FrameData.pLinearClampMin.reset();
 	g_FrameData.pPointClampMin.reset();
 	g_FrameData.pLinearWrap.reset();
@@ -1151,6 +1159,12 @@ void Engine::DrawUI()
 				ImGui::SameLine();
 				ImGui::TextDisabled("(frozen at frame %llu)", (unsigned long long)m_pScene->GetFrozenAtFrame());
 			}
+
+			ImGui::Separator();
+			const char* kSurfaceViews[] = { "Lit", "VisID class", "Cached N", "Live N", "BaseColor", "Roughness", "AO", "Bary" };
+			int sv = (int)m_pScene->GetDebugSurfaceView();
+			if (ImGui::Combo("Surface Debug (Lighting)", &sv, kSurfaceViews, IM_ARRAYSIZE(kSurfaceViews)))
+				m_pScene->SetDebugSurfaceView((u32)sv);
 		}
 	}
 	ImGui::End();

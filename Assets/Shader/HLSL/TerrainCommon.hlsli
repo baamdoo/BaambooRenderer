@@ -26,7 +26,7 @@ struct TerrainParams
     float4 LodRangeStartPacked[TERRAIN_LOD_FLOAT4S];
     float4 LodRangeEndPacked  [TERRAIN_LOD_FLOAT4S];
 };
-ConstantBuffer<TerrainParams> g_Terrain : register(b0, space1);
+ConstantBuffer< TerrainParams > g_Terrain : register(b0, space1);
 
 float GetLodRangeStart(uint depth) { return g_Terrain.LodRangeStartPacked[depth >> 2][depth & 3]; }
 float GetLodRangeEnd  (uint depth) { return g_Terrain.LodRangeEndPacked  [depth >> 2][depth & 3]; }
@@ -43,10 +43,6 @@ struct PatchInstance
 struct MSOutput
 {
     float4 positionCS : SV_Position;
-    float2 uv         : TEXCOORD1;
-    float  skirtBlend : TEXCOORD2;
-
-    nointerpolation uint patchDepth : TEXCOORD4;
 };
 
 #endif // _TERRAIN_COMMON_HEADER

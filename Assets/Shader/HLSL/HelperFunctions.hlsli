@@ -96,6 +96,11 @@ uint roundUpAndDivide(uint value, uint alignment)
     return (value + alignment - 1) / alignment;
 }
 
+float EdgeFunction(float2 a, float2 b, float2 c)
+{
+    return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
 float3 ReconstructWorldPos(float2 uv, float depth, float4x4 mViewProjInv)
 {
     float4 posCLIP  = float4(uv.x * 2.0 - 1.0, uv.y * -2.0 + 1.0, depth, 1.0);

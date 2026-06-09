@@ -21,7 +21,7 @@ public:
 
     void CreateShaderResourceView(const D3D12_SHADER_RESOURCE_VIEW_DESC& desc);
 
-    bool IsSRVSupported() const { return IsFormatSupported(D3D12_FORMAT_SUPPORT1_SHADER_SAMPLE); }
+    bool IsSRVSupported() const { return IsFormatSupported(D3D12_FORMAT_SUPPORT1_SHADER_LOAD) || IsFormatSupported(D3D12_FORMAT_SUPPORT1_SHADER_SAMPLE); }
     bool IsRTVSupported() const { return IsFormatSupported(D3D12_FORMAT_SUPPORT1_RENDER_TARGET); }
     bool IsDSVSupported() const { return IsFormatSupported(D3D12_FORMAT_SUPPORT1_DEPTH_STENCIL); }
     bool IsUAVSupported() const

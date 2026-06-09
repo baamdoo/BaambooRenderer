@@ -118,7 +118,7 @@ void PostProcessNode::ApplyAntiAliasing(render::CommandContext& context, const S
 	auto& rm = m_RenderDevice.GetResourceManager();
 	assert(
 		g_FrameData.pColor &&
-		g_FrameData.pGBuffer3 &&
+		g_FrameData.pVelocity &&
 		g_FrameData.pLinearClamp
 	);
 	{
@@ -127,7 +127,7 @@ void PostProcessNode::ApplyAntiAliasing(render::CommandContext& context, const S
 		context.SetRenderPipeline(m_TAA.pTemporalAntiAliasingPSO.get());
 
 		context.TransitionBarrier(g_FrameData.pColor.lock(), eTextureLayout::ShaderReadOnly);
-		context.TransitionBarrier(g_FrameData.pGBuffer3.lock(), eTextureLayout::ShaderReadOnly);
+		context.TransitionBarrier(g_FrameData.pVelocity.lock(), eTextureLayout::ShaderReadOnly);
 		if (!bFirstApply)
 			context.TransitionBarrier(m_TAA.pHistoryTexture, eTextureLayout::ShaderReadOnly);
 		else
@@ -141,7 +141,7 @@ void PostProcessNode::ApplyAntiAliasing(render::CommandContext& context, const S
 		} constant = { bFirstApply ? 1.0f : renderView.postProcess.aa.blendFactor, bFirstApply };
 		context.SetComputeConstants(sizeof(constant), &constant);
 		context.StageDescriptor("g_SceneTexture", g_FrameData.pColor.lock(), g_FrameData.pLinearClamp);
-		context.StageDescriptor("g_VelocityTexture", g_FrameData.pGBuffer3.lock(), g_FrameData.pLinearClamp);
+		context.StageDescriptor("g_VelocityTexture", g_FrameData.pVelocity.lock(), g_FrameData.pLinearClamp);
 		context.StageDescriptor("g_HistoryTexture", bFirstApply ? rm.GetFlatBlackTexture() : m_TAA.pHistoryTexture, g_FrameData.pLinearClamp);
 		context.StageDescriptor("g_OutputImage", m_TAA.pAntiAliasedTexture);
 

@@ -205,6 +205,8 @@ struct DebugViewFlags
 	u32  saturationMax         = 16u;
 
 	u32 lightTypeMask = 0u;
+
+	u32 surfaceDebugView = 0u;
 };
 
 //-------------------------------------------------------------------------

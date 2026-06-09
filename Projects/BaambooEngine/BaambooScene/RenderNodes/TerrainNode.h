@@ -40,8 +40,6 @@ public:
 	TerrainNode(render::RenderDevice& rd);
 	virtual ~TerrainNode() = default;
 
-	void SetGBufferNode(const Arc< GBufferNode >& pNode);
-
 	void SetQuadtreeConfig(const QuadtreeConfig& cfg);
 
 	// No-op: TerrainNode is not registered in RenderGraph. CullingNode owns this and drives DrawTerrainPhase1/2.
@@ -61,7 +59,6 @@ public:
 	const Arc< render::Buffer >& GetLodStatsBuffer() const { return m_pLodStatsBuffer; }
 #endif
 	u32 GetTotalNodeCount() const { return m_Quadtree.NumNodes(); }
-	// Per-patch triangle count: surface (2*(N-1)²) + skirt (8*(N-1))
 	u32 GetPerPatchTriangles() const
 	{
 		const u32 P = (m_Config.gridN > 1u) ? (m_Config.gridN - 1u) : 0u;
@@ -69,29 +66,6 @@ public:
 	}
 
 private:
-	struct TerrainParams
-	{
-		float terrainOriginX;
-		float terrainOriginZ;
-		float terrainSizeMeter;
-		u32   gridN;
-
-		float heightMinMeter;
-		float heightRangeMeter;
-		float heightmapTexel;  // 1 / rho
-		float worldPerTexel;   // T / rho
-
-		u32   heightmapRes;    // rho (auto-derived)
-		u32   maxDepth;        // 0 = root, maxDepth = leaf
-		u32   numPatches;
-		u32   _pad0;
-
-		float lodRangeStart[TERRAIN_MAX_LOD_DEPTHS]; // r_s[d] = k * r_e[d]
-		float lodRangeEnd  [TERRAIN_MAX_LOD_DEPTHS]; // r_e[d] = base * 2^(maxDepth - d)
-	};
-	static_assert(sizeof(TerrainParams) == 48u + 2ULL * TERRAIN_MAX_LOD_DEPTHS * sizeof(float),
-		"TerrainGlobalsCB must remain 16-byte-aligned and match HLSL TerrainGlobals layout");
-
 	void EnsureHeightmap();
 	void EnsureQuadtreeUpload(render::CommandContext& context);
 	void BuildQuadtree();
@@ -99,10 +73,12 @@ private:
 	void DrawTerrainImpl(render::CommandContext& context, Arc< render::RenderTarget > rt, const SceneRenderView& renderView);
 
 private:
-	QuadtreeConfig    m_Config;
-	bool              m_bConfigDirty = true;
-	std::string       m_HeightmapPathCache;
-	TerrainQuadtree   m_Quadtree;
+	TerrainParams m_TerrainParams = {};
+
+	QuadtreeConfig  m_Config;
+	bool            m_bConfigDirty = true;
+	std::string     m_HeightmapPathCache;
+	TerrainQuadtree m_Quadtree;
 
 	Arc< GBufferNode > m_pGBufferNode;
 

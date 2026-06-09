@@ -1,16 +1,15 @@
 #define _CAMERA
 #define _FROZENCAMERA
 #define _LIGHT
+#define _MESH
+#define _TRANSFORM
+#define _MATERIAL
 #include "Common.hlsli"
 #include "AtmosphereCommon.hlsli"
 #include "Lighting.hlsli"
 #include "LightCullingCommon.hlsli"
+#include "SurfaceResolve.hlsli"
 
-ConstantBuffer< DescriptorHeapIndex > g_Materials            : register(b1, ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_GBuffer0             : register(b2, ROOT_CONSTANT_SPACE);  // Albedo.rgb + AO.a
-ConstantBuffer< DescriptorHeapIndex > g_GBuffer1             : register(b3, ROOT_CONSTANT_SPACE);  // Normal.rgb + MaterialID.a
-ConstantBuffer< DescriptorHeapIndex > g_GBuffer2             : register(b4, ROOT_CONSTANT_SPACE);  // Emissive.rgb
-ConstantBuffer< DescriptorHeapIndex > g_GBuffer3             : register(b5, ROOT_CONSTANT_SPACE);  // MotionVectors.rg + Roughness.b + Metallic.a
 ConstantBuffer< DescriptorHeapIndex > g_DepthBuffer          : register(b6, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_AerialPerspectiveLUT : register(b7, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_CloudScatteringLUT   : register(b8, ROOT_CONSTANT_SPACE);
@@ -20,6 +19,15 @@ ConstantBuffer< DescriptorHeapIndex > g_LtcMatrixLUT         : register(b11, ROO
 ConstantBuffer< DescriptorHeapIndex > g_LtcAmplitudeLUT      : register(b12, ROOT_CONSTANT_SPACE); // (magnitude, F0_lerp, F90_lerp, edge)
 ConstantBuffer< DescriptorHeapIndex > g_LightGridBuffer      : register(b13, ROOT_CONSTANT_SPACE); // uint2(offset, count) per cluster
 ConstantBuffer< DescriptorHeapIndex > g_LightListDataBuffer  : register(b14, ROOT_CONSTANT_SPACE); // uint (type:3 + idx:29) packed
+ConstantBuffer< DescriptorHeapIndex > g_VBuf0                : register(b15, ROOT_CONSTANT_SPACE); // visibility surface ID
+ConstantBuffer< DescriptorHeapIndex > g_VBuf1                : register(b16, ROOT_CONSTANT_SPACE); // visibility primitive ID
+ConstantBuffer< DescriptorHeapIndex > g_CoreNormal           : register(b17, ROOT_CONSTANT_SPACE); // RG16_SNORM signed oct normal
+ConstantBuffer< DescriptorHeapIndex > g_CoreMaterial         : register(b18, ROOT_CONSTANT_SPACE); // R roughness | G matClass | BA spare
+
+cbuffer DebugConstants : register(b0, ROOT_CONSTANT_SPACE)
+{
+    uint g_DebugView;
+};
 
 
 static const float MIN_ROUGHNESS = 0.045;
@@ -37,19 +45,10 @@ void main(uint3 tID : SV_DispatchThreadID)
 
     float2 uv = (float2(texCoords.xy) + 0.5) / float2(width, height);
 
-    Texture2D< float4 > GBuffer0    = GetResource(g_GBuffer0.index);
-    Texture2D< float4 > GBuffer1    = GetResource(g_GBuffer1.index);
-    Texture2D< float3 > GBuffer2    = GetResource(g_GBuffer2.index);
-    Texture2D< float4 > GBuffer3    = GetResource(g_GBuffer3.index);
-    Texture2D< float >  DepthBuffer = GetResource(g_DepthBuffer.index);
-
-    float4 gbuffer0 = GBuffer0.SampleLevel(g_LinearClampSampler, uv, 0);
-    float4 gbuffer1 = GBuffer1.SampleLevel(g_LinearClampSampler, uv, 0);
-    float3 gbuffer2 = GBuffer2.SampleLevel(g_LinearClampSampler, uv, 0);
-    float4 gbuffer3 = GBuffer3.SampleLevel(g_LinearClampSampler, uv, 0);
+    Texture2D< float > DepthBuffer = GetResource(g_DepthBuffer.index);
+    float depth = DepthBuffer.SampleLevel(g_PointClampSampler, uv, 0);
 
     float3 color = 0.0;
-    float  depth = DepthBuffer.SampleLevel(g_PointClampSampler, uv, 0);
     if (depth == 0.0)
     {
         TextureCube< float3 > SkyboxLUT = GetResource(g_SkyboxLUT.index);
@@ -60,31 +59,112 @@ void main(uint3 tID : SV_DispatchThreadID)
     }
     else
     {
-        StructuredBuffer< MaterialData > Materials = GetResource(g_Materials.index);
+        Texture2D< uint > VBuf0 = GetResource(g_VBuf0.index);
+        uint v0 = VBuf0.Load(int3(texCoords, 0));
 
-        float3 albedo = gbuffer0.rgb;
-        float  ao     = gbuffer0.a;
+        float3 albedo;
+        float  ao;
+        float3 N;
+        uint   materialID;
+        float3 emissive;
+        float  roughness;
+        float  metallic;
 
-        float3 N          = gbuffer1.xyz;
-        uint   materialID = (uint)(gbuffer1.w * 255.0);
-        float3 emissive   = gbuffer2.rgb;
+        if (VisIsTerrain(v0))
+        {
+            Texture2D< float2 > CoreNormal = GetResource(g_CoreNormal.index);
 
-        float roughness = max(gbuffer3.z, MIN_ROUGHNESS);
-        float metallic  = gbuffer3.w;
+            N = OctDecode(CoreNormal.Load(int3(texCoords, 0)));
+
+            const float3 surfaceAlbedo = float3(0.45, 0.38, 0.28);
+            const float  surfaceRough  = 0.85;
+            const float3 cliffAlbedo   = float3(0.30, 0.27, 0.22);
+            const float  cliffRough    = 0.95;
+            float s = smoothstep(0.35, 0.65, saturate(1.0 - N.y)); // 0 flat .. 1 vertical
+
+            albedo     = lerp(surfaceAlbedo, cliffAlbedo, s);
+            ao         = 1.0;
+            materialID = INVALID_INDEX;
+            emissive   = float3(0.0, 0.0, 0.0);
+            roughness  = max(lerp(surfaceRough, cliffRough, s), MIN_ROUGHNESS);
+            metallic   = 0.0;
+        }
+        else
+        {
+            Texture2D< float2 > CoreNormal   = GetResource(g_CoreNormal.index);
+            Texture2D< float4 > CoreMaterial = GetResource(g_CoreMaterial.index);
+            Texture2D< uint >   VBuf1        = GetResource(g_VBuf1.index);
+
+            N         = OctDecode(CoreNormal.Load(int3(texCoords, 0)));
+            roughness = max(CoreMaterial.Load(int3(texCoords, 0)).r, MIN_ROUGHNESS);
+
+            uint v1 = VBuf1.Load(int3(texCoords, 0));
+            ResolvedMaterial m = ResolveMaterial(v0, v1, float2(texCoords) + 0.5, float2(width, height));
+
+            albedo     = m.baseColor;
+            ao         = m.ao;
+            materialID = m.materialID;
+            emissive   = m.emissive;
+            metallic   = m.metallic;
+        }
 
         float3 posWORLD = ReconstructWorldPos(uv, depth, g_Camera.mViewProjInv);
 
         float3 V  = normalize(posWORLD - g_Camera.posWORLD);
         float3 F0 = lerp(float3(0.04, 0.04, 0.04), albedo, metallic);
 
-        if (materialID != INVALID_INDEX && materialID < 256)
+        if (materialID != INVALID_INDEX)
         {
+            StructuredBuffer< MaterialData > Materials = GetResource(g_Materials.index);
             MaterialData material = Materials[materialID];
             if (material.ior > 1.0)
             {
                 float f0 = pow((material.ior - 1.0) / (material.ior + 1.0), 2.0);
                 F0 = float3(f0, f0, f0);
             }
+        }
+
+        if (g_DebugView != 0)
+        {
+            float3 dbg = float3(0.0, 0.0, 0.0);
+            if (g_DebugView == 1)
+            {
+                if (VisIsSky(v0))          dbg = float3(0.0, 0.0, 1.0);
+                else if (VisIsTerrain(v0)) dbg = float3(1.0, 0.0, 0.0);
+                else                       dbg = float3(0.0, 1.0, 0.0);
+            }
+            else if (g_DebugView == 2)
+            {
+                dbg = N * 0.5 + 0.5;
+            }
+            else if (g_DebugView == 3)
+            {
+                float3 nLive = N;
+                if (VisIsMesh(v0))
+                {
+                    Texture2D< uint > VBuf1dbg = GetResource(g_VBuf1.index);
+
+                    uint v1dbg = VBuf1dbg.Load(int3(texCoords, 0));
+                    nLive = ResolveMeshSurface(v0, v1dbg, float2(texCoords) + 0.5, float2(width, height)).N;
+                }
+                dbg = nLive * 0.5 + 0.5;
+            }
+            else if (g_DebugView == 4) dbg = albedo;
+            else if (g_DebugView == 5) dbg = float3(roughness, roughness, roughness);
+            else if (g_DebugView == 6) dbg = float3(ao, ao, ao);
+            else if (g_DebugView == 7)
+            {
+                float3 bcol = float3(0.0, 0.0, 0.0);
+                if (VisIsMesh(v0))
+                {
+                    Texture2D< uint > VBuf1bg = GetResource(g_VBuf1.index);
+                    uint v1bg = VBuf1bg.Load(int3(texCoords, 0));
+                    bcol = DebugVisBary(v0, v1bg, float2(texCoords) + 0.5, float2(width, height));
+                }
+                dbg = bcol;
+            }
+            OutSceneTexture[texCoords] = float4(dbg, 1.0);
+            return;
         }
 
         Texture2D< float4 > LtcMatrix    = GetResource(g_LtcMatrixLUT.index);

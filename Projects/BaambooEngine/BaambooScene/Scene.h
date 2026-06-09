@@ -22,9 +22,23 @@ class AtmosphereSystem;
 class CloudSystem;
 class PostProcessSystem;
 
+// Surface feature requirements — OR-union of what this frame's passes need from SurfaceResolve.
+// Lets the resolve skip producing caches that no pass consumes this frame (demand-driven).
+enum SurfaceRequirementBits : u32
+{
+	SURFACE_REQ_NORMAL_ROUGHNESS = 1u << 0, // CoreCache (oct normal + roughness + material class)
+	SURFACE_REQ_BASE_COLOR       = 1u << 1, // MaterialCache (baseColor + metalness) — future toggle
+	SURFACE_REQ_EMISSIVE         = 1u << 2, // EmissiveCache — future toggle
+	SURFACE_REQ_UV_GRAD          = 1u << 3, // DerivativeCache — future toggle
+	SURFACE_REQ_ALL              = 0xFFFFFFFFu,
+};
+
 struct FrameData
 {
 	u64 componentMarker = 0;
+
+	// MRT
+	Weak< render::RenderTarget > pPhase2Draw;
 
 	// AtmosphereLUTs
 	Weak< render::Texture > pTransmittanceLUT;
@@ -43,14 +57,26 @@ struct FrameData
 	Weak< render::Texture > pCloudShadowMap;
 	Weak< render::Texture > pCloudScatteringLUT;
 
-	// Scene buffers
-	Weak< render::Texture > pGBuffer0;
-	Weak< render::Texture > pGBuffer1;
-	Weak< render::Texture > pGBuffer2;
-	Weak< render::Texture > pGBuffer3;
+	// Visibility buffer (thin geometry pass) + resolved feature caches.
+	//   pVBuf0        R32_UINT   : bit31 valid | bit30 terrain | lod:24-26 | instanceID:0-23; sky = 0 (clear)
+	//   pVBuf1        R32_UINT   : (meshletIndex:25 | triLocal:7)
+	//   pVelocity     RG16F      : currUV - prevUV (screen-space motion)
+	//   pCoreNormal   RG16_SNORM : signed octahedral world-space normal (.xy)
+	//   pCoreMaterial RGBA8_UNORM: R linear roughness | G material class | BA spare
+	Weak< render::Texture > pVBuf0;
+	Weak< render::Texture > pVBuf1;
+	Weak< render::Texture > pVelocity;
+	Weak< render::Texture > pCoreNormal;
+	Weak< render::Texture > pCoreMaterial;
+
+	// Scene buffers (Color + depth + HiZ)
 	Weak< render::Texture > pColor;
 	Weak< render::Texture > pDepth;
 	Weak< render::Texture > pHiZ;
+
+	// Terrain SurfaceResolve inputs
+	Weak< render::Texture > pHeightmap;
+	std::function< TerrainParams() > pGetTerrainParams; // callback to query the current terrain's parameters (for SurfaceResolve)
 
 	// Light culling buffers
 	Weak< render::Buffer > pClusterAABBBuffer;
@@ -62,8 +88,9 @@ struct FrameData
 	Arc< render::Sampler > pPointWrap;
 	Arc< render::Sampler > pLinearClamp;
 	Arc< render::Sampler > pLinearWrap;
-	Arc< render::Sampler > pPointClampMin;  // POINT + MIN reduction
-	Arc< render::Sampler > pLinearClampMin; // LINEAR + MIN reduction for HiZ occlusion testing
+	Arc< render::Sampler > pPointClampMin;     // POINT + MIN reduction
+	Arc< render::Sampler > pLinearClampMin;    // LINEAR + MIN reduction for HiZ occlusion testing
+	Arc< render::Sampler > pPointClampNearest; // POINT + NEAREST mip — valid for integer textures
 
 	u32 totalInstances          = 0; // this frame's total instance count (not stale)
 	u32 phase1InstanceDrawCount = 0; // instances emitted by Phase1 cull (last-frame-visible survivors)
@@ -107,6 +134,9 @@ struct FrameData
 	u32 cullFlags = 0x1F; // all five toggles on by default
 
 	float sseThresholdPx = 1.0f; // for lod selection
+
+	// Demand-driven SurfaceResolve gating
+	u32 surfaceRequirements = SURFACE_REQ_ALL;
 };
 inline FrameData g_FrameData = {};
 
@@ -164,6 +194,8 @@ public:
 	u32  GetDebugSaturationMax() const { return m_DebugSaturationMax.load(); }
 	void SetDebugLightTypeMask(u32 m) { m_DebugLightTypeMask.store(m); }
 	u32  GetDebugLightTypeMask() const { return m_DebugLightTypeMask.load(); }
+	void SetDebugSurfaceView(u32 v) { m_DebugSurfaceView.store(v); }
+	u32  GetDebugSurfaceView() const { return m_DebugSurfaceView.load(); }
 
 	const MeshData* GetMeshData(u32 meshID) const { auto it = m_MeshData.find(meshID); return (it != m_MeshData.end()) ? &it->second : nullptr;  }
 	const Skeleton* GetSkeleton(u32 skeletonID) const { auto it = m_Skeletons.find(skeletonID); return (it != m_Skeletons.end()) ? &it->second : nullptr; }
@@ -222,6 +254,7 @@ private:
 	std::atomic< bool > m_DebugSkipEmpty{ true };
 	std::atomic< u32 >  m_DebugSaturationMax{ 16u};
 	std::atomic< u32 >  m_DebugLightTypeMask{ 0u };
+	std::atomic< u32 >  m_DebugSurfaceView{ 0u };
 };
 
 } // namespace baamboo

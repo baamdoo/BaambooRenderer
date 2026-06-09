@@ -4,7 +4,7 @@
 #define TERRAIN_MAX_LOD_DEPTHS 8
 #define TERRAIN_LOD_FLOAT4S    (TERRAIN_MAX_LOD_DEPTHS / 4)
 
-layout(set = 1, binding = 0) uniform g_Terrain
+layout(set = 1, binding = 0) uniform TerrainParams
 {
     float TerrainOriginX;
     float TerrainOriginZ;
@@ -23,9 +23,7 @@ layout(set = 1, binding = 0) uniform g_Terrain
 
     vec4 LodRangeStartPacked[TERRAIN_LOD_FLOAT4S];
     vec4 LodRangeEndPacked  [TERRAIN_LOD_FLOAT4S];
-} g_TerrainData;
-
-#define g_Terrain g_TerrainData
+} g_Terrain;
 
 float GetLodRangeStart(uint depth) { return g_Terrain.LodRangeStartPacked[depth >> 2][depth & 3]; }
 float GetLodRangeEnd  (uint depth) { return g_Terrain.LodRangeEndPacked  [depth >> 2][depth & 3]; }
@@ -39,9 +37,5 @@ struct PatchInstance
     uint  gridDim;
 };
 
-layout(set = 1, binding = 1) readonly buffer g_PatchInstances
-{
-    PatchInstance g_PatchInstanceData[];
-};
 
 #endif // _GLSL_TERRAIN_COMMON_HEADER

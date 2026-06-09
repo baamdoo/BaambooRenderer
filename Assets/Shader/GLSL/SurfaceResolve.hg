@@ -1,0 +1,274 @@
+#ifndef SURFACE_RESOLVE_HG
+#define SURFACE_RESOLVE_HG
+
+#include "VisibilityBuffer.hg"
+
+#define MATCLASS_STANDARD 0u
+#define MATCLASS_TERRAIN  1u
+
+
+vec2 SignNotZero(vec2 v)
+{
+    return vec2(v.x >= 0.0 ? 1.0 : -1.0,
+                v.y >= 0.0 ? 1.0 : -1.0);
+}
+
+float EdgeFunction(vec2 a, vec2 b, vec2 c)
+{
+    return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+vec2 OctEncode(vec3 n)
+{
+    n /= abs(n.x) + abs(n.y) + abs(n.z);
+    if (n.z < 0.0)
+    {
+        vec2 oldXY = n.xy;
+        n.xy = (1.0 - abs(oldXY.yx)) * SignNotZero(oldXY);
+    }
+
+    return n.xy;
+}
+vec3 OctDecode(vec2 e)
+{
+    vec3  n = vec3(e.x, e.y, 1.0 - abs(e.x) - abs(e.y));
+    float t = clamp(-n.z, 0.0, 1.0);
+    n.xy -= t * SignNotZero(n.xy);
+
+    return normalize(n);
+}
+
+vec3 Barycentrics(vec2 ndc, vec4 c0, vec4 c1, vec4 c2)
+{
+    vec2 ndc0 = c0.xy / c0.w;
+    vec2 ndc1 = c1.xy / c1.w;
+    vec2 ndc2 = c2.xy / c2.w;
+
+    float totalArea = EdgeFunction(ndc0, ndc1, ndc2);
+    if (abs(totalArea) < 1e-6)
+        return vec3(1.0 / 3.0);
+
+    float a = EdgeFunction(ndc, ndc1, ndc2) / totalArea;
+    float b = EdgeFunction(ndc, ndc2, ndc0) / totalArea;
+    float c = 1.0 - a - b;
+
+    vec3 invZ = vec3(1.0 / c0.w, 1.0 / c1.w, 1.0 / c2.w);
+    vec3 bary = vec3(a, b, c) * invZ;
+    return bary / dot(bary, vec3(1.0)); // 1/Z = a/Z0 + b/Z1 + c/Z2
+}
+
+void UVGradient(vec2 ndc, vec2 invViewport,
+                vec4 c0, vec4 c1, vec4 c2,
+                vec2 uv0, vec2 uv1, vec2 uv2,
+                out vec2 duvdx, out vec2 duvdy)
+{
+    vec3 bary   = Barycentrics(ndc, c0, c1, c2);
+    vec3 barydx = Barycentrics(ndc + vec2(2.0 * invViewport.x, 0.0), c0, c1, c2);
+    vec3 barydy = Barycentrics(ndc + vec2(0.0, 2.0 * invViewport.y), c0, c1, c2);
+
+    vec2 uv   = bary.x * uv0   + bary.y * uv1   + bary.z * uv2;
+    vec2 uvdx = barydx.x * uv0 + barydx.y * uv1 + barydx.z * uv2;
+    vec2 uvdy = barydy.x * uv0 + barydy.y * uv1 + barydy.z * uv2;
+
+    duvdx = uvdx - uv;
+    duvdy = uvdy - uv;
+}
+
+
+struct VisTriangle
+{
+    vec3 positionLS[3];
+    vec2 uv[3];
+    vec3 normalLS[3];
+    vec3 tangentLS[3];
+    mat4 mLocalToWorld;
+    uint materialID;
+};
+
+VisTriangle FetchVisTriangle(uint v0, uint v1)
+{
+    uint instanceID   = VisInstanceID(v0);
+    uint lod          = VisLOD(v0);
+    uint meshletIndex = VisMeshletIndex(v1);
+    uint triLocal     = VisTriLocal(v1);
+
+    InstanceData  inst = g_Instances[instanceID];
+    MeshData      mesh = g_Meshes[inst.meshID];
+    TransformData xf   = g_TransformBuffer.transforms[inst.transformID];
+    Meshlet       m    = g_MeshletBuffer.meshlets[meshletIndex];
+    MeshLOD       ml   = mesh.lods[lod];
+
+    uint tPacked3  = g_MeshletTriangleBuffer.meshletTriangles[ml.mtOffset + m.triangleOffset + triLocal];
+    uint locals[3] = uint[3](tPacked3 & 0xFFu, (tPacked3 >> 8) & 0xFFu, (tPacked3 >> 16) & 0xFFu);
+
+    VisTriangle t;
+    t.mLocalToWorld = xf.mLocalToWorld;
+    t.materialID   = inst.materialID;
+    for (uint k = 0u; k < 3u; ++k)
+    {
+        uint vi   = mesh.vOffset + g_MeshletVertexBuffer.meshletVertices[ml.mvOffset + m.vertexOffset + locals[k]];
+        Vertex vv = g_VertexBuffer.vertices[vi];
+        t.positionLS[k] = vec3(vv.posX, vv.posY, vv.posZ);
+        t.uv[k]   = vec2(vv.u, vv.v);
+        t.normalLS[k] = vec3(vv.normalX, vv.normalY, vv.normalZ);
+        t.tangentLS[k] = vec3(vv.tangentX, vv.tangentY, vv.tangentZ);
+    }
+    return t;
+}
+
+struct ResolvedSurface
+{
+    vec3  N;
+    float roughness;
+    uint  matClass;
+    vec3  baseColor;
+    float metallic;
+};
+
+ResolvedSurface ResolveMeshSurface(uint v0, uint v1, vec2 pixelCenter, vec2 viewport)
+{
+    VisTriangle t = FetchVisTriangle(v0, v1);
+
+    vec4 c[3];
+    for (uint k = 0u; k < 3u; ++k)
+    {
+        vec4 wp = t.mLocalToWorld * vec4(t.positionLS[k], 1.0);
+        c[k] = g_Camera.mViewProj * wp;
+    }
+
+    vec2 ndc = (pixelCenter / viewport) * 2.0 - 1.0;
+    // Vulkan: NO ndc.y flip — ApplyRhiNDC negates mProj[1][1], so clip-space y is already
+    // down (matches pixel-space y-down). The HLSL copy DOES flip (D3D NDC is y-up).
+
+    vec3 bary = Barycentrics(ndc, c[0], c[1], c[2]);
+
+    vec2 uv = bary.x * t.uv[0]   + bary.y * t.uv[1]   + bary.z * t.uv[2];
+    vec3 nL = bary.x * t.normalLS[0] + bary.y * t.normalLS[1] + bary.z * t.normalLS[2];
+    vec3 tL = bary.x * t.tangentLS[0] + bary.y * t.tangentLS[1] + bary.z * t.tangentLS[2];
+    mat3 rot = mat3(t.mLocalToWorld);
+    vec3 N = normalize(rot * nL);
+    vec3 T = normalize(rot * tL);
+
+    vec2 ddxUV, ddyUV;
+    UVGradient(ndc, 1.0 / viewport, c[0], c[1], c[2], t.uv[0], t.uv[1], t.uv[2], ddxUV, ddyUV);
+
+    ResolvedSurface s;
+    s.matClass  = MATCLASS_STANDARD;
+    s.N         = N;
+    s.roughness = 1.0;
+    s.baseColor = vec3(1.0);
+    s.metallic  = 0.0;
+
+    if (t.materialID != INVALID_INDEX)
+    {
+        MaterialData mat = g_MaterialBuffer.materials[t.materialID];
+
+        vec3 albedo = vec3(mat.tintR, mat.tintG, mat.tintB);
+        if (mat.albedoID != INVALID_INDEX)
+            albedo *= textureGrad(g_SceneTextures[nonuniformEXT(mat.albedoID)], uv, ddxUV, ddyUV).rgb;
+
+        float metallic  = mat.metallic;
+        float roughness = mat.roughness;
+        if (mat.metallicRoughnessAoID != INVALID_INDEX)
+        {
+            vec3 orm = textureGrad(g_SceneTextures[nonuniformEXT(mat.metallicRoughnessAoID)], uv, ddxUV, ddyUV).rgb;
+            metallic  *= orm.b;
+            roughness *= orm.g;
+        }
+
+        // Tangent-space normal map (production path; skipped when the material has none).
+        if (mat.normalID != INVALID_INDEX)
+        {
+            vec3 tn  = textureGrad(g_SceneTextures[nonuniformEXT(mat.normalID)], uv, ddxUV, ddyUV).xyz * 2.0 - 1.0;
+            vec3 B   = cross(N, T);
+            mat3 TBN = mat3(T, B, N);
+            N = normalize(TBN * tn);
+        }
+
+        s.N         = N;
+        s.roughness = roughness;
+        s.baseColor = albedo;
+        s.metallic  = metallic;
+    }
+    return s;
+}
+
+// DEBUG: ONLY the perspective-correct barycentrics for a VisID
+vec3 DebugVisBary(uint v0, uint v1, vec2 pixelCenter, vec2 viewport)
+{
+    VisTriangle t = FetchVisTriangle(v0, v1);
+
+    vec4 c[3];
+    for (uint k = 0u; k < 3u; ++k)
+        c[k] = g_Camera.mViewProj * (t.mLocalToWorld * vec4(t.positionLS[k], 1.0));
+    vec2 ndc = (pixelCenter / viewport) * 2.0 - 1.0;
+
+    return Barycentrics(ndc, c[0], c[1], c[2]);
+}
+
+
+struct ResolvedMaterial
+{
+    vec3  baseColor;
+    float metallic;
+    float ao;
+    vec3  emissive;
+    uint  materialID;
+};
+
+ResolvedMaterial ResolveMaterial(uint v0, uint v1, vec2 pixelCenter, vec2 viewport)
+{
+    VisTriangle t = FetchVisTriangle(v0, v1);
+
+    vec4 c[3];
+    for (uint k = 0u; k < 3u; ++k)
+    {
+        vec4 wp = t.mLocalToWorld * vec4(t.positionLS[k], 1.0);
+        c[k] = g_Camera.mViewProj * wp;
+    }
+
+    vec2 ndc  = (pixelCenter / viewport) * 2.0 - 1.0;
+    vec3 bary = Barycentrics(ndc, c[0], c[1], c[2]);
+    vec2 uv   = bary.x * t.uv[0] + bary.y * t.uv[1] + bary.z * t.uv[2];
+
+    vec2 ddxUV, ddyUV;
+    UVGradient(ndc, 1.0 / viewport, c[0], c[1], c[2], t.uv[0], t.uv[1], t.uv[2], ddxUV, ddyUV);
+
+    // Defaults match GBufferPS's invalid-material early-out (all zero) for A/B parity.
+    ResolvedMaterial m;
+    m.baseColor  = vec3(0.0);
+    m.metallic   = 0.0;
+    m.ao         = 0.0;
+    m.emissive   = vec3(0.0);
+    m.materialID = t.materialID;
+
+    if (t.materialID != INVALID_INDEX)
+    {
+        MaterialData mat = g_MaterialBuffer.materials[t.materialID];
+
+        vec3 albedo = vec3(mat.tintR, mat.tintG, mat.tintB);
+        if (mat.albedoID != INVALID_INDEX)
+            albedo *= textureGrad(g_SceneTextures[nonuniformEXT(mat.albedoID)], uv, ddxUV, ddyUV).rgb;
+
+        float metallic = mat.metallic;
+        float ao       = 1.0;
+        if (mat.metallicRoughnessAoID != INVALID_INDEX)
+        {
+            vec3 orm = textureGrad(g_SceneTextures[nonuniformEXT(mat.metallicRoughnessAoID)], uv, ddxUV, ddyUV).rgb;
+            metallic *= orm.b;
+            ao       *= orm.r;
+        }
+
+        vec3 emissive = vec3(0.0);
+        if (mat.emissiveID != INVALID_INDEX)
+            emissive = textureGrad(g_SceneTextures[nonuniformEXT(mat.emissiveID)], uv, ddxUV, ddyUV).rgb * mat.emissivePower;
+
+        m.baseColor = albedo;
+        m.metallic  = metallic;
+        m.ao        = ao;
+        m.emissive  = emissive;
+    }
+    return m;
+}
+
+#endif // SURFACE_RESOLVE_HG

@@ -3,19 +3,20 @@
 #extension GL_GOOGLE_include_directive : require
 
 #define _CAMERA
-#include "DescriptorCommon.hg"   // g_Camera (set 0)
-#include "HelperFunctions.hg"    // saturate(), EPSILON_MIN
-#include "TerrainCommon.hg"      // g_Terrain, g_PatchInstances, PatchInstance, GetLodRange*
+#include "DescriptorCommon.hg"
+#include "HelperFunctions.hg"
+#include "TerrainCommon.hg"
 
 #define TERRAIN_MAX_VERTS  256
 #define TERRAIN_MAX_PRIMS  256
 #define TERRAIN_MS_THREADS 128
 
+layout(set = 1, binding = 1) readonly buffer PatchInstanceBuffer
+{
+    PatchInstance g_PatchInstances[];
+};
 layout(set = 1, binding = 2) uniform sampler2D g_Heightmap;
 
-layout(location = 0) out vec2      outUv[];
-layout(location = 1) out float     outSkirtBlend[];
-layout(location = 2) flat out uint outPatchDepth[];
 
 struct SurfaceVertex
 {
@@ -83,7 +84,7 @@ layout(local_size_x = TERRAIN_MS_THREADS, local_size_y = 1, local_size_z = 1) in
 layout(triangles, max_vertices = TERRAIN_MAX_VERTS, max_primitives = TERRAIN_MAX_PRIMS) out;
 void main()
 {
-    PatchInstance pi = g_PatchInstanceData[gl_DrawID];
+    PatchInstance pi = g_PatchInstances[gl_DrawID];
 
     uint gridN = pi.gridDim;
     uint P     = gridN - 1u;
@@ -105,9 +106,6 @@ void main()
         {
             SurfaceVertex sv = ComputeSurfaceVertex(v % gridN, v / gridN, pi);
             gl_MeshVerticesEXT[v].gl_Position = g_Camera.mViewProj * vec4(sv.posWS, 1.0);
-            outUv        [v] = sv.uv;
-            outSkirtBlend[v] = 0.0; // surface: pure ground material
-            outPatchDepth[v] = pi.depth;
         }
         else
         {
@@ -120,9 +118,6 @@ void main()
             vec3 skirtPos = vec3(sv.posWS.x, sv.posWS.y - skirtDepth, sv.posWS.z);
 
             gl_MeshVerticesEXT[v].gl_Position = g_Camera.mViewProj * vec4(skirtPos, 1.0);
-            outUv        [v] = sv.uv;
-            outSkirtBlend[v] = 1.0;
-            outPatchDepth[v] = pi.depth;
         }
     }
 

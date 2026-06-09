@@ -1,0 +1,74 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_nonuniform_qualifier : enable
+
+#define _CAMERA
+#define _MESH
+#define _TRANSFORM
+#define _MATERIAL
+#include "DescriptorCommon.hg"
+#include "HelperFunctions.hg"
+#include "SurfaceResolve.hg"
+#include "TerrainCommon.hg"
+
+layout(push_constant) uniform PushConstants
+{
+    vec2 viewport;
+} g_Push;
+
+layout(set = 1, binding = 1) uniform usampler2D g_VBuf0;
+layout(set = 1, binding = 2) uniform usampler2D g_VBuf1;
+layout(set = 1, binding = 3, rg16_snorm) writeonly uniform image2D g_CoreNormal;
+layout(set = 1, binding = 4, rgba8) writeonly uniform image2D g_CoreMaterial;
+layout(set = 1, binding = 5) uniform sampler2D g_DepthBuffer;
+layout(set = 1, binding = 6) uniform sampler2D g_Heightmap;
+
+
+layout(local_size_x = 16, local_size_y = 16) in;
+void main()
+{
+    ivec2 px = ivec2(gl_GlobalInvocationID.xy);
+    if (px.x >= int(g_Push.viewport.x) || px.y >= int(g_Push.viewport.y))
+        return;
+
+    uint v0 = texelFetch(g_VBuf0, px, 0).r;
+
+    if (VisIsSky(v0))
+    {
+        imageStore(g_CoreNormal, px, vec4(0.0));
+        imageStore(g_CoreMaterial, px, vec4(0.0));
+
+        return;
+    }
+
+    if (VisIsTerrain(v0))
+    {
+        vec2  uv    = (vec2(px) + 0.5) / g_Push.viewport;
+        float depth = texelFetch(g_DepthBuffer, px, 0).r;
+
+        vec3  worldPos  = ReconstructWorldPos(uv, depth, g_Camera.mViewProjInv);
+        vec2  terrainUV = (worldPos.xz - vec2(g_Terrain.TerrainOriginX, g_Terrain.TerrainOriginZ)) / g_Terrain.TerrainSizeMeter;
+
+        float texel = g_Terrain.HeightmapTexel;
+        float hL = textureLod(g_Heightmap, terrainUV - vec2(texel, 0.0), 0.0).r;
+        float hR = textureLod(g_Heightmap, terrainUV + vec2(texel, 0.0), 0.0).r;
+        float hD = textureLod(g_Heightmap, terrainUV - vec2(0.0, texel), 0.0).r;
+        float hU = textureLod(g_Heightmap, terrainUV + vec2(0.0, texel), 0.0).r;
+
+        float dhdx = (hR - hL) * g_Terrain.HeightRangeMeter / (2.0 * g_Terrain.WorldPerTexel);
+        float dhdz = (hU - hD) * g_Terrain.HeightRangeMeter / (2.0 * g_Terrain.WorldPerTexel);
+
+        vec3 N = normalize(vec3(-dhdx, 1.0, -dhdz));
+
+        imageStore(g_CoreNormal,   px, vec4(OctEncode(N), 0.0, 0.0));
+        imageStore(g_CoreMaterial, px, vec4(0.85, float(MATCLASS_TERRAIN) / 255.0, 0.0, 0.0));
+        return;
+    }
+
+    uint v1 = texelFetch(g_VBuf1, px, 0).r;
+    vec2 pixelCenter = vec2(px) + 0.5;
+    ResolvedSurface s = ResolveMeshSurface(v0, v1, pixelCenter, g_Push.viewport);
+
+    imageStore(g_CoreNormal,   px, vec4(OctEncode(s.N), 0.0, 0.0));
+    imageStore(g_CoreMaterial, px, vec4(s.roughness, float(s.matClass) / 255.0, 0.0, 0.0));
+}

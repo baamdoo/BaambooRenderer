@@ -358,3 +358,31 @@ struct CloudShadowData
     mat4 mSunViewProj;
     mat4 mSunViewProjInv;
 };
+
+
+// =========================================================================
+// Terrain
+// =========================================================================
+constexpr u32 TERRAIN_MAX_LOD_DEPTHS = 8u; // depth 0..7 inclusive
+
+struct TerrainParams
+{
+    float terrainOriginX;
+    float terrainOriginZ;
+    float terrainSizeMeter;
+    u32   gridN;
+
+    float heightMinMeter;
+    float heightRangeMeter;
+    float heightmapTexel;  // 1 / rho
+    float worldPerTexel;   // T / rho
+
+    u32 heightmapRes;    // rho (auto-derived)
+    u32 maxDepth;        // 0 = root, maxDepth = leaf
+    u32 numPatches;
+    u32 _pad0;
+
+    float lodRangeStart[TERRAIN_MAX_LOD_DEPTHS]; // r_s[d] = k * r_e[d]
+    float lodRangeEnd[TERRAIN_MAX_LOD_DEPTHS];   // r_e[d] = base * 2^(maxDepth - d)
+};
+static_assert(sizeof(TerrainParams) == 48u + 2ULL * TERRAIN_MAX_LOD_DEPTHS * sizeof(float), "TerrainGlobalsCB");

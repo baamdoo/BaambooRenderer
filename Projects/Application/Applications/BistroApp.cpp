@@ -10,6 +10,7 @@
 #include "BaambooScene/RenderNodes/CloudNode.h"
 #include "BaambooScene/RenderNodes/SkyboxNode.h"
 #include "BaambooScene/RenderNodes/LightingNode.h"
+#include "BaambooScene/RenderNodes/SurfaceResolveNode.h"
 #include "BaambooScene/RenderNodes/PostProcessNode.h"
 
 #include <random>
@@ -266,6 +267,7 @@ void BistroApp::ConfigureRenderGraph()
 		pCullingNode->SetGBufferNode(pGBufferNode);
 		m_pScene->AddRenderNode(pCullingNode);
 	}
+	m_pScene->AddRenderNode(MakeArc< SurfaceResolveNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< LightingNode >(*m_pRendererBackend->GetDevice()));
 	m_pScene->AddRenderNode(MakeArc< PostProcessNode >(*m_pRendererBackend->GetDevice()));
 }
