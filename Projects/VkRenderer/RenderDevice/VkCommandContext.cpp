@@ -453,6 +453,9 @@ void VkCommandContext::Impl::GenerateMips(const Arc< VulkanTexture >& pTexture)
 {
 	// Assume this function is executed right after copy (staging to texture) operation
 	const auto& desc = pTexture->Desc();
+	if (desc.mipLevels <= 1)
+		return;
+
 	VkImageAspectFlags aspectMask = pTexture->IsDepthTexture() ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
 
 	VkImageSubresourceRange subresourceRange = {};
@@ -503,6 +506,8 @@ void VkCommandContext::Impl::GenerateMips(const Arc< VulkanTexture >& pTexture)
 		pTexture,
 		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 		subresourceRange);
+
+	pTexture->SetState(BarrierStates::TransferSource);
 }
 
 void VkCommandContext::Impl::TransitionBarrier(

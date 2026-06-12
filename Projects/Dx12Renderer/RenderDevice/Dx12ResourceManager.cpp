@@ -201,17 +201,37 @@ Arc< render::Texture > Dx12ResourceManager::LoadTexture(const std::string& filep
     auto pTex = Dx12Texture::CreateEmpty(m_RenderDevice, path.string().c_str());
     if (extension == ".dds")
     {
-        std::vector< D3D12_SUBRESOURCE_DATA > subresourceDatas;
-        DX_CHECK(DirectX::LoadDDSTextureFromFile(
-            d3d12Device, path.c_str(), &d3d12TexResource, rawData, subresourceDatas));
+        if (bGenerateMips)
+        {
+            // LoadDDSTextureFromFile only uploads mips stored in the file — route through
+            // DirectXTex so a 1-mip DDS gets a full CPU-generated chain like HDR/EXR/WIC.
+            DirectX::TexMetadata metadata = {};
+            DirectX::ScratchImage image;
+            HRESULT hr = DirectX::LoadFromDDSFile(path.c_str(), DirectX::DDS_FLAGS_NONE, &metadata, image);
+            if (SUCCEEDED(hr))
+                hr = GenerateMipChainIfRequested(image, metadata, bGenerateMips);
+            if (FAILED(hr))
+            {
+                __debugbreak();
+                return nullptr;
+            }
 
-        UINT subresourceSize = (UINT)subresourceDatas.size();
+            pTex = CreateTextureFromScratchImage(m_RenderDevice, path.string().c_str(), image);
+        }
+        else
+        {
+            std::vector< D3D12_SUBRESOURCE_DATA > subresourceDatas;
+            DX_CHECK(DirectX::LoadDDSTextureFromFile(
+                d3d12Device, path.c_str(), &d3d12TexResource, rawData, subresourceDatas));
 
-        ID3D12Resource2* d3d12TexResource2 = nullptr;
-        d3d12TexResource->QueryInterface(IID_PPV_ARGS(&d3d12TexResource2));
+            UINT subresourceSize = (UINT)subresourceDatas.size();
 
-        pTex->SetD3D12Resource(d3d12TexResource2);
-        m_RenderDevice.UpdateSubresources(pTex.get(), 0, subresourceSize, subresourceDatas.data());
+            ID3D12Resource2* d3d12TexResource2 = nullptr;
+            d3d12TexResource->QueryInterface(IID_PPV_ARGS(&d3d12TexResource2));
+
+            pTex->SetD3D12Resource(d3d12TexResource2);
+            m_RenderDevice.UpdateSubresources(pTex.get(), 0, subresourceSize, subresourceDatas.data());
+        }
     }
     else if (extension == ".hdr" || extension == ".HDR")
     {

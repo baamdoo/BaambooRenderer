@@ -35,8 +35,11 @@ SurfaceVertex ComputeSurfaceVertex(uint gx, uint gz, PatchInstance pi)
     float2 gFine   = float2(gx, gz);
     float2 xzWORLD = float2(patchOriginX, patchOriginZ) + gFine * (patchSizeM / (gridN - 1));
 
+    const float vertexSpacing = patchSizeM / (gridN - 1);
+    const float mipFine       = log2(vertexSpacing / g_Terrain.WorldPerTexel);
+
     float2 tFine   = (xzWORLD - float2(g_Terrain.TerrainOriginX, g_Terrain.TerrainOriginZ)) / g_Terrain.TerrainSizeMeter;
-    float  h01Fine = Heightmap.SampleLevel(g_LinearClampSampler, tFine, 0);
+    float  h01Fine = Heightmap.SampleLevel(g_LinearClampSampler, tFine, max(0.0, mipFine));
 
     float distVIEW = distance(g_Camera.posWORLD, float3(xzWORLD.x, g_Terrain.HeightMinMeter + h01Fine * g_Terrain.HeightRangeMeter, xzWORLD.y));
     float alpha    = saturate((distVIEW - rStart) / max((rEnd - rStart), EPSILON_MIN));
@@ -51,7 +54,7 @@ SurfaceVertex ComputeSurfaceVertex(uint gx, uint gz, PatchInstance pi)
     float tu = (xWORLD - g_Terrain.TerrainOriginX) / g_Terrain.TerrainSizeMeter;
     float tv = (zWORLD - g_Terrain.TerrainOriginZ) / g_Terrain.TerrainSizeMeter;
 
-    float h01 = Heightmap.SampleLevel(g_LinearClampSampler, float2(tu, tv), 0);
+    float h01 = Heightmap.SampleLevel(g_LinearClampSampler, float2(tu, tv), max(0.0, mipFine + alpha));
     float3 posWS = float3(xWORLD, h01 * g_Terrain.HeightRangeMeter + g_Terrain.HeightMinMeter, zWORLD);
 
     SurfaceVertex sv;
@@ -83,8 +86,9 @@ float ComputeSkirtDepth(PatchInstance pi)
 [outputtopology("triangle")]
 void main(
     uint3 GTid : SV_GroupThreadID,
-    out vertices MSOutput verts[TERRAIN_MAX_VERTS],
-    out indices  uint3    prims[TERRAIN_MAX_PRIMS])
+    out vertices   MSOutput    verts[TERRAIN_MAX_VERTS],
+    out indices    uint3       prims[TERRAIN_MAX_PRIMS],
+    out primitives MSPrimitive primAttrs[TERRAIN_MAX_PRIMS])
 {
     StructuredBuffer< PatchInstance > patches = GetResource(g_PatchInstances.index);
     const PatchInstance pi = patches[g_DrawID];
@@ -123,6 +127,8 @@ void main(
     // --- Primitives: [0,surfPrims) surface grid, then skirt quads ---
     for (uint p = GTid.x; p < totalPrims; p += TERRAIN_MS_THREADS)
     {
+        primAttrs[p].drawID = g_DrawID;
+
         if (p < surfPrims)
         {
             uint cid = p / 2u;

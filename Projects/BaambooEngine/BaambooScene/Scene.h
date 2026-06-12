@@ -76,6 +76,7 @@ struct FrameData
 
 	// Terrain SurfaceResolve inputs
 	Weak< render::Texture > pHeightmap;
+	Weak< render::Buffer >  pTerrainPatches;
 	std::function< TerrainParams() > pGetTerrainParams; // callback to query the current terrain's parameters (for SurfaceResolve)
 
 	// Light culling buffers

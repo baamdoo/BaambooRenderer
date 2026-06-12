@@ -22,6 +22,10 @@ layout(set = 1, binding = 3, rg16_snorm) writeonly uniform image2D g_CoreNormal;
 layout(set = 1, binding = 4, rgba8) writeonly uniform image2D g_CoreMaterial;
 layout(set = 1, binding = 5) uniform sampler2D g_DepthBuffer;
 layout(set = 1, binding = 6) uniform sampler2D g_Heightmap;
+layout(set = 1, binding = 7) readonly buffer PatchInstanceBuffer
+{
+    PatchInstance g_PatchInstances[];
+};
 
 
 layout(local_size_x = 16, local_size_y = 16) in;
@@ -49,14 +53,30 @@ void main()
         vec3  worldPos  = ReconstructWorldPos(uv, depth, g_Camera.mViewProjInv);
         vec2  terrainUV = (worldPos.xz - vec2(g_Terrain.TerrainOriginX, g_Terrain.TerrainOriginZ)) / g_Terrain.TerrainSizeMeter;
 
-        float texel = g_Terrain.HeightmapTexel;
-        float hL = textureLod(g_Heightmap, terrainUV - vec2(texel, 0.0), 0.0).r;
-        float hR = textureLod(g_Heightmap, terrainUV + vec2(texel, 0.0), 0.0).r;
-        float hD = textureLod(g_Heightmap, terrainUV - vec2(0.0, texel), 0.0).r;
-        float hU = textureLod(g_Heightmap, terrainUV + vec2(0.0, texel), 0.0).r;
+        PatchInstance pi = g_PatchInstances[VisInstanceID(v0)];
 
-        float dhdx = (hR - hL) * g_Terrain.HeightRangeMeter / (2.0 * g_Terrain.WorldPerTexel);
-        float dhdz = (hU - hD) * g_Terrain.HeightRangeMeter / (2.0 * g_Terrain.WorldPerTexel);
+        float spacing = pi.patchSizeMeter / max(float(pi.gridDim - 1u), 1.0);
+        float mipFine = log2(max(spacing, 1e-3) / g_Terrain.WorldPerTexel);
+
+        float dist  = length(worldPos - g_Camera.posWORLD);
+        float rS    = GetLodRangeStart(pi.depth);
+        float rE    = GetLodRangeEnd  (pi.depth);
+        float alpha = saturate((dist - rS) / max(rE - rS, EPSILON_MIN));
+
+        float lodGeom = mipFine + alpha;
+        float wPix    = dist * 2.0 / (g_Camera.mProj[1][1] * g_Push.viewport.y); // world meters per pixel (vertical fov)
+        float lodPix  = log2(max(wPix, 1e-6) / g_Terrain.WorldPerTexel);         // screen-footprint floor
+        float lodH    = max(0.0, max(lodGeom, lodPix));
+        float stepTexels = exp2(lodH); // 1 texel at mip lodH, expressed in mip0 texels
+
+        float texel = g_Terrain.HeightmapTexel * stepTexels;
+        float hL = textureLod(g_Heightmap, terrainUV - vec2(texel, 0.0), lodH).r;
+        float hR = textureLod(g_Heightmap, terrainUV + vec2(texel, 0.0), lodH).r;
+        float hD = textureLod(g_Heightmap, terrainUV - vec2(0.0, texel), lodH).r;
+        float hU = textureLod(g_Heightmap, terrainUV + vec2(0.0, texel), lodH).r;
+
+        float dhdx = (hR - hL) * g_Terrain.HeightRangeMeter / (2.0 * g_Terrain.WorldPerTexel * stepTexels);
+        float dhdz = (hU - hD) * g_Terrain.HeightRangeMeter / (2.0 * g_Terrain.WorldPerTexel * stepTexels);
 
         vec3 N = normalize(vec3(-dhdx, 1.0, -dhdz));
 

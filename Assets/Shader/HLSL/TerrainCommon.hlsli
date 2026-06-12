@@ -45,4 +45,9 @@ struct MSOutput
     float4 positionCS : SV_Position;
 };
 
+struct MSPrimitive
+{
+    nointerpolation uint drawID : TERRAIN_DRAWID;
+};
+
 #endif // _TERRAIN_COMMON_HEADER

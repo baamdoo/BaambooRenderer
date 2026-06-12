@@ -8,11 +8,11 @@ struct PSOutput
     float2 Velocity : SV_Target2;  // terrain placeholder = 0
 };
 
-PSOutput main(MSOutput IN)
+PSOutput main(MSOutput IN, MSPrimitive prim)
 {
     PSOutput output = (PSOutput)0;
 
-    output.VBuf0    = VISID_TERRAIN;
+    output.VBuf0    = VISID_TERRAIN | (prim.drawID & 0x00FFFFFFu);
     output.VBuf1    = 0u;
     output.Velocity = float2(0.0, 0.0); // static-terrain placeholder
 

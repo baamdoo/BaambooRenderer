@@ -130,11 +130,11 @@ Arc< render::Texture > VkResourceManager::LoadTexture(const std::string& filepat
 		viewCreateInfo.image            = vkImage;
 		viewCreateInfo.viewType         = ImageViewTypeConverter(gliTexture.target());
 		viewCreateInfo.format           = static_cast<VkFormat>(gliTexture.format());
-		viewCreateInfo.subresourceRange = 
+		viewCreateInfo.subresourceRange =
 		{
 			.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT, // assume .dds is always color
 			.baseMipLevel   = static_cast<u32>(gliTexture.base_level()),
-			.levelCount     = static_cast<u32>(gliTexture.levels()),
+			.levelCount     = createInfo.mipLevels, // image may carry generated mips beyond what the file stores
 			.baseArrayLayer = static_cast<u32>(gliTexture.base_layer()),
 			.layerCount     = static_cast<u32>(gliTexture.layers())
 		};
@@ -305,13 +305,15 @@ Arc< render::Texture > VkResourceManager::LoadTextureArray(const fs::path& dirpa
 		++i;
 	}
 
+	const VkImageUsageFlags arrayUsage = eTextureUsage_Sample | eTextureUsage_TransferDest | (bGenerateMips ? eTextureUsage_TransferSource : 0);
 	auto pTextureArray = VulkanTexture::Create(m_RenderDevice, std::string(dirpath.filename().string() + "_Array").c_str(),
 		{
-			.imageType   = eImageType::Texture2D,
-			.resolution  = { static_cast<u32>(baseWidth), static_cast<u32>(baseHeight), 1 },
-			.format      = GetRgba8Format(colorSpace),
-			.imageUsage  = eTextureUsage_Sample | eTextureUsage_TransferDest,
-			.arrayLayers = layerCount
+			.imageType     = eImageType::Texture2D,
+			.resolution    = { static_cast<u32>(baseWidth), static_cast<u32>(baseHeight), 1 },
+			.format        = GetRgba8Format(colorSpace),
+			.imageUsage    = arrayUsage,
+			.arrayLayers   = layerCount,
+			.bGenerateMips = bGenerateMips
 		});
 
 	u32 layerSize = baseWidth * baseHeight * 4;

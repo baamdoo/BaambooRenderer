@@ -137,9 +137,9 @@ void main(
     uint3 Gid : SV_GroupID,
     uint3 GTid : SV_GroupThreadID,
     in payload AmplificationPayload Payload,
-    out vertices   MSOutput    vertices  [64],
-    out indices    uint3       triangles [126],
-    out primitives MSPrimitive prims     [126])
+    out vertices   MSOutput    vertices[64],
+    out indices    uint3       triangles[126],
+    out primitives MSPrimitive primAttrs[126])
 {
 	uint mi = Payload.meshletIndices[Gid.x]; // mesh.mOffset is already baked into the meshlet indices by TaskShader
     uint ti = GTid.x;
@@ -207,9 +207,9 @@ void main(
         float4 ca = s_ClipPos[t0];
         float4 cb = s_ClipPos[t1];
         float4 cc = s_ClipPos[t2];
-        prims[i].cullPrimitive = TriangleCull(ca, cb, cc);
+        primAttrs[i].cullPrimitive = TriangleCull(ca, cb, cc);
 
-        prims[i].visID0 = PackVisID0Mesh(g_DrawID & 0x00FFFFFFu, Payload.lod, 0u);
-        prims[i].visID1 = PackVisID1(mi, i);
+        primAttrs[i].visID0 = PackVisID0Mesh(g_DrawID & 0x00FFFFFFu, Payload.lod, 0u);
+        primAttrs[i].visID1 = PackVisID1(mi, i);
     }
 }

@@ -5,6 +5,7 @@
 #include "RenderCommon/CommandContext.h"
 #include "RenderCommon/CpuProfiler.h"
 #include "BaambooScene/Scene.h"
+#include "BaambooScene/Terrain/TerrainPatch.h"
 
 namespace baamboo
 {
@@ -27,6 +28,13 @@ SurfaceResolveNode::SurfaceResolveNode(render::RenderDevice& rd)
 			.resolution = { rd.WindowWidth(), rd.WindowHeight(), 1 },
 			.format     = eFormat::RGBA8_UNORM,
 			.imageUsage = eTextureUsage_Sample | eTextureUsage_Storage,
+		});
+
+	m_pNullPatches = Buffer::Create(rd, "SurfaceResolvePass::NullPatches",
+		{
+			.count              = 1,
+			.elementSizeInBytes = sizeof(PatchInstance),
+			.bufferUsage        = eBufferUsage_Storage,
 		});
 
 	m_pResolvePSO = ComputePipeline::Create(rd, "SurfaceResolvePSO");
@@ -53,12 +61,17 @@ void SurfaceResolveNode::Apply(render::CommandContext& context, const SceneRende
 	if (!pHeightmap)
 		pHeightmap = m_RenderDevice.GetResourceManager().GetFlatBlackTexture();
 
+	auto pPatches = g_FrameData.pTerrainPatches.lock();
+	if (!pPatches)
+		pPatches = m_pNullPatches;
+
 	context.SetRenderPipeline(m_pResolvePSO.get());
 
 	context.TransitionBarrier(pVBuf0, eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(pVBuf1, eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(pDepth, eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(pHeightmap, eTextureLayout::ShaderReadOnly);
+	context.TransitionBufferToRead(pPatches, ePipelineStage::ComputeShader);
 	context.TransitionBarrier(m_pCoreNormal, eTextureLayout::General);
 	context.TransitionBarrier(m_pCoreMaterial, eTextureLayout::General);
 
@@ -79,6 +92,7 @@ void SurfaceResolveNode::Apply(render::CommandContext& context, const SceneRende
 	context.StageDescriptor("g_VBuf1", pVBuf1, g_FrameData.pPointClampNearest);
 	context.StageDescriptor("g_DepthBuffer", pDepth, g_FrameData.pPointClamp);
 	context.StageDescriptor("g_Heightmap", pHeightmap, g_FrameData.pLinearClamp);
+	context.StageDescriptor("g_PatchInstances", pPatches);
 	context.StageDescriptor("g_CoreNormal", m_pCoreNormal);
 	context.StageDescriptor("g_CoreMaterial", m_pCoreMaterial);
 

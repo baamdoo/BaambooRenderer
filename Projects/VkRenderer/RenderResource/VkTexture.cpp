@@ -14,6 +14,7 @@ inline u32 GetFormatElementSizeInBytes(VkFormat format)
 	u32 result = 0;
 	switch (format)
 	{
+	case VK_FORMAT_R16_UNORM:
 	case VK_FORMAT_R16_SFLOAT:
 		return 2;
 		break;

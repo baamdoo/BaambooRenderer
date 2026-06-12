@@ -11,12 +11,13 @@ cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
     float2 g_Viewport;
 };
 
-ConstantBuffer< DescriptorHeapIndex > g_VBuf0        : register(b1, ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_VBuf1        : register(b2, ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_CoreNormal   : register(b3, ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_CoreMaterial : register(b4, ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_DepthBuffer  : register(b5, ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_Heightmap    : register(b6, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_VBuf0          : register(b1, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_VBuf1          : register(b2, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_CoreNormal     : register(b3, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_CoreMaterial   : register(b4, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_DepthBuffer    : register(b5, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_Heightmap      : register(b6, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_PatchInstances : register(b7, ROOT_CONSTANT_SPACE);
 
 
 [numthreads(16, 16, 1)]
@@ -51,14 +52,31 @@ void main(uint3 tID : SV_DispatchThreadID)
         float3 worldPos  = ReconstructWorldPos(uv, depth, g_Camera.mViewProjInv);
         float2 terrainUV = (worldPos.xz - float2(g_Terrain.TerrainOriginX, g_Terrain.TerrainOriginZ)) / g_Terrain.TerrainSizeMeter;
 
-        const float2 texel = float2(g_Terrain.HeightmapTexel, g_Terrain.HeightmapTexel);
-        const float hL = Heightmap.SampleLevel(g_LinearClampSampler, terrainUV - float2(texel.x, 0.0), 0);
-        const float hR = Heightmap.SampleLevel(g_LinearClampSampler, terrainUV + float2(texel.x, 0.0), 0);
-        const float hD = Heightmap.SampleLevel(g_LinearClampSampler, terrainUV - float2(0.0, texel.y), 0);
-        const float hU = Heightmap.SampleLevel(g_LinearClampSampler, terrainUV + float2(0.0, texel.y), 0);
+        StructuredBuffer< PatchInstance > Patches = GetResource(g_PatchInstances.index);
+        const PatchInstance pi = Patches[VisInstanceID(v0)];
 
-        const float dhdx = (hR - hL) * g_Terrain.HeightRangeMeter / (2.0 * g_Terrain.WorldPerTexel);
-        const float dhdz = (hU - hD) * g_Terrain.HeightRangeMeter / (2.0 * g_Terrain.WorldPerTexel);
+        const float spacing = pi.patchSizeMeter / max((float)(pi.gridDim - 1u), 1.0);
+        const float mipFine = log2(max(spacing, 1e-3) / g_Terrain.WorldPerTexel);
+
+        const float dist  = length(worldPos - g_Camera.posWORLD);
+        const float rS    = GetLodRangeStart(pi.depth);
+        const float rE    = GetLodRangeEnd  (pi.depth);
+        const float alpha = saturate((dist - rS) / max(rE - rS, EPSILON_MIN));
+
+        const float lodGeom = mipFine + alpha;
+        const float wPix    = dist * 2.0 / (g_Camera.mProj[1][1] * g_Viewport.y); // world meters per pixel (vertical fov)
+        const float lodPix  = log2(max(wPix, 1e-6) / g_Terrain.WorldPerTexel);    // screen-footprint floor
+        const float lodH    = max(0.0, max(lodGeom, lodPix));
+        const float stepTexels = exp2(lodH); // 1 texel at mip lodH, expressed in mip0 texels
+
+        const float2 texel = float2(g_Terrain.HeightmapTexel, g_Terrain.HeightmapTexel) * stepTexels;
+        const float hL = Heightmap.SampleLevel(g_LinearClampSampler, terrainUV - float2(texel.x, 0.0), lodH);
+        const float hR = Heightmap.SampleLevel(g_LinearClampSampler, terrainUV + float2(texel.x, 0.0), lodH);
+        const float hD = Heightmap.SampleLevel(g_LinearClampSampler, terrainUV - float2(0.0, texel.y), lodH);
+        const float hU = Heightmap.SampleLevel(g_LinearClampSampler, terrainUV + float2(0.0, texel.y), lodH);
+
+        const float dhdx = (hR - hL) * g_Terrain.HeightRangeMeter / (2.0 * g_Terrain.WorldPerTexel * stepTexels);
+        const float dhdz = (hU - hD) * g_Terrain.HeightRangeMeter / (2.0 * g_Terrain.WorldPerTexel * stepTexels);
 
         float3 N = normalize(float3(-dhdx, 1.0, -dhdz));
 

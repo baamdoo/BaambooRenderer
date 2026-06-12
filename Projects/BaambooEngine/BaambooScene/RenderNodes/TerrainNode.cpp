@@ -155,7 +155,7 @@ void TerrainNode::EnsureHeightmap()
 	auto& rm = m_RenderDevice.GetResourceManager();
 	if (!m_Config.heightmapPath.empty() && fs::exists(m_Config.heightmapPath))
 	{
-		m_pHeightmap = rm.LoadTexture(m_Config.heightmapPath);
+		m_pHeightmap = rm.LoadTexture(m_Config.heightmapPath, /*bGenerateMips*/ true);
 	}
 	else
 	{
@@ -315,7 +315,8 @@ void TerrainNode::DrawTerrainImpl(render::CommandContext& context, Arc< render::
 
 	rt->InvalidateImageLayout();
 
-	g_FrameData.pHeightmap = m_pHeightmap;
+	g_FrameData.pHeightmap      = m_pHeightmap;
+	g_FrameData.pTerrainPatches = m_pCulledPatches;
 }
 
 void TerrainNode::Resize(u32 width, u32 height, u32 depth)

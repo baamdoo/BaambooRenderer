@@ -36,8 +36,11 @@ SurfaceVertex ComputeSurfaceVertex(uint gx, uint gz, PatchInstance pi)
     vec2 gFine   = vec2(gx, gz);
     vec2 xzWORLD = vec2(patchOriginX, patchOriginZ) + gFine * (patchSizeM / float(gridN - 1u));
 
+    float vertexSpacing = patchSizeM / float(gridN - 1u);
+    float mipFine       = log2(vertexSpacing / g_Terrain.WorldPerTexel);
+
     vec2  tFine   = (xzWORLD - vec2(g_Terrain.TerrainOriginX, g_Terrain.TerrainOriginZ)) / g_Terrain.TerrainSizeMeter;
-    float h01Fine = textureLod(g_Heightmap, tFine, 0.0).r;
+    float h01Fine = textureLod(g_Heightmap, tFine, max(0.0, mipFine)).r;
 
     float distVIEW = distance(g_Camera.posWORLD, vec3(xzWORLD.x, g_Terrain.HeightMinMeter + h01Fine * g_Terrain.HeightRangeMeter, xzWORLD.y));
     float alpha    = saturate((distVIEW - rStart) / max((rEnd - rStart), EPSILON_MIN));
@@ -52,7 +55,7 @@ SurfaceVertex ComputeSurfaceVertex(uint gx, uint gz, PatchInstance pi)
     float tu = (xWORLD - g_Terrain.TerrainOriginX) / g_Terrain.TerrainSizeMeter;
     float tv = (zWORLD - g_Terrain.TerrainOriginZ) / g_Terrain.TerrainSizeMeter;
 
-    float h01 = textureLod(g_Heightmap, vec2(tu, tv), 0.0).r;
+    float h01 = textureLod(g_Heightmap, vec2(tu, tv), max(0.0, mipFine + alpha)).r;
     vec3  posWS = vec3(xWORLD, h01 * g_Terrain.HeightRangeMeter + g_Terrain.HeightMinMeter, zWORLD);
 
     SurfaceVertex sv;
@@ -82,6 +85,9 @@ float ComputeSkirtDepth(PatchInstance pi)
 
 layout(local_size_x = TERRAIN_MS_THREADS, local_size_y = 1, local_size_z = 1) in;
 layout(triangles, max_vertices = TERRAIN_MAX_VERTS, max_primitives = TERRAIN_MAX_PRIMS) out;
+
+layout(location = 0) perprimitiveEXT out uint v_DrawID[];
+
 void main()
 {
     PatchInstance pi = g_PatchInstances[gl_DrawID];
@@ -124,6 +130,8 @@ void main()
     // --- Primitives: [0,surfPrims) surface grid, then skirt quads ---
     for (uint p = gl_LocalInvocationID.x; p < totalPrims; p += TERRAIN_MS_THREADS)
     {
+        v_DrawID[p] = uint(gl_DrawID);
+
         if (p < surfPrims)
         {
             uint cid = p / 2u;
