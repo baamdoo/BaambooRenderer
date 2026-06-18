@@ -6,7 +6,6 @@
 
 #include "BaambooScene/Entity.h"
 #include "BaambooScene/Components.h"
-#include "BaambooScene/RenderNodes/TerrainNode.h"
 #include "BaambooScene/RenderNodes/GBufferNode.h"
 #include "BaambooScene/RenderNodes/CullingNode.h"
 #include "BaambooScene/RenderNodes/SkyboxNode.h"
@@ -14,6 +13,8 @@
 #include "BaambooScene/RenderNodes/SurfaceResolveNode.h"
 #include "BaambooScene/RenderNodes/DebugDrawNode.h"
 #include "BaambooScene/RenderNodes/PostProcessNode.h"
+
+#include <cstdio>
 
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui/backends/imgui_impl_glfw.h>
@@ -26,8 +27,10 @@ void TerrainApp::Initialize(eRendererAPI api)
 
 	Super::Initialize(api);
 
-	m_CameraController.SetLookAt(float3(0.0f, 3000.0f, 0.0f), float3(2000.0f, 0.0f, 2000.0f));
+	m_CameraController.SetLookAt(float3(96.0f, 64.0f, -96.0f), float3(32.0f, 32.0f, 32.0f));
 	m_pCamera = new EditorCamera(m_CameraController, m_pWindow->Width(), m_pWindow->Height());
+	m_pCamera->zNear = 0.1f;
+	m_pCamera->zFar  = 1000.0f;
 }
 
 void TerrainApp::Update(f32 dt)
@@ -155,6 +158,115 @@ void TerrainApp::DrawUI()
 {
 	Super::DrawUI();
 
+	m_VoxelTerrainStats = VoxelTerrainDebug::CollectStats(m_VoxelTerrain);
+	ImGui::Begin("Voxel Terrain");
+	{
+		if (ImGui::Button("Rebuild Samples"))
+			RebuildVoxelTerrain();
+
+		ImGui::Separator();
+		ImGui::Text("Chunk Size      %.1f m", m_VoxelTerrainSettings.chunkWorldSizeMeter);
+		ImGui::Text("Cells / Axis    %u", m_VoxelTerrainSettings.cellsPerAxis);
+		ImGui::Text("Samples / Axis  %u", m_VoxelTerrainSettings.samplesPerAxis);
+		ImGui::Text("Voxel Size      %.2f m", m_VoxelTerrainSettings.voxelSizeMeter);
+
+		ImGui::Separator();
+		ImGui::Text("Chunks          %u", m_VoxelTerrainStats.numChunks);
+		ImGui::Text("Allocated       %u", m_VoxelTerrainStats.numAllocatedSamples);
+		ImGui::Text("Valid           %u", m_VoxelTerrainStats.numValidSamples);
+		ImGui::Text("Invalid         %u", m_VoxelTerrainStats.numInvalidSamples);
+		ImGui::Text("Solid           %u", m_VoxelTerrainStats.numSolidSamples);
+		ImGui::Text("Air             %u", m_VoxelTerrainStats.numAirSamples);
+		ImGui::Text("Surface         %u", m_VoxelTerrainStats.numSurfaceSamples);
+		ImGui::Text("SDF Min / Max   %.3f / %.3f", m_VoxelTerrainStats.minSDF, m_VoxelTerrainStats.maxSDF);
+
+		ImGui::Separator();
+		ImGui::Text("Surface Cells   %u", m_VoxelTerrainStats.numSurfaceCells);
+		ImGui::Text("Cube Indices    %u active", m_VoxelTerrainStats.numActiveCubeIndices);
+		ImGui::Text("Mesh Vertices   %u", m_VoxelTerrainStats.numMeshVertices);
+		ImGui::Text("Mesh Indices    %u", m_VoxelTerrainStats.numMeshIndices);
+
+		ImGui::Separator();
+		ImGui::Text("Normals         %u valid", m_VoxelTerrainStats.numNormalVertices);
+		ImGui::Text("Normal Issues   %u zero, %u non-finite", m_VoxelTerrainStats.numZeroNormals, m_VoxelTerrainStats.numNonFiniteNormals);
+		ImGui::Text("Normal Len      %.4f / %.4f / %.4f",
+			m_VoxelTerrainStats.minNormalLength,
+			m_VoxelTerrainStats.avgNormalLength,
+			m_VoxelTerrainStats.maxNormalLength);
+		ImGui::Text("Avg Normal      %.3f, %.3f, %.3f",
+			m_VoxelTerrainStats.avgNormal.x,
+			m_VoxelTerrainStats.avgNormal.y,
+			m_VoxelTerrainStats.avgNormal.z);
+
+		if (ImGui::CollapsingHeader("Cube Index Histogram"))
+		{
+			float allHistogram[256] = {};
+			u32 maxAllCount = 0u;
+			u32 maxSurfacePatternCount = 0u;
+			u32 surfacePatternCellCount = 0u;
+
+			for (u32 cubeIndex = 0u; cubeIndex < 256u; ++cubeIndex)
+			{
+				const u32 count = m_VoxelTerrainStats.cubeIndexHistogram[cubeIndex];
+				allHistogram[cubeIndex] = static_cast<float>(count);
+
+				if (maxAllCount < count)
+					maxAllCount = count;
+
+				if (cubeIndex != 0u && cubeIndex != 255u)
+				{
+					surfacePatternCellCount += count;
+					if (maxSurfacePatternCount < count)
+						maxSurfacePatternCount = count;
+				}
+			}
+
+			const float histogramWidth = ImGui::GetContentRegionAvail().x;
+			ImGui::Text("All Cells       max %u", maxAllCount);
+			ImGui::PlotHistogram(
+				"##cube_index_histogram_all",
+				allHistogram,
+				256,
+				0,
+				nullptr,
+				0.0f,
+				static_cast<float>(maxAllCount > 0u ? maxAllCount : 1u),
+				ImVec2(histogramWidth, 120.0f));
+			ImGui::Text("Air 0x00        %u", m_VoxelTerrainStats.cubeIndexHistogram[0u]);
+			ImGui::Text("Solid 0xFF      %u", m_VoxelTerrainStats.cubeIndexHistogram[255u]);
+
+			ImGui::Separator();
+			ImGui::Text("Surface Patterns %u cells, max %u", surfacePatternCellCount, maxSurfacePatternCount);
+
+			if (maxSurfacePatternCount > 0u)
+			{
+				ImGui::BeginChild("##cube_index_surface_pattern_bars", ImVec2(0.0f, 220.0f), true);
+				for (u32 cubeIndex = 1u; cubeIndex < 255u; ++cubeIndex)
+				{
+					const u32 count = m_VoxelTerrainStats.cubeIndexHistogram[cubeIndex];
+					if (count == 0u)
+						continue;
+
+					char overlay[32] = {};
+					std::snprintf(overlay, sizeof(overlay), "%u", count);
+
+					ImGui::Text("0x%02X", cubeIndex);
+					ImGui::SameLine(56.0f);
+					ImGui::ProgressBar(
+						static_cast<float>(count) / static_cast<float>(maxSurfacePatternCount),
+						ImVec2(-1.0f, 0.0f),
+						overlay);
+				}
+				ImGui::EndChild();
+			}
+			else
+			{
+				ImGui::TextDisabled("No surface-pattern cube indices.");
+			}
+		}
+	}
+	ImGui::End();
+
 	ImGui::Begin("Editor Camera");
 	{
 		if (ImGui::CollapsingHeader("Transform"))
@@ -237,13 +349,10 @@ void TerrainApp::ConfigureRenderGraph()
 	{
 		auto pGBufferNode = MakeArc< GBufferNode >(device);
 		auto pCullingNode = MakeArc< CullingNode >(device);
-		auto pTerrainNode = MakeArc< TerrainNode >(device);
 
 		pCullingNode->SetGBufferNode(pGBufferNode);
-		pCullingNode->SetTerrainNode(pTerrainNode);
 
 		m_pScene->AddRenderNode(pCullingNode);
-		m_pScene->AddRenderNode(pTerrainNode);
 	}
 	m_pScene->AddRenderNode(MakeArc< SurfaceResolveNode >(device));
 	m_pScene->AddRenderNode(MakeArc< LightingNode >(device));
@@ -253,37 +362,7 @@ void TerrainApp::ConfigureRenderGraph()
 
 void TerrainApp::ConfigureSceneObjects()
 {
-	{
-		auto terrain = m_pScene->CreateEntity("Terrain");
-		auto& tc = terrain.AttachComponent< TerrainComponent >();
-		tc.heightmapPath = TEXTURE_PATH.string() + "Terrain/Mountain.dds";
-
-		tc.rootSizeMeter     = 8192.0f;
-		tc.terrainSizeMeter  = 8192.0f;
-		tc.lodRangeBaseMeter = 1024.0f;
-		tc.lodMorphK         = 0.5f;
-		tc.maxDepth          = 7u;
-		tc.bForceFinestLOD   = false;
-
-		auto& transform = terrain.GetComponent< TransformComponent >();
-		transform.transform.position = float3(0.0f, 0.0f, 0.0f);
-
-		TerrainNode::QuadtreeConfig cfg = {};
-		cfg.heightmapPath     = tc.heightmapPath;
-		cfg.gridN             = tc.gridN;
-		cfg.rootSizeMeter     = tc.rootSizeMeter;
-		cfg.lodRangeBaseMeter = tc.lodRangeBaseMeter;
-		cfg.lodMorphK         = tc.lodMorphK;
-		cfg.maxDepth          = tc.maxDepth;
-		cfg.bForceFinestLOD   = tc.bForceFinestLOD;
-		cfg.terrainSizeMeter  = tc.terrainSizeMeter;
-		cfg.heightMinMeter    = tc.heightMinMeter;
-		cfg.heightRangeMeter  = tc.heightRangeMeter;
-		cfg.rootOriginX       = transform.transform.position.x - tc.rootSizeMeter * 0.5f;
-		cfg.rootOriginZ       = transform.transform.position.z - tc.rootSizeMeter * 0.5f;
-		if (const auto& pTerrainNode = StaticCast<TerrainNode>(m_pScene->GetRenderNodeByName("TerrainPass")))
-			pTerrainNode->SetQuadtreeConfig(cfg);
-	}
+	RebuildVoxelTerrain();
 
 	{
 		auto skybox = m_pScene->CreateEntity("Skybox");
@@ -299,21 +378,6 @@ void TerrainApp::ConfigureSceneObjects()
 	}
 
 	{
-		MeshDescriptor descriptor = {};
-		descriptor.rootPath          = GetModelPath();
-		descriptor.bOptimize         = true;
-		descriptor.rendererAPI       = s_RendererAPI;
-		descriptor.bWindingCW        = true;
-		descriptor.bGenerateMeshlets = true;
-		descriptor.numLODs           = 8;
-
-		auto helmet = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
-		auto& tc = helmet.GetComponent< TransformComponent >();
-		tc.transform.position = float3(2000.0f, 1500.0f, 2000.0f);
-		tc.transform.scale    = float3(300.0f, 300.0f, 300.0f);
-	}
-
-	{
 		auto  volume = m_pScene->CreateEntity("PostProcessVolume");
 		auto& pp = volume.AttachComponent< PostProcessComponent >();
 
@@ -321,4 +385,16 @@ void TerrainApp::ConfigureSceneObjects()
 		pp.tonemap.ev100 = 0.0f;
 		pp.tonemap.gamma = 2.2f;
 	}
+}
+
+void TerrainApp::RebuildVoxelTerrain()
+{
+	m_VoxelTerrain.Clear();
+	m_VoxelTerrain.Initialize(m_VoxelTerrainSettings);
+
+	m_VoxelChunkIndex = m_VoxelTerrain.CreateChunk(float3(0.0f, 0.0f, 0.0f));
+	m_VoxelTerrain.BuildChunkSamples(m_VoxelChunkIndex);
+	m_VoxelTerrain.BuildChunkMesh(m_VoxelChunkIndex);
+
+	m_VoxelTerrainStats = VoxelTerrainDebug::CollectStats(m_VoxelTerrain);
 }

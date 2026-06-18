@@ -36,7 +36,7 @@ private:
 	u32  m_ImageIndex = 0;
 	bool m_vSync = true;
 
-	Arc< Dx12Texture > m_pBackImages[MAX_FRAMES_IN_FLIGHT];
+	Arc< Dx12Texture > m_pBackImages[kMaxFramesInFlight];
 };
 
 }

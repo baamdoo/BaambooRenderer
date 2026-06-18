@@ -36,7 +36,7 @@ private:
 
         bool bProcessing = false;
     };
-    std::array< FrameData, MAX_FRAMES_IN_FLIGHT > m_Frames;
+    std::array< FrameData, kMaxFramesInFlight > m_Frames;
 
     u32 m_ContextIndex = 0;
 };

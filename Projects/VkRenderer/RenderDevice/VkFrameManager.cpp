@@ -62,7 +62,7 @@ void FrameManager::EndFrame(Arc< VkCommandContext >&& pContext)
     }
 
     m_Frames[m_ContextIndex].bProcessing = false;
-    m_ContextIndex = (m_ContextIndex + 1) % MAX_FRAMES_IN_FLIGHT;
+    m_ContextIndex = (m_ContextIndex + 1) % kMaxFramesInFlight;
 }
 
 void FrameManager::WaitIdle()

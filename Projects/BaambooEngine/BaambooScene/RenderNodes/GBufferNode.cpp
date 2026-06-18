@@ -125,7 +125,7 @@ void GBufferNode::DrawGBufferImpl(render::CommandContext& context, Arc< render::
 	const bool bHasInstances = cullOutputs.numInstances > 0;
 	if (bHasInstances)
 	{
-		if (cullOutputs.phase == CullingNode::PHASE2_CULL)
+		if (cullOutputs.phase == CullingNode::kPhase2Cull)
 		{
 			context.TransitionBarrier(cullOutputs.pHiZ, eTextureLayout::ShaderReadOnly);
 		}

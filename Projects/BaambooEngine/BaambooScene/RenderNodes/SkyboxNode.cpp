@@ -7,7 +7,7 @@
 namespace baamboo
 {
 
-static constexpr uint3 SKYBOX_LUT_RESOLUTION = { 1024, 1024, 1 };
+static constexpr uint3 kSkyboxLutResolution = { 1024, 1024, 1 };
 
 //-------------------------------------------------------------------------
 // Static Skybox
@@ -23,7 +23,7 @@ StaticSkyboxNode::StaticSkyboxNode(render::RenderDevice& rd)
 			"AtmospherePass::SkyboxLUT",
 			{
 				.imageType   = eImageType::TextureCube,
-				.resolution  = SKYBOX_LUT_RESOLUTION,
+				.resolution  = kSkyboxLutResolution,
 				.format      = eFormat::RG11B10_UFLOAT,
 				.imageUsage  = eTextureUsage_Storage | eTextureUsage_Sample,
 				.arrayLayers = 6
@@ -62,7 +62,7 @@ void StaticSkyboxNode::Apply(render::CommandContext& context, const SceneRenderV
 		context.StageDescriptor("g_SkyViewLUT", m_pSkyboxTexture, g_FrameData.pLinearClamp);
 		context.StageDescriptor("g_OutSkyboxLUT", m_pSkyboxLUT);
 
-		context.Dispatch3D< 8, 8, 6 >(SKYBOX_LUT_RESOLUTION.x, SKYBOX_LUT_RESOLUTION.y, SKYBOX_LUT_RESOLUTION.z);
+		context.Dispatch3D< 8, 8, 6 >(kSkyboxLutResolution.x, kSkyboxLutResolution.y, kSkyboxLutResolution.z);
 	}
 
 	g_FrameData.pSkyboxLUT = m_pSkyboxLUT;
@@ -83,7 +83,7 @@ DynamicSkyboxNode::DynamicSkyboxNode(render::RenderDevice& rd)
 			"AtmospherePass::SkyboxLUT",
 			{
 				.imageType   = eImageType::TextureCube,
-				.resolution  = SKYBOX_LUT_RESOLUTION,
+				.resolution  = kSkyboxLutResolution,
 				.format      = eFormat::RG11B10_UFLOAT,
 				.imageUsage  = eTextureUsage_Storage | eTextureUsage_Sample,
 				.arrayLayers = 6
@@ -115,7 +115,7 @@ void DynamicSkyboxNode::Apply(render::CommandContext& context, const SceneRender
 	context.StageDescriptor("g_SkyViewLUT", g_FrameData.pSkyViewLUT.lock(), g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_OutSkyboxLUT", m_pSkyboxLUT);
 
-	context.Dispatch3D< 8, 8, 6 >(SKYBOX_LUT_RESOLUTION.x, SKYBOX_LUT_RESOLUTION.y, SKYBOX_LUT_RESOLUTION.z);
+	context.Dispatch3D< 8, 8, 6 >(kSkyboxLutResolution.x, kSkyboxLutResolution.y, kSkyboxLutResolution.z);
 
 	g_FrameData.pSkyboxLUT = m_pSkyboxLUT;
 }

@@ -24,13 +24,13 @@ struct LightTypeStyle
 	float3 color;
 	const char* label;
 };
-constexpr u32 LT_BIT_SPOT   = 0u;
-constexpr u32 LT_BIT_AREA   = 1u;
-constexpr u32 LT_BIT_SPHERE = 2u;
-constexpr u32 LT_BIT_DISK   = 3u;
-constexpr u32 LT_BIT_TUBE   = 4u;
+constexpr u32 kLtBitSpot   = 0u;
+constexpr u32 kLtBitArea   = 1u;
+constexpr u32 kLtBitSphere = 2u;
+constexpr u32 kLtBitDisk   = 3u;
+constexpr u32 kLtBitTube   = 4u;
 
-constexpr u32 MAX_VERTS_PER_LIGHT = 192u;
+constexpr u32 kMaxVertsPerLight = 192u;
 
 } // namespace
 
@@ -207,11 +207,11 @@ void DebugDrawNode::ApplyLightWireframe(render::CommandContext& context, const S
 	context.SetRenderPipeline(m_pLightPSO.get());
 
 	const LightTypeStyle types[] = {
-		{ 1u << LT_BIT_SPOT,   { 1.0f, 0.85f, 0.30f }, "Spot"   },
-		{ 1u << LT_BIT_AREA,   { 0.30f, 0.85f, 1.0f }, "Area"   },
-		{ 1u << LT_BIT_SPHERE, { 1.0f, 0.40f, 0.70f }, "Sphere" },
-		{ 1u << LT_BIT_DISK,   { 0.70f, 1.0f, 0.40f }, "Disk"   },
-		{ 1u << LT_BIT_TUBE,   { 0.40f, 0.70f, 1.0f }, "Tube"   },
+		{ 1u << kLtBitSpot,   { 1.0f, 0.85f, 0.30f }, "Spot"   },
+		{ 1u << kLtBitArea,   { 0.30f, 0.85f, 1.0f }, "Area"   },
+		{ 1u << kLtBitSphere, { 1.0f, 0.40f, 0.70f }, "Sphere" },
+		{ 1u << kLtBitDisk,   { 0.70f, 1.0f, 0.40f }, "Disk"   },
+		{ 1u << kLtBitTube,   { 0.40f, 0.70f, 1.0f }, "Tube"   },
 	};
 
 	for (const auto& t : types)
@@ -220,11 +220,11 @@ void DebugDrawNode::ApplyLightWireframe(render::CommandContext& context, const S
 			continue;
 
 		u32 instanceCount = 0u;
-		if      (t.typeMask == (1u << LT_BIT_SPOT))   instanceCount = renderView.light.numSpots;
-		else if (t.typeMask == (1u << LT_BIT_AREA))   instanceCount = renderView.light.numAreas;
-		else if (t.typeMask == (1u << LT_BIT_SPHERE)) instanceCount = renderView.light.numSpheres;
-		else if (t.typeMask == (1u << LT_BIT_DISK))   instanceCount = renderView.light.numDisks;
-		else if (t.typeMask == (1u << LT_BIT_TUBE))   instanceCount = renderView.light.numTubes;
+		if      (t.typeMask == (1u << kLtBitSpot))   instanceCount = renderView.light.numSpots;
+		else if (t.typeMask == (1u << kLtBitArea))   instanceCount = renderView.light.numAreas;
+		else if (t.typeMask == (1u << kLtBitSphere)) instanceCount = renderView.light.numSpheres;
+		else if (t.typeMask == (1u << kLtBitDisk))   instanceCount = renderView.light.numDisks;
+		else if (t.typeMask == (1u << kLtBitTube))   instanceCount = renderView.light.numTubes;
 
 		if (instanceCount == 0u)
 			continue;
@@ -242,7 +242,7 @@ void DebugDrawNode::ApplyLightWireframe(render::CommandContext& context, const S
 		};
 		context.SetGraphicsConstants(sizeof(push), &push);
 
-		context.Draw(MAX_VERTS_PER_LIGHT, instanceCount);
+		context.Draw(kMaxVertsPerLight, instanceCount);
 	}
 }
 

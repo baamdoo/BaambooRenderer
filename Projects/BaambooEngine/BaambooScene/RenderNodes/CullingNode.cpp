@@ -32,7 +32,7 @@ CullingNode::CullingNode(render::RenderDevice& rd)
 	// --- Mesh cull result buffers ---
 	m_DrawIndexBuffer = Buffer::Create(rd, "CullingPass::DrawIndexBuffer",
 		{
-			.count              = MAX_ENTITY_COUNT,
+			.count              = kMaxEntityCount,
 			.elementSizeInBytes = sizeof(u32),
 			.bufferUsage        = eBufferUsage_Storage,
 		});
@@ -44,23 +44,23 @@ CullingNode::CullingNode(render::RenderDevice& rd)
 		});
 	m_CulledIndirectCommandBuffer = Buffer::Create(rd, "CullingPass::CulledIndirectCommandBuffer",
 		{
-			.count              = MAX_ENTITY_COUNT,
+			.count              = kMaxEntityCount,
 			.elementSizeInBytes = sizeof(IndirectCommandData),
 			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_Indirect,
 		});
 	m_VisibilityBuffer = Buffer::Create(rd, "CullingPass::VisibilityBuffer",
 		{
-			.count              = MAX_ENTITY_COUNT,
+			.count              = kMaxEntityCount,
 			.elementSizeInBytes = sizeof(u32),
 			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest,
 		});
 	m_MeshletVisibilityBuffer = Buffer::Create(rd, "CullingPass::MeshletVisibilityBuffer",
 		{
-			.count              = NUM_INITIAL_MESHLET_VISIBILITY_WORDS,
+			.count              = kNumInitialMeshletVisibilityWords,
 			.elementSizeInBytes = sizeof(u32),
 			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferSource | eBufferUsage_TransferDest,
 		});
-	m_NumMeshletVisibilityWords = NUM_INITIAL_MESHLET_VISIBILITY_WORDS;
+	m_NumMeshletVisibilityWords = kNumInitialMeshletVisibilityWords;
 
 	m_pSPDCounterBuffer = Buffer::Create(rd, "CullingPass::SPDCounterBuffer",
 		{
@@ -72,14 +72,14 @@ CullingNode::CullingNode(render::RenderDevice& rd)
 	// --- Readback ring ---
 	m_Phase1CountReadback = Buffer::Create(rd, "CullingPass::Phase1CountReadback",
 		{
-			.count              = READBACK_SLOTS,
+			.count              = kReadbackSlots,
 			.elementSizeInBytes = sizeof(u32),
 			.mapDirection       = 2,
 			.bufferUsage        = eBufferUsage_TransferDest,
 		});
 	m_Phase2CountReadback = Buffer::Create(rd, "CullingPass::Phase2CountReadback",
 		{
-			.count              = READBACK_SLOTS,
+			.count              = kReadbackSlots,
 			.elementSizeInBytes = sizeof(u32),
 			.mapDirection       = 2,
 			.bufferUsage        = eBufferUsage_TransferDest,
@@ -88,20 +88,20 @@ CullingNode::CullingNode(render::RenderDevice& rd)
 #if PROFILING_LEVEL >= 1
 	m_MeshletStatsBuffer = Buffer::Create(rd, "CullingPass::MeshletStatsBuffer",
 		{
-			.count              = MESHLET_STATS_FIELDS,
+			.count              = kMeshletStatsFields,
 			.elementSizeInBytes = sizeof(u32),
 			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferSource | eBufferUsage_TransferDest,
 		});
 	m_Phase1MeshletStatsReadback = Buffer::Create(rd, "CullingPass::Phase1MeshletStatsReadback",
 		{
-			.count              = READBACK_SLOTS * MESHLET_STATS_FIELDS,
+			.count              = kReadbackSlots * kMeshletStatsFields,
 			.elementSizeInBytes = sizeof(u32),
 			.mapDirection       = 2,
 			.bufferUsage        = eBufferUsage_TransferDest,
 		});
 	m_Phase2MeshletStatsReadback = Buffer::Create(rd, "CullingPass::Phase2MeshletStatsReadback",
 		{
-			.count              = READBACK_SLOTS * MESHLET_STATS_FIELDS,
+			.count              = kReadbackSlots * kMeshletStatsFields,
 			.elementSizeInBytes = sizeof(u32),
 			.mapDirection       = 2,
 			.bufferUsage        = eBufferUsage_TransferDest,
@@ -111,14 +111,14 @@ CullingNode::CullingNode(render::RenderDevice& rd)
 	// --- Terrain cull count readback ring (mirrors mesh Phase1/Phase2 pattern) ---
 	m_TerrainPhase1CountReadback = Buffer::Create(rd, "CullingPass::TerrainPhase1CountReadback",
 		{
-			.count              = READBACK_SLOTS,
+			.count              = kReadbackSlots,
 			.elementSizeInBytes = sizeof(u32),
 			.mapDirection       = 2,
 			.bufferUsage        = eBufferUsage_TransferDest,
 		});
 	m_TerrainPhase2CountReadback = Buffer::Create(rd, "CullingPass::TerrainPhase2CountReadback",
 		{
-			.count              = READBACK_SLOTS,
+			.count              = kReadbackSlots,
 			.elementSizeInBytes = sizeof(u32),
 			.mapDirection       = 2,
 			.bufferUsage        = eBufferUsage_TransferDest,
@@ -126,7 +126,7 @@ CullingNode::CullingNode(render::RenderDevice& rd)
 #if PROFILING_LEVEL >= 1
 	m_TerrainPhase1LodStatsReadback = Buffer::Create(rd, "CullingPass::TerrainPhase1LodStatsReadback",
 		{
-			.count              = READBACK_SLOTS * TERRAIN_LOD_STATS_DEPTHS,
+			.count              = kReadbackSlots * kTerrainLodStatsDepths,
 			.elementSizeInBytes = sizeof(u32),
 			.mapDirection       = 2,
 			.bufferUsage        = eBufferUsage_TransferDest,
@@ -134,7 +134,7 @@ CullingNode::CullingNode(render::RenderDevice& rd)
 #endif
 	m_TerrainPhase2LodStatsReadback = Buffer::Create(rd, "CullingPass::TerrainPhase2LodStatsReadback",
 		{
-			.count              = READBACK_SLOTS * TERRAIN_LOD_STATS_DEPTHS,
+			.count              = kReadbackSlots * kTerrainLodStatsDepths,
 			.elementSizeInBytes = sizeof(u32),
 			.mapDirection       = 2,
 			.bufferUsage        = eBufferUsage_TransferDest,
@@ -254,8 +254,8 @@ void CullingNode::BuildHiZ(render::CommandContext& context)
 	context.StageDescriptor("g_SPDCounter", m_pSPDCounterBuffer);
 
 	u32 lastMip = hiZMipCount - 1;
-	static constexpr u32 MAX_SPD_MIP_UAVS = 13; // g_MipUAV0..g_MipUAV12
-	for (u32 i = 0; i < MAX_SPD_MIP_UAVS; ++i)
+	static constexpr u32 kMaxSpdMipUavs = 13; // g_MipUAV0..g_MipUAV12
+	for (u32 i = 0; i < kMaxSpdMipUavs; ++i)
 	{
 		u32 mip = std::min(i, lastMip);
 		context.StageDescriptorMip("g_MipUAV" + std::to_string(i), m_pHiZTexture, mip);
@@ -284,7 +284,7 @@ void CullingNode::EnsureMeshletVisibility(u32 numRequiredWords)
 // =========================================================================
 void CullingNode::PublishReadbackStats()
 {
-	if (m_ReadbackFrameCounter < READBACK_SLOTS)
+	if (m_ReadbackFrameCounter < kReadbackSlots)
 		return;
 
 	if (auto* p1 = static_cast< u32* >(m_Phase1CountReadback->MappedMemory()))
@@ -295,14 +295,14 @@ void CullingNode::PublishReadbackStats()
 #if PROFILING_LEVEL >= 1
 	if (auto* p1m = static_cast< u32* >(m_Phase1MeshletStatsReadback->MappedMemory()))
 	{
-		const u32 base = m_ReadbackIdx * MESHLET_STATS_FIELDS;
+		const u32 base = m_ReadbackIdx * kMeshletStatsFields;
 		g_FrameData.phase1MeshletDrawn       = p1m[base + 0];
 		g_FrameData.phase1MeshletTotal       = p1m[base + 1];
 		g_FrameData.phase1TriangleCandidates = p1m[base + 2];
 	}
 	if (auto* p2m = static_cast< u32* >(m_Phase2MeshletStatsReadback->MappedMemory()))
 	{
-		const u32 base = m_ReadbackIdx * MESHLET_STATS_FIELDS;
+		const u32 base = m_ReadbackIdx * kMeshletStatsFields;
 		g_FrameData.phase2MeshletDrawn       = p2m[base + 0];
 		g_FrameData.phase2MeshletTotal       = p2m[base + 1];
 		g_FrameData.phase2TriangleCandidates = p2m[base + 2];
@@ -330,14 +330,14 @@ void CullingNode::PublishReadbackStats()
 #if PROFILING_LEVEL >= 1
 		if (auto* t1lod = static_cast< u32* >(m_TerrainPhase1LodStatsReadback->MappedMemory()))
 		{
-			const u32 base = m_ReadbackIdx * TERRAIN_LOD_STATS_DEPTHS;
-			for (u32 i = 0u; i < TERRAIN_LOD_STATS_DEPTHS; ++i)
+			const u32 base = m_ReadbackIdx * kTerrainLodStatsDepths;
+			for (u32 i = 0u; i < kTerrainLodStatsDepths; ++i)
 				g_FrameData.terrainPhase1LodPatches[i] = t1lod[base + i];
 		}
 		if (auto* t2lod = static_cast< u32* >(m_TerrainPhase2LodStatsReadback->MappedMemory()))
 		{
-			const u32 base = m_ReadbackIdx * TERRAIN_LOD_STATS_DEPTHS;
-			for (u32 i = 0u; i < TERRAIN_LOD_STATS_DEPTHS; ++i)
+			const u32 base = m_ReadbackIdx * kTerrainLodStatsDepths;
+			for (u32 i = 0u; i < kTerrainLodStatsDepths; ++i)
 				g_FrameData.terrainPhase2LodPatches[i] = t2lod[base + i];
 		}
 #endif
@@ -350,7 +350,7 @@ void CullingNode::PublishReadbackStats()
 		g_FrameData.terrainPhase1Triangles = 0u;
 		g_FrameData.terrainPhase2Triangles = 0u;
 #if PROFILING_LEVEL >= 1
-		for (u32 i = 0u; i < TERRAIN_LOD_STATS_DEPTHS; ++i)
+		for (u32 i = 0u; i < kTerrainLodStatsDepths; ++i)
 		{
 			g_FrameData.terrainPhase1LodPatches[i] = 0u;
 			g_FrameData.terrainPhase2LodPatches[i] = 0u;
@@ -407,9 +407,9 @@ void CullingNode::Apply(render::CommandContext& context, const SceneRenderView& 
 	// ============================================================
 	{
 		BAAMBOO_PROFILE_SCOPE(context, "Phase1Cull");
-		DispatchMeshCull(context, numInstances, PHASE1_CULL);
+		DispatchMeshCull(context, numInstances, kPhase1Cull);
 		if (m_pTerrainNode)
-			m_pTerrainNode->DispatchTerrainCull(context, CullingNode::PHASE1_CULL, m_pHiZTexture, renderView);
+			m_pTerrainNode->DispatchTerrainCull(context, CullingNode::kPhase1Cull, m_pHiZTexture, renderView);
 
 		context.CopyBufferRegion(m_Phase1CountReadback, m_DrawCountBuffer, sizeof(u32), m_ReadbackIdx * sizeof(u32), 0);
 		context.TransitionBufferToRead(m_DrawCountBuffer, ePipelineStage::DrawIndirect, 0, true);
@@ -423,20 +423,20 @@ void CullingNode::Apply(render::CommandContext& context, const SceneRenderView& 
 			const auto& pTerrainLodStats = m_pTerrainNode->GetLodStatsBuffer();
 			if (pTerrainLodStats)
 				context.CopyBufferRegion(m_TerrainPhase1LodStatsReadback, pTerrainLodStats,
-					TERRAIN_LOD_STATS_DEPTHS * sizeof(u32),
-					m_ReadbackIdx * TERRAIN_LOD_STATS_DEPTHS * sizeof(u32), 0);
+					kTerrainLodStatsDepths * sizeof(u32),
+					m_ReadbackIdx * kTerrainLodStatsDepths * sizeof(u32), 0);
 #endif
 		}
 	}
 	{
 		BAAMBOO_PROFILE_SCOPE_STATS(context, "Phase1Draw");
 		if (m_pGBufferNode)
-			m_pGBufferNode->DrawGBufferPhase1(context, MakeMeshCullOutputs(numInstances, PHASE1_CULL));
+			m_pGBufferNode->DrawGBufferPhase1(context, MakeMeshCullOutputs(numInstances, kPhase1Cull));
 		if (m_pTerrainNode && m_pGBufferNode)
 			m_pTerrainNode->DrawTerrainPhase1(context, m_pGBufferNode->GetPhase2RenderTarget(), renderView);
 
 #if PROFILING_LEVEL >= 1
-		const u32 statsBytes = MESHLET_STATS_FIELDS * sizeof(u32);
+		const u32 statsBytes = kMeshletStatsFields * sizeof(u32);
 		context.CopyBufferRegion(m_Phase1MeshletStatsReadback, m_MeshletStatsBuffer, statsBytes, m_ReadbackIdx * statsBytes, 0);
 #endif
 	}
@@ -454,9 +454,9 @@ void CullingNode::Apply(render::CommandContext& context, const SceneRenderView& 
 	// ============================================================
 	{
 		BAAMBOO_PROFILE_SCOPE(context, "Phase2Cull");
-		DispatchMeshCull(context, numInstances, PHASE2_CULL);
+		DispatchMeshCull(context, numInstances, kPhase2Cull);
 		if (m_pTerrainNode)
-			m_pTerrainNode->DispatchTerrainCull(context, CullingNode::PHASE2_CULL, m_pHiZTexture, renderView);
+			m_pTerrainNode->DispatchTerrainCull(context, CullingNode::kPhase2Cull, m_pHiZTexture, renderView);
 
 		context.CopyBufferRegion(m_Phase2CountReadback, m_DrawCountBuffer, sizeof(u32), m_ReadbackIdx * sizeof(u32), 0);
 		context.TransitionBufferToRead(m_DrawCountBuffer, ePipelineStage::DrawIndirect, 0, true);
@@ -470,27 +470,27 @@ void CullingNode::Apply(render::CommandContext& context, const SceneRenderView& 
 			const auto& pTerrainLodStats = m_pTerrainNode->GetLodStatsBuffer();
 			if (pTerrainLodStats)
 				context.CopyBufferRegion(m_TerrainPhase2LodStatsReadback, pTerrainLodStats,
-					TERRAIN_LOD_STATS_DEPTHS * sizeof(u32),
-					m_ReadbackIdx * TERRAIN_LOD_STATS_DEPTHS * sizeof(u32), 0);
+					kTerrainLodStatsDepths * sizeof(u32),
+					m_ReadbackIdx * kTerrainLodStatsDepths * sizeof(u32), 0);
 #endif
 		}
 	}
 	{
 		BAAMBOO_PROFILE_SCOPE_STATS(context, "Phase2Draw");
 		if (m_pGBufferNode)
-			m_pGBufferNode->DrawGBufferPhase2(context, MakeMeshCullOutputs(numInstances, PHASE2_CULL));
+			m_pGBufferNode->DrawGBufferPhase2(context, MakeMeshCullOutputs(numInstances, kPhase2Cull));
 		if (m_pTerrainNode && m_pGBufferNode)
 			m_pTerrainNode->DrawTerrainPhase2(context, m_pGBufferNode->GetPhase2RenderTarget(), renderView);
 
 #if PROFILING_LEVEL >= 1
-		const u32 statsBytes = MESHLET_STATS_FIELDS * sizeof(u32);
+		const u32 statsBytes = kMeshletStatsFields * sizeof(u32);
 		context.CopyBufferRegion(m_Phase2MeshletStatsReadback, m_MeshletStatsBuffer, statsBytes, m_ReadbackIdx * statsBytes, 0);
 #endif
 	}
 
 	// Advance ring-buffer index for next frame.
-	m_ReadbackIdx = (m_ReadbackIdx + 1) % READBACK_SLOTS;
-	if (m_ReadbackFrameCounter < READBACK_SLOTS + 1)
+	m_ReadbackIdx = (m_ReadbackIdx + 1) % kReadbackSlots;
+	if (m_ReadbackFrameCounter < kReadbackSlots + 1)
 		++m_ReadbackFrameCounter;
 }
 

@@ -118,12 +118,12 @@ Dx12ResourceManager::Dx12ResourceManager(Dx12RenderDevice& rd)
     : m_RenderDevice(rd)
 {
     m_pRtvDescriptorPool =
-        MakeBox< DescriptorPool >(m_RenderDevice, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, MAX_NUM_DESCRIPTOR_PER_POOL[D3D12_DESCRIPTOR_HEAP_TYPE_RTV]);
+        MakeBox< DescriptorPool >(m_RenderDevice, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, kMaxNumDescriptorPerPool[D3D12_DESCRIPTOR_HEAP_TYPE_RTV]);
     m_pDsvDescriptorPool =
-        MakeBox< DescriptorPool >(m_RenderDevice, D3D12_DESCRIPTOR_HEAP_TYPE_DSV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, MAX_NUM_DESCRIPTOR_PER_POOL[D3D12_DESCRIPTOR_HEAP_TYPE_DSV]);
+        MakeBox< DescriptorPool >(m_RenderDevice, D3D12_DESCRIPTOR_HEAP_TYPE_DSV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, kMaxNumDescriptorPerPool[D3D12_DESCRIPTOR_HEAP_TYPE_DSV]);
 
     m_pGlobalDescriptorHeap
-        = MakeArc< DescriptorPool >(m_RenderDevice, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, MAX_GLOBAL_DESCRIPTORS);
+        = MakeArc< DescriptorPool >(m_RenderDevice, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, kMaxGlobalDescriptors);
 
     m_pGlobalRootSignature = 
         MakeArc< Dx12RootSignature >(
@@ -133,32 +133,32 @@ Dx12ResourceManager::Dx12ResourceManager(Dx12RenderDevice& rd)
         );
 
     // CommandSignature Param: space100, b0
-    m_pGlobalRootSignature->AddConstants(0, COMMANDSIGNATURE_SPACE, 1);
+    m_pGlobalRootSignature->AddConstants(0, kCommandSignatureSpace, 1);
     // Root Constant: space100, b0
-    m_pGlobalRootSignature->AddConstants(0, MAX_LOCAL_ROOTCONSTANTS - 1);
+    m_pGlobalRootSignature->AddConstants(0, kMaxLocalRootConstants - 1);
     // DescriptorHeapIndices: space100, b1 ~ b16
-    for (u32 i = 1; i < MAX_DESCRIPTORHEAPINDICES + 1; ++i)
+    for (u32 i = 1; i < kMaxDescriptorHeapIndices + 1; ++i)
     {
         m_pGlobalRootSignature->AddConstants(i, 1);
     }
 
     // Global CBVs
-    m_pGlobalRootSignature->AddCBV(0, GLOBAL_DESCRIPTOR_SPACE);           // g_Camera
-    m_pGlobalRootSignature->AddConstants(1, GLOBAL_DESCRIPTOR_SPACE, 1);  // g_Vertices
-    m_pGlobalRootSignature->AddConstants(2, GLOBAL_DESCRIPTOR_SPACE, 1);  // g_Indices
-    m_pGlobalRootSignature->AddConstants(3, GLOBAL_DESCRIPTOR_SPACE, 1);  // g_Meshlets
-    m_pGlobalRootSignature->AddConstants(4, GLOBAL_DESCRIPTOR_SPACE, 1);  // g_MeshletVertices
-    m_pGlobalRootSignature->AddConstants(5, GLOBAL_DESCRIPTOR_SPACE, 1);  // g_MeshletTriangles
-    m_pGlobalRootSignature->AddConstants(6, GLOBAL_DESCRIPTOR_SPACE, 1);  // g_Meshes
-    m_pGlobalRootSignature->AddConstants(7, GLOBAL_DESCRIPTOR_SPACE, 1);  // g_Instances
-    m_pGlobalRootSignature->AddCBV(8, GLOBAL_DESCRIPTOR_SPACE);           // g_CullData
-    m_pGlobalRootSignature->AddConstants(9, GLOBAL_DESCRIPTOR_SPACE, 1);  // g_Transforms
-    m_pGlobalRootSignature->AddConstants(10, GLOBAL_DESCRIPTOR_SPACE, 1); // g_Materials
-    m_pGlobalRootSignature->AddCBV(11, GLOBAL_DESCRIPTOR_SPACE);          // g_Lights
-    m_pGlobalRootSignature->AddCBV(12, GLOBAL_DESCRIPTOR_SPACE);          // g_SceneEnvironment
-    m_pGlobalRootSignature->AddCBV(13, GLOBAL_DESCRIPTOR_SPACE);          // g_FrozenCamera
+    m_pGlobalRootSignature->AddCBV(0, kGlobalDescriptorSpace);           // g_Camera
+    m_pGlobalRootSignature->AddConstants(1, kGlobalDescriptorSpace, 1);  // g_Vertices
+    m_pGlobalRootSignature->AddConstants(2, kGlobalDescriptorSpace, 1);  // g_Indices
+    m_pGlobalRootSignature->AddConstants(3, kGlobalDescriptorSpace, 1);  // g_Meshlets
+    m_pGlobalRootSignature->AddConstants(4, kGlobalDescriptorSpace, 1);  // g_MeshletVertices
+    m_pGlobalRootSignature->AddConstants(5, kGlobalDescriptorSpace, 1);  // g_MeshletTriangles
+    m_pGlobalRootSignature->AddConstants(6, kGlobalDescriptorSpace, 1);  // g_Meshes
+    m_pGlobalRootSignature->AddConstants(7, kGlobalDescriptorSpace, 1);  // g_Instances
+    m_pGlobalRootSignature->AddCBV(8, kGlobalDescriptorSpace);           // g_CullData
+    m_pGlobalRootSignature->AddConstants(9, kGlobalDescriptorSpace, 1);  // g_Transforms
+    m_pGlobalRootSignature->AddConstants(10, kGlobalDescriptorSpace, 1); // g_Materials
+    m_pGlobalRootSignature->AddCBV(11, kGlobalDescriptorSpace);          // g_Lights
+    m_pGlobalRootSignature->AddCBV(12, kGlobalDescriptorSpace);          // g_SceneEnvironment
+    m_pGlobalRootSignature->AddCBV(13, kGlobalDescriptorSpace);          // g_FrozenCamera
     // Local CBVs
-    for (u32 i = 0; i < (MAX_VIEWS - 8) / 3; ++i)
+    for (u32 i = 0; i < (kMaxViews - 8) / 3; ++i)
     {
         m_pGlobalRootSignature->AddCBV(i, 1);
         m_pGlobalRootSignature->AddSRV(i, 1);

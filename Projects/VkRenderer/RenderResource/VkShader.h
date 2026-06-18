@@ -10,7 +10,7 @@ public:
 	struct DescriptorInfo
 	{
 		std::string      name;
-		u32              binding        = INVALID_INDEX;
+		u32              binding        = kInvalidIndex;
 		u32              arraySize      = 0;
 		VkDescriptorType descriptorType = VK_DESCRIPTOR_TYPE_MAX_ENUM;
 	};

@@ -53,7 +53,7 @@ struct TransformData
 
 struct BoneTransformData
 {
-    mat4 mBones[MAX_BONES];
+    mat4 mBones[kMaxBones];
 };
 
 
@@ -363,7 +363,7 @@ struct CloudShadowData
 // =========================================================================
 // Terrain
 // =========================================================================
-constexpr u32 TERRAIN_MAX_LOD_DEPTHS = 8u; // depth 0..7 inclusive
+constexpr u32 kTerrainMaxLodDepths = 8u; // depth 0..7 inclusive
 
 struct TerrainParams
 {
@@ -382,7 +382,7 @@ struct TerrainParams
     u32 numPatches;
     u32 _pad0;
 
-    float lodRangeStart[TERRAIN_MAX_LOD_DEPTHS]; // r_s[d] = k * r_e[d]
-    float lodRangeEnd[TERRAIN_MAX_LOD_DEPTHS];   // r_e[d] = base * 2^(maxDepth - d)
+    float lodRangeStart[kTerrainMaxLodDepths]; // r_s[d] = k * r_e[d]
+    float lodRangeEnd[kTerrainMaxLodDepths];   // r_e[d] = base * 2^(maxDepth - d)
 };
-static_assert(sizeof(TerrainParams) == 48u + 2ULL * TERRAIN_MAX_LOD_DEPTHS * sizeof(float), "TerrainGlobalsCB");
+static_assert(sizeof(TerrainParams) == 48u + 2ULL * kTerrainMaxLodDepths * sizeof(float), "TerrainGlobalsCB");

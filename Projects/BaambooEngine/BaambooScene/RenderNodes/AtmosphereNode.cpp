@@ -7,12 +7,12 @@
 namespace baamboo
 {
 
-static constexpr uint3 TRANSMITTANCE_LUT_RESOLUTION     = { 256, 64, 1 };
-static constexpr uint3 MULTISCATTERING_LUT_RESOLUTION   = { 32, 32, 1 };
-static constexpr uint3 SKYVIEW_LUT_RESOLUTION           = { 192, 104 , 1 };
-static constexpr uint3 AERIALPERSPECTIVE_LUT_RESOLUTION = { 32, 32, 32 };
-static constexpr uint3 ATMOSPHEREAMBIENT_LUT_RESOLUTION = { 64, 1, 1 };
-static constexpr uint3 SKYBOX_LUT_RESOLUTION            = { 1024, 1024, 1 };
+static constexpr uint3 kTransmittanceLutResolution     = { 256, 64, 1 };
+static constexpr uint3 kMultiScatteringLutResolution   = { 32, 32, 1 };
+static constexpr uint3 kSkyViewLutResolution           = { 192, 104 , 1 };
+static constexpr uint3 kAerialPerspectiveLutResolution = { 32, 32, 32 };
+static constexpr uint3 kAtmosphereAmbientLutResolution = { 64, 1, 1 };
+static constexpr uint3 kSkyboxLutResolution            = { 1024, 1024, 1 };
 
 AtmosphereNode::AtmosphereNode(render::RenderDevice& rd)
 	: Super(rd, "AtmospherePass")
@@ -24,7 +24,7 @@ AtmosphereNode::AtmosphereNode(render::RenderDevice& rd)
 			m_RenderDevice,
 			"AtmospherePass::TransmittanceLUT",
 			{
-				.resolution = TRANSMITTANCE_LUT_RESOLUTION,
+				.resolution = kTransmittanceLutResolution,
 				.format     = eFormat::RG11B10_UFLOAT,
 				.imageUsage = eTextureUsage_Storage | eTextureUsage_Sample
 			});
@@ -33,7 +33,7 @@ AtmosphereNode::AtmosphereNode(render::RenderDevice& rd)
 			m_RenderDevice,
 			"AtmospherePass::MultiScatteringLUT",
 			{
-				.resolution = MULTISCATTERING_LUT_RESOLUTION,
+				.resolution = kMultiScatteringLutResolution,
 				.format     = eFormat::RG11B10_UFLOAT,
 				.imageUsage = eTextureUsage_Storage | eTextureUsage_Sample
 			});
@@ -42,7 +42,7 @@ AtmosphereNode::AtmosphereNode(render::RenderDevice& rd)
 			m_RenderDevice,
 			"AtmospherePass::SkyViewLUT",
 			{
-				.resolution = SKYVIEW_LUT_RESOLUTION,
+				.resolution = kSkyViewLutResolution,
 				.format     = eFormat::RG11B10_UFLOAT,
 				.imageUsage = eTextureUsage_Storage | eTextureUsage_Sample
 			});
@@ -52,7 +52,7 @@ AtmosphereNode::AtmosphereNode(render::RenderDevice& rd)
 			"AtmospherePass::AerialPerspectiveLUT",
 			{
 				.imageType  = eImageType::Texture3D,
-				.resolution = AERIALPERSPECTIVE_LUT_RESOLUTION,
+				.resolution = kAerialPerspectiveLutResolution,
 				.format     = eFormat::RGBA16_FLOAT,
 				.imageUsage = eTextureUsage_Storage | eTextureUsage_Sample
 			});
@@ -62,7 +62,7 @@ AtmosphereNode::AtmosphereNode(render::RenderDevice& rd)
 			"AtmospherePass::AtmosphereAmbientLUT",
 			{
 				.imageType  = eImageType::Texture1D,
-				.resolution = ATMOSPHEREAMBIENT_LUT_RESOLUTION,
+				.resolution = kAtmosphereAmbientLutResolution,
 				.format     = eFormat::RG11B10_UFLOAT,
 				.imageUsage = eTextureUsage_Storage | eTextureUsage_Sample
 			});
@@ -72,7 +72,7 @@ AtmosphereNode::AtmosphereNode(render::RenderDevice& rd)
 			"AtmospherePass::SkyboxLUT",
 			{
 				.imageType   = eImageType::TextureCube,
-				.resolution  = SKYBOX_LUT_RESOLUTION,
+				.resolution  = kSkyboxLutResolution,
 				.format      = eFormat::RG11B10_UFLOAT,
 				.imageUsage  = eTextureUsage_Storage | eTextureUsage_Sample,
 				.arrayLayers = 6
@@ -140,7 +140,7 @@ void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderVie
 
 		context.StageDescriptor("g_OutTransmittanceLUT", m_pTransmittanceLUT);
 		
-		context.Dispatch2D< 8, 8 >(TRANSMITTANCE_LUT_RESOLUTION.x, TRANSMITTANCE_LUT_RESOLUTION.y);
+		context.Dispatch2D< 8, 8 >(kTransmittanceLutResolution.x, kTransmittanceLutResolution.y);
 
 		//
 		context.SetRenderPipeline(m_pMultiScatteringPSO.get());
@@ -153,7 +153,7 @@ void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderVie
 		context.StageDescriptor("g_TransmittanceLUT", m_pTransmittanceLUT, g_FrameData.pLinearClamp);
 		context.StageDescriptor("g_OutMultiScatteringLUT", m_pMultiScatteringLUT);
 		
-		context.Dispatch2D< 8, 8 >(MULTISCATTERING_LUT_RESOLUTION.x, MULTISCATTERING_LUT_RESOLUTION.y);
+		context.Dispatch2D< 8, 8 >(kMultiScatteringLutResolution.x, kMultiScatteringLutResolution.y);
 	}
 
 	context.SetRenderPipeline(m_pSkyViewPSO.get());
@@ -168,7 +168,7 @@ void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderVie
 	context.StageDescriptor("g_MultiScatteringLUT", m_pMultiScatteringLUT, g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_OutSkyViewLUT", m_pSkyViewLUT);
 	
-	context.Dispatch2D< 8, 8 >(SKYVIEW_LUT_RESOLUTION.x, SKYVIEW_LUT_RESOLUTION.y);
+	context.Dispatch2D< 8, 8 >(kSkyViewLutResolution.x, kSkyViewLutResolution.y);
 
 	//
 	context.SetRenderPipeline(m_pAerialPerspectivePSO.get());
@@ -179,7 +179,7 @@ void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderVie
 	context.StageDescriptor("g_MultiScatteringLUT", m_pMultiScatteringLUT, g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_OutAerialPerspectiveLUT", m_pAerialPerspectiveLUT);
 
-	context.Dispatch3D< 4, 4, 4 >(AERIALPERSPECTIVE_LUT_RESOLUTION.x, AERIALPERSPECTIVE_LUT_RESOLUTION.y, AERIALPERSPECTIVE_LUT_RESOLUTION.z);
+	context.Dispatch3D< 4, 4, 4 >(kAerialPerspectiveLutResolution.x, kAerialPerspectiveLutResolution.y, kAerialPerspectiveLutResolution.z);
 
 	//
 	context.SetRenderPipeline(m_pDistantSkyLightPSO.get());
@@ -197,7 +197,7 @@ void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderVie
 	context.StageDescriptor("g_MultiScatteringLUT", m_pMultiScatteringLUT, g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_OutAtmosphereAmbientLUT", m_pAtmosphereAmbientLUT);
 
-	context.Dispatch1D< 64 >(ATMOSPHEREAMBIENT_LUT_RESOLUTION.x);
+	context.Dispatch1D< 64 >(kAtmosphereAmbientLutResolution.x);
 
 	//
 	context.SetRenderPipeline(m_pBakeSkyboxPSO.get());
@@ -208,7 +208,7 @@ void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderVie
 	context.StageDescriptor("g_SkyViewLUT", m_pSkyViewLUT, g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_OutSkyboxLUT", m_pSkyboxLUT);
 
-	context.Dispatch3D< 8, 8, 6 >(SKYBOX_LUT_RESOLUTION.x, SKYBOX_LUT_RESOLUTION.y, SKYBOX_LUT_RESOLUTION.z);
+	context.Dispatch3D< 8, 8, 6 >(kSkyboxLutResolution.x, kSkyboxLutResolution.y, kSkyboxLutResolution.z);
 
 	g_FrameData.pTransmittanceLUT     = m_pTransmittanceLUT;
 	g_FrameData.pMultiScatteringLUT   = m_pMultiScatteringLUT;

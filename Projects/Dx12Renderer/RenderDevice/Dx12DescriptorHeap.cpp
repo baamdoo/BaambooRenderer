@@ -42,7 +42,7 @@ void Dx12DescriptorHeap::ParseRootSignature(Arc< Dx12RootSignature > pRootSignat
     m_pCurrentRS = pRootSignature;
 
     m_DescriptorTableBitMask = m_pCurrentRS->GetDescriptorTableBitMask(m_Type);
-    m_CachedDescriptorAllocations.emplace(m_pCurrentRS.get(), std::array< DescriptorAllocation, MAX_ROOT_INDEX >{});
+    m_CachedDescriptorAllocations.emplace(m_pCurrentRS.get(), std::array< DescriptorAllocation, kMaxRootIndex >{});
 
     auto mask = m_DescriptorTableBitMask;
     DWORD rootIndex;
@@ -65,7 +65,7 @@ void Dx12DescriptorHeap::ParseGlobalRootSignature(Arc< Dx12RootSignature > pRoot
     m_pCurrentRS = pRootSignature;
 
     m_DescriptorTableBitMask = m_pCurrentRS->GetDescriptorTableBitMask(m_Type);
-    m_CachedDescriptorAllocations.emplace(m_pCurrentRS.get(), std::array< DescriptorAllocation, MAX_ROOT_INDEX >{});
+    m_CachedDescriptorAllocations.emplace(m_pCurrentRS.get(), std::array< DescriptorAllocation, kMaxRootIndex >{});
 
     auto mask = m_DescriptorTableBitMask;
     DWORD rootIndex;
@@ -85,7 +85,7 @@ void Dx12DescriptorHeap::ParseGlobalRootSignature(Arc< Dx12RootSignature > pRoot
 u32 Dx12DescriptorHeap::StageDescriptor(u32 rootIndex, u32 numDescriptors, u32 offset, D3D12_CPU_DESCRIPTOR_HANDLE srcHandle)
 {
     assert(m_pCurrentRS);
-    assert(rootIndex < MAX_ROOT_INDEX && numDescriptors < m_NumDescriptors && offset + numDescriptors < m_NumDescriptors);
+    assert(rootIndex < kMaxRootIndex && numDescriptors < m_NumDescriptors && offset + numDescriptors < m_NumDescriptors);
 
     auto d3d12Device = m_RenderDevice.GetD3D12Device();
     // On-demand bindless descriptors allocation
@@ -107,7 +107,7 @@ u32 Dx12DescriptorHeap::StageDescriptor(u32 rootIndex, u32 numDescriptors, u32 o
 u32 Dx12DescriptorHeap::StageDescriptors(u32 rootIndex, u32 offset, std::vector< D3D12_CPU_DESCRIPTOR_HANDLE >&& srcHandles)
 {
     u32 numDescriptors = static_cast<u32>(srcHandles.size());
-    assert(rootIndex < MAX_ROOT_INDEX && numDescriptors < m_NumDescriptors && offset + numDescriptors < m_NumDescriptors);
+    assert(rootIndex < kMaxRootIndex && numDescriptors < m_NumDescriptors && offset + numDescriptors < m_NumDescriptors);
 
     auto d3d12Device = m_RenderDevice.GetD3D12Device();
     // On-demand bindless descriptors allocation

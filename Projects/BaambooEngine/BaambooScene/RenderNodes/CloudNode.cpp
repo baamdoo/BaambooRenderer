@@ -21,10 +21,10 @@ static inline uint3 QuatResolution(u32 width, u32 height)
 //-------------------------------------------------------------------------
 // Cloud Shape
 //-------------------------------------------------------------------------
-static constexpr uint3 BASE_NOISE_TEXTURE_RESOLUTION       = { 128, 128, 128 };
-static constexpr uint3 DETAIL_NOISE_TEXTURE_RESOLUTION     = { 64, 64, 64 };
-static constexpr uint3 VERTICAL_PROFILE_TEXTURE_RESOLUTION = { 256, 256, 1 };
-static constexpr uint3 WEATHERMAP_TEXTURE_RESOLUTION       = { 2048, 2048, 1 };
+static constexpr uint3 kBaseNoiseTextureResolution       = { 128, 128, 128 };
+static constexpr uint3 kDetailNoiseTextureResolution     = { 64, 64, 64 };
+static constexpr uint3 kVerticalProfileTextureResolution = { 256, 256, 1 };
+static constexpr uint3 kWeatherMapTextureResolution       = { 2048, 2048, 1 };
 
 CloudShapeNode::CloudShapeNode(render::RenderDevice& rd)
     : Super(rd, "CloudShapePass")
@@ -40,7 +40,7 @@ CloudShapeNode::CloudShapeNode(render::RenderDevice& rd)
             "CloudScattering::BaseNoise",
             {
                 .imageType = eImageType::Texture3D,
-                .resolution = BASE_NOISE_TEXTURE_RESOLUTION,
+                .resolution = kBaseNoiseTextureResolution,
                 .format = eFormat::RGBA8_UNORM,
                 .imageUsage = eTextureUsage_Sample | eTextureUsage_Storage
             });
@@ -92,7 +92,7 @@ void CloudShapeNode::Apply(render::CommandContext& context, const SceneRenderVie
         //context.SetComputeConstants(sizeof(constant), &constant);
         context.StageDescriptor("g_OutWeatherMap", m_pCloudWeatherMap);
 
-        context.Dispatch2D< 8, 8 >(WEATHERMAP_TEXTURE_RESOLUTION.x, WEATHERMAP_TEXTURE_RESOLUTION.y);*/
+        context.Dispatch2D< 8, 8 >(kWeatherMapTextureResolution.x, kWeatherMapTextureResolution.y);*/
     }
     if (g_FrameData.componentMarker & (1 << eComponentType::CCloud))
     {
@@ -102,7 +102,7 @@ void CloudShapeNode::Apply(render::CommandContext& context, const SceneRenderVie
 
         context.StageDescriptor("g_OutBaseNoise", m_pBaseNoiseTexture);
 
-        context.Dispatch3D< 8, 8, 8 >(BASE_NOISE_TEXTURE_RESOLUTION.x, BASE_NOISE_TEXTURE_RESOLUTION.y, BASE_NOISE_TEXTURE_RESOLUTION.z);
+        context.Dispatch3D< 8, 8, 8 >(kBaseNoiseTextureResolution.x, kBaseNoiseTextureResolution.y, kBaseNoiseTextureResolution.z);
     }
 
     g_FrameData.pCloudWeatherMap   = m_pCloudWeatherMap;
@@ -114,7 +114,7 @@ void CloudShapeNode::Apply(render::CommandContext& context, const SceneRenderVie
 //-------------------------------------------------------------------------
 // Cloud Scattering
 //-------------------------------------------------------------------------
-static constexpr uint3 CLOUD_SHADOWMAP_RESOLUTION = { 512, 512, 1 };
+static constexpr uint3 kCloudShadowMapResolution = { 512, 512, 1 };
 
 CloudScatteringNode::CloudScatteringNode(render::RenderDevice& device)
     : Super(device, "CloudScatteringPass")
@@ -127,7 +127,7 @@ CloudScatteringNode::CloudScatteringNode(render::RenderDevice& device)
             m_RenderDevice,
             "CloudScattering::ShadowMap",
             {
-                .resolution = CLOUD_SHADOWMAP_RESOLUTION,
+                .resolution = kCloudShadowMapResolution,
                 .format     = eFormat::RG11B10_UFLOAT,
                 .imageUsage = eTextureUsage_Sample | eTextureUsage_Storage
             });
@@ -245,7 +245,7 @@ void CloudScatteringNode::Apply(render::CommandContext& context, const SceneRend
         context.StageDescriptor("g_CloudBaseNoise", g_FrameData.pCloudBaseNoiseLUT.lock(), g_FrameData.pLinearWrap);
         context.StageDescriptor("g_OutCloudShadowMap", m_pCloudShadowMap);
 
-        context.Dispatch2D< 8, 8 >(CLOUD_SHADOWMAP_RESOLUTION.x, CLOUD_SHADOWMAP_RESOLUTION.y);
+        context.Dispatch2D< 8, 8 >(kCloudShadowMapResolution.x, kCloudShadowMapResolution.y);
 
         g_FrameData.pCloudShadowMap = m_pCloudShadowMap;
     }

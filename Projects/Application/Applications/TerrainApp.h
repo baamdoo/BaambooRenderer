@@ -1,5 +1,7 @@
 #pragma once
 #include "BaambooEngine.h"
+#include "BaambooScene/VoxelTerrain/ProceduralTerrain.h"
+#include "BaambooScene/VoxelTerrain/VoxelTerrainDebug.h"
 
 class TerrainApp : public baamboo::Engine
 {
@@ -16,6 +18,12 @@ private:
 
 	void ConfigureRenderGraph();
 	void ConfigureSceneObjects();
+	void RebuildVoxelTerrain();
 
 	baamboo::CameraController_FirstPerson m_CameraController;
+
+	baamboo::ProceduralTerrain      m_VoxelTerrain;
+	baamboo::VoxelTerrainSettings   m_VoxelTerrainSettings = {};
+	baamboo::VoxelTerrainDebugStats m_VoxelTerrainStats    = {};
+	u32                             m_VoxelChunkIndex      = kInvalidIndex;
 };

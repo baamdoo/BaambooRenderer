@@ -13,8 +13,8 @@ class TerrainNode : public render::RenderNode
 {
 using Super = render::RenderNode;
 public:
-	static constexpr u32 MAX_QUADTREE_NODES  = 32768u;  // covers maxDepth=7 (21845) + safety margin
-	static constexpr u32 MAX_CULLED_PATCHES  = 32768u;  // Covers 128x128 leaf patches at maxDepth=7 in finest-review mode.
+	static constexpr u32 kMaxQuadtreeNodes  = 32768u;  // covers maxDepth=7 (21845) + safety margin
+	static constexpr u32 kMaxCulledPatches  = 32768u;  // Covers 128x128 leaf patches at maxDepth=7 in finest-review mode.
 
 	struct QuadtreeConfig
 	{

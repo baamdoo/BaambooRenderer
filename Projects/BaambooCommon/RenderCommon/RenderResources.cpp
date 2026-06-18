@@ -354,7 +354,7 @@ std::pair< u32, u32 > GraphicsPipeline::GetResourceBindingIndex(const std::strin
 {
 	auto iter = m_ResourceBindingMap.find(name);
 	if (iter == m_ResourceBindingMap.end())
-		return { INVALID_INDEX, INVALID_INDEX };
+		return { kInvalidIndex, kInvalidIndex };
 
 	return { (u32)(iter->second >> 32), (u32)(iter->second & 0xFFFFFFFF) };
 }
@@ -448,7 +448,7 @@ std::pair< u32, u32 > RaytracingPipeline::GetResourceBindingIndex(const std::str
 {
 	auto iter = m_ResourceBindingMap.find(name);
 	if (iter == m_ResourceBindingMap.end())
-		return { INVALID_INDEX, INVALID_INDEX };
+		return { kInvalidIndex, kInvalidIndex };
 
 	return { (u32)(iter->second >> 32), (u32)(iter->second & 0xFFFFFFFF) };
 }

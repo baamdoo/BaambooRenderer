@@ -109,21 +109,21 @@ inline std::wstring ConvertToWString(const std::string& str)
 //-------------------------------------------------------------------------
 // Predefined
 //-------------------------------------------------------------------------
-constexpr u32 NUM_SAMPLING = 1u;
-constexpr u32 NUM_RESOURCE_DESCRIPTOR_TYPE = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER + 1;
-constexpr u32 MAX_NUM_DESCRIPTOR_PER_POOL[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES] = { 1024, 32, 256, 8 };
-constexpr u32 MAX_GLOBAL_DESCRIPTORS = 8192;
-constexpr u32 MAX_ROOT_INDEX = D3D12_MAX_ROOT_COST;
-constexpr u32 MAX_ROOTCONSTANTS = 32u;
-constexpr u32 MAX_DESCRIPTORHEAPINDICES = 18u;
-constexpr u32 MAX_LOCAL_ROOTCONSTANTS = MAX_ROOTCONSTANTS - MAX_DESCRIPTORHEAPINDICES;
-constexpr u32 MAX_VIEWS = (MAX_ROOT_INDEX - MAX_ROOTCONSTANTS) / 2;
+constexpr u32 kNumSampling = 1u;
+constexpr u32 kNumResourceDescriptorType = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER + 1;
+constexpr u32 kMaxNumDescriptorPerPool[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES] = { 1024, 32, 256, 8 };
+constexpr u32 kMaxGlobalDescriptors = 8192;
+constexpr u32 kMaxRootIndex = D3D12_MAX_ROOT_COST;
+constexpr u32 kMaxRootConstants = 32u;
+constexpr u32 kMaxDescriptorHeapIndices = 18u;
+constexpr u32 kMaxLocalRootConstants = kMaxRootConstants - kMaxDescriptorHeapIndices;
+constexpr u32 kMaxViews = (kMaxRootIndex - kMaxRootConstants) / 2;
 
-constexpr u32 GLOBAL_DESCRIPTOR_SPACE = 0u;
-constexpr u32 COMMANDSIGNATURE_SPACE  = 99u;
-constexpr u32 ROOT_CONSTANT_SPACE     = 100u;
-constexpr u32 MISS_ARGUMENT_SPACE     = 200u;
-constexpr u32 HITGROUP_ARGUMENT_SPACE = 300u;
+constexpr u32 kGlobalDescriptorSpace = 0u;
+constexpr u32 kCommandSignatureSpace  = 99u;
+constexpr u32 kRootConstantSpace     = 100u;
+constexpr u32 kMissArgumentSpace     = 200u;
+constexpr u32 kHitGroupArgumentSpace = 300u;
 
 enum class eSamplerIndex
 {

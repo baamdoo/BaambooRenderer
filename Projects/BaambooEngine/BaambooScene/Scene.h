@@ -9,7 +9,7 @@
 namespace baamboo
 {
 
-inline constexpr u32 TERRAIN_LOD_STATS_DEPTHS = 8u;
+inline constexpr u32 kTerrainLodStatsDepths = 8u;
 
 class RenderGraph;
 class EditorCamera;
@@ -121,8 +121,8 @@ struct FrameData
 	u32 terrainPhase1Triangles = 0;
 	u32 terrainPhase2Triangles = 0;
 #if PROFILING_LEVEL >= 1
-	u32 terrainPhase1LodPatches[TERRAIN_LOD_STATS_DEPTHS] = {};
-	u32 terrainPhase2LodPatches[TERRAIN_LOD_STATS_DEPTHS] = {};
+	u32 terrainPhase1LodPatches[kTerrainLodStatsDepths] = {};
+	u32 terrainPhase2LodPatches[kTerrainLodStatsDepths] = {};
 #endif
 
 	// Runtime culling toggles — bitmask consumed by task + mesh shaders per-frame as push constant.

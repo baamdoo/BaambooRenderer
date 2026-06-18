@@ -101,7 +101,7 @@ enum
 	eContentButton_Skybox,
 };
 
-constexpr u32 NUM_TOLERANCE_ASYNC_FRAME_GAME_TO_RENDER = 3;
+constexpr u32 kNumToleranceAsyncFrameGameToRender = 3;
 
 Engine::Engine()
 	: m_CurrentDirectory(ASSET_PATH)
@@ -256,7 +256,7 @@ void Engine::GameLoop(float dt)
 	m_pScene->Update(dt, *m_pCamera);
 
 	auto renderView = m_pScene->RenderView(*m_pCamera, float2(m_pWindow->Width(), m_pWindow->Height()), m_Frame, m_pRendererBackend->GetDevice()->GetDeviceSettings());
-	if (m_RenderViewQueue.size() >= NUM_TOLERANCE_ASYNC_FRAME_GAME_TO_RENDER)
+	if (m_RenderViewQueue.size() >= kNumToleranceAsyncFrameGameToRender)
 		m_RenderViewQueue.replace(std::move(renderView));
 	else
 		m_RenderViewQueue.push(std::move(renderView));
@@ -380,7 +380,7 @@ void Engine::RenderLoop()
 					? 0.0f
 					: float(m_GpuProfileSnapshot[0].currentMs);
 				m_FrameTimeHistory[m_FrameTimeHistoryIdx] = frameTotalMs;
-				m_FrameTimeHistoryIdx = (m_FrameTimeHistoryIdx + 1) % FRAME_HISTORY_SIZE;
+				m_FrameTimeHistoryIdx = (m_FrameTimeHistoryIdx + 1) % kFrameHistorySize;
 
 				// --- Frame anomaly detection ---
 				// Compare current Frame time against its EMA baseline; on large deviation,
@@ -388,8 +388,8 @@ void Engine::RenderLoop()
 				++m_FrameCounter;
 				if (m_bAnomalyCapture
 				    && !m_GpuProfileSnapshot.empty()
-				    && m_FrameCounter > ANOMALY_WARMUP_FRAMES
-				    && m_FrameCounter - m_LastAnomalyFrame > ANOMALY_COOLDOWN_FRAMES)
+				    && m_FrameCounter > kAnomalyWarmupFrames
+				    && m_FrameCounter - m_LastAnomalyFrame > kAnomalyCooldownFrames)
 				{
 					const auto& frameEntry  = m_GpuProfileSnapshot[0];
 					const double baselineMs = frameEntry.emaMs;
@@ -412,7 +412,7 @@ void Engine::RenderLoop()
 							a.gpuProfile     = m_GpuProfileSnapshot;  // deep copy
 							a.cpuProfile     = m_CpuProfileSnapshot;
 							m_AnomalyLog.push_back(std::move(a));
-							if (m_AnomalyLog.size() > MAX_ANOMALY_CAPTURES)
+							if (m_AnomalyLog.size() > kMaxAnomalyCaptures)
 								m_AnomalyLog.pop_front();
 							m_LastAnomalyFrame = m_FrameCounter;
 						}
@@ -505,7 +505,7 @@ void Engine::DrawUI()
 		ImGui::Separator();
 		{
 			float histMax = 0.0f;
-			for (u32 i = 0; i < FRAME_HISTORY_SIZE; ++i)
+			for (u32 i = 0; i < kFrameHistorySize; ++i)
 				histMax = std::max(histMax, m_FrameTimeHistory[i]);
 			histMax = std::max(histMax * 1.15f, 1.0f); // 15% headroom, min 1ms
 
@@ -514,7 +514,7 @@ void Engine::DrawUI()
 			ImGui::PlotLines(
 				"##gpu_frame_time",
 				m_FrameTimeHistory,
-				int(FRAME_HISTORY_SIZE),
+				int(kFrameHistorySize),
 				int(m_FrameTimeHistoryIdx),
 				overlay,
 				0.0f, histMax,
@@ -548,12 +548,12 @@ void Engine::DrawUI()
 			ImDrawList* dl = ImGui::GetWindowDrawList();
 			if (frameMs > 1e-6)
 			{
-				constexpr float TAU = 6.2831853f;
-				float a0 = -TAU * 0.25f; // start at 12 o'clock
+				constexpr float kTau = 6.2831853f;
+				float a0 = -kTau * 0.25f; // start at 12 o'clock
 				auto addWedge = [&](double frac, u32 color)
 				{
 					if (frac <= 0.0) return;
-					const float a1 = a0 + float(frac) * TAU;
+					const float a1 = a0 + float(frac) * kTau;
 					const int   seg = std::max(4, int(frac * 48.0));
 					dl->PathLineTo(center);
 					dl->PathArcTo(center, pieRadius, a0, a1, seg);
@@ -1025,11 +1025,11 @@ void Engine::DrawUI()
 				}
 
 #if PROFILING_LEVEL >= 1
-				if (ImGui::BeginTable("##terrain_lod_depths", TERRAIN_LOD_STATS_DEPTHS + 1,
+				if (ImGui::BeginTable("##terrain_lod_depths", kTerrainLodStatsDepths + 1,
 					ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH))
 				{
 					ImGui::TableSetupColumn("Phase", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-					for (u32 d = 0u; d < TERRAIN_LOD_STATS_DEPTHS; ++d)
+					for (u32 d = 0u; d < kTerrainLodStatsDepths; ++d)
 					{
 						char label[8];
 						snprintf(label, sizeof(label), "D%u", d);
@@ -1042,7 +1042,7 @@ void Engine::DrawUI()
 						ImGui::TableNextRow();
 						ImGui::TableSetColumnIndex(0);
 						ImGui::TextUnformatted(phase);
-						for (u32 d = 0u; d < TERRAIN_LOD_STATS_DEPTHS; ++d)
+						for (u32 d = 0u; d < kTerrainLodStatsDepths; ++d)
 						{
 							ImGui::TableSetColumnIndex(static_cast<int>(d + 1u));
 							if (counts[d] > 0u)
@@ -1212,9 +1212,9 @@ void Engine::DrawUI()
 		rootEntities.reserve(rootView.size_hint());
 		rootView.each([&rootEntities](auto id, auto&, auto&) { rootEntities.push_back(id); });
 
-		constexpr static u32 MAX_ENTITY_COUNT_ON_PANEL = 10;
+		constexpr static u32 kMaxEntityCountOnPanel = 10;
 		const int rootCount = static_cast< int >(rootEntities.size());
-		if (rootCount > MAX_ENTITY_COUNT_ON_PANEL)
+		if (rootCount > kMaxEntityCountOnPanel)
 		{
 			ImGuiListClipper clipper;
 			clipper.Begin(rootCount);

@@ -73,9 +73,9 @@ void ParseDescriptors(TReflection* pReflection, Dx12Shader::ShaderReflection& re
                     info.name           = bindDesc.Name;
                     info.baseRegister   = bindDesc.BindPoint;
                     const bool bRootConstantSpace =
-                        bindDesc.Space == ROOT_CONSTANT_SPACE ||
-                        bindDesc.Space == MISS_ARGUMENT_SPACE ||
-                        bindDesc.Space == HITGROUP_ARGUMENT_SPACE;
+                        bindDesc.Space == kRootConstantSpace ||
+                        bindDesc.Space == kMissArgumentSpace ||
+                        bindDesc.Space == kHitGroupArgumentSpace;
                     info.numDescriptors = bRootConstantSpace ? cbDesc.Size / 4 : bindDesc.BindCount;
                     info.inputType      = bindDesc.Type;
                     info.rangeType      = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;

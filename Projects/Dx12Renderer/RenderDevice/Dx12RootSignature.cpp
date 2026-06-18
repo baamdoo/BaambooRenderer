@@ -208,7 +208,7 @@ Dx12RootSignature::~Dx12RootSignature()
 
 u32 Dx12RootSignature::AddConstants(u32 reg, u32 numConstants, D3D12_SHADER_VISIBILITY visibility)
 {
-	return AddConstants(reg, ROOT_CONSTANT_SPACE, numConstants, visibility);
+	return AddConstants(reg, kRootConstantSpace, numConstants, visibility);
 }
 
 u32 Dx12RootSignature::AddConstants(u32 reg, u32 space, u32 numConstants, D3D12_SHADER_VISIBILITY visibility)
@@ -363,7 +363,7 @@ void Dx12RootSignature::CopySignatureParams(Dx12RootSignature& srcSignature)
 
 u32 Dx12RootSignature::GetNumDescriptors(u32 rootIndex) const
 {
-	assert(rootIndex < MAX_ROOT_INDEX);
+	assert(rootIndex < kMaxRootIndex);
 	return m_NumDescriptorsPerTable[rootIndex];
 }
 
@@ -388,7 +388,7 @@ u32 Dx12RootSignature::GetRootIndex(D3D12_ROOT_PARAMETER_TYPE type, u32 space, u
 	const auto& it = m_RootIndexMap.find({ type, MAKELONG(space, reg) });
 	if (it == m_RootIndexMap.end())
 	{
-		return INVALID_INDEX;
+		return kInvalidIndex;
 	}
 
 	return it->second;
@@ -399,8 +399,8 @@ u32 Dx12RootSignature::AddParameter(const CD3DX12_ROOT_PARAMETER1& param)
 	m_RootParameters.emplace_back(param);
 	u32 rootIndex = static_cast<u32>(m_RootParameters.size()) - 1;
 
-	u32 reg   = INVALID_INDEX;
-	u32 space = INVALID_INDEX;
+	u32 reg   = kInvalidIndex;
+	u32 space = kInvalidIndex;
 	switch (param.ParameterType)
 	{
 	case D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS:

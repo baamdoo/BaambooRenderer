@@ -198,7 +198,7 @@ struct AnimationComponent
 	// Animation blending
 	struct BlendLayer
 	{
-		u32   clipID = INVALID_INDEX;
+		u32   clipID = kInvalidIndex;
 		float weight = 1.0f;
 		float time   = 0.0f;
 	};
@@ -219,9 +219,9 @@ struct AnimationComponent
 //-------------------------------------------------------------------------
 struct SkinnedMeshComponent
 {
-	u32 meshID          = INVALID_INDEX;
-	u32 skeletonID      = INVALID_INDEX;
-	u32 boneTransformID = INVALID_INDEX;
+	u32 meshID          = kInvalidIndex;
+	u32 skeletonID      = kInvalidIndex;
+	u32 boneTransformID = kInvalidIndex;
 };
 
 //-------------------------------------------------------------------------
@@ -230,7 +230,7 @@ struct SkinnedMeshComponent
 struct SkeletonComponent
 {
 	std::string skeletonName;
-	u32 skeletonID = INVALID_INDEX;
+	u32 skeletonID = kInvalidIndex;
 
 	bool  showBones = false;
 	float boneScale = 0.1f;

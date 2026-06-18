@@ -10,8 +10,8 @@ namespace dx12
 namespace
 {
 
-constexpr u64 SBT_TABLE_ALIGNMENT  = D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT;  // 64
-constexpr u64 SBT_RECORD_ALIGNMENT = D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT; // 32
+constexpr u64 kSbtTableAlignment  = D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT;  // 64
+constexpr u64 kSbtRecordAlignment = D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT; // 32
 
 }
 
@@ -33,9 +33,9 @@ void Dx12ShaderBindingTable::Build()
 	m_MissStride     = m_MissRecords.size() > 0 ? ComputeRecordStride(GetMaxLocalDataSize(m_MissRecords)) : 0;
 	m_HitGroupStride = m_HitGroupRecords.size() > 0 ? ComputeRecordStride(GetMaxLocalDataSize(m_HitGroupRecords)) : 0;
 	
-	m_RayGenSize   = baamboo::math::AlignUp(m_RayGenStride, SBT_TABLE_ALIGNMENT);
-	m_MissSize     = baamboo::math::AlignUp(m_MissStride * static_cast<u32>(m_MissRecords.size()), SBT_TABLE_ALIGNMENT);
-	m_HitGroupSize = baamboo::math::AlignUp(m_HitGroupStride * static_cast<u32>(m_HitGroupRecords.size()), SBT_TABLE_ALIGNMENT);
+	m_RayGenSize   = baamboo::math::AlignUp(m_RayGenStride, kSbtTableAlignment);
+	m_MissSize     = baamboo::math::AlignUp(m_MissStride * static_cast<u32>(m_MissRecords.size()), kSbtTableAlignment);
+	m_HitGroupSize = baamboo::math::AlignUp(m_HitGroupStride * static_cast<u32>(m_HitGroupRecords.size()), kSbtTableAlignment);
 
 	u64 totalSBTSize = m_RayGenSize + m_MissSize + m_HitGroupSize;
 	m_pSBTBuffer = Dx12ConstantBuffer::Create(
@@ -100,7 +100,7 @@ const D3D12_DISPATCH_RAYS_DESC& Dx12ShaderBindingTable::GetDispatchRaysDesc(u32 
 u64 Dx12ShaderBindingTable::ComputeRecordStride(u32 maxLocalDataSize) const
 {
 	const u64 identifierSize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
-	return baamboo::math::AlignUp(identifierSize + maxLocalDataSize, SBT_RECORD_ALIGNMENT);
+	return baamboo::math::AlignUp(identifierSize + maxLocalDataSize, kSbtRecordAlignment);
 }
 
 u32 Dx12ShaderBindingTable::GetMaxLocalDataSize(const std::vector< ShaderRecord >& records) const

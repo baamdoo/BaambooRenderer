@@ -185,7 +185,7 @@ Box< render::RaytracingPipeline > Dx12RenderDevice::CreateRaytracingPipeline(con
 
 u32 Dx12RenderDevice::Swap()
 {
-	m_ContextIndex = (m_ContextIndex + 1) % MAX_FRAMES_IN_FLIGHT;
+	m_ContextIndex = (m_ContextIndex + 1) % kMaxFramesInFlight;
 
 	return m_ContextIndex;
 }
@@ -295,7 +295,7 @@ DXGI_SAMPLE_DESC Dx12RenderDevice::GetMultisampleQualityLevels(DXGI_FORMAT forma
 	qualityLevels.Flags = flags;
 	qualityLevels.NumQualityLevels = 0;
 
-	while (qualityLevels.SampleCount <= NUM_SAMPLING
+	while (qualityLevels.SampleCount <= kNumSampling
 		&& SUCCEEDED(m_d3d12Device->CheckFeatureSupport(D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS, &qualityLevels, sizeof(D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS))) 
 		&& qualityLevels.NumQualityLevels > 0)
 	{

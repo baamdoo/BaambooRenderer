@@ -48,7 +48,7 @@ DescriptorHandle DescriptorSet::StageDescriptor(const VkDescriptorImageInfo& ima
 DescriptorHandle DescriptorSet::StageDescriptors(const std::vector< VkDescriptorImageInfo >& imageInfos, u32 binding, VkDescriptorType descriptorType)
 {
     if (imageInfos.empty())
-        return { INVALID_INDEX, 0 };
+        return { kInvalidIndex, 0 };
 
     auto index = m_IndexAllocator.allocate();
 
@@ -69,7 +69,7 @@ DescriptorHandle DescriptorSet::StageDescriptor(const VkDescriptorBufferInfo& bu
 {
     if (bufferInfo.range == 0)
     {
-        return { INVALID_INDEX, 0 };
+        return { kInvalidIndex, 0 };
     }
 
     return StageDescriptors({ bufferInfo }, binding, descriptorType);
@@ -78,7 +78,7 @@ DescriptorHandle DescriptorSet::StageDescriptor(const VkDescriptorBufferInfo& bu
 DescriptorHandle DescriptorSet::StageDescriptors(const std::vector< VkDescriptorBufferInfo >& bufferInfos, u32 binding, VkDescriptorType descriptorType)
 {
     if (bufferInfos.empty())
-        return { INVALID_INDEX, 0 };
+        return { kInvalidIndex, 0 };
 
     auto index = m_IndexAllocator.allocate();
 

@@ -15,8 +15,8 @@
 
 #define LOD_COUNT 8
 
-constexpr u32 MAX_BONES_PER_VERTEX = 4;
-constexpr u32 MAX_BONES = 128;
+constexpr u32 kMaxBonesPerVertex = 4;
+constexpr u32 kMaxBones = 128;
 
 using int2 = glm::ivec2;
 using int3 = glm::ivec3;

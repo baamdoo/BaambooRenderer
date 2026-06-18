@@ -102,7 +102,7 @@ float3 AnimationChannel::InterpolateScale(float time) const
 u32 Skeleton::GetBoneIndex(const std::string& name) const
 {
     auto it = boneNameToIndex.find(name);
-    return (it != boneNameToIndex.end()) ? it->second : INVALID_INDEX;
+    return (it != boneNameToIndex.end()) ? it->second : kInvalidIndex;
 }
 
 bool Skeleton::HasBone(const std::string& name) const
@@ -136,7 +136,7 @@ void AnimationPose::CalculateBoneMatrices(const Skeleton& skeleton)
         const Bone& bone = skeleton.bones[i];
         mat4 mModel = boneTransforms[i].ToMatrix();
 
-        if (bone.parentIndex == INVALID_INDEX)
+        if (bone.parentIndex == kInvalidIndex)
         {
             // Root bone
             mWorlds[i] = mModel;

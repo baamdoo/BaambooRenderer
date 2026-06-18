@@ -12,7 +12,7 @@ namespace baamboo
 
 namespace
 {
-	constexpr float FORCE_FINEST_LOD_RANGE_METER = 1.0e20f;
+	constexpr float kForceFinestLodRangeMeter = 1.0e20f;
 }
 
 TerrainNode::TerrainNode(render::RenderDevice& rd)
@@ -22,21 +22,21 @@ TerrainNode::TerrainNode(render::RenderDevice& rd)
 
 	m_pQuadtreeNodesBuffer = Buffer::Create(rd, "TerrainPass::QuadtreeNodes",
 		{
-			.count              = MAX_QUADTREE_NODES,
+			.count              = kMaxQuadtreeNodes,
 			.elementSizeInBytes = sizeof(TerrainNodeGPU),
 			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest,
 		});
 
 	m_pCulledPatches = Buffer::Create(rd, "TerrainPass::CulledPatches",
 		{
-			.count              = MAX_CULLED_PATCHES,
+			.count              = kMaxCulledPatches,
 			.elementSizeInBytes = sizeof(PatchInstance),
 			.bufferUsage        = eBufferUsage_Storage, // UAV (cull CS writes) + SRV (TerrainMS reads)
 		});
 
 	m_pIndirectCommands = Buffer::Create(rd, "TerrainPass::IndirectCommands",
 		{
-			.count              = MAX_CULLED_PATCHES,
+			.count              = kMaxCulledPatches,
 			.elementSizeInBytes = sizeof(IndirectCommandData),
 			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_Indirect,
 		});
@@ -53,7 +53,7 @@ TerrainNode::TerrainNode(render::RenderDevice& rd)
 #if PROFILING_LEVEL >= 1
 	m_pLodStatsBuffer = Buffer::Create(rd, "TerrainPass::LodStats",
 		{
-			.count              = TERRAIN_MAX_LOD_DEPTHS,
+			.count              = kTerrainMaxLodDepths,
 			.elementSizeInBytes = sizeof(u32),
 			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferSource | eBufferUsage_TransferDest,
 		});
@@ -61,7 +61,7 @@ TerrainNode::TerrainNode(render::RenderDevice& rd)
 
 	m_pNodeVisibilityBuffer = Buffer::Create(rd, "TerrainPass::NodeVisibility",
 		{
-			.count              = MAX_QUADTREE_NODES,
+			.count              = kMaxQuadtreeNodes,
 			.elementSizeInBytes = sizeof(u32),
 			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest,
 		});
@@ -106,9 +106,9 @@ void TerrainNode::BuildQuadtree()
 	qc.rootSizeMeter = m_Config.rootSizeMeter;
 	qc.terrainMinY   = m_Config.heightMinMeter;
 	qc.terrainMaxY   = m_Config.heightMinMeter + m_Config.heightRangeMeter;
-	qc.lodRangeBase  = m_Config.bForceFinestLOD ? FORCE_FINEST_LOD_RANGE_METER : m_Config.lodRangeBaseMeter;
+	qc.lodRangeBase  = m_Config.bForceFinestLOD ? kForceFinestLodRangeMeter : m_Config.lodRangeBaseMeter;
 	qc.lodMorphK     = m_Config.bForceFinestLOD ? 1.0f : m_Config.lodMorphK;
-	qc.maxDepth      = std::min(m_Config.maxDepth, TERRAIN_MAX_LOD_DEPTHS - 1u);
+	qc.maxDepth      = std::min(m_Config.maxDepth, kTerrainMaxLodDepths - 1u);
 	qc.gridN         = m_Config.gridN;
 	m_Quadtree.Build(qc);
 }
@@ -136,7 +136,7 @@ void TerrainNode::FillTerrainParams(TerrainParams& params) const
 
 	const auto& rs = m_Quadtree.RangeStarts();
 	const auto& re = m_Quadtree.RangeEnds();
-	for (u32 d = 0u; d < TERRAIN_MAX_LOD_DEPTHS; ++d)
+	for (u32 d = 0u; d < kTerrainMaxLodDepths; ++d)
 	{
 		params.lodRangeStart[d] = (d < rs.size()) ? rs[d] : 0.0f;
 		params.lodRangeEnd  [d] = (d < re.size()) ? re[d] : 0.0f;
@@ -178,8 +178,8 @@ void TerrainNode::EnsureQuadtreeUpload(render::CommandContext& context)
 	if (nodeCount == 0u)
 		return;
 
-	BB_ASSERT(nodeCount <= MAX_QUADTREE_NODES,
-		"TerrainNode: quadtree node count exceeds MAX_QUADTREE_NODES; bump the constant");
+	BB_ASSERT(nodeCount <= kMaxQuadtreeNodes,
+		"TerrainNode: quadtree node count exceeds kMaxQuadtreeNodes; bump the constant");
 
 	context.UploadData(m_pQuadtreeNodesBuffer, gpuNodes.data(), nodeCount, sizeof(TerrainNodeGPU));
 	m_bQuadtreeUploaded = true;
@@ -308,7 +308,7 @@ void TerrainNode::DrawTerrainImpl(render::CommandContext& context, Arc< render::
 			m_pIndirectCommands,
 			offsetof(IndirectCommandData, groupCountX),
 			m_pDrawCountBuffer,
-			MAX_CULLED_PATCHES,
+			kMaxCulledPatches,
 			sizeof(IndirectCommandData));
 	}
 	context.EndRenderPass();

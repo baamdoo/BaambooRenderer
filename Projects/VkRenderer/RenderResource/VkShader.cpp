@@ -168,7 +168,7 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, VulkanShader::Sh
 		u32 set       = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
 		u32 binding   = compiler.get_decoration(resource.id, spv::DecorationBinding);
 		// u32 size = (u32)compiler.get_declared_struct_size(type);
-		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_SHADERRESOURCE_ARRAY_SIZE + 1 : type.array[0]; // assume utilize only 1d-array for now
+		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? kMaxShaderResourceArraySize + 1 : type.array[0]; // assume utilize only 1d-array for now
 
 		appendDescriptorAliases(resource, set, binding, arraySize, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 	}
@@ -178,7 +178,7 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, VulkanShader::Sh
 		const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
 		u32 set       = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
 		u32 binding   = compiler.get_decoration(resource.id, spv::DecorationBinding);
-		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_SHADERRESOURCE_ARRAY_SIZE + 1 : type.array[0]; // assume utilize only 1d-array for now
+		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? kMaxShaderResourceArraySize + 1 : type.array[0]; // assume utilize only 1d-array for now
 
 		appendDescriptorAliases(resource, set, binding, arraySize, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 	}
@@ -188,7 +188,7 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, VulkanShader::Sh
 		const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
 		u32 set       = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
 		u32 binding   = compiler.get_decoration(resource.id, spv::DecorationBinding);
-		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_SHADERRESOURCE_ARRAY_SIZE + 1 : type.array[0]; // assume utilize only 1d-array for now
+		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? kMaxShaderResourceArraySize + 1 : type.array[0]; // assume utilize only 1d-array for now
 
 		appendDescriptorAliases(resource, set, binding, arraySize, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 	}
@@ -198,7 +198,7 @@ VkShaderStageFlagBits ParseSpirv(const u32* code, u64 codeSize, VulkanShader::Sh
 		const spirv_cross::SPIRType& type = compiler.get_type(resource.type_id);
 		u32 set = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
 		u32 binding = compiler.get_decoration(resource.id, spv::DecorationBinding);
-		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? MAX_SHADERRESOURCE_ARRAY_SIZE + 1 : type.array[0]; // assume utilize only 1d-array for now
+		u32 arraySize = type.array.empty() ? 1u : type.array[0] == 0u ? kMaxShaderResourceArraySize + 1 : type.array[0]; // assume utilize only 1d-array for now
 
 		appendDescriptorAliases(resource, set, binding, arraySize, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
 	}

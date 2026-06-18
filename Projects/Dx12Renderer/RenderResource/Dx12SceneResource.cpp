@@ -284,7 +284,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
         material.subsurface         = materialView.subsurface;
         material.transmission       = materialView.transmission;
 
-        material.albedoID = INVALID_INDEX;
+        material.albedoID = kInvalidIndex;
         if (!materialView.albedoTex.empty())
         {
             auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.albedoTex, render::eTextureColorSpace::SRGB);
@@ -299,7 +299,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
             }
         }
 
-        material.normalID = INVALID_INDEX;
+        material.normalID = kInvalidIndex;
         if (!materialView.normalTex.empty())
         {
             auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.normalTex);
@@ -314,7 +314,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
             }
         }
 
-        material.specularID = INVALID_INDEX;
+        material.specularID = kInvalidIndex;
         if (!materialView.specularTex.empty())
         {
             auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.specularTex, render::eTextureColorSpace::SRGB);
@@ -335,7 +335,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
         std::string metallicStr  = materialView.metallicTex;
         std::string ormStr       = aoStr + roughnessStr + metallicStr;
 
-        material.metallicRoughnessAoID = INVALID_INDEX;
+        material.metallicRoughnessAoID = kInvalidIndex;
         auto pORM = GetTexture(ormStr);
         if (!pORM)
         {
@@ -377,7 +377,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
             srvIndexCache.emplace(pORM.get(), material.metallicRoughnessAoID);
         }
 
-        material.emissiveID = INVALID_INDEX;
+        material.emissiveID = kInvalidIndex;
         if (!materialView.emissionTex.empty())
         {
             auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.emissionTex, render::eTextureColorSpace::SRGB);
@@ -392,7 +392,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
             }
         }
 
-        material.clearcoatID = INVALID_INDEX;
+        material.clearcoatID = kInvalidIndex;
         if (!materialView.clearcoatTex.empty())
         {
             auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.clearcoatTex);
@@ -407,7 +407,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
             }
         }
 
-        material.sheenID = INVALID_INDEX;
+        material.sheenID = kInvalidIndex;
         if (!materialView.sheenTex.empty())
         {
             auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.sheenTex, render::eTextureColorSpace::SRGB);
@@ -422,7 +422,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
             }
         }
 
-        material.anisotropyID = INVALID_INDEX;
+        material.anisotropyID = kInvalidIndex;
         if (!materialView.anisotropyTex.empty())
         {
             auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.anisotropyTex);
@@ -437,7 +437,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
             }
         }
 
-        material.subsurfaceID = INVALID_INDEX;
+        material.subsurfaceID = kInvalidIndex;
         if (!materialView.subsurfaceTex.empty())
         {
             auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.subsurfaceTex);
@@ -452,7 +452,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
             }
         }
 
-        material.transmissionID = INVALID_INDEX;
+        material.transmissionID = kInvalidIndex;
         if (!materialView.transmissionTex.empty())
         {
             auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.transmissionTex);
@@ -542,7 +542,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
                 assert(IsValidIndex(data.transform) && data.transform < sceneView.transforms.size());
                 instance.transformID = data.transform;
 
-                instance.materialID = INVALID_INDEX;
+                instance.materialID = kInvalidIndex;
                 if (IsValidIndex(data.material))
                 {
                     assert(data.material < sceneView.materials.size());
@@ -603,59 +603,59 @@ void Dx12SceneResource::BindSceneResources(render::CommandContext& context)
     Dx12CommandContext& rhicontext = static_cast<Dx12CommandContext&>(context);
     const auto& d3d12CommandList2 = rhicontext.GetD3D12CommandList();
 
-    auto cameraRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_CBV, GLOBAL_DESCRIPTOR_SPACE, 0);
+    auto cameraRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_CBV, kGlobalDescriptorSpace, 0);
     d3d12CommandList2->SetComputeRootConstantBufferView(cameraRootIdx, m_FrameData[m_ContextIndex].pCameraBuffer->GpuAddress());
     d3d12CommandList2->SetGraphicsRootConstantBufferView(cameraRootIdx, m_FrameData[m_ContextIndex].pCameraBuffer->GpuAddress());
 
-    auto vRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, GLOBAL_DESCRIPTOR_SPACE, 1);
+    auto vRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, kGlobalDescriptorSpace, 1);
     d3d12CommandList2->SetComputeRoot32BitConstant(vRootIdx, m_pVertexAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
     d3d12CommandList2->SetGraphicsRoot32BitConstant(vRootIdx, m_pVertexAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
 
-    auto iRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, GLOBAL_DESCRIPTOR_SPACE, 2);
+    auto iRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, kGlobalDescriptorSpace, 2);
     d3d12CommandList2->SetComputeRoot32BitConstant(iRootIdx, m_pIndexAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
     d3d12CommandList2->SetGraphicsRoot32BitConstant(iRootIdx, m_pIndexAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
 
-    auto mRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, GLOBAL_DESCRIPTOR_SPACE, 3);
+    auto mRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, kGlobalDescriptorSpace, 3);
     d3d12CommandList2->SetComputeRoot32BitConstant(mRootIdx, m_pMeshletAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
     d3d12CommandList2->SetGraphicsRoot32BitConstant(mRootIdx, m_pMeshletAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
 
-    auto mvRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, GLOBAL_DESCRIPTOR_SPACE, 4);
+    auto mvRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, kGlobalDescriptorSpace, 4);
     d3d12CommandList2->SetComputeRoot32BitConstant(mvRootIdx, m_pMeshletVertexAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
     d3d12CommandList2->SetGraphicsRoot32BitConstant(mvRootIdx, m_pMeshletVertexAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
 
-    auto mtRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, GLOBAL_DESCRIPTOR_SPACE, 5);
+    auto mtRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, kGlobalDescriptorSpace, 5);
     d3d12CommandList2->SetComputeRoot32BitConstant(mtRootIdx, m_pMeshletTriangleAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
     d3d12CommandList2->SetGraphicsRoot32BitConstant(mtRootIdx, m_pMeshletTriangleAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
 
-    auto mdRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, GLOBAL_DESCRIPTOR_SPACE, 6);
+    auto mdRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, kGlobalDescriptorSpace, 6);
     d3d12CommandList2->SetComputeRoot32BitConstant(mdRootIdx, m_FrameData[m_ContextIndex].pMeshDataAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
     d3d12CommandList2->SetGraphicsRoot32BitConstant(mdRootIdx, m_FrameData[m_ContextIndex].pMeshDataAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
 
-    auto instRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, GLOBAL_DESCRIPTOR_SPACE, 7);
+    auto instRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, kGlobalDescriptorSpace, 7);
     d3d12CommandList2->SetComputeRoot32BitConstant(instRootIdx, m_FrameData[m_ContextIndex].pInstanceAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
     d3d12CommandList2->SetGraphicsRoot32BitConstant(instRootIdx, m_FrameData[m_ContextIndex].pInstanceAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
 
-    auto cullRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_CBV, GLOBAL_DESCRIPTOR_SPACE, 8);
+    auto cullRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_CBV, kGlobalDescriptorSpace, 8);
     d3d12CommandList2->SetComputeRootConstantBufferView(cullRootIdx, m_FrameData[m_ContextIndex].pCullBuffer->GpuAddress());
     d3d12CommandList2->SetGraphicsRootConstantBufferView(cullRootIdx, m_FrameData[m_ContextIndex].pCullBuffer->GpuAddress());
 
-    auto transformBufferIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, GLOBAL_DESCRIPTOR_SPACE, 9);
+    auto transformBufferIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, kGlobalDescriptorSpace, 9);
     d3d12CommandList2->SetComputeRoot32BitConstant(transformBufferIdx, GetTransformBuffer()->GetShaderResourceHandle(), 0);
     d3d12CommandList2->SetGraphicsRoot32BitConstant(transformBufferIdx, GetTransformBuffer()->GetShaderResourceHandle(), 0);
 
-    auto materialBufferIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, GLOBAL_DESCRIPTOR_SPACE, 10);
+    auto materialBufferIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, kGlobalDescriptorSpace, 10);
     d3d12CommandList2->SetComputeRoot32BitConstant(materialBufferIdx, GetMaterialBuffer()->GetShaderResourceHandle(), 0);
     d3d12CommandList2->SetGraphicsRoot32BitConstant(materialBufferIdx, GetMaterialBuffer()->GetShaderResourceHandle(), 0);
 
-    auto lightRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_CBV, GLOBAL_DESCRIPTOR_SPACE, 11);
+    auto lightRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_CBV, kGlobalDescriptorSpace, 11);
     d3d12CommandList2->SetComputeRootConstantBufferView(lightRootIdx, GetLightBuffer()->GpuAddress());
     d3d12CommandList2->SetGraphicsRootConstantBufferView(lightRootIdx, GetLightBuffer()->GpuAddress());
 
-    auto sceneEnvironmentRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_CBV, GLOBAL_DESCRIPTOR_SPACE, 12);
+    auto sceneEnvironmentRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_CBV, kGlobalDescriptorSpace, 12);
     d3d12CommandList2->SetComputeRootConstantBufferView(sceneEnvironmentRootIdx, m_FrameData[m_ContextIndex].pSceneEnvironmentBuffer->GpuAddress());
     d3d12CommandList2->SetGraphicsRootConstantBufferView(sceneEnvironmentRootIdx, m_FrameData[m_ContextIndex].pSceneEnvironmentBuffer->GpuAddress());
 
-    auto frozenCameraRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_CBV, GLOBAL_DESCRIPTOR_SPACE, 13);
+    auto frozenCameraRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_CBV, kGlobalDescriptorSpace, 13);
     d3d12CommandList2->SetComputeRootConstantBufferView(frozenCameraRootIdx, m_FrameData[m_ContextIndex].pFrozenCameraBuffer->GpuAddress());
     d3d12CommandList2->SetGraphicsRootConstantBufferView(frozenCameraRootIdx, m_FrameData[m_ContextIndex].pFrozenCameraBuffer->GpuAddress());
 }

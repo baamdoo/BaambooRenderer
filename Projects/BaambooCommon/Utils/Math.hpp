@@ -63,8 +63,8 @@ inline float3 SmoothStep(const float3& v1, const float3& v2, float t)
 }
 
 
-static constexpr int MAX_HALTON_SEQUENCE = 16;
-static constexpr glm::vec2 HALTON_SEQUENCE[MAX_HALTON_SEQUENCE] = 
+static constexpr int kMaxHaltonSequence = 16;
+static constexpr glm::vec2 kHaltonSequence[kMaxHaltonSequence] = 
 {
 	glm::vec2(0.5, 0.333333),
 	glm::vec2(0.25, 0.666667),
@@ -86,7 +86,7 @@ static constexpr glm::vec2 HALTON_SEQUENCE[MAX_HALTON_SEQUENCE] =
 
 inline glm::vec2 GetHaltonSequence(uint32_t idx)
 {
-	return HALTON_SEQUENCE[idx % MAX_HALTON_SEQUENCE];
+	return kHaltonSequence[idx % kMaxHaltonSequence];
 }
 
 static float2 RaySphereIntersection(float3 rayOrigin, float3 rayDir, float3 sphereCenter, float sphereRadius)

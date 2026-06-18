@@ -143,11 +143,11 @@ VkSceneResource::VkSceneResource(VkRenderDevice& rd)
 	for (auto& frameData : m_FrameData)
 	{
 		frameData.pMeshDataAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(MeshData) * _KB(1LL), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT);
-		frameData.pInstanceAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(InstanceData) * MAX_ENTITY_COUNT, VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT);
-		//frameData.pIndirectCommandAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(IndirectCommandData) * MAX_ENTITY_COUNT, VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT);
+		frameData.pInstanceAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(InstanceData) * kMaxEntityCount, VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT);
+		//frameData.pIndirectCommandAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(IndirectCommandData) * kMaxEntityCount, VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT);
 
-		frameData.pTransformAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(TransformData) * MAX_ENTITY_COUNT, VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
-		frameData.pMaterialAllocator  = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(MaterialData) * MAX_ENTITY_COUNT, VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
+		frameData.pTransformAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(TransformData) * kMaxEntityCount, VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
+		frameData.pMaterialAllocator  = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(MaterialData) * kMaxEntityCount, VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
 		frameData.pLightAllocator     = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(LightData), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
 
 		frameData.pCameraBuffer           = VulkanUniformBuffer::Create(m_RenderDevice, "CameraBuffer", sizeof(CameraData));
@@ -175,7 +175,7 @@ VkSceneResource::VkSceneResource(VkRenderDevice& rd)
 		{ eCommonSetBindingIndex_Light, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, VK_NULL_HANDLE },
 		{ eCommonSetBindingIndex_Environment, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, VK_NULL_HANDLE },
 		{ eCommonSetBindingIndex_FrozenCamera, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_ALL, VK_NULL_HANDLE },
-		{ eCommonSetBindingIndex_SceneTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_BINDLESS_DESCRIPTOR_RESOURCE_COUNT, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, VK_NULL_HANDLE },
+		{ eCommonSetBindingIndex_SceneTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kMaxBindlessDescriptorResourceCount, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, VK_NULL_HANDLE },
 	};
 
 	std::unordered_map< VkDescriptorType, VkDescriptorPoolSize > poolSizeMap;
@@ -183,7 +183,7 @@ VkSceneResource::VkSceneResource(VkRenderDevice& rd)
 	{
 		auto& poolSize = poolSizeMap[binding.descriptorType];
 		poolSize.type             = binding.descriptorType;
-		poolSize.descriptorCount += binding.descriptorCount * MAX_FRAMES_IN_FLIGHT;
+		poolSize.descriptorCount += binding.descriptorCount * kMaxFramesInFlight;
 	}
 
 	std::vector< VkDescriptorPoolSize > poolSizes;
@@ -192,7 +192,7 @@ VkSceneResource::VkSceneResource(VkRenderDevice& rd)
 		std::move_iterator(poolSizeMap.end()),
 		std::back_inserter(poolSizes),
 		[](std::pair< VkDescriptorType, VkDescriptorPoolSize >&& entry) { return std::move(entry.second); });
-	m_pDescriptorPool = new DescriptorPool(m_RenderDevice, std::move(poolSizes), MAX_FRAMES_IN_FLIGHT, VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
+	m_pDescriptorPool = new DescriptorPool(m_RenderDevice, std::move(poolSizes), kMaxFramesInFlight, VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
 
 	std::vector < VkDescriptorBindingFlags > flags =
 	{
@@ -325,7 +325,7 @@ void VkSceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneVie
 	memcpy(m_FrameData[m_ContextIndex].pSceneEnvironmentBuffer->MappedMemory(), &sceneEnvironmentData, sizeof(SceneEnvironmentData));
 
 	// Re-stage descriptors (imageInfos retains last full-update's textures; per-frame allocators retain their data)
-	u32 variableDescCounts[] = { MAX_BINDLESS_DESCRIPTOR_RESOURCE_COUNT };
+	u32 variableDescCounts[] = { kMaxBindlessDescriptorResourceCount };
 	auto& descriptorSet = m_pDescriptorPool->AllocateSet(m_vkSetLayout, variableDescCounts, m_ContextIndex);
 	descriptorSet.StageDescriptor({ m_FrameData[m_ContextIndex].pCameraBuffer->vkBuffer(), 0, m_FrameData[m_ContextIndex].pCameraBuffer->SizeInBytes() }, eCommonSetBindingIndex_Camera, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 	descriptorSet.StageDescriptor({ m_FrameData[m_ContextIndex].pCullBuffer->vkBuffer(), 0, m_FrameData[m_ContextIndex].pCullBuffer->SizeInBytes() }, eCommonSetBindingIndex_Cull, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
@@ -408,7 +408,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 		material.subsurface   = materialView.subsurface;
 		material.transmission = materialView.transmission;
 
-		material.albedoID = INVALID_INDEX;
+		material.albedoID = kInvalidIndex;
 		if (!materialView.albedoTex.empty())
 		{
 			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.albedoTex, render::eTextureColorSpace::SRGB);
@@ -424,7 +424,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 			}
 		}
 
-		material.normalID = INVALID_INDEX;
+		material.normalID = kInvalidIndex;
 		if (!materialView.normalTex.empty())
 		{
 			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.normalTex);
@@ -440,7 +440,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 			}
 		}
 
-		material.specularID = INVALID_INDEX;
+		material.specularID = kInvalidIndex;
 		if (!materialView.specularTex.empty())
 		{
 			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.specularTex, render::eTextureColorSpace::SRGB);
@@ -462,7 +462,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 		std::string metallicStr  = materialView.metallicTex;
 		std::string ormStr       = aoStr + roughnessStr + metallicStr;
 
-		material.metallicRoughnessAoID = INVALID_INDEX;
+		material.metallicRoughnessAoID = kInvalidIndex;
 		auto pORM = GetTexture(ormStr);
 		if (!pORM)
 		{
@@ -505,7 +505,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 			srvIndexCache.emplace(pORM.get(), material.metallicRoughnessAoID);
 		}
 
-		material.emissiveID = INVALID_INDEX;
+		material.emissiveID = kInvalidIndex;
 		if (!materialView.emissionTex.empty())
 		{
 			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.emissionTex, render::eTextureColorSpace::SRGB);
@@ -521,7 +521,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 			}
 		}
 
-		material.clearcoatID = INVALID_INDEX;
+		material.clearcoatID = kInvalidIndex;
 		if (!materialView.clearcoatTex.empty())
 		{
 			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.clearcoatTex);
@@ -537,7 +537,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 			}
 		}
 
-		material.sheenID = INVALID_INDEX;
+		material.sheenID = kInvalidIndex;
 		if (!materialView.sheenTex.empty())
 		{
 			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.sheenTex, render::eTextureColorSpace::SRGB);
@@ -553,7 +553,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 			}
 		}
 
-		material.anisotropyID = INVALID_INDEX;
+		material.anisotropyID = kInvalidIndex;
 		if (!materialView.anisotropyTex.empty())
 		{
 			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.anisotropyTex);
@@ -569,7 +569,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 			}
 		}
 
-		material.subsurfaceID = INVALID_INDEX;
+		material.subsurfaceID = kInvalidIndex;
 		if (!materialView.subsurfaceTex.empty())
 		{
 			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.subsurfaceTex);
@@ -585,7 +585,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 			}
 		}
 
-		material.transmissionID = INVALID_INDEX;
+		material.transmissionID = kInvalidIndex;
 		if (!materialView.transmissionTex.empty())
 		{
 			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.transmissionTex);
@@ -643,7 +643,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 	for (auto& [id, data] : sceneView.draws)
 	{
 		InstanceData instance = {};
-		if (data.mesh != INVALID_INDEX)
+		if (data.mesh != kInvalidIndex)
 		{
 			BB_ASSERT(data.mesh < sceneView.meshes.size(), "Mesh idx_%d should less than mesh size %d", data.mesh, (u32)sceneView.meshes.size());
 			auto& meshView = sceneView.meshes[data.mesh];
@@ -651,11 +651,11 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 			{
 				instance.meshID = data.mesh;
 
-				assert(data.transform != INVALID_INDEX && data.transform < sceneView.transforms.size());
+				assert(data.transform != kInvalidIndex && data.transform < sceneView.transforms.size());
 				instance.transformID = data.transform;
 
-				instance.materialID = INVALID_INDEX;
-				if (data.material != INVALID_INDEX)
+				instance.materialID = kInvalidIndex;
+				if (data.material != kInvalidIndex)
 				{
 					assert(data.material < sceneView.materials.size());
 					instance.materialID = data.material;
@@ -687,7 +687,7 @@ void VkSceneResource::BindSceneResources(render::CommandContext& context)
 {
 	VkCommandContext& rhiContext = static_cast<VkCommandContext&>(context);
 	
-	u32 variableDescCounts[] = { MAX_BINDLESS_DESCRIPTOR_RESOURCE_COUNT };
+	u32 variableDescCounts[] = { kMaxBindlessDescriptorResourceCount };
 	auto vkDescriptorSet = m_pDescriptorPool->AllocateSet(m_vkSetLayout, variableDescCounts, m_ContextIndex).vkDescriptorSet();
 	if (rhiContext.IsGraphicsContext())
 	{
@@ -881,7 +881,7 @@ void VkSceneResource::UpdateFrameBuffer(VkCommandContext& context, const void* p
 
 VkDescriptorSet VkSceneResource::GetSceneDescriptorSet() const
 {
-	u32 variableDescCounts[] = { MAX_BINDLESS_DESCRIPTOR_RESOURCE_COUNT };
+	u32 variableDescCounts[] = { kMaxBindlessDescriptorResourceCount };
 	return m_pDescriptorPool->AllocateSet(m_vkSetLayout, variableDescCounts, m_ContextIndex).vkDescriptorSet();
 }
 

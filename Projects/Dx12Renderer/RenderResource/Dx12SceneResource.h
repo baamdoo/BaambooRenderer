@@ -93,7 +93,7 @@ private:
 
         void Reset();
     };
-    std::array< PerFrameData, MAX_FRAMES_IN_FLIGHT > m_FrameData;
+    std::array< PerFrameData, kMaxFramesInFlight > m_FrameData;
 
     CullData   m_CullData    = {};
     CameraData m_CameraCache = {};

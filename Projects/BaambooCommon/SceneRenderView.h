@@ -113,9 +113,9 @@ struct MaterialRenderView
 
 struct DrawRenderView
 {
-	u32 transform = INVALID_INDEX;
-	u32 mesh      = INVALID_INDEX;
-	u32 material  = INVALID_INDEX;
+	u32 transform = kInvalidIndex;
+	u32 mesh      = kInvalidIndex;
+	u32 material  = kInvalidIndex;
 };
 
 using LightRenderView = LightData;

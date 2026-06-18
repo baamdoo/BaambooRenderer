@@ -212,7 +212,7 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
 	// **
 	// Process materials
 	// **
-    if (mesh->mMaterialIndex != INVALID_INDEX && mesh->mMaterialIndex < scene->mNumMaterials)
+    if (mesh->mMaterialIndex != kInvalidIndex && mesh->mMaterialIndex < scene->mNumMaterials)
     {
         meshData.materialIndex = mesh->mMaterialIndex;
 
@@ -420,12 +420,12 @@ void ModelLoader::ProcessBoneHierarchy(aiNode* node, const aiScene* scene, i32 p
     }
 
     // If this node is a bone or has bone children, add it to skeleton
-    u32 currentBoneIndex = INVALID_INDEX;
+    u32 currentBoneIndex = kInvalidIndex;
     if (bIsBone || parentIndex != -1)
     {
         Bone bone;
         bone.name = nodeName;
-        bone.parentIndex = (parentIndex >= 0) ? static_cast<u32>(parentIndex) : INVALID_INDEX;
+        bone.parentIndex = (parentIndex >= 0) ? static_cast<u32>(parentIndex) : kInvalidIndex;
         bone.mBoneToModel = ConvertMatrix(node->mTransformation);
 
         // Find inverse bind pose from mesh bones
@@ -453,7 +453,7 @@ void ModelLoader::ProcessBoneHierarchy(aiNode* node, const aiScene* scene, i32 p
     for (u32 i = 0; i < node->mNumChildren; ++i)
     {
         ProcessBoneHierarchy(node->mChildren[i], scene,
-            currentBoneIndex != INVALID_INDEX ? static_cast<i32>(currentBoneIndex) : parentIndex);
+            currentBoneIndex != kInvalidIndex ? static_cast<i32>(currentBoneIndex) : parentIndex);
     }
 }
 
@@ -470,7 +470,7 @@ void ModelLoader::ProcessBoneWeights(aiMesh* mesh, MeshData& meshData)
         std::string boneName = bone->mName.C_Str();
 
         // Get bone index in skeleton
-        u32 boneIndex = INVALID_INDEX;
+        u32 boneIndex = kInvalidIndex;
         auto it = m_BoneMap.find(boneName);
         if (it != m_BoneMap.end())
         {
@@ -481,7 +481,7 @@ void ModelLoader::ProcessBoneWeights(aiMesh* mesh, MeshData& meshData)
             // This bone wasn't in hierarchy, add it
             Bone newBone;
             newBone.name = boneName;
-            newBone.parentIndex = INVALID_INDEX; // Will be fixed later
+            newBone.parentIndex = kInvalidIndex; // Will be fixed later
             newBone.mModelToBone = ConvertMatrix(bone->mOffsetMatrix);
 
             boneIndex = static_cast<u32>(m_AnimationData.skeleton.bones.size());
@@ -498,7 +498,7 @@ void ModelLoader::ProcessBoneWeights(aiMesh* mesh, MeshData& meshData)
             float weight = bone->mWeights[weightIdx].mWeight;
 
             // Find empty slot for this weight (max 4 bones per vertex)
-            for (u32 i = 0; i < MAX_BONES_PER_VERTEX; ++i)
+            for (u32 i = 0; i < kMaxBonesPerVertex; ++i)
             {
                 if (meshData.boneWeights[vertexId][i] == 0.0f)
                 {
@@ -551,7 +551,7 @@ AnimationClip ModelLoader::ProcessAnimationClip(aiAnimation* animation)
         }
         else
         {
-            channel.boneIndex = INVALID_INDEX;
+            channel.boneIndex = kInvalidIndex;
         }
 
         // Position keys

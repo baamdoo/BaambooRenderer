@@ -23,7 +23,7 @@ static PFN_vkCmdDrawMeshTasksIndirectCountEXT vkCmdDrawMeshTasksIndirectCountEXT
 
 static bool ValidateResourceBinding(const std::string& name, u32 set, u32 binding)
 {
-	if (set != INVALID_INDEX && binding != INVALID_INDEX)
+	if (set != kInvalidIndex && binding != kInvalidIndex)
 		return true;
 
 	BB_ASSERT(false, "Descriptor '%s' was not found in the current Vulkan pipeline.", name.c_str());
@@ -204,9 +204,9 @@ private:
 	std::unordered_map< u32, std::vector< AllocationInfo > > m_PushAllocations;
 
 	u32                    m_NumBufferBarriersToFlush = 0;
-	VkBufferMemoryBarrier2 m_BufferBarriers[MAX_NUM_PENDING_BARRIERS] = {};
+	VkBufferMemoryBarrier2 m_BufferBarriers[kMaxNumPendingBarriers] = {};
 	u32                    m_NumImageBarriersToFlush = 0;
-	VkImageMemoryBarrier2  m_ImageBarriers[MAX_NUM_PENDING_BARRIERS] = {};
+	VkImageMemoryBarrier2  m_ImageBarriers[kMaxNumPendingBarriers] = {};
 
 	u32 m_CurrentContextIndex = 0;
 
@@ -1097,7 +1097,7 @@ void VkCommandContext::Impl::AddBarrier(const VkBufferMemoryBarrier2& barrier, b
 {
 	m_BufferBarriers[m_NumBufferBarriersToFlush++] = barrier;
 
-	if (bFlushImmediate || m_NumBufferBarriersToFlush == MAX_NUM_PENDING_BARRIERS)
+	if (bFlushImmediate || m_NumBufferBarriersToFlush == kMaxNumPendingBarriers)
 	{
 		FlushBarriers();
 	}
@@ -1107,7 +1107,7 @@ void VkCommandContext::Impl::AddBarrier(const VkImageMemoryBarrier2& barrier, bo
 {
 	m_ImageBarriers[m_NumImageBarriersToFlush++] = barrier;
 
-	if (bFlushImmediate || m_NumImageBarriersToFlush == MAX_NUM_PENDING_BARRIERS)
+	if (bFlushImmediate || m_NumImageBarriersToFlush == kMaxNumPendingBarriers)
 	{
 		FlushBarriers();
 	}
@@ -1265,17 +1265,17 @@ void VkCommandContext::GenerateMips(Arc< VulkanTexture > texture)
 
 namespace
 {
-	constexpr VkPipelineStageFlags2 TRANSFER_STAGE_MASK =
+	constexpr VkPipelineStageFlags2 kTransferStageMask =
 		VK_PIPELINE_STAGE_2_TRANSFER_BIT |
 		VK_PIPELINE_STAGE_2_COPY_BIT     |
 		VK_PIPELINE_STAGE_2_BLIT_BIT     |
 		VK_PIPELINE_STAGE_2_RESOLVE_BIT  |
 		VK_PIPELINE_STAGE_2_CLEAR_BIT;
 
-	constexpr VkPipelineStageFlags2 INDIRECT_STAGE_MASK =
+	constexpr VkPipelineStageFlags2 kIndirectStageMask =
 		VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
 
-	constexpr VkPipelineStageFlags2 NON_SHADER_STAGE_MASK = TRANSFER_STAGE_MASK | INDIRECT_STAGE_MASK;
+	constexpr VkPipelineStageFlags2 kNonShaderStageMask = kTransferStageMask | kIndirectStageMask;
 }
 
 void VkCommandContext::TransitionBufferToRead(const Arc< render::Buffer >& pBuffer, VkPipelineStageFlags2 dstStage, u64 offsetInBytes, bool bFlushImmediate)
@@ -1284,9 +1284,9 @@ void VkCommandContext::TransitionBufferToRead(const Arc< render::Buffer >& pBuff
 	assert(rhiResource);
 
 	VkAccessFlags2 dstAccessFlags = 0;
-	if (dstStage & INDIRECT_STAGE_MASK)    dstAccessFlags |= VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
-	if (dstStage & TRANSFER_STAGE_MASK)    dstAccessFlags |= VK_ACCESS_2_TRANSFER_READ_BIT;
-	if (dstStage & ~NON_SHADER_STAGE_MASK) dstAccessFlags |= VK_ACCESS_2_SHADER_READ_BIT;
+	if (dstStage & kIndirectStageMask)    dstAccessFlags |= VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT;
+	if (dstStage & kTransferStageMask)    dstAccessFlags |= VK_ACCESS_2_TRANSFER_READ_BIT;
+	if (dstStage & ~kNonShaderStageMask) dstAccessFlags |= VK_ACCESS_2_SHADER_READ_BIT;
 
 	BarrierState barrier = BarrierState(dstAccessFlags, dstStage);
 	m_Impl->TransitionBarrier( rhiResource, barrier, offsetInBytes, bFlushImmediate);
@@ -1298,8 +1298,8 @@ void VkCommandContext::TransitionBufferToWrite(const Arc< render::Buffer >& pBuf
 	assert(rhiResource);
 
 	VkAccessFlags2 dstAccessFlags = 0;
-	if (dstStage & TRANSFER_STAGE_MASK)    dstAccessFlags |= VK_ACCESS_2_TRANSFER_WRITE_BIT;
-	if (dstStage & ~NON_SHADER_STAGE_MASK) dstAccessFlags |= VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT;
+	if (dstStage & kTransferStageMask)    dstAccessFlags |= VK_ACCESS_2_TRANSFER_WRITE_BIT;
+	if (dstStage & ~kNonShaderStageMask) dstAccessFlags |= VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_READ_BIT;
 
 	BarrierState barrier = BarrierState(dstAccessFlags, dstStage);
 	m_Impl->TransitionBarrier(rhiResource, barrier, offsetInBytes, bFlushImmediate);

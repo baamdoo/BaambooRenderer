@@ -121,8 +121,8 @@ private:
 	std::unordered_map< std::string, ProfileStats > m_CpuProfileStatsByName;
 
 	// Frame-time history ring buffer for ImGui::PlotLines.
-	static constexpr u32 FRAME_HISTORY_SIZE = 200;
-	float m_FrameTimeHistory[FRAME_HISTORY_SIZE] = {};
+	static constexpr u32 kFrameHistorySize = 200;
+	float m_FrameTimeHistory[kFrameHistorySize] = {};
 	u32   m_FrameTimeHistoryIdx = 0;
 
 	// --- Frame anomaly capture ---
@@ -143,9 +143,9 @@ private:
 		std::vector< ProfileSnapshotEntry > gpuProfile;
 		std::vector< ProfileSnapshotEntry > cpuProfile;
 	};
-	static constexpr u32 MAX_ANOMALY_CAPTURES    = 16;
-	static constexpr u32 ANOMALY_WARMUP_FRAMES   = 60;  // skip detection until EMA stabilizes
-	static constexpr u32 ANOMALY_COOLDOWN_FRAMES = 10;  // min gap between consecutive captures
+	static constexpr u32 kMaxAnomalyCaptures    = 16;
+	static constexpr u32 kAnomalyWarmupFrames   = 60;  // skip detection until EMA stabilizes
+	static constexpr u32 kAnomalyCooldownFrames = 10;  // min gap between consecutive captures
 
 	std::deque< FrameAnomaly > m_AnomalyLog;
 	u64                        m_FrameCounter        = 0;

@@ -26,7 +26,7 @@ ImGuiModule::ImGuiModule(Dx12RenderDevice& rd, ImGuiContext* pImGuiContext)
 	info.Device                       = m_RenderDevice.GetD3D12Device();
 	info.CommandQueue                 = m_RenderDevice.GraphicsQueue().GetD3D12CommandQueue();
 	info.RTVFormat                    = DXGI_FORMAT_R8G8B8A8_UNORM;
-	info.NumFramesInFlight            = MAX_FRAMES_IN_FLIGHT;
+	info.NumFramesInFlight            = kMaxFramesInFlight;
 	info.SrvDescriptorHeap            = m_d3d12SrvDescHeap;
 	info.LegacySingleSrvCpuDescriptor = m_d3d12SrvDescHeap->GetCPUDescriptorHandleForHeapStart();
 	info.LegacySingleSrvGpuDescriptor = m_d3d12SrvDescHeap->GetGPUDescriptorHandleForHeapStart();

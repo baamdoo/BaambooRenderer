@@ -45,11 +45,11 @@ inline fs::path GetSpirvPath()
 //-------------------------------------------------------------------------
 // Pre-defined Values
 //-------------------------------------------------------------------------
-constexpr u32 DEFAULT_DESCRIPTOR_POOL_SIZE = 1024u;
-constexpr u32 MAX_BINDLESS_DESCRIPTOR_RESOURCE_COUNT = 1024u;
-constexpr u32 MAX_SHADERRESOURCE_ARRAY_SIZE = 1024u;
+constexpr u32 kDefaultDescriptorPoolSize = 1024u;
+constexpr u32 kMaxBindlessDescriptorResourceCount = 1024u;
+constexpr u32 kMaxShaderResourceArraySize = 1024u;
 
-constexpr u32 COMMON_DESCRIPTORSET_INDEX = 0u;
+constexpr u32 kCommonDescriptorSetIndex = 0u;
 
 
 //-------------------------------------------------------------------------

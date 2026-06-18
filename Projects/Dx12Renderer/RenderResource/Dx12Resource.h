@@ -8,7 +8,7 @@ namespace fs = std::filesystem;
 namespace dx12
 {
 
-constexpr D3D12_RESOURCE_STATES D3D12_RESOURCE_STATE_INVALID = (D3D12_RESOURCE_STATES)(~0u);
+constexpr D3D12_RESOURCE_STATES kD3D12ResourceStateInvalid = (D3D12_RESOURCE_STATES)(~0u);
 
 enum class eResourceType
 {

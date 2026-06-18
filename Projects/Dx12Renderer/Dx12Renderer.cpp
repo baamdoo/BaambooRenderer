@@ -110,7 +110,7 @@ void Renderer::EndFrame(Arc< render::CommandContext >&& pContext, Arc< render::T
 	}
 
 	auto pBackImage = m_pSwapChain->GetBackImage();
-	if constexpr (NUM_SAMPLING > 1)
+	if constexpr (kNumSampling > 1)
 	{
 		rhiContext->ResolveSubresource(pBackImage.get(), pColor.get());
 	}

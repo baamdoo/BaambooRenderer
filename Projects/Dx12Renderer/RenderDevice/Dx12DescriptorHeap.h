@@ -35,7 +35,7 @@ private:
 
 	u64 m_DescriptorTableBitMask    = 0;
 	u64 m_DescriptorTableDirtyFlags = 0;
-	std::unordered_map< Dx12RootSignature*, std::array< DescriptorAllocation, MAX_ROOT_INDEX > > m_CachedDescriptorAllocations = {};
+	std::unordered_map< Dx12RootSignature*, std::array< DescriptorAllocation, kMaxRootIndex > > m_CachedDescriptorAllocations = {};
 
 	Arc< Dx12RootSignature > m_pCurrentRS = nullptr;
 };

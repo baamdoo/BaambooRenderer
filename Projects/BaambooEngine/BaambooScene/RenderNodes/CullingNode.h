@@ -24,8 +24,8 @@ class CullingNode : public render::RenderNode
 {
 using Super = render::RenderNode;
 public:
-	static constexpr u32 PHASE1_CULL = 0u;
-	static constexpr u32 PHASE2_CULL = 1u;
+	static constexpr u32 kPhase1Cull = 0u;
+	static constexpr u32 kPhase2Cull = 1u;
 
 	CullingNode(render::RenderDevice& rd);
 	virtual ~CullingNode();
@@ -65,7 +65,7 @@ private:
 	Arc< render::Buffer > m_VisibilityBuffer;
 	Arc< render::Buffer > m_MeshletVisibilityBuffer;
 	u32                   m_NumMeshletVisibilityWords = 0;
-	static constexpr u32  NUM_INITIAL_MESHLET_VISIBILITY_WORDS = _KB(2);
+	static constexpr u32  kNumInitialMeshletVisibilityWords = _KB(2);
 
 	// --- HiZ pyramid + SPD ---
 	Arc< render::Texture > m_pHiZTexture;
@@ -76,12 +76,12 @@ private:
 	Box< render::ComputePipeline > m_pHiZGenerationPSO;
 
 	// --- Readback ring ---
-	static constexpr u32  READBACK_SLOTS = MAX_FRAMES_IN_FLIGHT;
+	static constexpr u32  kReadbackSlots = kMaxFramesInFlight;
 	Arc< render::Buffer > m_Phase1CountReadback;
 	Arc< render::Buffer > m_Phase2CountReadback;
 
 #if PROFILING_LEVEL >= 1
-	static constexpr u32  MESHLET_STATS_FIELDS = 3;
+	static constexpr u32  kMeshletStatsFields = 3;
 	Arc< render::Buffer > m_MeshletStatsBuffer;
 	Arc< render::Buffer > m_Phase1MeshletStatsReadback;
 	Arc< render::Buffer > m_Phase2MeshletStatsReadback;

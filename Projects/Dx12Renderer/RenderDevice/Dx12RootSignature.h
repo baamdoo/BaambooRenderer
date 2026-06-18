@@ -107,7 +107,7 @@ private:
 	std::vector< u32 >             m_DescriptorTableIndices;
 	std::vector< DescriptorTable > m_DescriptorTables;
 
-	u32	m_NumDescriptorsPerTable[MAX_ROOT_INDEX] = {};
+	u32	m_NumDescriptorsPerTable[kMaxRootIndex] = {};
 	u64	m_SamplerTableBitMask    = 0;
 	u64	m_DescriptorTableBitMask = 0;
 

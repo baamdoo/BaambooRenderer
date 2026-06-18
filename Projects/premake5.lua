@@ -86,6 +86,7 @@ project "BaambooEngine"
 	files {
 		"%{prj.name}/**.h",
 		"%{prj.name}/**.hpp",
+		"%{prj.name}/**.inl",
 		"%{prj.name}/**.cpp",
 		"%{prj.name}/**.c",
 

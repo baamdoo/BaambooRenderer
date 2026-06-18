@@ -8,7 +8,7 @@ struct Bone
 {
     std::string name;
 
-    u32  parentIndex  = INVALID_INDEX;
+    u32  parentIndex  = kInvalidIndex;
     mat4 mBoneToModel = mat4(1.0f);
     mat4 mModelToBone = mat4(1.0f);
 };
@@ -35,7 +35,7 @@ struct AnimationChannel
 {
     std::string boneName;
 
-    u32 boneIndex = INVALID_INDEX;
+    u32 boneIndex = kInvalidIndex;
 
     std::vector< KeyPosition > positionKeys;
     std::vector< KeyRotation > rotationKeys;

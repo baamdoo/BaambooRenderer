@@ -404,7 +404,7 @@ void Dx12GraphicsPipeline::ParseRootParameters(const Dx12Shader::ShaderReflectio
             case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
             {
                 D3D12_ROOT_PARAMETER_TYPE type = 
-                    space == ROOT_CONSTANT_SPACE ? D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS : 
+                    space == kRootConstantSpace ? D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS : 
                     descriptor.rangeType == D3D12_DESCRIPTOR_RANGE_TYPE_CBV ? D3D12_ROOT_PARAMETER_TYPE_CBV :
                     descriptor.rangeType == D3D12_DESCRIPTOR_RANGE_TYPE_UAV ? D3D12_ROOT_PARAMETER_TYPE_UAV : D3D12_ROOT_PARAMETER_TYPE_SRV;
 
@@ -467,7 +467,7 @@ void Dx12ComputePipeline::ParseRootParameters(const Dx12Shader::ShaderReflection
             case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
             {
                 D3D12_ROOT_PARAMETER_TYPE type =
-                    space == ROOT_CONSTANT_SPACE ? D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS : 
+                    space == kRootConstantSpace ? D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS : 
                     descriptor.rangeType == D3D12_DESCRIPTOR_RANGE_TYPE_CBV ? D3D12_ROOT_PARAMETER_TYPE_CBV :
                     descriptor.rangeType == D3D12_DESCRIPTOR_RANGE_TYPE_UAV ? D3D12_ROOT_PARAMETER_TYPE_UAV : D3D12_ROOT_PARAMETER_TYPE_SRV;
 
@@ -489,8 +489,8 @@ void Dx12ComputePipeline::ParseRootParameters(const Dx12Shader::ShaderReflection
 //-------------------------------------------------------------------------
 namespace
 {
-    constexpr u64 SBT_TABLE_ALIGNMENT  = D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT;  // 64
-    constexpr u64 SBT_RECORD_ALIGNMENT = D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT; // 32
+    constexpr u64 kSbtTableAlignment  = D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT;  // 64
+    constexpr u64 kSbtRecordAlignment = D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT; // 32
 }
 
 Dx12RaytracingPipeline::Dx12RaytracingPipeline(Dx12RenderDevice& rd, const char* name)
@@ -639,7 +639,7 @@ void Dx12RaytracingPipeline::BuildStateObject()
 
 void Dx12RaytracingPipeline::BuildLocalRootSignature(const Dx12Shader::ShaderReflection& reflection)
 {
-    auto missIT = reflection.descriptors.find(MISS_ARGUMENT_SPACE);
+    auto missIT = reflection.descriptors.find(kMissArgumentSpace);
     if (missIT != reflection.descriptors.end() && !missIT->second.empty())
     {
         std::vector< Dx12Shader::DescriptorInfo > localDescriptors = missIT->second;
@@ -660,15 +660,15 @@ void Dx12RaytracingPipeline::BuildLocalRootSignature(const Dx12Shader::ShaderRef
             switch (desc.rangeType)
             {
             case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
-                m_pMissLocalRootSignature->AddSRV(desc.baseRegister, MISS_ARGUMENT_SPACE);
+                m_pMissLocalRootSignature->AddSRV(desc.baseRegister, kMissArgumentSpace);
                 break;
 
             case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
-                m_pMissLocalRootSignature->AddUAV(desc.baseRegister, MISS_ARGUMENT_SPACE);
+                m_pMissLocalRootSignature->AddUAV(desc.baseRegister, kMissArgumentSpace);
                 break;
 
             case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
-                m_pMissLocalRootSignature->AddConstants(desc.baseRegister, MISS_ARGUMENT_SPACE, desc.numDescriptors);
+                m_pMissLocalRootSignature->AddConstants(desc.baseRegister, kMissArgumentSpace, desc.numDescriptors);
                 break;
 
             default:
@@ -680,7 +680,7 @@ void Dx12RaytracingPipeline::BuildLocalRootSignature(const Dx12Shader::ShaderRef
         m_pMissLocalRootSignature->Build();
     }
 
-    auto hgIT = reflection.descriptors.find(HITGROUP_ARGUMENT_SPACE);
+    auto hgIT = reflection.descriptors.find(kHitGroupArgumentSpace);
     if (hgIT != reflection.descriptors.end() && !hgIT->second.empty())
     {
         std::vector< Dx12Shader::DescriptorInfo > localDescriptors = hgIT->second;
@@ -701,15 +701,15 @@ void Dx12RaytracingPipeline::BuildLocalRootSignature(const Dx12Shader::ShaderRef
             switch (desc.rangeType)
             {
             case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
-                m_pHitGroupLocalRootSignature->AddSRV(desc.baseRegister, HITGROUP_ARGUMENT_SPACE);
+                m_pHitGroupLocalRootSignature->AddSRV(desc.baseRegister, kHitGroupArgumentSpace);
                 break;
 
             case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
-                m_pHitGroupLocalRootSignature->AddUAV(desc.baseRegister, HITGROUP_ARGUMENT_SPACE);
+                m_pHitGroupLocalRootSignature->AddUAV(desc.baseRegister, kHitGroupArgumentSpace);
                 break;
 
             case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
-                m_pHitGroupLocalRootSignature->AddConstants(desc.baseRegister, HITGROUP_ARGUMENT_SPACE, desc.numDescriptors);
+                m_pHitGroupLocalRootSignature->AddConstants(desc.baseRegister, kHitGroupArgumentSpace, desc.numDescriptors);
                 break;
 
             default:
@@ -735,7 +735,7 @@ void Dx12RaytracingPipeline::ParseRootParameters(const Dx12Shader::ShaderReflect
             case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
             {
                 D3D12_ROOT_PARAMETER_TYPE type =
-                    space == ROOT_CONSTANT_SPACE ? D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS :
+                    space == kRootConstantSpace ? D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS :
                     descriptor.rangeType == D3D12_DESCRIPTOR_RANGE_TYPE_CBV ? D3D12_ROOT_PARAMETER_TYPE_CBV :
                     descriptor.rangeType == D3D12_DESCRIPTOR_RANGE_TYPE_UAV ? D3D12_ROOT_PARAMETER_TYPE_UAV : D3D12_ROOT_PARAMETER_TYPE_SRV;
 

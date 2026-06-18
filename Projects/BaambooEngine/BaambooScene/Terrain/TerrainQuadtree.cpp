@@ -25,7 +25,7 @@ void TerrainQuadtree::Build(const Config& cfg)
     root.originXZ  = cfg.rootOriginXZ;
     root.sizeMeter = cfg.rootSizeMeter;
     root.depth     = 0u;
-    root.parentIdx = INVALID_INDEX;
+    root.parentIdx = kInvalidIndex;
     root.aabb      = BoundingBox(
         float3(cfg.rootOriginXZ.x,                    cfg.terrainMinY, cfg.rootOriginXZ.y),
         float3(cfg.rootOriginXZ.x + cfg.rootSizeMeter, cfg.terrainMaxY, cfg.rootOriginXZ.y + cfg.rootSizeMeter));

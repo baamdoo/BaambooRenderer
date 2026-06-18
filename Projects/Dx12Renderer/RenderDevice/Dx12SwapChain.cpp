@@ -33,7 +33,7 @@ Dx12SwapChain::Dx12SwapChain(Dx12RenderDevice& rd, baamboo::Window& window)
 		//swapChainDesc.BufferDesc.RefreshRate.Numerator = m_uiRefreshRate;
 		//swapChainDesc.BufferDesc.RefreshRate.Denominator = 1;
 		swapChainDesc.BufferUsage        = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-		swapChainDesc.BufferCount        = MAX_FRAMES_IN_FLIGHT;
+		swapChainDesc.BufferCount        = kMaxFramesInFlight;
 		swapChainDesc.SampleDesc.Count   = 1;
 		swapChainDesc.SampleDesc.Quality = 0;
 		swapChainDesc.Scaling            = DXGI_SCALING_NONE;
@@ -91,8 +91,8 @@ void Dx12SwapChain::ResizeViewport(u32 width, u32 height)
 
 	DXGI_SWAP_CHAIN_DESC1 desc = {};
 	DX_CHECK(m_dxgiSwapChain4->GetDesc1(&desc));
-	DX_CHECK(m_dxgiSwapChain4->ResizeBuffers(MAX_FRAMES_IN_FLIGHT, width, height, desc.Format, desc.Flags));
-	for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+	DX_CHECK(m_dxgiSwapChain4->ResizeBuffers(kMaxFramesInFlight, width, height, desc.Format, desc.Flags));
+	for (u32 i = 0; i < kMaxFramesInFlight; ++i)
 	{
 		auto pTex = m_pBackImages[i];
 		assert(pTex);
@@ -108,7 +108,7 @@ void Dx12SwapChain::ResizeViewport(u32 width, u32 height)
 
 void Dx12SwapChain::CreateSwapChainResources()
 {
-	for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+	for (u32 i = 0; i < kMaxFramesInFlight; ++i)
 	{
 		ID3D12Resource2* d3d12Resource = nullptr;
 		m_dxgiSwapChain4->GetBuffer(i, IID_PPV_ARGS(&d3d12Resource));

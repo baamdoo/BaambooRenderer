@@ -133,7 +133,7 @@ void StaticMeshSystem::CollectRenderData(SceneRenderView& outView) const
 
     for (const auto& [id, entry] : m_RenderData)
     {
-        u32 meshIndex = INVALID_INDEX;
+        u32 meshIndex = kInvalidIndex;
         auto meshIt = meshIndexMap.find(entry.mesh.tag);
         if (meshIt == meshIndexMap.end())
         {
@@ -147,7 +147,7 @@ void StaticMeshSystem::CollectRenderData(SceneRenderView& outView) const
             meshIndex = meshIt->second;
         }
 
-        u32 materialIndex = INVALID_INDEX;
+        u32 materialIndex = kInvalidIndex;
         if (entry.bHasMaterial)
         {
             auto matIt = materialIndexMap.find(entry.material.id);

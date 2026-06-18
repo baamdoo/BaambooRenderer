@@ -4,7 +4,7 @@
 namespace dx12
 {
 
-constexpr u32 MAX_NUM_PENDING_BARRIERS = 16;
+constexpr u32 kMaxNumPendingBarriers = 16;
 
 class Dx12Resource;
 class Dx12Buffer;

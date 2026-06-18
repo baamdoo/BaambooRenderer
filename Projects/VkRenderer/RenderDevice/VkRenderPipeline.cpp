@@ -407,7 +407,7 @@ void VulkanGraphicsPipeline::Build()
 		m_vkSetLayouts.resize(maxSet + 1);
 		for (const auto& [set, binding] : descriptorSetLayoutBindingMap)
 		{
-			if (set == COMMON_DESCRIPTORSET_INDEX)
+			if (set == kCommonDescriptorSetIndex)
 			{
 				m_vkSetLayouts[set] = rhiSceneResource.GetSceneDescriptorSetLayout();
 				continue;
@@ -424,7 +424,7 @@ void VulkanGraphicsPipeline::Build()
 			layoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 			layoutInfo.bindingCount = static_cast<u32>(bindings.size());
 			layoutInfo.pBindings    = bindings.data();
-			if (set != COMMON_DESCRIPTORSET_INDEX)
+			if (set != kCommonDescriptorSetIndex)
 			{
 				layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT;
 			}
@@ -651,7 +651,7 @@ void VulkanGraphicsPipeline::Build()
 		m_vkSetLayouts.resize(maxSet + 1);
 		for (const auto& [set, binding] : descriptorSetLayoutBindingMap)
 		{
-			if (set == COMMON_DESCRIPTORSET_INDEX)
+			if (set == kCommonDescriptorSetIndex)
 			{
 				m_vkSetLayouts[set] = rhiSceneResource.GetSceneDescriptorSetLayout();
 				continue;
@@ -930,10 +930,10 @@ void VulkanComputePipeline::Build()
 	m_vkSetLayouts.clear();
 	m_vkSetLayouts.resize(maxSet + 1);
 
-	m_vkSetLayouts[COMMON_DESCRIPTORSET_INDEX] = rhiSceneResource.GetSceneDescriptorSetLayout();
+	m_vkSetLayouts[kCommonDescriptorSetIndex] = rhiSceneResource.GetSceneDescriptorSetLayout();
 	for (const auto& [set, binding] : descriptorSetLayoutBindingMap)
 	{
-		if (set == COMMON_DESCRIPTORSET_INDEX)
+		if (set == kCommonDescriptorSetIndex)
 		{
 			continue;
 		}

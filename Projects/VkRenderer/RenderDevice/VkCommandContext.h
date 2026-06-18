@@ -15,7 +15,7 @@ class DynamicBufferAllocator;
 class StaticBufferAllocator;
 class VulkanBuffer;
 
-constexpr u32 MAX_NUM_PENDING_BARRIERS = 16;
+constexpr u32 kMaxNumPendingBarriers = 16;
 
 enum class eCommandType
 {

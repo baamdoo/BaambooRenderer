@@ -97,7 +97,7 @@ private:
 
         void Reset();
     };
-    std::array< PerFrameData, MAX_FRAMES_IN_FLIGHT > m_FrameData;
+    std::array< PerFrameData, kMaxFramesInFlight > m_FrameData;
 
 
     std::unordered_map< std::string, BufferHandle >         m_VertexCache;
