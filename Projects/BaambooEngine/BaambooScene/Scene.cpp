@@ -341,6 +341,30 @@ void Scene::OnWindowResized(u32 width, u32 height)
 			node->Resize(width, height);
 }
 
+void Scene::SetDebugLines(std::vector< DebugLineVertex >&& lines)
+{
+	std::lock_guard< std::mutex > lock(m_SceneMutex);
+	SetDebugLinesAlreadyLocked(std::move(lines));
+}
+
+void Scene::SetDebugLinesAlreadyLocked(std::vector< DebugLineVertex >&& lines)
+{
+	m_DebugLines = std::move(lines);
+	++m_DebugLinesVersion;
+}
+
+void Scene::ClearDebugLines()
+{
+	std::lock_guard< std::mutex > lock(m_SceneMutex);
+	ClearDebugLinesAlreadyLocked();
+}
+
+void Scene::ClearDebugLinesAlreadyLocked()
+{
+	m_DebugLines.clear();
+	++m_DebugLinesVersion;
+}
+
 SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport, u64 frame, const render::DeviceSettings& ds) const
 {
 	SceneRenderView view = {};
@@ -398,6 +422,11 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport,
 	view.debugFlags.saturationMax         = m_DebugSaturationMax.load(std::memory_order_relaxed);
 	view.debugFlags.lightTypeMask         = m_DebugLightTypeMask.load(std::memory_order_relaxed);
 	view.debugFlags.surfaceDebugView      = m_DebugSurfaceView.load(std::memory_order_relaxed);
+	{
+		std::lock_guard< std::mutex > lock(m_SceneMutex);
+		view.debugLines = m_DebugLines;
+		view.debugLinesVersion = m_DebugLinesVersion;
+	}
 
 	m_pTransformSystem->CollectRenderData(view);
 	m_pStaticMeshSystem->CollectRenderData(view);

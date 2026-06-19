@@ -126,7 +126,7 @@ TerrainMeshData MarchingCubes::BuildMesh(
             if (params.bEstimateNormals && chunkDesc.SDF)
             {
                 float3 posWorld = chunkDesc.originWorld + v.position;
-                float  e = chunkDesc.settings.voxelSizeMeter * 0.5f;
+                float  e = chunkDesc.settings.voxelSizeMeter * std::max(params.normalEpsilonMultiplier, 1.0e-4f);
 
                 float dx = chunkDesc.SDF(posWorld + float3(e, 0, 0)) - chunkDesc.SDF(posWorld - float3(e, 0, 0));
                 float dy = chunkDesc.SDF(posWorld + float3(0, e, 0)) - chunkDesc.SDF(posWorld - float3(0, e, 0));
@@ -213,8 +213,8 @@ TerrainMeshData MarchingCubes::BuildMesh(
                     u32 i2 = GetOrCreateVertex(x, y, z, eC, samplePosC0, samplePosC1, pSampleC0->value, pSampleC1->value);
 
                     meshData.indices.push_back(i0);
-                    meshData.indices.push_back(i1);
                     meshData.indices.push_back(i2);
+                    meshData.indices.push_back(i1);
 				}
 
                 // debug info
@@ -224,7 +224,8 @@ TerrainMeshData MarchingCubes::BuildMesh(
             }
         }
 	}
-    
+
+    meshData.RecalculateBounds();
     return meshData;
 }
 

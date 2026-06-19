@@ -20,6 +20,7 @@ struct VoxelTerrainSettings
     u32   cellsPerAxis        = kDefaultVoxelCellsPerAxis;
     u32   samplesPerAxis      = kDefaultVoxelSamplesPerAxis;
     float voxelSizeMeter      = kDefaultVoxelSizeMeter;
+    float normalEpsilonMultiplier = 0.5f;
 };
 
 struct VoxelChunkCoord

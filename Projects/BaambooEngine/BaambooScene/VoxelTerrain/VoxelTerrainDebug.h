@@ -26,6 +26,17 @@ struct VoxelTerrainDebugStats
 
     u32 numMeshVertices = 0u;
     u32 numMeshIndices  = 0u;
+    u32 numMeshlets     = 0u;
+
+    u32    numMeshesWithBounds = 0u;
+    float3 meshBoundsMin       = float3(0.0f);
+    float3 meshBoundsMax       = float3(0.0f);
+
+    u32   numResidualVertices = 0u;
+    u32   numNonFiniteResiduals = 0u;
+    float minSurfaceResidual = 0.0f;
+    float avgSurfaceResidual = 0.0f;
+    float maxSurfaceResidual = 0.0f;
 
     u32    numNormalVertices    = 0u;
     u32    numZeroNormals       = 0u;
@@ -34,6 +45,24 @@ struct VoxelTerrainDebugStats
     float  maxNormalLength      = 0.0f;
     float  avgNormalLength      = 0.0f;
     float3 avgNormal            = float3(0.0f);
+
+    u32   numSphereOutwardNormals = 0u;
+    u32   numSphereInwardNormals  = 0u;
+    float minSphereNormalDot      = 0.0f;
+    float avgSphereNormalDot      = 0.0f;
+    float maxSphereNormalDot      = 0.0f;
+
+    u32   numTriangles = 0u;
+    u32   numInvalidIndexTriangles = 0u;
+    u32   numDegenerateTriangles   = 0u;
+    u32   numFaceNormalTriangles   = 0u;
+    u32   numNegativeFaceNormalDotTriangles = 0u;
+    float minFaceNormalDot = 0.0f;
+    float avgFaceNormalDot = 0.0f;
+    float maxFaceNormalDot = 0.0f;
+
+    u32 numBoundaryEdges = 0u;
+    u32 numNonManifoldEdges = 0u;
 };
 
 class VoxelTerrainDebug

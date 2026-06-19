@@ -105,7 +105,7 @@ public:
 
 	void StageDescriptor(
 		const std::string& name,
-		Arc< Dx12StructuredBuffer > pBuffer,
+		Arc< Dx12Buffer > pBuffer,
 		D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	void StageDescriptor(
 		const std::string& name,
@@ -959,7 +959,7 @@ void Dx12CommandContext::Impl::SetAccelerationStructureSRV(const std::string& na
 
 void Dx12CommandContext::Impl::StageDescriptor(
 	const std::string& name,
-	Arc< Dx12StructuredBuffer > pBuffer,
+	Arc< Dx12Buffer > pBuffer,
 	D3D12_DESCRIPTOR_HEAP_TYPE heapType)
 {
 	const auto& state = pBuffer->GetCurrentState();
@@ -1511,7 +1511,7 @@ void Dx12CommandContext::StageDescriptor(const std::string& name, Arc< render::B
 {
 	UNUSED(offset);
 
-	auto rhiBuffer = StaticCast<Dx12StructuredBuffer>(pBuffer);
+	auto rhiBuffer = StaticCast<Dx12Buffer>(pBuffer);
 	assert(rhiBuffer);
 
 	m_Impl->StageDescriptor(name, rhiBuffer);

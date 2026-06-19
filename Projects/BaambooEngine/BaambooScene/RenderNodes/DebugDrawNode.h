@@ -21,15 +21,23 @@ private:
 
 	void ApplyFrustumWireframe(render::CommandContext& context);
 	void ApplyClusterWireframe(render::CommandContext& context, const SceneRenderView& renderView);
-	void ApplyLightWireframe  (render::CommandContext& context, const SceneRenderView& renderView);
+	void ApplyLightWireframe(render::CommandContext& context, const SceneRenderView& renderView);
+	void ApplyDebugLines(render::CommandContext& context, const SceneRenderView& renderView);
+	bool EnsureDebugLineBuffer(u32 vertexCount);
 
 private:
-	Arc< render::Texture >          m_pColorRef;
-	Arc< render::RenderTarget >     m_pRenderTarget;
+	Arc< render::Texture >      m_pColorRef;
+	Arc< render::RenderTarget > m_pRenderTarget;
 
 	Box< render::GraphicsPipeline > m_pFrustumPSO;
 	Box< render::GraphicsPipeline > m_pClusterPSO;
 	Box< render::GraphicsPipeline > m_pLightPSO;
+	Box< render::GraphicsPipeline > m_pDebugLinePSO;
+
+	Arc< render::Buffer > m_pDebugLineBuffer;
+	u32 m_DebugLineVertexCapacity = 0u;
+	u32 m_DebugLineVertexCount = 0u;
+	u64 m_DebugLineVersion = ~0ull;
 };
 
 } // namespace baamboo

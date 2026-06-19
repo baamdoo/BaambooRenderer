@@ -53,6 +53,14 @@ std::vector< u64 > StaticMeshSystem::UpdateRenderData(const EditorCamera& edCame
         MeshRenderDataEntry& entry = m_RenderData[id];
 
         auto& meshComponent = m_Registry.get< StaticMeshComponent >(entity);
+        if (!meshComponent.pVertices || meshComponent.numVertices == 0u ||
+            !meshComponent.lods[0].pIndices || meshComponent.lods[0].numIndices == 0u)
+        {
+            RemoveRenderData(id);
+            markedEntities.emplace_back(id);
+            continue;
+        }
+
         entry.mesh.id  = id;
         entry.mesh.tag = meshComponent.tag;
         

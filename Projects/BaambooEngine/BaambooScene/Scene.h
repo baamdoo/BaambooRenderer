@@ -197,6 +197,10 @@ public:
 	u32  GetDebugLightTypeMask() const { return m_DebugLightTypeMask.load(); }
 	void SetDebugSurfaceView(u32 v) { m_DebugSurfaceView.store(v); }
 	u32  GetDebugSurfaceView() const { return m_DebugSurfaceView.load(); }
+	void SetDebugLines(std::vector< DebugLineVertex >&& lines);
+	void SetDebugLinesAlreadyLocked(std::vector< DebugLineVertex >&& lines);
+	void ClearDebugLines();
+	void ClearDebugLinesAlreadyLocked();
 
 	const MeshData* GetMeshData(u32 meshID) const { auto it = m_MeshData.find(meshID); return (it != m_MeshData.end()) ? &it->second : nullptr;  }
 	const Skeleton* GetSkeleton(u32 skeletonID) const { auto it = m_Skeletons.find(skeletonID); return (it != m_Skeletons.end()) ? &it->second : nullptr; }
@@ -256,6 +260,8 @@ private:
 	std::atomic< u32 >  m_DebugSaturationMax{ 16u};
 	std::atomic< u32 >  m_DebugLightTypeMask{ 0u };
 	std::atomic< u32 >  m_DebugSurfaceView{ 0u };
+	std::vector< DebugLineVertex > m_DebugLines;
+	u64 m_DebugLinesVersion = 0u;
 };
 
 } // namespace baamboo

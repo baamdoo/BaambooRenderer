@@ -46,6 +46,8 @@ public:
     D3D12_GPU_DESCRIPTOR_HANDLE GetShaderResourceViewGPU() const { return m_SRVAllocation.GetGPUHandle(); }
     [[nodiscard]]
     D3D12_GPU_DESCRIPTOR_HANDLE GetUnorderedAccessViewGPU() const { return m_UAVAllocation.GetGPUHandle(); }
+    u32 GetShaderResourceHandle(u32 offset = 0) const { return m_SRVAllocation.Index(offset); }
+    u32 GetUnorderedAccessHandle(u32 offset = 0) const { return m_UAVAllocation.Index(offset); }
 
 protected:
     virtual void CreateViews();
@@ -123,8 +125,6 @@ public:
     Dx12StructuredBuffer(Dx12RenderDevice& rd, const char* name, u64 elementSizeInBytes, u32 numElements, RenderFlags additionalUsage = 0);
     virtual ~Dx12StructuredBuffer();
 
-    u32 GetShaderResourceHandle(u32 offset = 0) const { return m_SRVAllocation.Index(offset); }
-    u32 GetUnorderedAccessHandle(u32 offset = 0) const { return m_UAVAllocation.Index(offset); }
 };
 
 }

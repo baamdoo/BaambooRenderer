@@ -209,6 +209,14 @@ struct DebugViewFlags
 	u32 surfaceDebugView = 0u;
 };
 
+struct DebugLineVertex
+{
+	float3 position = float3(0.0f);
+	float  pad0     = 0.0f;
+	float3 color    = float3(1.0f);
+	float  alpha    = 1.0f;
+};
+
 //-------------------------------------------------------------------------
 // SceneRenderView : Holds all the scene data
 //                   required for rendering in a refined state.
@@ -247,6 +255,8 @@ struct SceneRenderView
 	float2           frozenViewport = float2(0.0f, 0.0f); // viewport (px) at freeze moment
 
 	DebugViewFlags debugFlags = {};
+	std::vector< DebugLineVertex > debugLines;
+	u64 debugLinesVersion = 0u;
 
 	// for sync producer(SceneRenderView)-consumer(Renderer)
 	std::mutex* pSceneMutex;

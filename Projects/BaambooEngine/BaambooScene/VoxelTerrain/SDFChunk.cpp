@@ -77,8 +77,10 @@ bool SDFChunk::BuildMesh()
 {
     MarchingCubesBuildParams params{};
     params.bEstimateNormals = static_cast< bool >(m_Desc.SDF);
+    params.normalEpsilonMultiplier = m_Desc.settings.normalEpsilonMultiplier;
 
     m_MeshData = MarchingCubes::BuildMesh(m_SampleGrid, m_Desc, params);
+    m_MeshData.BuildMeshlets();
     return true;
 }
 

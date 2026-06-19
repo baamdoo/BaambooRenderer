@@ -9,6 +9,7 @@ namespace baamboo
 struct MarchingCubesBuildParams
 {
     bool bEstimateNormals = false;
+    float normalEpsilonMultiplier = 0.5f;
 };
 
 class MarchingCubes

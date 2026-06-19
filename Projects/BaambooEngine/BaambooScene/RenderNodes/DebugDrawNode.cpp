@@ -78,6 +78,19 @@ DebugDrawNode::DebugDrawNode(render::RenderDevice& rd)
 			.SetCullMode(eCullMode::None);
 		// No alpha-blend: light gizmos read more clearly as solid wireframe.
 	}
+
+	// --- Generic debug line PSO ---
+	{
+		auto pVS = Shader::Create(rd, "DebugLineVS", { .stage = eShaderStage::Vertex, .filename = "DebugLineVS" });
+
+		m_pDebugLinePSO = GraphicsPipeline::Create(rd, "DebugLinePSO");
+		m_pDebugLinePSO->SetShaders(pVS, pPS)
+			.SetTopology(ePrimitiveTopology::Line)
+			.SetCullMode(eCullMode::None)
+			.SetBlendEnable(0, true)
+			.SetColorBlending(0, eBlendFactor::SrcAlpha, eBlendFactor::SrcAlphaInv, eBlendOp::Add)
+			.SetAlphaBlending(0, eBlendFactor::One, eBlendFactor::Zero, eBlendOp::Add);
+	}
 }
 
 void DebugDrawNode::EnsureRenderTarget(Arc< render::Texture > pColor)
@@ -97,6 +110,7 @@ void DebugDrawNode::EnsureRenderTarget(Arc< render::Texture > pColor)
 	m_pFrustumPSO->SetRenderTarget(m_pRenderTarget).Build();
 	m_pClusterPSO->SetRenderTarget(m_pRenderTarget).Build();
 	m_pLightPSO  ->SetRenderTarget(m_pRenderTarget).Build();
+	m_pDebugLinePSO->SetRenderTarget(m_pRenderTarget).Build();
 }
 
 void DebugDrawNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)
@@ -104,6 +118,7 @@ void DebugDrawNode::Apply(render::CommandContext& context, const SceneRenderView
 	using namespace render;
 
 	const bool bDrawFrustum = renderView.bFrozen;
+	const bool bDrawDebugLines = !renderView.debugLines.empty();
 	const bool bDrawCluster = renderView.debugFlags.bShowClusterWireframe
 		&& g_FrameData.pClusterAABBBuffer
 		&& g_FrameData.pLightGridBuffer;
@@ -111,7 +126,7 @@ void DebugDrawNode::Apply(render::CommandContext& context, const SceneRenderView
 		&& (renderView.light.numSpots + renderView.light.numAreas + renderView.light.numSpheres
 			+ renderView.light.numDisks + renderView.light.numTubes) > 0u;
 
-	if (!bDrawFrustum && !bDrawCluster && !bDrawLights)
+	if (!bDrawFrustum && !bDrawDebugLines && !bDrawCluster && !bDrawLights)
 		return;
 
 	if (!g_FrameData.pColor)
@@ -128,6 +143,9 @@ void DebugDrawNode::Apply(render::CommandContext& context, const SceneRenderView
 	{
 		if (bDrawFrustum)
 			ApplyFrustumWireframe(context);
+
+		if (bDrawDebugLines)
+			ApplyDebugLines(context, renderView);
 
 		if (bDrawCluster)
 			ApplyClusterWireframe(context, renderView);
@@ -246,12 +264,60 @@ void DebugDrawNode::ApplyLightWireframe(render::CommandContext& context, const S
 	}
 }
 
+bool DebugDrawNode::EnsureDebugLineBuffer(u32 vertexCount)
+{
+	if (vertexCount == 0u)
+		return false;
+
+	if (m_pDebugLineBuffer && m_DebugLineVertexCapacity >= vertexCount)
+		return false;
+
+	m_DebugLineVertexCapacity = std::max(vertexCount, m_DebugLineVertexCapacity * 2u);
+	m_DebugLineVertexCapacity = std::max(m_DebugLineVertexCapacity, 256u);
+	m_pDebugLineBuffer = render::Buffer::Create(m_RenderDevice, "DebugDrawPass::DebugLines",
+		{
+			.count = m_DebugLineVertexCapacity,
+			.elementSizeInBytes = sizeof(DebugLineVertex),
+			.bufferUsage = render::eBufferUsage_Storage | render::eBufferUsage_TransferDest,
+		});
+	return true;
+}
+
+void DebugDrawNode::ApplyDebugLines(render::CommandContext& context, const SceneRenderView& renderView)
+{
+	using namespace render;
+
+	const u32 vertexCount = static_cast< u32 >(renderView.debugLines.size());
+	if (vertexCount == 0u)
+		return;
+
+	const bool bBufferRecreated = EnsureDebugLineBuffer(vertexCount);
+	if (!m_pDebugLineBuffer)
+		return;
+
+	if (bBufferRecreated || m_DebugLineVersion != renderView.debugLinesVersion || m_DebugLineVertexCount != vertexCount)
+	{
+		context.UploadData(m_pDebugLineBuffer, renderView.debugLines.data(), vertexCount, sizeof(DebugLineVertex));
+		m_DebugLineVersion = renderView.debugLinesVersion;
+		m_DebugLineVertexCount = vertexCount;
+	}
+	context.TransitionBufferToRead(m_pDebugLineBuffer, ePipelineStage::VertexShader);
+
+	context.SetRenderPipeline(m_pDebugLinePSO.get());
+	context.StageDescriptor("g_DebugLines", m_pDebugLineBuffer);
+	context.Draw(vertexCount, 1u);
+}
+
 void DebugDrawNode::Resize(u32 width, u32 height, u32 depth)
 {
 	UNUSED(width); UNUSED(height); UNUSED(depth);
 	
 	m_pRenderTarget.reset();
 	m_pColorRef.reset();
+	m_pDebugLineBuffer.reset();
+	m_DebugLineVertexCapacity = 0u;
+	m_DebugLineVertexCount = 0u;
+	m_DebugLineVersion = ~0ull;
 }
 
 void DebugDrawNode::DrawUI()
