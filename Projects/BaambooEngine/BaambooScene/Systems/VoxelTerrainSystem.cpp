@@ -35,6 +35,14 @@ bool NearlyEqual3(const float3& a, const float3& b, float epsilon = 1.0e-4f)
     return NearlyEqual(a.x, b.x, epsilon) && NearlyEqual(a.y, b.y, epsilon) && NearlyEqual(a.z, b.z, epsilon);
 }
 
+float3 GetChunkLocalPosition(const VoxelTerrainChunkComponent& chunk, const VoxelTerrainSettings& settings)
+{
+    return float3(
+        static_cast< float >(chunk.coord.x),
+        static_cast< float >(chunk.coord.y),
+        static_cast< float >(chunk.coord.z)) * settings.chunkWorldSizeMeter;
+}
+
 quat MakeEulerYXZRotation(const float3& eulerDegrees)
 {
     const float3 radians = glm::radians(eulerDegrees);
@@ -117,6 +125,11 @@ std::vector< u64 > VoxelTerrainSystem::UpdateRenderData(const EditorCamera& edCa
 
     RebuildAllDirty();
 
+    m_Registry.view< VoxelTerrainComponent >().each([this](auto entity, auto&)
+        {
+            NormalizeRootTransform(entity);
+        });
+
     m_Registry.view< VoxelTerrainChunkComponent >().each([this](auto entity, auto&)
         {
             NormalizeChunkTransform(entity);
@@ -139,9 +152,7 @@ void VoxelTerrainSystem::RebuildAllDirty()
 {
     m_Registry.view< VoxelTerrainComponent >().each([this](auto entity, auto& terrain)
         {
-            const u64 rootId = entt::to_integral(entity);
-            const bool bMissingTerrain = !m_Terrains.contains(rootId);
-            if (terrain.bDirtyMark || bMissingTerrain)
+            if (terrain.bDirtyMark)
                 RebuildRoot(entity);
         });
 }
@@ -153,6 +164,36 @@ bool VoxelTerrainSystem::SetMeshVisible(bool bVisible)
 
     m_bMeshVisible = bVisible;
     RefreshAllMeshComponents();
+    return true;
+}
+
+bool VoxelTerrainSystem::NormalizeRootTransform(entt::entity rootEntity)
+{
+    if (!m_Registry.valid(rootEntity) ||
+        !m_Registry.all_of< TransformComponent, VoxelTerrainComponent >(rootEntity))
+    {
+        return false;
+    }
+
+    const auto& terrain = m_Registry.get< VoxelTerrainComponent >(rootEntity);
+    auto& transform = m_Registry.get< TransformComponent >(rootEntity);
+
+    const float3 expectedPosition = terrain.terrainOriginWorld;
+    const float3 expectedRotation = float3(0.0f);
+    const float3 expectedScale = float3(1.0f);
+    if (NearlyEqual3(transform.transform.position, expectedPosition) &&
+        NearlyEqual3(transform.transform.rotation, expectedRotation) &&
+        NearlyEqual3(transform.transform.scale, expectedScale))
+    {
+        transform.transform.Update();
+        return false;
+    }
+
+    transform.transform.position = expectedPosition;
+    transform.transform.rotation = expectedRotation;
+    transform.transform.scale = expectedScale;
+    transform.transform.Update();
+    m_Registry.patch< TransformComponent >(rootEntity, [](auto&) {});
     return true;
 }
 
@@ -178,13 +219,14 @@ bool VoxelTerrainSystem::NormalizeChunkTransform(entt::entity chunkEntity)
     const auto& terrain = m_Registry.get< VoxelTerrainComponent >(chunk.root);
     auto& transform = m_Registry.get< TransformComponent >(chunkEntity);
 
-    const float3 expectedPosition = GetChunkPosition(chunk, terrain.settings);
+    const float3 expectedPosition = GetChunkLocalPosition(chunk, terrain.settings);
     const float3 expectedRotation = float3(0.0f);
     const float3 expectedScale = float3(1.0f);
     if (NearlyEqual3(transform.transform.position, expectedPosition) &&
         NearlyEqual3(transform.transform.rotation, expectedRotation) &&
         NearlyEqual3(transform.transform.scale, expectedScale))
     {
+        transform.transform.Update();
         return false;
     }
 
@@ -218,7 +260,10 @@ void VoxelTerrainSystem::RefreshMeshComponent(entt::entity chunkEntity)
 
     const SDFChunk* sdfChunk = GetChunk(chunkEntity);
     if (sdfChunk)
+    {
+        NormalizeRootTransform(chunk.root);
         NormalizeChunkTransform(chunkEntity);
+    }
 
     if (sdfChunk && m_bMeshVisible)
     {
@@ -292,22 +337,9 @@ const SDFChunk* VoxelTerrainSystem::GetChunk(entt::entity chunkEntity) const
     return terrainData ? terrainData->GetChunk(chunk.chunkIndex) : nullptr;
 }
 
-float3 VoxelTerrainSystem::GetChunkOriginWorld(const VoxelTerrainChunkComponent& chunk, const VoxelTerrainSettings& settings)
+float3 VoxelTerrainSystem::GetChunkOriginWorld(const VoxelTerrainChunkComponent& chunk, const VoxelTerrainComponent& terrain)
 {
-    return float3(
-        static_cast< float >(chunk.coord.x),
-        static_cast< float >(chunk.coord.y),
-        static_cast< float >(chunk.coord.z)) * settings.chunkWorldSizeMeter;
-}
-
-float3 VoxelTerrainSystem::GetTerrainPivot(const VoxelTerrainSettings& settings)
-{
-    return float3(settings.chunkWorldSizeMeter * 0.5f);
-}
-
-float3 VoxelTerrainSystem::GetChunkPosition(const VoxelTerrainChunkComponent& chunk, const VoxelTerrainSettings& settings)
-{
-    return GetChunkOriginWorld(chunk, settings) - GetTerrainPivot(settings);
+    return terrain.terrainOriginWorld + GetChunkLocalPosition(chunk, terrain.settings);
 }
 
 bool VoxelTerrainSystem::RebuildRoot(entt::entity rootEntity)
@@ -316,22 +348,62 @@ bool VoxelTerrainSystem::RebuildRoot(entt::entity rootEntity)
         return false;
 
     auto& terrain = m_Registry.get< VoxelTerrainComponent >(rootEntity);
-    ProceduralTerrain& terrainData = m_Terrains[entt::to_integral(rootEntity)];
-    terrainData.Clear();
-    terrainData.Initialize(terrain.settings);
+    const u64 rootId = entt::to_integral(rootEntity);
+    NormalizeRootTransform(rootEntity);
 
-    bool bBuiltAnyChunk = false;
-    m_Registry.view< VoxelTerrainChunkComponent >().each([this, rootEntity, &terrainData, &bBuiltAnyChunk](auto chunkEntity, auto& chunk)
+    auto FailRebuild = [&terrain]()
         {
-            if (chunk.root != rootEntity)
+            terrain.bDirtyMark = false;
+            return false;
+        };
+
+    ProceduralTerrain candidateTerrain;
+    candidateTerrain.Initialize(terrain.settings);
+
+    struct CandidateChunkIndex
+    {
+        entt::entity entity = entt::null;
+        u32 chunkIndex = kInvalidIndex;
+    };
+
+    std::vector< CandidateChunkIndex > candidateChunkIndices;
+    bool bFailed = false;
+
+    m_Registry.view< VoxelTerrainChunkComponent >().each([this, rootEntity, &candidateTerrain, &candidateChunkIndices, &bFailed](auto chunkEntity, auto& chunk)
+        {
+            if (bFailed || chunk.root != rootEntity)
                 return;
 
-            bBuiltAnyChunk |= RebuildChunk(rootEntity, chunkEntity, terrainData);
+            NormalizeChunkTransform(chunkEntity);
+
+            u32 candidateChunkIndex = kInvalidIndex;
+            if (!RebuildChunkCandidate(rootEntity, chunkEntity, candidateTerrain, candidateChunkIndex))
+            {
+                bFailed = true;
+                return;
+            }
+
+            candidateChunkIndices.push_back({ chunkEntity, candidateChunkIndex });
         });
+
+    if (bFailed)
+        return FailRebuild();
+
+    m_Terrains[rootId] = std::move(candidateTerrain);
+
+    for (const CandidateChunkIndex& candidateIndex : candidateChunkIndices)
+    {
+        if (!m_Registry.valid(candidateIndex.entity) || !m_Registry.all_of< VoxelTerrainChunkComponent >(candidateIndex.entity))
+            continue;
+
+        auto& chunk = m_Registry.get< VoxelTerrainChunkComponent >(candidateIndex.entity);
+        if (chunk.root == rootEntity)
+            chunk.chunkIndex = candidateIndex.chunkIndex;
+    }
 
     terrain.builtFieldPreset = terrain.fieldPreset;
     terrain.bDirtyMark = false;
-    if (bBuiltAnyChunk)
+    if (!candidateChunkIndices.empty())
         ++terrain.meshRevision;
 
     m_Registry.view< VoxelTerrainChunkComponent >().each([this, rootEntity](auto chunkEntity, auto& chunk)
@@ -339,19 +411,24 @@ bool VoxelTerrainSystem::RebuildRoot(entt::entity rootEntity)
             if (chunk.root == rootEntity)
                 RefreshMeshComponent(chunkEntity);
         });
-    return bBuiltAnyChunk;
+
+    return true;
 }
 
-bool VoxelTerrainSystem::RebuildChunk(entt::entity rootEntity, entt::entity chunkEntity, ProceduralTerrain& terrainData)
+bool VoxelTerrainSystem::RebuildChunkCandidate(
+    entt::entity rootEntity,
+    entt::entity chunkEntity,
+    ProceduralTerrain& terrainData,
+    u32& outChunkIndex)
 {
     auto& terrain = m_Registry.get< VoxelTerrainComponent >(rootEntity);
     auto& chunk = m_Registry.get< VoxelTerrainChunkComponent >(chunkEntity);
-    const float3 chunkOriginWorld = GetChunkOriginWorld(chunk, terrain.settings);
+    const float3 chunkOriginWorld = GetChunkOriginWorld(chunk, terrain);
 
     switch (terrain.fieldPreset)
     {
     case VoxelTerrainFieldPreset::SphereRegression:
-        chunk.chunkIndex = terrainData.CreateChunk(chunkOriginWorld);
+        outChunkIndex = terrainData.CreateChunk(chunkOriginWorld);
         break;
     case VoxelTerrainFieldPreset::AxisAlignedBox:
     {
@@ -364,7 +441,7 @@ bool VoxelTerrainSystem::RebuildChunk(entt::entity rootEntity, entt::entity chun
                 return SDF::AxisAlignedBox(p, center, halfExtent);
             };
 
-        chunk.chunkIndex = terrainData.CreateChunk(desc);
+        outChunkIndex = terrainData.CreateChunk(desc);
         break;
     }
     case VoxelTerrainFieldPreset::Capsule:
@@ -379,7 +456,7 @@ bool VoxelTerrainSystem::RebuildChunk(entt::entity rootEntity, entt::entity chun
                 return SDF::Capsule(p, segmentA, segmentB, radius);
             };
 
-        chunk.chunkIndex = terrainData.CreateChunk(desc);
+        outChunkIndex = terrainData.CreateChunk(desc);
         break;
     }
     case VoxelTerrainFieldPreset::UniformTransformedBox:
@@ -396,7 +473,7 @@ bool VoxelTerrainSystem::RebuildChunk(entt::entity rootEntity, entt::entity chun
                 return EvaluateUniformTransformedBoxSDF(p, center, rotation, uniformScale, halfExtent);
             };
 
-        chunk.chunkIndex = terrainData.CreateChunk(desc);
+        outChunkIndex = terrainData.CreateChunk(desc);
         break;
     }
     case VoxelTerrainFieldPreset::NonUniformDistanceLikeBox:
@@ -413,14 +490,20 @@ bool VoxelTerrainSystem::RebuildChunk(entt::entity rootEntity, entt::entity chun
                 return EvaluateNonUniformDistanceLikeBoxField(p, center, rotation, nonUniformScale, halfExtent);
             };
 
-        chunk.chunkIndex = terrainData.CreateChunk(desc);
+        outChunkIndex = terrainData.CreateChunk(desc);
         break;
     }
     }
 
-    terrainData.BuildChunkSamples(chunk.chunkIndex);
-    terrainData.BuildChunkMesh(chunk.chunkIndex);
-    NormalizeChunkTransform(chunkEntity);
+    if (outChunkIndex == kInvalidIndex)
+        return false;
+
+    if (!terrainData.BuildChunkSamples(outChunkIndex))
+        return false;
+
+    if (!terrainData.BuildChunkMesh(outChunkIndex))
+        return false;
+
     return true;
 }
 

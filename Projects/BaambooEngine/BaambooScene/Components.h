@@ -141,6 +141,7 @@ struct TerrainComponent
 struct VoxelTerrainComponent
 {
 	baamboo::VoxelTerrainSettings settings = {};
+	float3 terrainOriginWorld = float3(0.0f);
 
 	baamboo::VoxelTerrainFieldPreset fieldPreset = baamboo::VoxelTerrainFieldPreset::SphereRegression;
 	baamboo::VoxelTerrainFieldPreset builtFieldPreset = baamboo::VoxelTerrainFieldPreset::SphereRegression;

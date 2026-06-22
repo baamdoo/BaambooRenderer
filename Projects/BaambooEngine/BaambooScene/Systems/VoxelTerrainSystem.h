@@ -27,6 +27,7 @@ public:
     bool SetMeshVisible(bool bVisible);
     bool IsMeshVisible() const { return m_bMeshVisible; }
 
+    bool NormalizeRootTransform(entt::entity rootEntity);
     bool NormalizeChunkTransform(entt::entity chunkEntity);
     void RefreshMeshComponent(entt::entity chunkEntity);
     void RefreshAllMeshComponents();
@@ -36,13 +37,11 @@ public:
     const ProceduralTerrain* GetTerrainForChunk(entt::entity chunkEntity) const;
     const SDFChunk*          GetChunk(entt::entity chunkEntity) const;
 
-    static float3 GetChunkOriginWorld(const VoxelTerrainChunkComponent& chunk, const VoxelTerrainSettings& settings);
-    static float3 GetTerrainPivot(const VoxelTerrainSettings& settings);
-    static float3 GetChunkPosition(const VoxelTerrainChunkComponent& chunk, const VoxelTerrainSettings& settings);
+    static float3 GetChunkOriginWorld(const VoxelTerrainChunkComponent& chunk, const VoxelTerrainComponent& terrain);
 
 private:
     bool RebuildRoot(entt::entity rootEntity);
-    bool RebuildChunk(entt::entity rootEntity, entt::entity chunkEntity, ProceduralTerrain& terrainData);
+    bool RebuildChunkCandidate(entt::entity rootEntity, entt::entity chunkEntity, ProceduralTerrain& terrainData, u32& outChunkIndex);
     void ResetMeshComponent(StaticMeshComponent& meshComponent, const VoxelTerrainComponent& terrain) const;
     void MarkTerrainDirty(entt::entity rootEntity);
 

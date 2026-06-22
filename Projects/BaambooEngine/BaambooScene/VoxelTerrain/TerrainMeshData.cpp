@@ -47,6 +47,9 @@ bool TerrainMeshData::BuildMeshlets()
     meshletVertices.clear();
     meshletTriangles.clear();
 
+    if (vertices.empty() && indices.empty())
+        return true;
+
     if (vertices.empty() || indices.empty())
         return false;
 

@@ -398,6 +398,9 @@ void TerrainApp::DrawUI()
 				bRebuildChunk = true;
 			}
 			ImGui::Text("Built Preset    %s", GetVoxelFieldPresetName(terrain.builtFieldPreset));
+			ImGui::DragFloat3("Terrain Origin", glm::value_ptr(terrain.terrainOriginWorld), 0.5f, 0.0f, 0.0f, "%.2f m");
+			if (ImGui::IsItemDeactivatedAfterEdit())
+				bRebuildChunk = true;
 			switch (terrain.fieldPreset)
 			{
 			case VoxelTerrainFieldPreset::AxisAlignedBox:
@@ -752,7 +755,9 @@ void TerrainApp::ConfigureSceneObjects()
 	auto& terrain = m_VoxelTerrainRootEntity.AttachComponent< VoxelTerrainComponent >();
 	{
 		auto& transform = m_VoxelTerrainRootEntity.GetComponent< TransformComponent >();
-		transform.transform.position = VoxelTerrainSystem::GetTerrainPivot(terrain.settings);
+		transform.transform.position = terrain.terrainOriginWorld;
+		transform.transform.rotation = float3(0.0f);
+		transform.transform.scale = float3(1.0f);
 		transform.transform.Update();
 		m_pScene->Registry().patch< TransformComponent >(m_VoxelTerrainRootEntity.ID(), [](auto&) {});
 	}
@@ -882,16 +887,12 @@ void TerrainApp::RefreshVoxelTerrainDebugLines(bool bSceneAlreadyLocked)
 		return;
 	}
 
+	voxelSystem->NormalizeRootTransform(m_VoxelTerrainRootEntity.ID());
 	voxelSystem->NormalizeChunkTransform(m_VoxelTerrainChunkEntity.ID());
-	const TransformSystem* transformSystem = m_pScene->GetTransformSystem();
-	if (!transformSystem)
-	{
-		ClearDebugLines();
-		return;
-	}
 
+	const auto& rootTransform = m_VoxelTerrainRootEntity.GetComponent< TransformComponent >();
 	const auto& chunkTransform = m_VoxelTerrainChunkEntity.GetComponent< TransformComponent >();
-	const mat4& chunkToWorld = transformSystem->WorldMatrix(chunkTransform.world);
+	const mat4 chunkToWorld = rootTransform.transform.Matrix() * chunkTransform.transform.Matrix();
 
 	std::vector< DebugLineVertex > lines;
 	const TerrainMeshData& meshData = chunk->MeshData();

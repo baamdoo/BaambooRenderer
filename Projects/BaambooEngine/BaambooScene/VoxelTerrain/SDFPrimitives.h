@@ -11,6 +11,11 @@ namespace baamboo
 namespace SDF
 {
 
+// World/primitive-space meters squared. Capsule segments shorter than this behave as spheres.
+constexpr float kCapsuleDegenerateSegmentEpsilonMeter = 1.0e-5f;
+constexpr float kCapsuleDegenerateSegmentEpsilonSquaredMeter =
+    kCapsuleDegenerateSegmentEpsilonMeter * kCapsuleDegenerateSegmentEpsilonMeter;
+
 inline float QuietNaN()
 {
     return std::numeric_limits<float>::quiet_NaN();
@@ -44,8 +49,8 @@ inline float Capsule(const float3& p, const float3& segmentA, const float3& segm
     const float3 pa = p - segmentA;
     const float3 ba = segmentB - segmentA;
     const float  baLengthSquared = glm::dot(ba, ba);
-    if (!(baLengthSquared > 0.0f))
-        return QuietNaN();
+    if (baLengthSquared <= kCapsuleDegenerateSegmentEpsilonSquaredMeter)
+        return Sphere(p, segmentA, radius);
 
     const float  t = glm::clamp(glm::dot(pa, ba) / baLengthSquared, 0.0f, 1.0f);
     const float3 c = segmentA + t * ba;
