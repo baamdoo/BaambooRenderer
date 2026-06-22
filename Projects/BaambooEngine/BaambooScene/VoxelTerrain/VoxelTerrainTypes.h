@@ -8,6 +8,14 @@
 namespace baamboo
 {
 
+enum class VoxelTerrainFieldPreset : i32
+{
+    SphereRegression = 0,
+    AxisAlignedBox,
+    Capsule,
+    UniformTransformedBox,
+    NonUniformDistanceLikeBox,
+};
 
 constexpr float kDefaultVoxelChunkWorldSizeMeter = 64.0f;
 constexpr u32   kDefaultVoxelCellsPerAxis        = 32u;

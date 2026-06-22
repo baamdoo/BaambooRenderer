@@ -42,10 +42,20 @@ u64 MakeEdgeKey(u32 a, u32 b)
 
 } // namespace
 
-VoxelTerrainDebugStats VoxelTerrainDebug::CollectStats(const ProceduralTerrain& terrain)
+VoxelTerrainDebugStats VoxelTerrainDebug::CollectStats(
+    const ProceduralTerrain& terrain,
+    const VoxelTerrainDebugValidationDesc* validationDesc)
 {
     VoxelTerrainDebugStats stats{};
     stats.numChunks = static_cast< u32 >(terrain.GetChunks().size());
+
+    if (validationDesc)
+    {
+        stats.fixtureName = validationDesc->fixtureName;
+        stats.distanceSemantics = validationDesc->distanceSemantics;
+        stats.bExpectClosedSurface = validationDesc->bExpectClosedSurface;
+        stats.bHasExpectedOutwardNormal = static_cast< bool >(validationDesc->ExpectedOutwardNormalWorld);
+    }
 
     bool bHasValidSample = false;
     constexpr float surfaceEpsilon = 1e-4f;
@@ -54,8 +64,8 @@ VoxelTerrainDebugStats VoxelTerrainDebug::CollectStats(const ProceduralTerrain& 
     bool bHasNormal = false;
     bool bHasResidual = false;
     float residualSum = 0.0f;
-    bool bHasSphereDot = false;
-    float sphereDotSum = 0.0f;
+    bool bHasReferenceNormalDot = false;
+    float referenceNormalDotSum = 0.0f;
     bool bHasFaceDot = false;
     float faceDotSum = 0.0f;
     bool bHasMeshBounds = false;
@@ -91,7 +101,6 @@ VoxelTerrainDebugStats VoxelTerrainDebug::CollectStats(const ProceduralTerrain& 
         for (u32 cubeIndex = 0u; cubeIndex < 256u; ++cubeIndex)
             stats.cubeIndexHistogram[cubeIndex] += meshData.cubeIndexHistogram[cubeIndex];
 
-        const float3 sphereCenter = chunk.GetOriginWorld() + float3(chunk.GetDesc().settings.chunkWorldSizeMeter * 0.5f);
         for (const Vertex& vertex : meshData.vertices)
         {
             const float3 vertexWorld = chunk.GetOriginWorld() + vertex.position;
@@ -103,14 +112,14 @@ VoxelTerrainDebugStats VoxelTerrainDebug::CollectStats(const ProceduralTerrain& 
                     AccumulateMinAvgMax(
                         residual,
                         bHasResidual,
-                        stats.minSurfaceResidual,
-                        stats.maxSurfaceResidual,
+                        stats.minFieldResidual,
+                        stats.maxFieldResidual,
                         residualSum);
-                    ++stats.numResidualVertices;
+                    ++stats.numFieldResidualVertices;
                 }
                 else
                 {
-                    ++stats.numNonFiniteResiduals;
+                    ++stats.numNonFiniteFieldResiduals;
                 }
             }
 
@@ -131,23 +140,42 @@ VoxelTerrainDebugStats VoxelTerrainDebug::CollectStats(const ProceduralTerrain& 
             normalLengthSum += normalLength;
             normalSum += vertex.normal;
 
-            const float3 sphereOutward = vertexWorld - sphereCenter;
-            const float sphereOutwardLength = glm::length(sphereOutward);
-            if (std::isfinite(sphereOutwardLength) && sphereOutwardLength > 1e-6f)
+            if (validationDesc && validationDesc->ExpectedOutwardNormalWorld)
             {
-                const float dot = glm::dot(vertex.normal / normalLength, sphereOutward / sphereOutwardLength);
-                if (std::isfinite(dot))
+                float3 expectedNormal = float3(0.0f);
+                if (!validationDesc->ExpectedOutwardNormalWorld(vertexWorld, expectedNormal))
                 {
-                    AccumulateMinAvgMax(
-                        dot,
-                        bHasSphereDot,
-                        stats.minSphereNormalDot,
-                        stats.maxSphereNormalDot,
-                        sphereDotSum);
-                    if (dot >= 0.0f)
-                        ++stats.numSphereOutwardNormals;
+                    ++stats.numReferenceNormalsSkipped;
+                }
+                else
+                {
+                    const float expectedNormalLength = glm::length(expectedNormal);
+                    if (!IsFinite(expectedNormal) || !std::isfinite(expectedNormalLength) || expectedNormalLength <= 1e-6f)
+                    {
+                        ++stats.numReferenceNormalsSkipped;
+                    }
                     else
-                        ++stats.numSphereInwardNormals;
+                    {
+                        const float dot = glm::dot(vertex.normal / normalLength, expectedNormal / expectedNormalLength);
+                        if (std::isfinite(dot))
+                        {
+                            AccumulateMinAvgMax(
+                                dot,
+                                bHasReferenceNormalDot,
+                                stats.minReferenceNormalDot,
+                                stats.maxReferenceNormalDot,
+                                referenceNormalDotSum);
+                            ++stats.numReferenceNormalsEvaluated;
+                            if (dot >= 0.0f)
+                                ++stats.numReferenceNormalsOutward;
+                            else
+                                ++stats.numReferenceNormalsReversed;
+                        }
+                        else
+                        {
+                            ++stats.numReferenceNormalsSkipped;
+                        }
+                    }
                 }
             }
 
@@ -266,12 +294,11 @@ VoxelTerrainDebugStats VoxelTerrainDebug::CollectStats(const ProceduralTerrain& 
         stats.avgNormal = normalSum * invNormalCount;
     }
 
-    if (stats.numResidualVertices > 0u)
-        stats.avgSurfaceResidual = residualSum / static_cast< float >(stats.numResidualVertices);
+    if (stats.numFieldResidualVertices > 0u)
+        stats.avgFieldResidual = residualSum / static_cast< float >(stats.numFieldResidualVertices);
 
-    const u32 numSphereDotNormals = stats.numSphereOutwardNormals + stats.numSphereInwardNormals;
-    if (numSphereDotNormals > 0u)
-        stats.avgSphereNormalDot = sphereDotSum / static_cast< float >(numSphereDotNormals);
+    if (stats.numReferenceNormalsEvaluated > 0u)
+        stats.avgReferenceNormalDot = referenceNormalDotSum / static_cast< float >(stats.numReferenceNormalsEvaluated);
 
     if (stats.numFaceNormalTriangles > 0u)
         stats.avgFaceNormalDot = faceDotSum / static_cast< float >(stats.numFaceNormalTriangles);

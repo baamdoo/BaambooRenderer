@@ -82,6 +82,7 @@ struct VisTriangle
     float3   tangentLS[3];
 
     float4x4 mLocalToWorld;
+    float4x4 mWorldToLocal;
 
     uint     materialID;
 };
@@ -112,6 +113,7 @@ VisTriangle FetchVisTriangle(uint v0, uint v1)
 
     VisTriangle t;
     t.mLocalToWorld = xf.mLocalToWorld;
+    t.mWorldToLocal = xf.mWorldToLocal;
     t.materialID    = inst.materialID;
 
     [unroll] for (uint k = 0; k < 3; ++k)
@@ -159,8 +161,9 @@ ResolvedSurface ResolveMeshSurface(uint v0, uint v1, float2 pixelCenter, float2 
     float3 nL = bary.x * t.normalLS[0] + bary.y * t.normalLS[1] + bary.z * t.normalLS[2];
     float3 tL = bary.x * t.tangentLS[0] + bary.y * t.tangentLS[1] + bary.z * t.tangentLS[2];
 
-    float3 N = normalize(mul((float3x3)t.mLocalToWorld, nL));
+    float3 N = normalize(mul(transpose((float3x3)t.mWorldToLocal), nL));
     float3 T = normalize(mul((float3x3)t.mLocalToWorld, tL));
+    T = normalize(T - N * dot(T, N));
 
     float2 ddxUV, ddyUV;
     UVGradient(ndc, 1.0 / viewport, c[0], c[1], c[2], t.uv[0], t.uv[1], t.uv[2], ddxUV, ddyUV);
@@ -201,7 +204,7 @@ ResolvedSurface ResolveMeshSurface(uint v0, uint v1, float2 pixelCenter, float2 
 
             float3 n = NormalMap.SampleGrad(g_LinearWrapSampler, uv, ddxUV, ddyUV).rgb * 2.0 - 1.0;
 
-            float3 B = cross(N, T);
+            float3 B = normalize(cross(N, T));
             float3x3 TBN = float3x3(T, B, N);
 
             N = normalize(mul(n, TBN));

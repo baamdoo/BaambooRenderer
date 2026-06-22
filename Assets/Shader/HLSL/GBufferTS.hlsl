@@ -59,6 +59,7 @@ groupshared AmplificationPayload Payload;
 
 // Lane 0 loads everything once, derived offsets are cached in shared memory to reduce LSGB stall.
 groupshared float4x4 sh_LocalToWorld;
+groupshared float4x4 sh_WorldToLocal;
 groupshared float    sh_MaxScale;
 groupshared uint     sh_VisOffset;
 groupshared uint     sh_Lod;
@@ -84,6 +85,7 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
         float maxScale = max(scaleX, max(scaleY, scaleZ));
 
         sh_LocalToWorld  = transform.mLocalToWorld;
+        sh_WorldToLocal  = transform.mWorldToLocal;
         sh_MaxScale      = maxScale;
         sh_VisOffset     = instance.visOffset;
         sh_Lod           = lod;
@@ -133,7 +135,7 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
             // 2) Backface cone cull
             if ((g_CullData.cullFlags & CULL_FLAG_MESHLET_CONE) != 0u && accept)
             {
-                float3 coneAxisWS = normalize(mul(sh_LocalToWorld, float4(meshlet.coneAxisX, meshlet.coneAxisY, meshlet.coneAxisZ, 0.0)).xyz);
+                float3 coneAxisWS = normalize(mul(transpose((float3x3)sh_WorldToLocal), float3(meshlet.coneAxisX, meshlet.coneAxisY, meshlet.coneAxisZ)));
 
                 accept = !IsConeCulled(float4(coneAxisWS, meshlet.coneCutoff), meshletCenterWS, meshletRadiusWS, g_FrozenCamera.posWORLD);
             }

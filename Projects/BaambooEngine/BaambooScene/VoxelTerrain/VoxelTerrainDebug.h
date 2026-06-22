@@ -1,13 +1,36 @@
 #pragma once
 #include "VoxelTerrainTypes.h"
 
+#include <functional>
+
 namespace baamboo
 {
 
 class ProceduralTerrain;
 
+enum class VoxelTerrainSDFDistanceSemantics
+{
+    ExactEuclidean,
+    DistanceLike,
+};
+
+using ExpectedOutwardNormalWorldFn = std::function< bool(const float3& positionWorld, float3& outExpectedNormal) >;
+
+struct VoxelTerrainDebugValidationDesc
+{
+    const char* fixtureName = nullptr;
+    VoxelTerrainSDFDistanceSemantics distanceSemantics = VoxelTerrainSDFDistanceSemantics::DistanceLike;
+    bool bExpectClosedSurface = false;
+    ExpectedOutwardNormalWorldFn ExpectedOutwardNormalWorld;
+};
+
 struct VoxelTerrainDebugStats
 {
+    const char* fixtureName = nullptr;
+    VoxelTerrainSDFDistanceSemantics distanceSemantics = VoxelTerrainSDFDistanceSemantics::DistanceLike;
+    bool bExpectClosedSurface = false;
+    bool bHasExpectedOutwardNormal = false;
+
     u32 numChunks           = 0u;
     u32 numAllocatedSamples = 0u;
     u32 numValidSamples     = 0u;
@@ -32,11 +55,11 @@ struct VoxelTerrainDebugStats
     float3 meshBoundsMin       = float3(0.0f);
     float3 meshBoundsMax       = float3(0.0f);
 
-    u32   numResidualVertices = 0u;
-    u32   numNonFiniteResiduals = 0u;
-    float minSurfaceResidual = 0.0f;
-    float avgSurfaceResidual = 0.0f;
-    float maxSurfaceResidual = 0.0f;
+    u32   numFieldResidualVertices = 0u;
+    u32   numNonFiniteFieldResiduals = 0u;
+    float minFieldResidual = 0.0f;
+    float avgFieldResidual = 0.0f;
+    float maxFieldResidual = 0.0f;
 
     u32    numNormalVertices    = 0u;
     u32    numZeroNormals       = 0u;
@@ -46,11 +69,13 @@ struct VoxelTerrainDebugStats
     float  avgNormalLength      = 0.0f;
     float3 avgNormal            = float3(0.0f);
 
-    u32   numSphereOutwardNormals = 0u;
-    u32   numSphereInwardNormals  = 0u;
-    float minSphereNormalDot      = 0.0f;
-    float avgSphereNormalDot      = 0.0f;
-    float maxSphereNormalDot      = 0.0f;
+    u32   numReferenceNormalsEvaluated = 0u;
+    u32   numReferenceNormalsSkipped   = 0u;
+    u32   numReferenceNormalsOutward   = 0u;
+    u32   numReferenceNormalsReversed  = 0u;
+    float minReferenceNormalDot        = 0.0f;
+    float avgReferenceNormalDot        = 0.0f;
+    float maxReferenceNormalDot        = 0.0f;
 
     u32   numTriangles = 0u;
     u32   numInvalidIndexTriangles = 0u;
@@ -68,7 +93,9 @@ struct VoxelTerrainDebugStats
 class VoxelTerrainDebug
 {
 public:
-    static VoxelTerrainDebugStats CollectStats(const ProceduralTerrain& terrain);
+    static VoxelTerrainDebugStats CollectStats(
+        const ProceduralTerrain& terrain,
+        const VoxelTerrainDebugValidationDesc* validationDesc = nullptr);
 };
 
 } // namespace baamboo

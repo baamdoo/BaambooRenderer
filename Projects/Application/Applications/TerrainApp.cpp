@@ -13,13 +13,18 @@
 #include "BaambooScene/RenderNodes/SurfaceResolveNode.h"
 #include "BaambooScene/RenderNodes/DebugDrawNode.h"
 #include "BaambooScene/RenderNodes/PostProcessNode.h"
+#include "BaambooScene/Systems/TransformSystem.h"
+#include "BaambooScene/Systems/VoxelTerrainSystem.h"
+#include "BaambooScene/VoxelTerrain/SDFPrimitives.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <string>
 #include <unordered_set>
 
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/euler_angles.hpp>
 #include <imgui/backends/imgui_impl_glfw.h>
 
 using namespace baamboo;
@@ -27,12 +32,150 @@ using namespace baamboo;
 namespace
 {
 
-constexpr const char* kVoxelTerrainMeshTag = "VoxelSphereChunk";
-constexpr const char* kVoxelTerrainGeneratedPath = "$generated/VoxelSphereChunk";
+constexpr const char* kVoxelTerrainRootTag = "VoxelTerrainRoot";
+constexpr const char* kVoxelTerrainChunkTag = "VoxelTerrainChunk";
+constexpr const char* kVoxelTerrainGeneratedPath = "$generated/VoxelTerrainChunk";
 
 bool IsFinite(const float3& v)
 {
 	return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+}
+
+bool NearlyEqual(float a, float b, float epsilon = 1.0e-4f)
+{
+	return std::abs(a - b) <= epsilon;
+}
+
+bool NearlyEqual3(const float3& a, const float3& b, float epsilon = 1.0e-4f)
+{
+	return NearlyEqual(a.x, b.x, epsilon) && NearlyEqual(a.y, b.y, epsilon) && NearlyEqual(a.z, b.z, epsilon);
+}
+
+float3 TransformPoint(const mat4& transform, const float3& point)
+{
+	const float4 transformed = transform * float4(point, 1.0f);
+	return float3(transformed.x, transformed.y, transformed.z);
+}
+
+float3 TransformNormal(const mat4& transform, const float3& normal)
+{
+	const mat3 normalMatrix = glm::transpose(glm::inverse(mat3(transform)));
+	return normalMatrix * normal;
+}
+
+struct VoxelTerrainPrimitiveSelfCheckStats
+{
+	u32 numPassed = 0u;
+	u32 numFailed = 0u;
+};
+
+void RecordSelfCheck(VoxelTerrainPrimitiveSelfCheckStats& stats, bool bPassed)
+{
+	if (bPassed)
+		++stats.numPassed;
+	else
+		++stats.numFailed;
+}
+
+VoxelTerrainPrimitiveSelfCheckStats RunVoxelTerrainPrimitiveSelfChecks()
+{
+	VoxelTerrainPrimitiveSelfCheckStats stats{};
+
+	RecordSelfCheck(stats, NearlyEqual(SDF::Capsule(float3(0.0f, 0.0f, 0.0f), float3(-1.0f, 0.0f, 0.0f), float3(1.0f, 0.0f, 0.0f), 0.5f), -0.5f));
+	RecordSelfCheck(stats, NearlyEqual(SDF::Capsule(float3(0.0f, 1.0f, 0.0f), float3(-1.0f, 0.0f, 0.0f), float3(1.0f, 0.0f, 0.0f), 0.5f), 0.5f));
+	RecordSelfCheck(stats, NearlyEqual(SDF::Capsule(float3(2.0f, 0.0f, 0.0f), float3(-1.0f, 0.0f, 0.0f), float3(1.0f, 0.0f, 0.0f), 0.5f), 0.5f));
+
+	const float3 translation = float3(10.0f, 20.0f, 30.0f);
+	const quat rotation = glm::angleAxis(glm::radians(35.0f), float3(0.0f, 1.0f, 0.0f));
+	const float3 localPoint = float3(2.0f, -3.0f, 4.0f);
+	const float uniformScale = 2.0f;
+	const float3 uniformParent = translation + rotation * (localPoint * uniformScale);
+	RecordSelfCheck(stats, NearlyEqual3(SDF::InverseTransformPointUniformScale(translation, translation, rotation, uniformScale), float3(0.0f)));
+	RecordSelfCheck(stats, NearlyEqual3(SDF::InverseTransformPointUniformScale(uniformParent, translation, rotation, uniformScale), localPoint));
+	RecordSelfCheck(stats, NearlyEqual(SDF::ApplyUniformScaleToDistance(3.0f, uniformScale), 6.0f));
+
+	const float3 nonUniformScale = float3(2.0f, 3.0f, 4.0f);
+	const float3 nonUniformParent = translation + rotation * (localPoint * nonUniformScale);
+	RecordSelfCheck(stats, NearlyEqual3(SDF::InverseTransformPointNonUniformScale(translation, translation, rotation, nonUniformScale), float3(0.0f)));
+	RecordSelfCheck(stats, NearlyEqual3(SDF::InverseTransformPointNonUniformScale(nonUniformParent, translation, rotation, nonUniformScale), localPoint));
+
+	return stats;
+}
+
+const char* GetVoxelFieldPresetName(VoxelTerrainFieldPreset preset)
+{
+	switch (preset)
+	{
+	case VoxelTerrainFieldPreset::SphereRegression:
+		return "Sphere Regression";
+	case VoxelTerrainFieldPreset::AxisAlignedBox:
+		return "Axis-Aligned Box";
+	case VoxelTerrainFieldPreset::Capsule:
+		return "Capsule";
+	case VoxelTerrainFieldPreset::UniformTransformedBox:
+		return "Uniform Transformed Box";
+	case VoxelTerrainFieldPreset::NonUniformDistanceLikeBox:
+		return "Non-Uniform DistanceLike Box";
+	}
+
+	return "Unknown";
+}
+
+const char* GetVoxelDistanceSemanticsName(VoxelTerrainSDFDistanceSemantics semantics)
+{
+	switch (semantics)
+	{
+	case VoxelTerrainSDFDistanceSemantics::ExactEuclidean:
+		return "ExactEuclidean";
+	case VoxelTerrainSDFDistanceSemantics::DistanceLike:
+		return "DistanceLike";
+	}
+
+	return "Unknown";
+}
+
+const char* GetVoxelFieldResidualUnit(VoxelTerrainSDFDistanceSemantics semantics)
+{
+	return semantics == VoxelTerrainSDFDistanceSemantics::ExactEuclidean ? "m" : "field units";
+}
+
+VoxelTerrainDebugValidationDesc MakeVoxelTerrainValidationDesc(
+	VoxelTerrainFieldPreset preset,
+	const float3& chunkOriginWorld,
+	const VoxelTerrainSettings& settings)
+{
+	VoxelTerrainDebugValidationDesc desc{};
+	desc.fixtureName = GetVoxelFieldPresetName(preset);
+
+	switch (preset)
+	{
+	case VoxelTerrainFieldPreset::SphereRegression:
+	{
+		desc.distanceSemantics = VoxelTerrainSDFDistanceSemantics::ExactEuclidean;
+		desc.bExpectClosedSurface = true;
+
+		const float3 sphereCenter = chunkOriginWorld + float3(settings.chunkWorldSizeMeter * 0.5f);
+		desc.ExpectedOutwardNormalWorld = [sphereCenter](const float3& positionWorld, float3& outExpectedNormal)
+			{
+				outExpectedNormal = positionWorld - sphereCenter;
+				const float length = glm::length(outExpectedNormal);
+				return IsFinite(outExpectedNormal) && std::isfinite(length) && length > 1e-6f;
+			};
+		break;
+	}
+	case VoxelTerrainFieldPreset::AxisAlignedBox:
+	case VoxelTerrainFieldPreset::Capsule:
+	case VoxelTerrainFieldPreset::UniformTransformedBox:
+		desc.distanceSemantics = VoxelTerrainSDFDistanceSemantics::ExactEuclidean;
+		desc.bExpectClosedSurface = true;
+		break;
+	case VoxelTerrainFieldPreset::NonUniformDistanceLikeBox:
+		desc.distanceSemantics = VoxelTerrainSDFDistanceSemantics::DistanceLike;
+		desc.bExpectClosedSurface = true;
+		break;
+	}
+
+	return desc;
 }
 
 u64 MakeDebugEdgeKey(u32 a, u32 b)
@@ -61,19 +204,19 @@ void AddDebugLine(
 	lines.push_back(vb);
 }
 
-void AddAabbLines(std::vector< DebugLineVertex >& lines, const BoundingBox& aabb, const float3& color, float alpha)
+void AddTransformedAabbLines(std::vector< DebugLineVertex >& lines, const BoundingBox& aabb, const mat4& localToWorld, const float3& color, float alpha)
 {
 	const float3 min = aabb.Min();
 	const float3 max = aabb.Max();
 	const float3 corners[8] = {
-		{ min.x, min.y, min.z },
-		{ max.x, min.y, min.z },
-		{ max.x, max.y, min.z },
-		{ min.x, max.y, min.z },
-		{ min.x, min.y, max.z },
-		{ max.x, min.y, max.z },
-		{ max.x, max.y, max.z },
-		{ min.x, max.y, max.z },
+		TransformPoint(localToWorld, { min.x, min.y, min.z }),
+		TransformPoint(localToWorld, { max.x, min.y, min.z }),
+		TransformPoint(localToWorld, { max.x, max.y, min.z }),
+		TransformPoint(localToWorld, { min.x, max.y, min.z }),
+		TransformPoint(localToWorld, { min.x, min.y, max.z }),
+		TransformPoint(localToWorld, { max.x, min.y, max.z }),
+		TransformPoint(localToWorld, { max.x, max.y, max.z }),
+		TransformPoint(localToWorld, { min.x, max.y, max.z }),
 	};
 
 	const u32 edges[24] = {
@@ -105,6 +248,8 @@ void TerrainApp::Update(f32 dt)
 	Super::Update(dt);
 
 	m_CameraController.Update(dt);
+	if (m_bVoxelWireframeVisible || m_bVoxelChunkBoundsVisible || m_bVoxelNormalsVisible)
+		RefreshVoxelTerrainDebugLines();
 }
 
 void TerrainApp::Release()
@@ -229,9 +374,89 @@ void TerrainApp::DrawUI()
 	{
 		if (ImGui::CollapsingHeader("CPU Marching Cubes Validation", ImGuiTreeNodeFlags_DefaultOpen))
 		{
+			if (!m_VoxelTerrainRootEntity.IsValid() || !m_VoxelTerrainRootEntity.HasAll< VoxelTerrainComponent >())
+			{
+				ImGui::TextDisabled("Voxel terrain root component is missing.");
+			}
+			else
+			{
+				auto& terrain = m_VoxelTerrainRootEntity.GetComponent< VoxelTerrainComponent >();
 			bool bRefreshMesh = false;
 			bool bRefreshDebugLines = false;
 			bool bRebuildChunk = false;
+			const char* fieldPresetNames[] = {
+				"Sphere Regression",
+				"Axis-Aligned Box",
+				"Capsule",
+				"Uniform Transformed Box",
+				"Non-Uniform DistanceLike Box",
+			};
+			i32 fieldPresetIndex = static_cast< i32 >(terrain.fieldPreset);
+			if (ImGui::Combo("Field Preset", &fieldPresetIndex, fieldPresetNames, IM_ARRAYSIZE(fieldPresetNames)))
+			{
+				terrain.fieldPreset = static_cast< VoxelTerrainFieldPreset >(fieldPresetIndex);
+				bRebuildChunk = true;
+			}
+			ImGui::Text("Built Preset    %s", GetVoxelFieldPresetName(terrain.builtFieldPreset));
+			switch (terrain.fieldPreset)
+			{
+			case VoxelTerrainFieldPreset::AxisAlignedBox:
+				ImGui::Text("Box Center     %.1f, %.1f, %.1f",
+					terrain.boxCenter.x,
+					terrain.boxCenter.y,
+					terrain.boxCenter.z);
+				ImGui::Text("Box Half Ext   %.1f, %.1f, %.1f",
+					terrain.boxHalfExtent.x,
+					terrain.boxHalfExtent.y,
+					terrain.boxHalfExtent.z);
+				break;
+			case VoxelTerrainFieldPreset::Capsule:
+				ImGui::Text("Capsule A      %.1f, %.1f, %.1f",
+					terrain.capsuleSegmentA.x,
+					terrain.capsuleSegmentA.y,
+					terrain.capsuleSegmentA.z);
+				ImGui::Text("Capsule B      %.1f, %.1f, %.1f",
+					terrain.capsuleSegmentB.x,
+					terrain.capsuleSegmentB.y,
+					terrain.capsuleSegmentB.z);
+				ImGui::Text("Capsule Radius %.1f m", terrain.capsuleRadius);
+				break;
+			case VoxelTerrainFieldPreset::UniformTransformedBox:
+				ImGui::Text("Box Center     %.1f, %.1f, %.1f",
+					terrain.transformBoxCenter.x,
+					terrain.transformBoxCenter.y,
+					terrain.transformBoxCenter.z);
+				ImGui::Text("Box Half Ext   %.1f, %.1f, %.1f",
+					terrain.transformBoxHalfExtent.x,
+					terrain.transformBoxHalfExtent.y,
+					terrain.transformBoxHalfExtent.z);
+				ImGui::Text("Rotation XYZ   %.1f, %.1f, %.1f deg",
+					terrain.transformBoxEulerDegrees.x,
+					terrain.transformBoxEulerDegrees.y,
+					terrain.transformBoxEulerDegrees.z);
+				ImGui::Text("Uniform Scale  %.2f", terrain.transformUniformScale);
+				break;
+			case VoxelTerrainFieldPreset::NonUniformDistanceLikeBox:
+				ImGui::Text("Box Center     %.1f, %.1f, %.1f",
+					terrain.transformBoxCenter.x,
+					terrain.transformBoxCenter.y,
+					terrain.transformBoxCenter.z);
+				ImGui::Text("Box Half Ext   %.1f, %.1f, %.1f",
+					terrain.transformBoxHalfExtent.x,
+					terrain.transformBoxHalfExtent.y,
+					terrain.transformBoxHalfExtent.z);
+				ImGui::Text("Rotation XYZ   %.1f, %.1f, %.1f deg",
+					terrain.transformBoxEulerDegrees.x,
+					terrain.transformBoxEulerDegrees.y,
+					terrain.transformBoxEulerDegrees.z);
+				ImGui::Text("NonUni Scale   %.2f, %.2f, %.2f",
+					terrain.transformNonUniformScale.x,
+					terrain.transformNonUniformScale.y,
+					terrain.transformNonUniformScale.z);
+				break;
+			case VoxelTerrainFieldPreset::SphereRegression:
+				break;
+			}
 
 			bRefreshMesh |= ImGui::Checkbox("Shaded Mesh", &m_bVoxelMeshVisible);
 			bRefreshDebugLines |= ImGui::Checkbox("Wireframe Overlay", &m_bVoxelWireframeVisible);
@@ -240,14 +465,14 @@ void TerrainApp::DrawUI()
 			bRefreshDebugLines |= ImGui::DragFloat("Normal Line Length", &m_VoxelNormalLineLength, 0.05f, 0.01f, 10.0f, "%.2f m");
 			bRefreshDebugLines |= ImGui::InputInt("Normal Stride", &m_VoxelNormalStride);
 			bRefreshDebugLines |= ImGui::InputInt("Normal Max Count", &m_VoxelNormalMaxCount);
-			ImGui::DragFloat("FD Epsilon Mult", &m_VoxelTerrainSettings.normalEpsilonMultiplier, 0.01f, 0.01f, 4.0f, "%.2f");
+			ImGui::DragFloat("FD Epsilon Mult", &terrain.settings.normalEpsilonMultiplier, 0.01f, 0.01f, 4.0f, "%.2f");
 			if (ImGui::IsItemDeactivatedAfterEdit())
 				bRebuildChunk = true;
 
 			m_VoxelNormalStride = std::max(m_VoxelNormalStride, 1);
 			m_VoxelNormalMaxCount = std::max(m_VoxelNormalMaxCount, 0);
 			m_VoxelNormalLineLength = std::max(m_VoxelNormalLineLength, 0.01f);
-			m_VoxelTerrainSettings.normalEpsilonMultiplier = std::max(m_VoxelTerrainSettings.normalEpsilonMultiplier, 0.01f);
+			terrain.settings.normalEpsilonMultiplier = std::max(terrain.settings.normalEpsilonMultiplier, 0.01f);
 
 			if (ImGui::Button("Rebuild CPU Chunk"))
 				bRebuildChunk = true;
@@ -259,20 +484,25 @@ void TerrainApp::DrawUI()
 				bRefreshDebugLines = false;
 			}
 			if (ImGui::Button("Refresh Validation Stats"))
-				m_VoxelTerrainStats = VoxelTerrainDebug::CollectStats(m_VoxelTerrain);
+				RefreshVoxelTerrainStats();
 
 			if (bRefreshMesh)
-				RefreshVoxelTerrainMeshComponent();
+			{
+				if (VoxelTerrainSystem* voxelSystem = m_pScene ? m_pScene->GetVoxelTerrainSystem() : nullptr)
+					voxelSystem->SetMeshVisible(m_bVoxelMeshVisible);
+			}
 			if (bRefreshDebugLines || bRefreshMesh)
 				RefreshVoxelTerrainDebugLines(true);
-		}
 
 		ImGui::Separator();
-		ImGui::Text("Chunk Size      %.1f m", m_VoxelTerrainSettings.chunkWorldSizeMeter);
-		ImGui::Text("Cells / Axis    %u", m_VoxelTerrainSettings.cellsPerAxis);
-		ImGui::Text("Samples / Axis  %u", m_VoxelTerrainSettings.samplesPerAxis);
-		ImGui::Text("Voxel Size      %.2f m", m_VoxelTerrainSettings.voxelSizeMeter);
-		ImGui::Text("FD Epsilon      %.2f x voxel", m_VoxelTerrainSettings.normalEpsilonMultiplier);
+		ImGui::Text("Chunk Size      %.1f m", terrain.settings.chunkWorldSizeMeter);
+		ImGui::Text("Cells / Axis    %u", terrain.settings.cellsPerAxis);
+		ImGui::Text("Samples / Axis  %u", terrain.settings.samplesPerAxis);
+		ImGui::Text("Voxel Size      %.2f m", terrain.settings.voxelSizeMeter);
+		ImGui::Text("FD Epsilon      %.2f x voxel", terrain.settings.normalEpsilonMultiplier);
+		ImGui::Text("Fixture         %s", m_VoxelTerrainStats.fixtureName ? m_VoxelTerrainStats.fixtureName : "None");
+		ImGui::Text("Distance        %s", GetVoxelDistanceSemanticsName(m_VoxelTerrainStats.distanceSemantics));
+		ImGui::Text("Closed Surface  %s", m_VoxelTerrainStats.bExpectClosedSurface ? "expected" : "not required");
 
 		ImGui::Separator();
 		ImGui::Text("Chunks          %u", m_VoxelTerrainStats.numChunks);
@@ -302,13 +532,14 @@ void TerrainApp::DrawUI()
 			m_VoxelTerrainStats.meshBoundsMax.z);
 
 		ImGui::Separator();
-		ImGui::Text("Residuals       %u valid, %u non-finite",
-			m_VoxelTerrainStats.numResidualVertices,
-			m_VoxelTerrainStats.numNonFiniteResiduals);
-		ImGui::Text("Abs SDF         %.6f / %.6f / %.6f",
-			m_VoxelTerrainStats.minSurfaceResidual,
-			m_VoxelTerrainStats.avgSurfaceResidual,
-			m_VoxelTerrainStats.maxSurfaceResidual);
+		ImGui::Text("Field Residuals %u valid, %u non-finite",
+			m_VoxelTerrainStats.numFieldResidualVertices,
+			m_VoxelTerrainStats.numNonFiniteFieldResiduals);
+		ImGui::Text("Field Residual  %.6f / %.6f / %.6f %s",
+			m_VoxelTerrainStats.minFieldResidual,
+			m_VoxelTerrainStats.avgFieldResidual,
+			m_VoxelTerrainStats.maxFieldResidual,
+			GetVoxelFieldResidualUnit(m_VoxelTerrainStats.distanceSemantics));
 
 		ImGui::Separator();
 		ImGui::Text("Normals         %u valid", m_VoxelTerrainStats.numNormalVertices);
@@ -321,13 +552,17 @@ void TerrainApp::DrawUI()
 			m_VoxelTerrainStats.avgNormal.x,
 			m_VoxelTerrainStats.avgNormal.y,
 			m_VoxelTerrainStats.avgNormal.z);
-		ImGui::Text("Sphere Dot      %.4f / %.4f / %.4f",
-			m_VoxelTerrainStats.minSphereNormalDot,
-			m_VoxelTerrainStats.avgSphereNormalDot,
-			m_VoxelTerrainStats.maxSphereNormalDot);
-		ImGui::Text("Sphere Normals  %u outward, %u inward",
-			m_VoxelTerrainStats.numSphereOutwardNormals,
-			m_VoxelTerrainStats.numSphereInwardNormals);
+		ImGui::Text("Reference Normal %s", m_VoxelTerrainStats.bHasExpectedOutwardNormal ? "enabled" : "not supplied");
+		ImGui::Text("Reference Dot   %.4f / %.4f / %.4f",
+			m_VoxelTerrainStats.minReferenceNormalDot,
+			m_VoxelTerrainStats.avgReferenceNormalDot,
+			m_VoxelTerrainStats.maxReferenceNormalDot);
+		ImGui::Text("Reference Count %u evaluated, %u skipped",
+			m_VoxelTerrainStats.numReferenceNormalsEvaluated,
+			m_VoxelTerrainStats.numReferenceNormalsSkipped);
+		ImGui::Text("Reference Facing %u outward, %u reversed",
+			m_VoxelTerrainStats.numReferenceNormalsOutward,
+			m_VoxelTerrainStats.numReferenceNormalsReversed);
 
 		ImGui::Separator();
 		ImGui::Text("Triangles       %u", m_VoxelTerrainStats.numTriangles);
@@ -343,6 +578,9 @@ void TerrainApp::DrawUI()
 		ImGui::Text("Edges           %u boundary, %u non-manifold",
 			m_VoxelTerrainStats.numBoundaryEdges,
 			m_VoxelTerrainStats.numNonManifoldEdges);
+
+		const VoxelTerrainPrimitiveSelfCheckStats primitiveChecks = RunVoxelTerrainPrimitiveSelfChecks();
+		ImGui::Text("Primitive Checks %u passed, %u failed", primitiveChecks.numPassed, primitiveChecks.numFailed);
 
 		if (ImGui::CollapsingHeader("Cube Index Histogram"))
 		{
@@ -409,7 +647,9 @@ void TerrainApp::DrawUI()
 			{
 				ImGui::TextDisabled("No surface-pattern cube indices.");
 			}
+			}
 		}
+	}
 	}
 	ImGui::End();
 
@@ -508,14 +748,27 @@ void TerrainApp::ConfigureRenderGraph()
 
 void TerrainApp::ConfigureSceneObjects()
 {
-	m_VoxelTerrainEntity = m_pScene->CreateEntity(kVoxelTerrainMeshTag);
+	m_VoxelTerrainRootEntity = m_pScene->CreateEntity(kVoxelTerrainRootTag);
+	auto& terrain = m_VoxelTerrainRootEntity.AttachComponent< VoxelTerrainComponent >();
 	{
-		auto& mesh = m_VoxelTerrainEntity.AttachComponent< StaticMeshComponent >();
-		mesh.tag = kVoxelTerrainMeshTag;
+		auto& transform = m_VoxelTerrainRootEntity.GetComponent< TransformComponent >();
+		transform.transform.position = VoxelTerrainSystem::GetTerrainPivot(terrain.settings);
+		transform.transform.Update();
+		m_pScene->Registry().patch< TransformComponent >(m_VoxelTerrainRootEntity.ID(), [](auto&) {});
+	}
+
+	m_VoxelTerrainChunkEntity = m_pScene->CreateEntity(kVoxelTerrainChunkTag);
+	m_VoxelTerrainRootEntity.AttachChild(m_VoxelTerrainChunkEntity.ID());
+	{
+		auto& chunkComponent = m_VoxelTerrainChunkEntity.AttachComponent< VoxelTerrainChunkComponent >();
+		chunkComponent.root = m_VoxelTerrainRootEntity.ID();
+
+		auto& mesh = m_VoxelTerrainChunkEntity.AttachComponent< StaticMeshComponent >();
+		mesh.tag = kVoxelTerrainChunkTag;
 		mesh.path = kVoxelTerrainGeneratedPath;
 		mesh.maxLOD = 0u;
 
-		auto& material = m_VoxelTerrainEntity.AttachComponent< MaterialComponent >();
+		auto& material = m_VoxelTerrainChunkEntity.AttachComponent< MaterialComponent >();
 		material.name = "Voxel Terrain Reference";
 		material.tint = float4(0.74f, 0.82f, 0.92f, 1.0f);
 		material.roughness = 0.72f;
@@ -549,106 +802,106 @@ void TerrainApp::ConfigureSceneObjects()
 
 void TerrainApp::RebuildVoxelTerrain(bool bSceneAlreadyLocked)
 {
-	m_VoxelTerrain.Clear();
-	m_VoxelTerrain.Initialize(m_VoxelTerrainSettings);
-
-	m_VoxelChunkIndex = m_VoxelTerrain.CreateChunk(float3(0.0f, 0.0f, 0.0f));
-	m_VoxelTerrain.BuildChunkSamples(m_VoxelChunkIndex);
-	m_VoxelTerrain.BuildChunkMesh(m_VoxelChunkIndex);
-
-	m_VoxelTerrainStats = VoxelTerrainDebug::CollectStats(m_VoxelTerrain);
-	RefreshVoxelTerrainMeshComponent();
-	RefreshVoxelTerrainDebugLines(bSceneAlreadyLocked);
-}
-
-void TerrainApp::RefreshVoxelTerrainMeshComponent()
-{
-	if (!m_pScene || !m_VoxelTerrainEntity.IsValid() || !m_VoxelTerrainEntity.HasAll< StaticMeshComponent >())
+	if (!m_pScene || !m_VoxelTerrainRootEntity.IsValid())
 		return;
 
-	auto& meshComponent = m_VoxelTerrainEntity.GetComponent< StaticMeshComponent >();
-	meshComponent.tag = kVoxelTerrainMeshTag;
-	meshComponent.path = kVoxelTerrainGeneratedPath;
-	meshComponent.pVertices = nullptr;
-	meshComponent.numVertices = 0u;
-	meshComponent.aabb = BoundingBox(float3(0.0f), float3(0.0f));
-	meshComponent.sphere = BoundingSphere(float3(0.0f), 0.0f);
-	meshComponent.maxLOD = 0u;
-	for (auto& lod : meshComponent.lods)
-	{
-		lod.pIndices = nullptr;
-		lod.numIndices = 0u;
-		lod.pMeshlets = nullptr;
-		lod.numMeshlets = 0u;
-		lod.pMeshletVertices = nullptr;
-		lod.numMeshletVertices = 0u;
-		lod.pMeshletTriangles = nullptr;
-		lod.numMeshletTriangles = 0u;
-		lod.simplifyError = 0.0f;
-	}
+	VoxelTerrainSystem* voxelSystem = m_pScene->GetVoxelTerrainSystem();
+	if (!voxelSystem)
+		return;
 
-	const SDFChunk* chunk = m_VoxelTerrain.GetChunk(m_VoxelChunkIndex);
-	if (chunk)
-	{
-		auto& transform = m_VoxelTerrainEntity.GetComponent< TransformComponent >();
-		transform.transform.position = chunk->GetOriginWorld();
-		m_pScene->Registry().patch< TransformComponent >(m_VoxelTerrainEntity.ID(), [](auto&) {});
-	}
-
-	if (chunk && m_bVoxelMeshVisible)
-	{
-		const TerrainMeshData& meshData = chunk->MeshData();
-		if (!meshData.vertices.empty() && !meshData.indices.empty() && meshData.bHasBounds)
-		{
-			meshComponent.aabb = meshData.aabb;
-			meshComponent.sphere = BoundingSphere(meshData.aabb);
-			meshComponent.pVertices = const_cast< Vertex* >(meshData.vertices.data());
-			meshComponent.numVertices = meshData.NumVertices();
-
-			meshComponent.lods[0].pIndices = const_cast< Index* >(meshData.indices.data());
-			meshComponent.lods[0].numIndices = meshData.NumIndices();
-			if (!meshData.meshlets.empty())
-			{
-				meshComponent.lods[0].pMeshlets = const_cast< Meshlet* >(meshData.meshlets.data());
-				meshComponent.lods[0].numMeshlets = meshData.NumMeshlets();
-			}
-			if (!meshData.meshletVertices.empty())
-			{
-				meshComponent.lods[0].pMeshletVertices = const_cast< u32* >(meshData.meshletVertices.data());
-				meshComponent.lods[0].numMeshletVertices = static_cast< u32 >(meshData.meshletVertices.size());
-			}
-			if (!meshData.meshletTriangles.empty())
-			{
-				meshComponent.lods[0].pMeshletTriangles = const_cast< u32* >(meshData.meshletTriangles.data());
-				meshComponent.lods[0].numMeshletTriangles = static_cast< u32 >(meshData.meshletTriangles.size());
-			}
-		}
-	}
-
-	m_pScene->Registry().patch< StaticMeshComponent >(m_VoxelTerrainEntity.ID(), [](auto&) {});
+	voxelSystem->Rebuild(m_VoxelTerrainRootEntity.ID());
+	RefreshVoxelTerrainStats();
+	RefreshVoxelTerrainDebugLines(bSceneAlreadyLocked);
 }
+void TerrainApp::RefreshVoxelTerrainStats()
+{
+	VoxelTerrainSystem* voxelSystem = m_pScene ? m_pScene->GetVoxelTerrainSystem() : nullptr;
+	const ProceduralTerrain* terrainData = (voxelSystem && m_VoxelTerrainRootEntity.IsValid())
+		? voxelSystem->GetTerrain(m_VoxelTerrainRootEntity.ID())
+		: nullptr;
 
+	if (!m_VoxelTerrainRootEntity.IsValid() ||
+		!m_VoxelTerrainChunkEntity.IsValid() ||
+		!m_VoxelTerrainRootEntity.HasAll< VoxelTerrainComponent >() ||
+		!m_VoxelTerrainChunkEntity.HasAll< VoxelTerrainChunkComponent >() ||
+		!terrainData)
+	{
+		ProceduralTerrain emptyTerrain;
+		m_VoxelTerrainStats = VoxelTerrainDebug::CollectStats(emptyTerrain);
+		return;
+	}
+
+	const auto& terrain = m_VoxelTerrainRootEntity.GetComponent< VoxelTerrainComponent >();
+	const SDFChunk* chunk = voxelSystem->GetChunk(m_VoxelTerrainChunkEntity.ID());
+	if (!chunk)
+	{
+		m_VoxelTerrainStats = VoxelTerrainDebug::CollectStats(*terrainData);
+		return;
+	}
+
+	VoxelTerrainDebugValidationDesc validationDesc = MakeVoxelTerrainValidationDesc(
+		terrain.builtFieldPreset,
+		chunk->GetOriginWorld(),
+		chunk->GetDesc().settings);
+	m_VoxelTerrainStats = VoxelTerrainDebug::CollectStats(*terrainData, &validationDesc);
+}
 void TerrainApp::RefreshVoxelTerrainDebugLines(bool bSceneAlreadyLocked)
 {
 	if (!m_pScene)
 		return;
 
-	std::vector< DebugLineVertex > lines;
-	const SDFChunk* chunk = m_VoxelTerrain.GetChunk(m_VoxelChunkIndex);
-	if (!chunk)
+	auto ClearDebugLines = [&]()
+		{
+			if (bSceneAlreadyLocked)
+				m_pScene->ClearDebugLinesAlreadyLocked();
+			else
+				m_pScene->ClearDebugLines();
+		};
+
+	if (!m_VoxelTerrainRootEntity.IsValid() ||
+		!m_VoxelTerrainChunkEntity.IsValid() ||
+		!m_VoxelTerrainRootEntity.HasAll< VoxelTerrainComponent, TransformComponent >() ||
+		!m_VoxelTerrainChunkEntity.HasAll< VoxelTerrainChunkComponent, TransformComponent >())
 	{
-		if (bSceneAlreadyLocked)
-			m_pScene->ClearDebugLinesAlreadyLocked();
-		else
-			m_pScene->ClearDebugLines();
+		ClearDebugLines();
 		return;
 	}
 
+	VoxelTerrainSystem* voxelSystem = m_pScene->GetVoxelTerrainSystem();
+	if (!voxelSystem)
+	{
+		ClearDebugLines();
+		return;
+	}
+
+	const auto& terrain = m_VoxelTerrainRootEntity.GetComponent< VoxelTerrainComponent >();
+	const SDFChunk* chunk = voxelSystem->GetChunk(m_VoxelTerrainChunkEntity.ID());
+	if (!chunk)
+	{
+		ClearDebugLines();
+		return;
+	}
+
+	voxelSystem->NormalizeChunkTransform(m_VoxelTerrainChunkEntity.ID());
+	const TransformSystem* transformSystem = m_pScene->GetTransformSystem();
+	if (!transformSystem)
+	{
+		ClearDebugLines();
+		return;
+	}
+
+	const auto& chunkTransform = m_VoxelTerrainChunkEntity.GetComponent< TransformComponent >();
+	const mat4& chunkToWorld = transformSystem->WorldMatrix(chunkTransform.world);
+
+	std::vector< DebugLineVertex > lines;
 	const TerrainMeshData& meshData = chunk->MeshData();
-	const float3 chunkOrigin = chunk->GetOriginWorld();
 
 	if (m_bVoxelChunkBoundsVisible)
-		AddAabbLines(lines, chunk->GetWorldBounds(), float3(1.0f, 0.84f, 0.22f), 1.0f);
+	{
+		const float chunkSize = terrain.settings.chunkWorldSizeMeter;
+		const BoundingBox chunkBounds(float3(0.0f), float3(chunkSize));
+		AddTransformedAabbLines(lines, chunkBounds, chunkToWorld, float3(1.0f, 0.84f, 0.22f), 1.0f);
+	}
 
 	if (m_bVoxelWireframeVisible)
 	{
@@ -671,8 +924,8 @@ void TerrainApp::RefreshVoxelTerrainDebugLines(bool bSceneAlreadyLocked)
 
 				AddDebugLine(
 					lines,
-					chunkOrigin + meshData.vertices[a].position,
-					chunkOrigin + meshData.vertices[b].position,
+					TransformPoint(chunkToWorld, meshData.vertices[a].position),
+					TransformPoint(chunkToWorld, meshData.vertices[b].position),
 					float3(0.08f, 0.92f, 1.0f),
 					0.65f);
 			}
@@ -702,12 +955,13 @@ void TerrainApp::RefreshVoxelTerrainDebugLines(bool bSceneAlreadyLocked)
 			if (!IsFinite(vertex.normal))
 				continue;
 
-			const float normalLength = glm::length(vertex.normal);
-			if (!std::isfinite(normalLength) || normalLength <= 1e-6f)
+			const float3 normal = TransformNormal(chunkToWorld, vertex.normal);
+			const float normalLength = glm::length(normal);
+			if (!IsFinite(normal) || !std::isfinite(normalLength) || normalLength <= 1e-6f)
 				continue;
 
-			const float3 start = chunkOrigin + vertex.position;
-			const float3 end = start + (vertex.normal / normalLength) * m_VoxelNormalLineLength;
+			const float3 start = TransformPoint(chunkToWorld, vertex.position);
+			const float3 end = start + (normal / normalLength) * m_VoxelNormalLineLength;
 			AddDebugLine(lines, start, end, float3(0.25f, 1.0f, 0.35f), 1.0f);
 		}
 	}

@@ -16,6 +16,7 @@ public:
     void Clear();
 
     u32 CreateChunk(const float3& originWorld);
+    u32 CreateChunk(const VoxelTerrainChunkDesc& desc);
 
     SDFChunk*       GetChunk(u32 chunkIndex);
     const SDFChunk* GetChunk(u32 chunkIndex) const;

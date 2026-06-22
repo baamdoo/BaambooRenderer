@@ -29,6 +29,19 @@ u32 ProceduralTerrain::CreateChunk(const float3& originWorld)
     return chunkIndex;
 }
 
+u32 ProceduralTerrain::CreateChunk(const VoxelTerrainChunkDesc& desc)
+{
+    if (!m_bInitialized)
+        Initialize();
+
+    SDFChunk chunk;
+    chunk.Initialize(desc);
+
+    const u32 chunkIndex = static_cast< u32 >(m_Chunks.size());
+    m_Chunks.push_back(chunk);
+    return chunkIndex;
+}
+
 SDFChunk* ProceduralTerrain::GetChunk(u32 chunkIndex)
 {
     if (chunkIndex >= m_Chunks.size())

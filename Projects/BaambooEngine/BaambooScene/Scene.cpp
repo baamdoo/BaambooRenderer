@@ -9,6 +9,7 @@
 #include "Systems/AtmosphereSystem.h"
 #include "Systems/CloudSystem.h"
 #include "Systems/PostProcessSystem.h"
+#include "Systems/VoxelTerrainSystem.h"
 #include "Utils/Math.hpp"
 
 #include <queue>
@@ -27,6 +28,7 @@ Scene::Scene(const std::string& name)
 	: m_Name(name)
 {
 	m_pTransformSystem   = new TransformSystem(m_Registry);
+	m_pVoxelTerrainSystem = new VoxelTerrainSystem(m_Registry, m_pTransformSystem);
 	m_pStaticMeshSystem  = new StaticMeshSystem(m_Registry);
 	m_pSkyLightSystem    = new SkyLightSystem(m_Registry, m_pTransformSystem);
 	m_pAtmosphereSystem  = new AtmosphereSystem(m_Registry, m_pSkyLightSystem);
@@ -41,6 +43,7 @@ Scene::~Scene()
 		RELEASE(pLoader);
 
 	RELEASE(m_pPostProcessSystem);
+	RELEASE(m_pVoxelTerrainSystem);
 	RELEASE(m_pLocalLightSystem);
 	RELEASE(m_pCloudSystem);
 	RELEASE(m_pAtmosphereSystem);
@@ -287,6 +290,9 @@ void Scene::Update(f32 dt, const EditorCamera& edCamera)
 	std::lock_guard< std::mutex > lock(m_SceneMutex);
 
 	s_SceneRunningTime += dt;
+
+	if (m_pVoxelTerrainSystem)
+		m_pVoxelTerrainSystem->UpdateRenderData(edCamera);
 
 	for (auto entity : m_pTransformSystem->UpdateRenderData(edCamera))
 	{

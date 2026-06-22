@@ -21,6 +21,7 @@ class LocalLightSystem;
 class AtmosphereSystem;
 class CloudSystem;
 class PostProcessSystem;
+class VoxelTerrainSystem;
 
 // Surface feature requirements — OR-union of what this frame's passes need from SurfaceResolve.
 // Lets the resolve skip producing caches that no pass consumes this frame (demand-driven).
@@ -175,6 +176,8 @@ public:
 	const entt::registry& Registry() const { return m_Registry; }
 	[[nodiscard]]
 	TransformSystem* GetTransformSystem() const { return m_pTransformSystem; }
+	[[nodiscard]]
+	VoxelTerrainSystem* GetVoxelTerrainSystem() const { return m_pVoxelTerrainSystem; }
 
 	const std::vector< Arc< render::RenderNode > >& GetRenderNodes() const { return m_RenderGraph.GetRenderNodes(); }
 	const Arc< render::RenderNode >& GetRenderNodeByName(const std::string& nodeName) const { return m_RenderGraph.GetRenderNodeByName(nodeName); }
@@ -227,13 +230,14 @@ private:
 	mutable std::unordered_map< u64, u64 > m_EntityDirtyMasks;
 
 	// systems
-	TransformSystem*   m_pTransformSystem   = nullptr;
-	StaticMeshSystem*  m_pStaticMeshSystem  = nullptr;
-	SkyLightSystem*    m_pSkyLightSystem    = nullptr;
-	LocalLightSystem*  m_pLocalLightSystem  = nullptr;
-	AtmosphereSystem*  m_pAtmosphereSystem  = nullptr;
-	CloudSystem*       m_pCloudSystem       = nullptr;
-	PostProcessSystem* m_pPostProcessSystem = nullptr;
+	TransformSystem*    m_pTransformSystem   = nullptr;
+	StaticMeshSystem*   m_pStaticMeshSystem  = nullptr;
+	SkyLightSystem*     m_pSkyLightSystem    = nullptr;
+	LocalLightSystem*   m_pLocalLightSystem  = nullptr;
+	AtmosphereSystem*   m_pAtmosphereSystem  = nullptr;
+	CloudSystem*        m_pCloudSystem       = nullptr;
+	PostProcessSystem*  m_pPostProcessSystem = nullptr;
+	VoxelTerrainSystem* m_pVoxelTerrainSystem = nullptr;
 
 	RenderGraph m_RenderGraph;
 

@@ -34,7 +34,7 @@ void SDFChunk::Initialize(const float3& originWorld, const VoxelTerrainSettings&
 
     const float3 center = originWorld + float3(settings.chunkWorldSizeMeter * 0.5f);
     const float  radius = settings.chunkWorldSizeMeter * 0.375f;
-    desc.SDF = [center, radius](const float3& p)
+    desc.SDF = [center, radius](const float3& p) // default : sphere SDF
         {
             return glm::length(p - center) - radius;
         };

@@ -36,14 +36,16 @@ VSOutput main(VSInput IN)
 
     TransformData transform = Transforms[g_TransformIndex];
 
-    float4 posWORLD     = mul(transform.mLocalToWorld, float4(IN.position, 1.0));
-    float4 normalWORLD  = mul(transform.mLocalToWorld, float4(IN.normal, 0.0));
-    float4 tangentWORLD = mul(transform.mLocalToWorld, float4(IN.tangent, 0.0));
+    float4 posWORLD = mul(transform.mLocalToWorld, float4(IN.position, 1.0));
+
+    float3 normalWORLD  = normalize(mul(transpose((float3x3)transform.mWorldToLocal), IN.normal));
+    float3 tangentWORLD = normalize(mul((float3x3)transform.mLocalToWorld, IN.tangent));
+    tangentWORLD = normalize(tangentWORLD - normalWORLD * dot(tangentWORLD, normalWORLD));
 
     output.posWORLD     = posWORLD.xyz;
     output.uv           = IN.uv;
-    output.normalWORLD  = normalize(normalWORLD.xyz);
-    output.tangentWORLD = normalize(tangentWORLD.xyz);
+    output.normalWORLD  = normalWORLD;
+    output.tangentWORLD = tangentWORLD;
     output.position     = mul(g_Camera.mViewProj, posWORLD);
 
     // TODO
