@@ -5,6 +5,7 @@
 #include "SDFPrimitives.h"
 
 #include <array>
+#include <cmath>
 #include <glm/gtx/euler_angles.hpp>
 
 namespace baamboo
@@ -58,14 +59,14 @@ struct VoxelTerrainFieldProfileRecord
 };
 
 constexpr std::array< VoxelTerrainFieldProfileRecord, 8 > kFieldProfiles = {{
-    { { VoxelTerrainFieldPreset::SphereRegression, "Sphere Regression", VoxelTerrainSDFDistanceSemantics::ExactEuclidean, true, false }, nullptr },
-    { { VoxelTerrainFieldPreset::AxisAlignedBox, "Axis-Aligned Box", VoxelTerrainSDFDistanceSemantics::ExactEuclidean, true, false }, nullptr },
-    { { VoxelTerrainFieldPreset::Capsule, "Capsule", VoxelTerrainSDFDistanceSemantics::ExactEuclidean, true, false }, nullptr },
-    { { VoxelTerrainFieldPreset::UniformTransformedBox, "Uniform Transformed Box", VoxelTerrainSDFDistanceSemantics::ExactEuclidean, true, false }, nullptr },
-    { { VoxelTerrainFieldPreset::NonUniformDistanceLikeBox, "Non-Uniform DistanceLike Box", VoxelTerrainSDFDistanceSemantics::DistanceLike, true, false }, nullptr },
-    { { VoxelTerrainFieldPreset::HeightFieldFlat, "Height Field - Flat", VoxelTerrainSDFDistanceSemantics::ExactEuclidean, false, true }, &kFlatHeightField },
-    { { VoxelTerrainFieldPreset::HeightFieldSloped, "Height Field - Sloped", VoxelTerrainSDFDistanceSemantics::DistanceLike, false, true }, &kSlopedHeightField },
-    { { VoxelTerrainFieldPreset::HeightFieldPeriodic, "Height Field - Periodic", VoxelTerrainSDFDistanceSemantics::DistanceLike, false, true }, &kPeriodicHeightField },
+    { { VoxelTerrainFieldPreset::SphereRegression, "Sphere Regression" }, nullptr },
+    { { VoxelTerrainFieldPreset::AxisAlignedBox, "Axis-Aligned Box" }, nullptr },
+    { { VoxelTerrainFieldPreset::Capsule, "Capsule" }, nullptr },
+    { { VoxelTerrainFieldPreset::UniformTransformedBox, "Uniform Transformed Box" }, nullptr },
+    { { VoxelTerrainFieldPreset::NonUniformDistanceLikeBox, "Non-Uniform DistanceLike Box" }, nullptr },
+    { { VoxelTerrainFieldPreset::HeightFieldFlat, "Height Field - Flat" }, &kFlatHeightField },
+    { { VoxelTerrainFieldPreset::HeightFieldSloped, "Height Field - Sloped" }, &kSlopedHeightField },
+    { { VoxelTerrainFieldPreset::HeightFieldPeriodic, "Height Field - Periodic" }, &kPeriodicHeightField },
 }};
 
 const VoxelTerrainFieldProfileRecord& FindFieldProfileRecord(VoxelTerrainFieldPreset preset)
@@ -123,26 +124,6 @@ bool IsFinite(const float3& v)
     return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
 }
 
-bool EvaluateMetricResidual(
-    const VoxelTerrainHeightFieldParameters& params,
-    const float3& positionWorld,
-    float& outResidual)
-{
-    const float rawField = EvaluateVoxelTerrainHeightFieldSignedField(params, positionWorld);
-    const float3 gradient = EvaluateVoxelTerrainHeightFieldGradient(params, positionWorld);
-    const float gradientLength = glm::length(gradient);
-    if (!std::isfinite(rawField) ||
-        !IsFinite(gradient) ||
-        !std::isfinite(gradientLength) ||
-        gradientLength <= 1.0e-6f)
-    {
-        return false;
-    }
-
-    outResidual = std::abs(rawField) / gradientLength;
-    return std::isfinite(outResidual);
-}
-
 } // namespace
 
 u32 GetVoxelTerrainFieldPresetCount()
@@ -181,24 +162,6 @@ const VoxelTerrainFieldProfile& GetVoxelTerrainFieldProfile(VoxelTerrainFieldPre
 const char* GetVoxelTerrainFieldPresetName(VoxelTerrainFieldPreset preset)
 {
     return GetVoxelTerrainFieldProfile(preset).displayName;
-}
-
-const char* GetVoxelTerrainDistanceSemanticsName(VoxelTerrainSDFDistanceSemantics semantics)
-{
-    switch (semantics)
-    {
-    case VoxelTerrainSDFDistanceSemantics::ExactEuclidean:
-        return "ExactEuclidean";
-    case VoxelTerrainSDFDistanceSemantics::DistanceLike:
-        return "DistanceLike";
-    }
-
-    return "Unknown";
-}
-
-const char* GetVoxelTerrainFieldResidualUnit(VoxelTerrainSDFDistanceSemantics semantics)
-{
-    return semantics == VoxelTerrainSDFDistanceSemantics::ExactEuclidean ? "m" : "field units";
 }
 
 const VoxelTerrainHeightFieldParameters* GetVoxelTerrainHeightFieldParameters(VoxelTerrainFieldPreset preset)
@@ -362,56 +325,6 @@ VoxelTerrainChunkDesc CreateVoxelTerrainChunkDesc(
         }
         break;
     }
-    }
-
-    return desc;
-}
-
-VoxelTerrainDebugValidationDesc CreateVoxelTerrainDebugValidationDesc(
-    const VoxelTerrainComponent& terrain,
-    const VoxelTerrainChunkDesc& chunkDesc)
-{
-    const VoxelTerrainFieldProfile& profile = GetVoxelTerrainFieldProfile(terrain.builtFieldPreset);
-
-    VoxelTerrainDebugValidationDesc desc{};
-    desc.fixtureName = profile.displayName;
-    desc.distanceSemantics = profile.distanceSemantics;
-    desc.bExpectClosedSurface = profile.bExpectClosedSurface;
-
-    if (terrain.builtFieldPreset == VoxelTerrainFieldPreset::SphereRegression)
-    {
-        const float3 sphereCenter = chunkDesc.originWorld + float3(chunkDesc.settings.chunkWorldSizeMeter * 0.5f);
-        desc.ExpectedOutwardNormalWorld = [sphereCenter](const float3& positionWorld, float3& outExpectedNormal)
-            {
-                outExpectedNormal = positionWorld - sphereCenter;
-                const float length = glm::length(outExpectedNormal);
-                return IsFinite(outExpectedNormal) && std::isfinite(length) && length > 1.0e-6f;
-            };
-    }
-
-    if (const VoxelTerrainHeightFieldParameters* params = GetVoxelTerrainHeightFieldParameters(terrain.builtFieldPreset))
-    {
-        const VoxelTerrainHeightFieldParameters heightField = *params;
-        desc.ExpectedOutwardNormalWorld = [heightField](const float3& positionWorld, float3& outExpectedNormal)
-            {
-                return EvaluateVoxelTerrainHeightFieldNormal(heightField, positionWorld, outExpectedNormal);
-            };
-        desc.MetricResidualWorld = [heightField](const float3& positionWorld, float& outResidual)
-            {
-                return EvaluateMetricResidual(heightField, positionWorld, outResidual);
-            };
-        desc.SurfaceHeightWorld = [heightField](float xWorld, float zWorld, float& outHeightWorld)
-            {
-                outHeightWorld = EvaluateVoxelTerrainHeightFieldHeight(heightField, xWorld, zWorld);
-                return std::isfinite(outHeightWorld);
-            };
-        desc.ReferenceFieldWorld = [heightField](const float3& positionWorld, float& outFieldValue)
-            {
-                outFieldValue = EvaluateVoxelTerrainHeightFieldSignedField(heightField, positionWorld);
-                return std::isfinite(outFieldValue);
-            };
-        desc.bProbeSurfaceSigns = true;
-        desc.bProbeSharedFaceContinuity = true;
     }
 
     return desc;

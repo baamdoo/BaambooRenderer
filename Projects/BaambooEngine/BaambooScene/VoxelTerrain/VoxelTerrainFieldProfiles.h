@@ -1,5 +1,5 @@
 #pragma once
-#include "VoxelTerrainDebug.h"
+#include "VoxelTerrainTypes.h"
 
 struct VoxelTerrainComponent;
 
@@ -30,9 +30,6 @@ struct VoxelTerrainFieldProfile
 {
     VoxelTerrainFieldPreset preset = VoxelTerrainFieldPreset::SphereRegression;
     const char* displayName = nullptr;
-    VoxelTerrainSDFDistanceSemantics distanceSemantics = VoxelTerrainSDFDistanceSemantics::DistanceLike;
-    bool bExpectClosedSurface = false;
-    bool bIsGraphSurface = false;
 };
 
 u32 GetVoxelTerrainFieldPresetCount();
@@ -41,8 +38,6 @@ bool TryGetVoxelTerrainFieldPresetIndex(VoxelTerrainFieldPreset preset, i32& out
 
 const VoxelTerrainFieldProfile& GetVoxelTerrainFieldProfile(VoxelTerrainFieldPreset preset);
 const char* GetVoxelTerrainFieldPresetName(VoxelTerrainFieldPreset preset);
-const char* GetVoxelTerrainDistanceSemanticsName(VoxelTerrainSDFDistanceSemantics semantics);
-const char* GetVoxelTerrainFieldResidualUnit(VoxelTerrainSDFDistanceSemantics semantics);
 
 const VoxelTerrainHeightFieldParameters* GetVoxelTerrainHeightFieldParameters(VoxelTerrainFieldPreset preset);
 const char* GetVoxelTerrainHeightFieldShapeName(VoxelTerrainHeightFieldShape shape);
@@ -65,8 +60,5 @@ bool EvaluateVoxelTerrainHeightFieldNormal(
 VoxelTerrainChunkDesc CreateVoxelTerrainChunkDesc(
     const VoxelTerrainComponent& terrain,
     const float3& chunkOriginWorld);
-VoxelTerrainDebugValidationDesc CreateVoxelTerrainDebugValidationDesc(
-    const VoxelTerrainComponent& terrain,
-    const VoxelTerrainChunkDesc& chunkDesc);
 
 } // namespace baamboo

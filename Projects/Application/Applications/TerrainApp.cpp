@@ -16,7 +16,6 @@
 #include "BaambooScene/Systems/TransformSystem.h"
 #include "BaambooScene/Systems/VoxelTerrainSystem.h"
 #include "BaambooScene/VoxelTerrain/VoxelTerrainFieldProfiles.h"
-#include "BaambooScene/VoxelTerrain/SDFPrimitives.h"
 
 #include <algorithm>
 #include <cmath>
@@ -41,16 +40,6 @@ bool IsFinite(const float3& v)
 	return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
 }
 
-bool NearlyEqual(float a, float b, float epsilon = 1.0e-4f)
-{
-	return std::abs(a - b) <= epsilon;
-}
-
-bool NearlyEqual3(const float3& a, const float3& b, float epsilon = 1.0e-4f)
-{
-	return NearlyEqual(a.x, b.x, epsilon) && NearlyEqual(a.y, b.y, epsilon) && NearlyEqual(a.z, b.z, epsilon);
-}
-
 float3 TransformPoint(const mat4& transform, const float3& point)
 {
 	const float4 transformed = transform * float4(point, 1.0f);
@@ -61,45 +50,6 @@ float3 TransformNormal(const mat4& transform, const float3& normal)
 {
 	const mat3 normalMatrix = glm::transpose(glm::inverse(mat3(transform)));
 	return normalMatrix * normal;
-}
-
-struct VoxelTerrainPrimitiveSelfCheckStats
-{
-	u32 numPassed = 0u;
-	u32 numFailed = 0u;
-};
-
-void RecordSelfCheck(VoxelTerrainPrimitiveSelfCheckStats& stats, bool bPassed)
-{
-	if (bPassed)
-		++stats.numPassed;
-	else
-		++stats.numFailed;
-}
-
-VoxelTerrainPrimitiveSelfCheckStats RunVoxelTerrainPrimitiveSelfChecks()
-{
-	VoxelTerrainPrimitiveSelfCheckStats stats{};
-
-	RecordSelfCheck(stats, NearlyEqual(SDF::Capsule(float3(0.0f, 0.0f, 0.0f), float3(-1.0f, 0.0f, 0.0f), float3(1.0f, 0.0f, 0.0f), 0.5f), -0.5f));
-	RecordSelfCheck(stats, NearlyEqual(SDF::Capsule(float3(0.0f, 1.0f, 0.0f), float3(-1.0f, 0.0f, 0.0f), float3(1.0f, 0.0f, 0.0f), 0.5f), 0.5f));
-	RecordSelfCheck(stats, NearlyEqual(SDF::Capsule(float3(2.0f, 0.0f, 0.0f), float3(-1.0f, 0.0f, 0.0f), float3(1.0f, 0.0f, 0.0f), 0.5f), 0.5f));
-
-	const float3 translation = float3(10.0f, 20.0f, 30.0f);
-	const quat rotation = glm::angleAxis(glm::radians(35.0f), float3(0.0f, 1.0f, 0.0f));
-	const float3 localPoint = float3(2.0f, -3.0f, 4.0f);
-	const float uniformScale = 2.0f;
-	const float3 uniformParent = translation + rotation * (localPoint * uniformScale);
-	RecordSelfCheck(stats, NearlyEqual3(SDF::InverseTransformPointUniformScale(translation, translation, rotation, uniformScale), float3(0.0f)));
-	RecordSelfCheck(stats, NearlyEqual3(SDF::InverseTransformPointUniformScale(uniformParent, translation, rotation, uniformScale), localPoint));
-	RecordSelfCheck(stats, NearlyEqual(SDF::ApplyUniformScaleToDistance(3.0f, uniformScale), 6.0f));
-
-	const float3 nonUniformScale = float3(2.0f, 3.0f, 4.0f);
-	const float3 nonUniformParent = translation + rotation * (localPoint * nonUniformScale);
-	RecordSelfCheck(stats, NearlyEqual3(SDF::InverseTransformPointNonUniformScale(translation, translation, rotation, nonUniformScale), float3(0.0f)));
-	RecordSelfCheck(stats, NearlyEqual3(SDF::InverseTransformPointNonUniformScale(nonUniformParent, translation, rotation, nonUniformScale), localPoint));
-
-	return stats;
 }
 
 u64 MakeDebugEdgeKey(u32 a, u32 b)
@@ -296,18 +246,17 @@ void TerrainApp::DrawUI()
 
 	ImGui::Begin("Voxel Terrain");
 	{
-		if (ImGui::CollapsingHeader("CPU Marching Cubes Validation", ImGuiTreeNodeFlags_DefaultOpen))
+		if (!m_VoxelTerrainRootEntity.IsValid() || !m_VoxelTerrainRootEntity.HasAll< VoxelTerrainComponent >())
 		{
-			if (!m_VoxelTerrainRootEntity.IsValid() || !m_VoxelTerrainRootEntity.HasAll< VoxelTerrainComponent >())
-			{
-				ImGui::TextDisabled("Voxel terrain root component is missing.");
-			}
-			else
-			{
-				auto& terrain = m_VoxelTerrainRootEntity.GetComponent< VoxelTerrainComponent >();
+			ImGui::TextDisabled("Voxel terrain root component is missing.");
+		}
+		else
+		{
+			auto& terrain = m_VoxelTerrainRootEntity.GetComponent< VoxelTerrainComponent >();
 			bool bRefreshMesh = false;
 			bool bRefreshDebugLines = false;
 			bool bRebuildChunk = false;
+
 			if (ImGui::BeginCombo("Field Preset", GetVoxelTerrainFieldPresetName(terrain.fieldPreset)))
 			{
 				for (u32 i = 0u; i < GetVoxelTerrainFieldPresetCount(); ++i)
@@ -325,65 +274,34 @@ void TerrainApp::DrawUI()
 				}
 				ImGui::EndCombo();
 			}
+
 			ImGui::Text("Built Preset    %s", GetVoxelTerrainFieldPresetName(terrain.builtFieldPreset));
 			ImGui::DragFloat3("Terrain Origin", glm::value_ptr(terrain.terrainOriginWorld), 0.5f, 0.0f, 0.0f, "%.2f m");
 			if (ImGui::IsItemDeactivatedAfterEdit())
 				bRebuildChunk = true;
+
 			switch (terrain.fieldPreset)
 			{
 			case VoxelTerrainFieldPreset::AxisAlignedBox:
-				ImGui::Text("Box Center     %.1f, %.1f, %.1f",
-					terrain.boxCenter.x,
-					terrain.boxCenter.y,
-					terrain.boxCenter.z);
-				ImGui::Text("Box Half Ext   %.1f, %.1f, %.1f",
-					terrain.boxHalfExtent.x,
-					terrain.boxHalfExtent.y,
-					terrain.boxHalfExtent.z);
+				ImGui::Text("Box Center     %.1f, %.1f, %.1f", terrain.boxCenter.x, terrain.boxCenter.y, terrain.boxCenter.z);
+				ImGui::Text("Box Half Ext   %.1f, %.1f, %.1f", terrain.boxHalfExtent.x, terrain.boxHalfExtent.y, terrain.boxHalfExtent.z);
 				break;
 			case VoxelTerrainFieldPreset::Capsule:
-				ImGui::Text("Capsule A      %.1f, %.1f, %.1f",
-					terrain.capsuleSegmentA.x,
-					terrain.capsuleSegmentA.y,
-					terrain.capsuleSegmentA.z);
-				ImGui::Text("Capsule B      %.1f, %.1f, %.1f",
-					terrain.capsuleSegmentB.x,
-					terrain.capsuleSegmentB.y,
-					terrain.capsuleSegmentB.z);
+				ImGui::Text("Capsule A      %.1f, %.1f, %.1f", terrain.capsuleSegmentA.x, terrain.capsuleSegmentA.y, terrain.capsuleSegmentA.z);
+				ImGui::Text("Capsule B      %.1f, %.1f, %.1f", terrain.capsuleSegmentB.x, terrain.capsuleSegmentB.y, terrain.capsuleSegmentB.z);
 				ImGui::Text("Capsule Radius %.1f m", terrain.capsuleRadius);
 				break;
 			case VoxelTerrainFieldPreset::UniformTransformedBox:
-				ImGui::Text("Box Center     %.1f, %.1f, %.1f",
-					terrain.transformBoxCenter.x,
-					terrain.transformBoxCenter.y,
-					terrain.transformBoxCenter.z);
-				ImGui::Text("Box Half Ext   %.1f, %.1f, %.1f",
-					terrain.transformBoxHalfExtent.x,
-					terrain.transformBoxHalfExtent.y,
-					terrain.transformBoxHalfExtent.z);
-				ImGui::Text("Rotation XYZ   %.1f, %.1f, %.1f deg",
-					terrain.transformBoxEulerDegrees.x,
-					terrain.transformBoxEulerDegrees.y,
-					terrain.transformBoxEulerDegrees.z);
+				ImGui::Text("Box Center     %.1f, %.1f, %.1f", terrain.transformBoxCenter.x, terrain.transformBoxCenter.y, terrain.transformBoxCenter.z);
+				ImGui::Text("Box Half Ext   %.1f, %.1f, %.1f", terrain.transformBoxHalfExtent.x, terrain.transformBoxHalfExtent.y, terrain.transformBoxHalfExtent.z);
+				ImGui::Text("Rotation XYZ   %.1f, %.1f, %.1f deg", terrain.transformBoxEulerDegrees.x, terrain.transformBoxEulerDegrees.y, terrain.transformBoxEulerDegrees.z);
 				ImGui::Text("Uniform Scale  %.2f", terrain.transformUniformScale);
 				break;
 			case VoxelTerrainFieldPreset::NonUniformDistanceLikeBox:
-				ImGui::Text("Box Center     %.1f, %.1f, %.1f",
-					terrain.transformBoxCenter.x,
-					terrain.transformBoxCenter.y,
-					terrain.transformBoxCenter.z);
-				ImGui::Text("Box Half Ext   %.1f, %.1f, %.1f",
-					terrain.transformBoxHalfExtent.x,
-					terrain.transformBoxHalfExtent.y,
-					terrain.transformBoxHalfExtent.z);
-				ImGui::Text("Rotation XYZ   %.1f, %.1f, %.1f deg",
-					terrain.transformBoxEulerDegrees.x,
-					terrain.transformBoxEulerDegrees.y,
-					terrain.transformBoxEulerDegrees.z);
-				ImGui::Text("NonUni Scale   %.2f, %.2f, %.2f",
-					terrain.transformNonUniformScale.x,
-					terrain.transformNonUniformScale.y,
-					terrain.transformNonUniformScale.z);
+				ImGui::Text("Box Center     %.1f, %.1f, %.1f", terrain.transformBoxCenter.x, terrain.transformBoxCenter.y, terrain.transformBoxCenter.z);
+				ImGui::Text("Box Half Ext   %.1f, %.1f, %.1f", terrain.transformBoxHalfExtent.x, terrain.transformBoxHalfExtent.y, terrain.transformBoxHalfExtent.z);
+				ImGui::Text("Rotation XYZ   %.1f, %.1f, %.1f deg", terrain.transformBoxEulerDegrees.x, terrain.transformBoxEulerDegrees.y, terrain.transformBoxEulerDegrees.z);
+				ImGui::Text("NonUni Scale   %.2f, %.2f, %.2f", terrain.transformNonUniformScale.x, terrain.transformNonUniformScale.y, terrain.transformNonUniformScale.z);
 				break;
 			case VoxelTerrainFieldPreset::HeightFieldFlat:
 			case VoxelTerrainFieldPreset::HeightFieldSloped:
@@ -424,6 +342,9 @@ void TerrainApp::DrawUI()
 
 			if (ImGui::Button("Rebuild CPU Chunk"))
 				bRebuildChunk = true;
+			ImGui::SameLine();
+			if (ImGui::Button("Refresh Stats"))
+				RefreshVoxelTerrainStats();
 
 			if (bRebuildChunk)
 			{
@@ -431,9 +352,6 @@ void TerrainApp::DrawUI()
 				bRefreshMesh = false;
 				bRefreshDebugLines = false;
 			}
-			if (ImGui::Button("Refresh Validation Stats"))
-				RefreshVoxelTerrainStats();
-
 			if (bRefreshMesh)
 			{
 				if (VoxelTerrainSystem* voxelSystem = m_pScene ? m_pScene->GetVoxelTerrainSystem() : nullptr)
@@ -442,193 +360,39 @@ void TerrainApp::DrawUI()
 			if (bRefreshDebugLines || bRefreshMesh)
 				RefreshVoxelTerrainDebugLines(true);
 
-		ImGui::Separator();
-		ImGui::Text("Chunk Size      %.1f m", terrain.settings.chunkWorldSizeMeter);
-		ImGui::Text("Cells / Axis    %u", terrain.settings.cellsPerAxis);
-		ImGui::Text("Samples / Axis  %u", terrain.settings.samplesPerAxis);
-		ImGui::Text("Voxel Size      %.2f m", terrain.settings.voxelSizeMeter);
-		ImGui::Text("FD Epsilon      %.2f x voxel", terrain.settings.normalEpsilonMultiplier);
-		ImGui::Text("Fixture         %s", m_VoxelTerrainStats.fixtureName ? m_VoxelTerrainStats.fixtureName : "None");
-		ImGui::Text("Distance        %s", GetVoxelTerrainDistanceSemanticsName(m_VoxelTerrainStats.distanceSemantics));
-		ImGui::Text("Closed Surface  %s", m_VoxelTerrainStats.bExpectClosedSurface ? "expected" : "not required");
-
-		ImGui::Separator();
-		ImGui::Text("Chunks          %u", m_VoxelTerrainStats.numChunks);
-		ImGui::Text("Allocated       %u", m_VoxelTerrainStats.numAllocatedSamples);
-		ImGui::Text("Valid           %u", m_VoxelTerrainStats.numValidSamples);
-		ImGui::Text("Invalid         %u", m_VoxelTerrainStats.numInvalidSamples);
-		ImGui::Text("Solid           %u", m_VoxelTerrainStats.numSolidSamples);
-		ImGui::Text("Air             %u", m_VoxelTerrainStats.numAirSamples);
-		ImGui::Text("Surface         %u", m_VoxelTerrainStats.numSurfaceSamples);
-		ImGui::Text("SDF Min / Max   %.3f / %.3f", m_VoxelTerrainStats.minSDF, m_VoxelTerrainStats.maxSDF);
-
-		ImGui::Separator();
-		ImGui::Text("Surface Cells   %u", m_VoxelTerrainStats.numSurfaceCells);
-		ImGui::Text("Cube Indices    %u active", m_VoxelTerrainStats.numActiveCubeIndices);
-		ImGui::Text("Mesh Vertices   %u", m_VoxelTerrainStats.numMeshVertices);
-		ImGui::Text("Mesh Indices    %u", m_VoxelTerrainStats.numMeshIndices);
-		ImGui::Text("Meshlets        %u", m_VoxelTerrainStats.numMeshlets);
-		ImGui::Text("Mesh Issues     %u malformed buffers, %u normal fallbacks",
-			m_VoxelTerrainStats.numMalformedIndexBuffers,
-			m_VoxelTerrainStats.numNormalGradientFallbacks);
-
-		ImGui::Separator();
-		ImGui::Text("Mesh Bounds     %u valid", m_VoxelTerrainStats.numMeshesWithBounds);
-		ImGui::Text("Bounds Min      %.3f, %.3f, %.3f",
-			m_VoxelTerrainStats.meshBoundsMin.x,
-			m_VoxelTerrainStats.meshBoundsMin.y,
-			m_VoxelTerrainStats.meshBoundsMin.z);
-		ImGui::Text("Bounds Max      %.3f, %.3f, %.3f",
-			m_VoxelTerrainStats.meshBoundsMax.x,
-			m_VoxelTerrainStats.meshBoundsMax.y,
-			m_VoxelTerrainStats.meshBoundsMax.z);
-
-		ImGui::Separator();
-		ImGui::Text("Field Residuals %u valid, %u non-finite",
-			m_VoxelTerrainStats.numFieldResidualVertices,
-			m_VoxelTerrainStats.numNonFiniteFieldResiduals);
-		ImGui::Text("Field Residual  %.6f / %.6f / %.6f %s",
-			m_VoxelTerrainStats.minFieldResidual,
-			m_VoxelTerrainStats.avgFieldResidual,
-			m_VoxelTerrainStats.maxFieldResidual,
-			GetVoxelTerrainFieldResidualUnit(m_VoxelTerrainStats.distanceSemantics));
-		ImGui::Text("Field P95       %.6f %s",
-			m_VoxelTerrainStats.p95FieldResidual,
-			GetVoxelTerrainFieldResidualUnit(m_VoxelTerrainStats.distanceSemantics));
-		ImGui::Text("Metric Residual %u valid, %u non-finite",
-			m_VoxelTerrainStats.numMetricResidualVertices,
-			m_VoxelTerrainStats.numNonFiniteMetricResiduals);
-		ImGui::Text("Metric Min/Avg/P95/Max %.6f / %.6f / %.6f / %.6f m",
-			m_VoxelTerrainStats.minMetricResidual,
-			m_VoxelTerrainStats.avgMetricResidual,
-			m_VoxelTerrainStats.p95MetricResidual,
-			m_VoxelTerrainStats.maxMetricResidual);
-
-		ImGui::Separator();
-		ImGui::Text("Normals         %u valid", m_VoxelTerrainStats.numNormalVertices);
-		ImGui::Text("Normal Issues   %u zero, %u non-finite", m_VoxelTerrainStats.numZeroNormals, m_VoxelTerrainStats.numNonFiniteNormals);
-		ImGui::Text("Normal Len      %.4f / %.4f / %.4f",
-			m_VoxelTerrainStats.minNormalLength,
-			m_VoxelTerrainStats.avgNormalLength,
-			m_VoxelTerrainStats.maxNormalLength);
-		ImGui::Text("Avg Normal      %.3f, %.3f, %.3f",
-			m_VoxelTerrainStats.avgNormal.x,
-			m_VoxelTerrainStats.avgNormal.y,
-			m_VoxelTerrainStats.avgNormal.z);
-		ImGui::Text("Reference Normal %s", m_VoxelTerrainStats.bHasExpectedOutwardNormal ? "enabled" : "not supplied");
-		ImGui::Text("Reference Dot   %.4f / %.4f / %.4f",
-			m_VoxelTerrainStats.minReferenceNormalDot,
-			m_VoxelTerrainStats.avgReferenceNormalDot,
-			m_VoxelTerrainStats.maxReferenceNormalDot);
-		ImGui::Text("Reference Angle %.4f / %.4f / %.4f deg",
-			m_VoxelTerrainStats.minReferenceNormalAngleDegree,
-			m_VoxelTerrainStats.avgReferenceNormalAngleDegree,
-			m_VoxelTerrainStats.maxReferenceNormalAngleDegree);
-		ImGui::Text("Reference Count %u evaluated, %u skipped",
-			m_VoxelTerrainStats.numReferenceNormalsEvaluated,
-			m_VoxelTerrainStats.numReferenceNormalsSkipped);
-		ImGui::Text("Reference Facing %u outward, %u reversed",
-			m_VoxelTerrainStats.numReferenceNormalsOutward,
-			m_VoxelTerrainStats.numReferenceNormalsReversed);
-
-		ImGui::Separator();
-		ImGui::Text("Triangles       %u", m_VoxelTerrainStats.numTriangles);
-		ImGui::Text("Index/DeGen     %u invalid, %u degenerate",
-			m_VoxelTerrainStats.numInvalidIndexTriangles,
-			m_VoxelTerrainStats.numDegenerateTriangles);
-		ImGui::Text("Face Dot        %.4f / %.4f / %.4f",
-			m_VoxelTerrainStats.minFaceNormalDot,
-			m_VoxelTerrainStats.avgFaceNormalDot,
-			m_VoxelTerrainStats.maxFaceNormalDot);
-		ImGui::Text("Winding         %u negative-dot tris",
-			m_VoxelTerrainStats.numNegativeFaceNormalDotTriangles);
-		ImGui::Text("Edges           %u boundary, %u non-manifold",
-			m_VoxelTerrainStats.numBoundaryEdges,
-			m_VoxelTerrainStats.numNonManifoldEdges);
-		ImGui::Text("Boundary Class  %u side, %u top/bottom, %u interior",
-			m_VoxelTerrainStats.numBoundarySideEdges,
-			m_VoxelTerrainStats.numBoundaryTopBottomEdges,
-			m_VoxelTerrainStats.numBoundaryInteriorEdges);
-		ImGui::Text("Surface Probes  %u pairs, %u failed, %u non-finite",
-			m_VoxelTerrainStats.numSurfaceSignProbePairs,
-			m_VoxelTerrainStats.numSurfaceSignProbeFailures,
-			m_VoxelTerrainStats.numNonFiniteSurfaceSignProbes);
-		ImGui::Text("Face Probes     %u samples, %.6f m pos max, %.6f field max",
-			m_VoxelTerrainStats.numSharedFaceProbeSamples,
-			m_VoxelTerrainStats.maxSharedFacePositionDelta,
-			m_VoxelTerrainStats.maxSharedFaceFieldDelta);
-
-		const VoxelTerrainPrimitiveSelfCheckStats primitiveChecks = RunVoxelTerrainPrimitiveSelfChecks();
-		ImGui::Text("Primitive Checks %u passed, %u failed", primitiveChecks.numPassed, primitiveChecks.numFailed);
-
-		if (ImGui::CollapsingHeader("Cube Index Histogram"))
-		{
-			float allHistogram[256] = {};
-			u32 maxAllCount = 0u;
-			u32 maxSurfacePatternCount = 0u;
-			u32 surfacePatternCellCount = 0u;
-
-			for (u32 cubeIndex = 0u; cubeIndex < 256u; ++cubeIndex)
-			{
-				const u32 count = m_VoxelTerrainStats.cubeIndexHistogram[cubeIndex];
-				allHistogram[cubeIndex] = static_cast<float>(count);
-
-				if (maxAllCount < count)
-					maxAllCount = count;
-
-				if (cubeIndex != 0u && cubeIndex != 255u)
-				{
-					surfacePatternCellCount += count;
-					if (maxSurfacePatternCount < count)
-						maxSurfacePatternCount = count;
-				}
-			}
-
-			const float histogramWidth = ImGui::GetContentRegionAvail().x;
-			ImGui::Text("All Cells       max %u", maxAllCount);
-			ImGui::PlotHistogram(
-				"##cube_index_histogram_all",
-				allHistogram,
-				256,
-				0,
-				nullptr,
-				0.0f,
-				static_cast<float>(maxAllCount > 0u ? maxAllCount : 1u),
-				ImVec2(histogramWidth, 120.0f));
-			ImGui::Text("Air 0x00        %u", m_VoxelTerrainStats.cubeIndexHistogram[0u]);
-			ImGui::Text("Solid 0xFF      %u", m_VoxelTerrainStats.cubeIndexHistogram[255u]);
+			ImGui::Separator();
+			ImGui::Text("Chunk Size      %.1f m", terrain.settings.chunkWorldSizeMeter);
+			ImGui::Text("Cells / Axis    %u", terrain.settings.cellsPerAxis);
+			ImGui::Text("Samples / Axis  %u", terrain.settings.samplesPerAxis);
+			ImGui::Text("Voxel Size      %.2f m", terrain.settings.voxelSizeMeter);
+			ImGui::Text("FD Epsilon      %.2f x voxel", terrain.settings.normalEpsilonMultiplier);
 
 			ImGui::Separator();
-			ImGui::Text("Surface Patterns %u cells, max %u", surfacePatternCellCount, maxSurfacePatternCount);
+			ImGui::Text("Chunks          %u", m_VoxelTerrainStats.numChunks);
+			ImGui::Text("Allocated       %u", m_VoxelTerrainStats.numAllocatedSamples);
+			ImGui::Text("Valid / Invalid %u / %u", m_VoxelTerrainStats.numValidSamples, m_VoxelTerrainStats.numInvalidSamples);
+			ImGui::Text("Solid / Air     %u / %u", m_VoxelTerrainStats.numSolidSamples, m_VoxelTerrainStats.numAirSamples);
+			ImGui::Text("Surface Samples %u", m_VoxelTerrainStats.numSurfaceSamples);
+			ImGui::Text("SDF Min / Max   %.3f / %.3f", m_VoxelTerrainStats.minSDF, m_VoxelTerrainStats.maxSDF);
 
-			if (maxSurfacePatternCount > 0u)
-			{
-				ImGui::BeginChild("##cube_index_surface_pattern_bars", ImVec2(0.0f, 220.0f), true);
-				for (u32 cubeIndex = 1u; cubeIndex < 255u; ++cubeIndex)
-				{
-					const u32 count = m_VoxelTerrainStats.cubeIndexHistogram[cubeIndex];
-					if (count == 0u)
-						continue;
+			ImGui::Separator();
+			ImGui::Text("Surface Cells   %u", m_VoxelTerrainStats.numSurfaceCells);
+			ImGui::Text("Cube Indices    %u active", m_VoxelTerrainStats.numActiveCubeIndices);
+			ImGui::Text("Mesh Vertices   %u", m_VoxelTerrainStats.numMeshVertices);
+			ImGui::Text("Mesh Indices    %u", m_VoxelTerrainStats.numMeshIndices);
+			ImGui::Text("Meshlets        %u", m_VoxelTerrainStats.numMeshlets);
+			ImGui::Text("Normal Fallback %u", m_VoxelTerrainStats.numNormalGradientFallbacks);
 
-					char overlay[32] = {};
-					std::snprintf(overlay, sizeof(overlay), "%u", count);
+			ImGui::Separator();
+			ImGui::Text("Mesh Bounds     %u valid", m_VoxelTerrainStats.numMeshesWithBounds);
+			ImGui::Text("Bounds Min      %.3f, %.3f, %.3f", m_VoxelTerrainStats.meshBoundsMin.x, m_VoxelTerrainStats.meshBoundsMin.y, m_VoxelTerrainStats.meshBoundsMin.z);
+			ImGui::Text("Bounds Max      %.3f, %.3f, %.3f", m_VoxelTerrainStats.meshBoundsMax.x, m_VoxelTerrainStats.meshBoundsMax.y, m_VoxelTerrainStats.meshBoundsMax.z);
 
-					ImGui::Text("0x%02X", cubeIndex);
-					ImGui::SameLine(56.0f);
-					ImGui::ProgressBar(
-						static_cast<float>(count) / static_cast<float>(maxSurfacePatternCount),
-						ImVec2(-1.0f, 0.0f),
-						overlay);
-				}
-				ImGui::EndChild();
-			}
-			else
-			{
-				ImGui::TextDisabled("No surface-pattern cube indices.");
-			}
-			}
+			ImGui::Separator();
+			ImGui::Text("Normals         %u sampled", m_VoxelTerrainStats.numNormalVertices);
+			ImGui::Text("Normal Len      %.4f / %.4f / %.4f", m_VoxelTerrainStats.minNormalLength, m_VoxelTerrainStats.avgNormalLength, m_VoxelTerrainStats.maxNormalLength);
+			ImGui::Text("Avg Normal      %.3f, %.3f, %.3f", m_VoxelTerrainStats.avgNormal.x, m_VoxelTerrainStats.avgNormal.y, m_VoxelTerrainStats.avgNormal.z);
 		}
-	}
 	}
 	ImGui::End();
 
@@ -705,7 +469,6 @@ void TerrainApp::DrawUI()
 	}
 	ImGui::End();
 }
-
 void TerrainApp::ConfigureRenderGraph()
 {
 	auto& device = *m_pRendererBackend->GetDevice();
@@ -801,30 +564,15 @@ void TerrainApp::RefreshVoxelTerrainStats()
 		? voxelSystem->GetTerrain(m_VoxelTerrainRootEntity.ID())
 		: nullptr;
 
-	if (!m_VoxelTerrainRootEntity.IsValid() ||
-		!m_VoxelTerrainChunkEntity.IsValid() ||
-		!m_VoxelTerrainRootEntity.HasAll< VoxelTerrainComponent >() ||
-		!m_VoxelTerrainChunkEntity.HasAll< VoxelTerrainChunkComponent >() ||
-		!terrainData)
+	if (!terrainData)
 	{
 		ProceduralTerrain emptyTerrain;
 		m_VoxelTerrainStats = VoxelTerrainDebug::CollectStats(emptyTerrain);
 		return;
 	}
 
-	const auto& terrain = m_VoxelTerrainRootEntity.GetComponent< VoxelTerrainComponent >();
-	const SDFChunk* chunk = voxelSystem->GetChunk(m_VoxelTerrainChunkEntity.ID());
-	if (!chunk)
-	{
-		m_VoxelTerrainStats = VoxelTerrainDebug::CollectStats(*terrainData);
-		return;
-	}
-	VoxelTerrainDebugValidationDesc validationDesc = CreateVoxelTerrainDebugValidationDesc(
-		terrain,
-		chunk->GetDesc());
-	m_VoxelTerrainStats = VoxelTerrainDebug::CollectStats(*terrainData, &validationDesc);
-}
-void TerrainApp::RefreshVoxelTerrainDebugLines(bool bSceneAlreadyLocked)
+	m_VoxelTerrainStats = VoxelTerrainDebug::CollectStats(*terrainData);
+}void TerrainApp::RefreshVoxelTerrainDebugLines(bool bSceneAlreadyLocked)
 {
 	if (!m_pScene)
 		return;
