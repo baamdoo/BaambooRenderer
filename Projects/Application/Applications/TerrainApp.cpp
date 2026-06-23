@@ -15,6 +15,7 @@
 #include "BaambooScene/RenderNodes/PostProcessNode.h"
 #include "BaambooScene/Systems/TransformSystem.h"
 #include "BaambooScene/Systems/VoxelTerrainSystem.h"
+#include "BaambooScene/VoxelTerrain/VoxelTerrainFieldProfiles.h"
 #include "BaambooScene/VoxelTerrain/SDFPrimitives.h"
 
 #include <algorithm>
@@ -24,7 +25,6 @@
 #include <unordered_set>
 
 #include <glm/gtc/type_ptr.hpp>
-#include <glm/gtx/euler_angles.hpp>
 #include <imgui/backends/imgui_impl_glfw.h>
 
 using namespace baamboo;
@@ -100,82 +100,6 @@ VoxelTerrainPrimitiveSelfCheckStats RunVoxelTerrainPrimitiveSelfChecks()
 	RecordSelfCheck(stats, NearlyEqual3(SDF::InverseTransformPointNonUniformScale(nonUniformParent, translation, rotation, nonUniformScale), localPoint));
 
 	return stats;
-}
-
-const char* GetVoxelFieldPresetName(VoxelTerrainFieldPreset preset)
-{
-	switch (preset)
-	{
-	case VoxelTerrainFieldPreset::SphereRegression:
-		return "Sphere Regression";
-	case VoxelTerrainFieldPreset::AxisAlignedBox:
-		return "Axis-Aligned Box";
-	case VoxelTerrainFieldPreset::Capsule:
-		return "Capsule";
-	case VoxelTerrainFieldPreset::UniformTransformedBox:
-		return "Uniform Transformed Box";
-	case VoxelTerrainFieldPreset::NonUniformDistanceLikeBox:
-		return "Non-Uniform DistanceLike Box";
-	}
-
-	return "Unknown";
-}
-
-const char* GetVoxelDistanceSemanticsName(VoxelTerrainSDFDistanceSemantics semantics)
-{
-	switch (semantics)
-	{
-	case VoxelTerrainSDFDistanceSemantics::ExactEuclidean:
-		return "ExactEuclidean";
-	case VoxelTerrainSDFDistanceSemantics::DistanceLike:
-		return "DistanceLike";
-	}
-
-	return "Unknown";
-}
-
-const char* GetVoxelFieldResidualUnit(VoxelTerrainSDFDistanceSemantics semantics)
-{
-	return semantics == VoxelTerrainSDFDistanceSemantics::ExactEuclidean ? "m" : "field units";
-}
-
-VoxelTerrainDebugValidationDesc MakeVoxelTerrainValidationDesc(
-	VoxelTerrainFieldPreset preset,
-	const float3& chunkOriginWorld,
-	const VoxelTerrainSettings& settings)
-{
-	VoxelTerrainDebugValidationDesc desc{};
-	desc.fixtureName = GetVoxelFieldPresetName(preset);
-
-	switch (preset)
-	{
-	case VoxelTerrainFieldPreset::SphereRegression:
-	{
-		desc.distanceSemantics = VoxelTerrainSDFDistanceSemantics::ExactEuclidean;
-		desc.bExpectClosedSurface = true;
-
-		const float3 sphereCenter = chunkOriginWorld + float3(settings.chunkWorldSizeMeter * 0.5f);
-		desc.ExpectedOutwardNormalWorld = [sphereCenter](const float3& positionWorld, float3& outExpectedNormal)
-			{
-				outExpectedNormal = positionWorld - sphereCenter;
-				const float length = glm::length(outExpectedNormal);
-				return IsFinite(outExpectedNormal) && std::isfinite(length) && length > 1e-6f;
-			};
-		break;
-	}
-	case VoxelTerrainFieldPreset::AxisAlignedBox:
-	case VoxelTerrainFieldPreset::Capsule:
-	case VoxelTerrainFieldPreset::UniformTransformedBox:
-		desc.distanceSemantics = VoxelTerrainSDFDistanceSemantics::ExactEuclidean;
-		desc.bExpectClosedSurface = true;
-		break;
-	case VoxelTerrainFieldPreset::NonUniformDistanceLikeBox:
-		desc.distanceSemantics = VoxelTerrainSDFDistanceSemantics::DistanceLike;
-		desc.bExpectClosedSurface = true;
-		break;
-	}
-
-	return desc;
 }
 
 u64 MakeDebugEdgeKey(u32 a, u32 b)
@@ -384,20 +308,24 @@ void TerrainApp::DrawUI()
 			bool bRefreshMesh = false;
 			bool bRefreshDebugLines = false;
 			bool bRebuildChunk = false;
-			const char* fieldPresetNames[] = {
-				"Sphere Regression",
-				"Axis-Aligned Box",
-				"Capsule",
-				"Uniform Transformed Box",
-				"Non-Uniform DistanceLike Box",
-			};
-			i32 fieldPresetIndex = static_cast< i32 >(terrain.fieldPreset);
-			if (ImGui::Combo("Field Preset", &fieldPresetIndex, fieldPresetNames, IM_ARRAYSIZE(fieldPresetNames)))
+			if (ImGui::BeginCombo("Field Preset", GetVoxelTerrainFieldPresetName(terrain.fieldPreset)))
 			{
-				terrain.fieldPreset = static_cast< VoxelTerrainFieldPreset >(fieldPresetIndex);
-				bRebuildChunk = true;
+				for (u32 i = 0u; i < GetVoxelTerrainFieldPresetCount(); ++i)
+				{
+					const VoxelTerrainFieldPreset preset = GetVoxelTerrainFieldPresetAt(i);
+					const bool bSelected = terrain.fieldPreset == preset;
+					if (ImGui::Selectable(GetVoxelTerrainFieldPresetName(preset), bSelected))
+					{
+						terrain.fieldPreset = preset;
+						bRebuildChunk = true;
+					}
+
+					if (bSelected)
+						ImGui::SetItemDefaultFocus();
+				}
+				ImGui::EndCombo();
 			}
-			ImGui::Text("Built Preset    %s", GetVoxelFieldPresetName(terrain.builtFieldPreset));
+			ImGui::Text("Built Preset    %s", GetVoxelTerrainFieldPresetName(terrain.builtFieldPreset));
 			ImGui::DragFloat3("Terrain Origin", glm::value_ptr(terrain.terrainOriginWorld), 0.5f, 0.0f, 0.0f, "%.2f m");
 			if (ImGui::IsItemDeactivatedAfterEdit())
 				bRebuildChunk = true;
@@ -457,6 +385,23 @@ void TerrainApp::DrawUI()
 					terrain.transformNonUniformScale.y,
 					terrain.transformNonUniformScale.z);
 				break;
+			case VoxelTerrainFieldPreset::HeightFieldFlat:
+			case VoxelTerrainFieldPreset::HeightFieldSloped:
+			case VoxelTerrainFieldPreset::HeightFieldPeriodic:
+				if (const VoxelTerrainHeightFieldParameters* params = GetVoxelTerrainHeightFieldParameters(terrain.fieldPreset))
+				{
+					ImGui::Text("Height Shape   %s", GetVoxelTerrainHeightFieldShapeName(params->shape));
+					ImGui::Text("Base Height    %.2f m", params->baseHeightMeter);
+					ImGui::Text("Anchor XZ      %.2f, %.2f m", params->anchorXMeter, params->anchorZMeter);
+					if (params->shape == VoxelTerrainHeightFieldShape::Plane)
+						ImGui::Text("Slope XZ       %.3f, %.3f", params->slopeX, params->slopeZ);
+					if (params->shape == VoxelTerrainHeightFieldShape::Periodic)
+					{
+						ImGui::Text("Amplitude      %.2f m", params->amplitudeMeter);
+						ImGui::Text("Wavelength XZ  %.2f, %.2f m", params->wavelengthXMeter, params->wavelengthZMeter);
+					}
+				}
+				break;
 			case VoxelTerrainFieldPreset::SphereRegression:
 				break;
 			}
@@ -504,7 +449,7 @@ void TerrainApp::DrawUI()
 		ImGui::Text("Voxel Size      %.2f m", terrain.settings.voxelSizeMeter);
 		ImGui::Text("FD Epsilon      %.2f x voxel", terrain.settings.normalEpsilonMultiplier);
 		ImGui::Text("Fixture         %s", m_VoxelTerrainStats.fixtureName ? m_VoxelTerrainStats.fixtureName : "None");
-		ImGui::Text("Distance        %s", GetVoxelDistanceSemanticsName(m_VoxelTerrainStats.distanceSemantics));
+		ImGui::Text("Distance        %s", GetVoxelTerrainDistanceSemanticsName(m_VoxelTerrainStats.distanceSemantics));
 		ImGui::Text("Closed Surface  %s", m_VoxelTerrainStats.bExpectClosedSurface ? "expected" : "not required");
 
 		ImGui::Separator();
@@ -522,6 +467,10 @@ void TerrainApp::DrawUI()
 		ImGui::Text("Cube Indices    %u active", m_VoxelTerrainStats.numActiveCubeIndices);
 		ImGui::Text("Mesh Vertices   %u", m_VoxelTerrainStats.numMeshVertices);
 		ImGui::Text("Mesh Indices    %u", m_VoxelTerrainStats.numMeshIndices);
+		ImGui::Text("Meshlets        %u", m_VoxelTerrainStats.numMeshlets);
+		ImGui::Text("Mesh Issues     %u malformed buffers, %u normal fallbacks",
+			m_VoxelTerrainStats.numMalformedIndexBuffers,
+			m_VoxelTerrainStats.numNormalGradientFallbacks);
 
 		ImGui::Separator();
 		ImGui::Text("Mesh Bounds     %u valid", m_VoxelTerrainStats.numMeshesWithBounds);
@@ -542,7 +491,18 @@ void TerrainApp::DrawUI()
 			m_VoxelTerrainStats.minFieldResidual,
 			m_VoxelTerrainStats.avgFieldResidual,
 			m_VoxelTerrainStats.maxFieldResidual,
-			GetVoxelFieldResidualUnit(m_VoxelTerrainStats.distanceSemantics));
+			GetVoxelTerrainFieldResidualUnit(m_VoxelTerrainStats.distanceSemantics));
+		ImGui::Text("Field P95       %.6f %s",
+			m_VoxelTerrainStats.p95FieldResidual,
+			GetVoxelTerrainFieldResidualUnit(m_VoxelTerrainStats.distanceSemantics));
+		ImGui::Text("Metric Residual %u valid, %u non-finite",
+			m_VoxelTerrainStats.numMetricResidualVertices,
+			m_VoxelTerrainStats.numNonFiniteMetricResiduals);
+		ImGui::Text("Metric Min/Avg/P95/Max %.6f / %.6f / %.6f / %.6f m",
+			m_VoxelTerrainStats.minMetricResidual,
+			m_VoxelTerrainStats.avgMetricResidual,
+			m_VoxelTerrainStats.p95MetricResidual,
+			m_VoxelTerrainStats.maxMetricResidual);
 
 		ImGui::Separator();
 		ImGui::Text("Normals         %u valid", m_VoxelTerrainStats.numNormalVertices);
@@ -560,6 +520,10 @@ void TerrainApp::DrawUI()
 			m_VoxelTerrainStats.minReferenceNormalDot,
 			m_VoxelTerrainStats.avgReferenceNormalDot,
 			m_VoxelTerrainStats.maxReferenceNormalDot);
+		ImGui::Text("Reference Angle %.4f / %.4f / %.4f deg",
+			m_VoxelTerrainStats.minReferenceNormalAngleDegree,
+			m_VoxelTerrainStats.avgReferenceNormalAngleDegree,
+			m_VoxelTerrainStats.maxReferenceNormalAngleDegree);
 		ImGui::Text("Reference Count %u evaluated, %u skipped",
 			m_VoxelTerrainStats.numReferenceNormalsEvaluated,
 			m_VoxelTerrainStats.numReferenceNormalsSkipped);
@@ -581,6 +545,18 @@ void TerrainApp::DrawUI()
 		ImGui::Text("Edges           %u boundary, %u non-manifold",
 			m_VoxelTerrainStats.numBoundaryEdges,
 			m_VoxelTerrainStats.numNonManifoldEdges);
+		ImGui::Text("Boundary Class  %u side, %u top/bottom, %u interior",
+			m_VoxelTerrainStats.numBoundarySideEdges,
+			m_VoxelTerrainStats.numBoundaryTopBottomEdges,
+			m_VoxelTerrainStats.numBoundaryInteriorEdges);
+		ImGui::Text("Surface Probes  %u pairs, %u failed, %u non-finite",
+			m_VoxelTerrainStats.numSurfaceSignProbePairs,
+			m_VoxelTerrainStats.numSurfaceSignProbeFailures,
+			m_VoxelTerrainStats.numNonFiniteSurfaceSignProbes);
+		ImGui::Text("Face Probes     %u samples, %.6f m pos max, %.6f field max",
+			m_VoxelTerrainStats.numSharedFaceProbeSamples,
+			m_VoxelTerrainStats.maxSharedFacePositionDelta,
+			m_VoxelTerrainStats.maxSharedFaceFieldDelta);
 
 		const VoxelTerrainPrimitiveSelfCheckStats primitiveChecks = RunVoxelTerrainPrimitiveSelfChecks();
 		ImGui::Text("Primitive Checks %u passed, %u failed", primitiveChecks.numPassed, primitiveChecks.numFailed);
@@ -843,11 +819,9 @@ void TerrainApp::RefreshVoxelTerrainStats()
 		m_VoxelTerrainStats = VoxelTerrainDebug::CollectStats(*terrainData);
 		return;
 	}
-
-	VoxelTerrainDebugValidationDesc validationDesc = MakeVoxelTerrainValidationDesc(
-		terrain.builtFieldPreset,
-		chunk->GetOriginWorld(),
-		chunk->GetDesc().settings);
+	VoxelTerrainDebugValidationDesc validationDesc = CreateVoxelTerrainDebugValidationDesc(
+		terrain,
+		chunk->GetDesc());
 	m_VoxelTerrainStats = VoxelTerrainDebug::CollectStats(*terrainData, &validationDesc);
 }
 void TerrainApp::RefreshVoxelTerrainDebugLines(bool bSceneAlreadyLocked)

@@ -16,6 +16,7 @@ void TerrainMeshData::Clear()
     aabb       = BoundingBox(float3(0.0f), float3(0.0f));
     bHasBounds = false;
     numSurfaceCells = 0u;
+    numNormalGradientFallbacks = 0u;
     for (u32& count : cubeIndexHistogram)
         count = 0u;
 }

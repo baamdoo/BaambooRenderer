@@ -21,6 +21,7 @@ struct TerrainMeshData
 
     u32 numSurfaceCells = 0u;
     u32 cubeIndexHistogram[256] = {};
+    u32 numNormalGradientFallbacks = 0u;
 
     void Clear();
     void RecalculateBounds();

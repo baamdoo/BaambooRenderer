@@ -41,6 +41,11 @@ struct EdgeVertexKeyHash
     }
 };
 
+bool IsFinite(const float3& v)
+{
+    return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+}
+
 EdgeVertexKey MakeEdgeKey(u32 x, u32 y, u32 z, u32 edge)
 {
     switch (edge)
@@ -110,6 +115,16 @@ TerrainMeshData MarchingCubes::BuildMesh(
             return glm::mix(p0, p1, v0 / (v0 - v1));
         };
 
+    auto IsTriangleFiniteAndNonDegenerate = [](const float3& p0, const float3& p1, const float3& p2)
+        {
+            if (!IsFinite(p0) || !IsFinite(p1) || !IsFinite(p2))
+                return false;
+
+            const float3 cross = glm::cross(p1 - p0, p2 - p0);
+            const float crossLengthSquared = glm::dot(cross, cross);
+            return std::isfinite(crossLengthSquared) && crossLengthSquared > 1e-12f;
+        };
+
     TerrainMeshData meshData{};
 
     std::unordered_map< EdgeVertexKey, u32, EdgeVertexKeyHash > edgeVertexCache;
@@ -134,7 +149,13 @@ TerrainMeshData MarchingCubes::BuildMesh(
                 const float3 gradient = float3(dx, dy, dz);
                 const float gradientLengthSquared = glm::dot(gradient, gradient);
                 if (std::isfinite(gradientLengthSquared) && gradientLengthSquared > 1e-12f)
+                {
                     v.normal = glm::normalize(gradient);
+                }
+                else
+                {
+                    ++meshData.numNormalGradientFallbacks;
+                }
             }
 
             const u32 index = static_cast<u32>(meshData.vertices.size());
@@ -207,6 +228,12 @@ TerrainMeshData MarchingCubes::BuildMesh(
                     const auto& samplePosB1 = cornerPositions[edgeCornerB[1]];
                     const auto& samplePosC0 = cornerPositions[edgeCornerC[0]];
                     const auto& samplePosC1 = cornerPositions[edgeCornerC[1]];
+
+                    const float3 pA = InterpolateEdge(samplePosA0, samplePosA1, pSampleA0->value, pSampleA1->value);
+                    const float3 pB = InterpolateEdge(samplePosB0, samplePosB1, pSampleB0->value, pSampleB1->value);
+                    const float3 pC = InterpolateEdge(samplePosC0, samplePosC1, pSampleC0->value, pSampleC1->value);
+                    if (!IsTriangleFiniteAndNonDegenerate(pA, pB, pC))
+                        continue;
 
                     u32 i0 = GetOrCreateVertex(x, y, z, eA, samplePosA0, samplePosA1, pSampleA0->value, pSampleA1->value);
                     u32 i1 = GetOrCreateVertex(x, y, z, eB, samplePosB0, samplePosB1, pSampleB0->value, pSampleB1->value);

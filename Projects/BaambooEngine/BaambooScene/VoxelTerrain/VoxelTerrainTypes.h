@@ -15,6 +15,9 @@ enum class VoxelTerrainFieldPreset : i32
     Capsule,
     UniformTransformedBox,
     NonUniformDistanceLikeBox,
+    HeightFieldFlat,
+    HeightFieldSloped,
+    HeightFieldPeriodic,
 };
 
 constexpr float kDefaultVoxelChunkWorldSizeMeter = 64.0f;

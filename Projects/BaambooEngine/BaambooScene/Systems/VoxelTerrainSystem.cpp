@@ -2,9 +2,8 @@
 #include "VoxelTerrainSystem.h"
 
 #include "TransformSystem.h"
-#include "../VoxelTerrain/SDFPrimitives.h"
+#include "../VoxelTerrain/VoxelTerrainFieldProfiles.h"
 
-#include <glm/gtx/euler_angles.hpp>
 
 namespace baamboo
 {
@@ -41,45 +40,6 @@ float3 GetChunkLocalPosition(const VoxelTerrainChunkComponent& chunk, const Voxe
         static_cast< float >(chunk.coord.x),
         static_cast< float >(chunk.coord.y),
         static_cast< float >(chunk.coord.z)) * settings.chunkWorldSizeMeter;
-}
-
-quat MakeEulerYXZRotation(const float3& eulerDegrees)
-{
-    const float3 radians = glm::radians(eulerDegrees);
-    const mat4 rotation = glm::eulerAngleYXZ(radians.y, radians.x, radians.z);
-    return glm::normalize(glm::quat_cast(rotation));
-}
-
-float EvaluateUniformTransformedBoxSDF(
-    const float3& p,
-    const float3& center,
-    const quat& rotationToParent,
-    float uniformScale,
-    const float3& halfExtent)
-{
-    const float3 primitiveP = SDF::InverseTransformPointUniformScale(
-        p,
-        center,
-        rotationToParent,
-        uniformScale);
-    return SDF::ApplyUniformScaleToDistance(
-        SDF::AxisAlignedBox(primitiveP, float3(0.0f), halfExtent),
-        uniformScale);
-}
-
-float EvaluateNonUniformDistanceLikeBoxField(
-    const float3& p,
-    const float3& center,
-    const quat& rotationToParent,
-    const float3& nonUniformScale,
-    const float3& halfExtent)
-{
-    const float3 primitiveP = SDF::InverseTransformPointNonUniformScale(
-        p,
-        center,
-        rotationToParent,
-        nonUniformScale);
-    return SDF::AxisAlignedBox(primitiveP, float3(0.0f), halfExtent);
 }
 
 } // namespace
@@ -425,75 +385,8 @@ bool VoxelTerrainSystem::RebuildChunkCandidate(
     auto& chunk = m_Registry.get< VoxelTerrainChunkComponent >(chunkEntity);
     const float3 chunkOriginWorld = GetChunkOriginWorld(chunk, terrain);
 
-    switch (terrain.fieldPreset)
-    {
-    case VoxelTerrainFieldPreset::SphereRegression:
-        outChunkIndex = terrainData.CreateChunk(chunkOriginWorld);
-        break;
-    case VoxelTerrainFieldPreset::AxisAlignedBox:
-    {
-        VoxelTerrainChunkDesc desc{};
-        desc.originWorld = chunkOriginWorld;
-        desc.settings = terrain.settings;
-        desc.SDF = [center = terrain.boxCenter,
-            halfExtent = terrain.boxHalfExtent](const float3& p)
-            {
-                return SDF::AxisAlignedBox(p, center, halfExtent);
-            };
-
-        outChunkIndex = terrainData.CreateChunk(desc);
-        break;
-    }
-    case VoxelTerrainFieldPreset::Capsule:
-    {
-        VoxelTerrainChunkDesc desc{};
-        desc.originWorld = chunkOriginWorld;
-        desc.settings = terrain.settings;
-        desc.SDF = [segmentA = terrain.capsuleSegmentA,
-            segmentB = terrain.capsuleSegmentB,
-            radius = terrain.capsuleRadius](const float3& p)
-            {
-                return SDF::Capsule(p, segmentA, segmentB, radius);
-            };
-
-        outChunkIndex = terrainData.CreateChunk(desc);
-        break;
-    }
-    case VoxelTerrainFieldPreset::UniformTransformedBox:
-    {
-        VoxelTerrainChunkDesc desc{};
-        desc.originWorld = chunkOriginWorld;
-        desc.settings = terrain.settings;
-        const quat rotation = MakeEulerYXZRotation(terrain.transformBoxEulerDegrees);
-        desc.SDF = [center = terrain.transformBoxCenter,
-            rotation,
-            uniformScale = terrain.transformUniformScale,
-            halfExtent = terrain.transformBoxHalfExtent](const float3& p)
-            {
-                return EvaluateUniformTransformedBoxSDF(p, center, rotation, uniformScale, halfExtent);
-            };
-
-        outChunkIndex = terrainData.CreateChunk(desc);
-        break;
-    }
-    case VoxelTerrainFieldPreset::NonUniformDistanceLikeBox:
-    {
-        VoxelTerrainChunkDesc desc{};
-        desc.originWorld = chunkOriginWorld;
-        desc.settings = terrain.settings;
-        const quat rotation = MakeEulerYXZRotation(terrain.transformBoxEulerDegrees);
-        desc.SDF = [center = terrain.transformBoxCenter,
-            rotation,
-            nonUniformScale = terrain.transformNonUniformScale,
-            halfExtent = terrain.transformBoxHalfExtent](const float3& p)
-            {
-                return EvaluateNonUniformDistanceLikeBoxField(p, center, rotation, nonUniformScale, halfExtent);
-            };
-
-        outChunkIndex = terrainData.CreateChunk(desc);
-        break;
-    }
-    }
+    const VoxelTerrainChunkDesc desc = CreateVoxelTerrainChunkDesc(terrain, chunkOriginWorld);
+    outChunkIndex = terrainData.CreateChunk(desc);
 
     if (outChunkIndex == kInvalidIndex)
         return false;
