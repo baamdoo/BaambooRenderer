@@ -18,7 +18,6 @@ public:
 private:
 	Arc< render::Texture >         m_pCoreNormal;
 	Arc< render::Texture >         m_pCoreMaterial;
-	Arc< render::Buffer >          m_pNullPatches; // 1-element fallback so the patch binding stays valid without a terrain
 	Box< render::ComputePipeline > m_pResolvePSO;
 };
 

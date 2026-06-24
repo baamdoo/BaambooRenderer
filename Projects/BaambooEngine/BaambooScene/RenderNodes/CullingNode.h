@@ -1,5 +1,4 @@
 #pragma once
-#include "TerrainNode.h"
 #include "GBufferNode.h"
 
 namespace baamboo
@@ -37,7 +36,6 @@ public:
 
 	// --- Sub-node registration (app constructs both, links here) ---
 	void SetGBufferNode(const Arc< GBufferNode >& pNode) { m_pGBufferNode = pNode; }
-	void SetTerrainNode(const Arc< TerrainNode >& pNode) { m_pTerrainNode = pNode; }
 
 	// --- Shared HiZ exposure (for future SSAO/reflections that need depth pyramid) ---
 	Arc< render::Texture > GetHiZTexture() const { return m_pHiZTexture; }
@@ -56,7 +54,6 @@ private:
 private:
 	// --- Sub-nodes (draw responsibility, owned via Arc) ---
 	Arc< GBufferNode > m_pGBufferNode;
-	Arc< TerrainNode > m_pTerrainNode;
 
 	// --- Mesh cull resources ---
 	Arc< render::Buffer > m_DrawIndexBuffer;
@@ -85,13 +82,6 @@ private:
 	Arc< render::Buffer > m_MeshletStatsBuffer;
 	Arc< render::Buffer > m_Phase1MeshletStatsReadback;
 	Arc< render::Buffer > m_Phase2MeshletStatsReadback;
-#endif
-
-	Arc< render::Buffer > m_TerrainPhase1CountReadback;
-	Arc< render::Buffer > m_TerrainPhase2CountReadback;
-#if PROFILING_LEVEL >= 1
-	Arc< render::Buffer > m_TerrainPhase1LodStatsReadback;
-	Arc< render::Buffer > m_TerrainPhase2LodStatsReadback;
 #endif
 
 	bool m_bNeedsClear          = true;

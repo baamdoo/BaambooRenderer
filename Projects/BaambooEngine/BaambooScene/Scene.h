@@ -9,8 +9,6 @@
 namespace baamboo
 {
 
-inline constexpr u32 kTerrainLodStatsDepths = 8u;
-
 class RenderGraph;
 class EditorCamera;
 class TransformSystem;
@@ -75,11 +73,6 @@ struct FrameData
 	Weak< render::Texture > pDepth;
 	Weak< render::Texture > pHiZ;
 
-	// Terrain SurfaceResolve inputs
-	Weak< render::Texture > pHeightmap;
-	Weak< render::Buffer >  pTerrainPatches;
-	std::function< TerrainParams() > pGetTerrainParams; // callback to query the current terrain's parameters (for SurfaceResolve)
-
 	// Light culling buffers
 	Weak< render::Buffer > pClusterAABBBuffer;
 	Weak< render::Buffer > pLightGridBuffer;
@@ -109,21 +102,6 @@ struct FrameData
 	u32 phase2MeshletDrawn       = 0;
 	u32 phase1TriangleCandidates = 0;
 	u32 phase2TriangleCandidates = 0;
-#endif
-
-	// --- Terrain cull stats (TerrainPatchCullingCS) ---
-	//   totalPatches        — quadtree node count this frame (= TerrainQuadtree::NumNodes()).
-	//   phase1DrawCount     — patches emitted by Phase 1 terrain cull (prev-visible survivors).
-	//   phase2DrawCount     — patches emitted by Phase 2 terrain cull (newly visible after HZB).
-	//   phase{1,2}Triangles — drawCount × per-patch tris (surface 2*(N-1)² + skirt 8*(N-1))
-	u32 terrainTotalPatches    = 0;
-	u32 terrainPhase1DrawCount = 0;
-	u32 terrainPhase2DrawCount = 0;
-	u32 terrainPhase1Triangles = 0;
-	u32 terrainPhase2Triangles = 0;
-#if PROFILING_LEVEL >= 1
-	u32 terrainPhase1LodPatches[kTerrainLodStatsDepths] = {};
-	u32 terrainPhase2LodPatches[kTerrainLodStatsDepths] = {};
 #endif
 
 	// Runtime culling toggles — bitmask consumed by task + mesh shaders per-frame as push constant.

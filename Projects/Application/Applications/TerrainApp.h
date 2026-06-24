@@ -1,7 +1,6 @@
 #pragma once
 #include "BaambooEngine.h"
 #include "BaambooScene/Entity.h"
-#include "BaambooScene/VoxelTerrain/VoxelTerrainDebug.h"
 
 class TerrainApp : public baamboo::Engine
 {
@@ -18,21 +17,12 @@ private:
 
 	void ConfigureRenderGraph();
 	void ConfigureSceneObjects();
-	void RebuildVoxelTerrain(bool bSceneAlreadyLocked = false);
-	void RefreshVoxelTerrainStats();
-	void RefreshVoxelTerrainDebugLines(bool bSceneAlreadyLocked = false);
+	void RebuildVoxelTerrain();
 
 	baamboo::CameraController_FirstPerson m_CameraController;
 
-	baamboo::VoxelTerrainDebugStats m_VoxelTerrainStats = {};
-	baamboo::Entity                 m_VoxelTerrainRootEntity;
-	baamboo::Entity                 m_VoxelTerrainChunkEntity;
+	baamboo::Entity m_VoxelTerrainRootEntity;
+	baamboo::Entity m_VoxelTerrainChunkEntity;
 
-	bool  m_bVoxelMeshVisible        = true;
-	bool  m_bVoxelWireframeVisible   = false;
-	bool  m_bVoxelChunkBoundsVisible = true;
-	bool  m_bVoxelNormalsVisible     = false;
-	float m_VoxelNormalLineLength    = 1.5f;
-	i32   m_VoxelNormalStride        = 12;
-	i32   m_VoxelNormalMaxCount      = 512;
+	bool m_bVoxelMeshVisible = true;
 };

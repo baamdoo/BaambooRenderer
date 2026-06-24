@@ -360,29 +360,4 @@ struct CloudShadowData
 };
 
 
-// =========================================================================
-// Terrain
-// =========================================================================
-constexpr u32 kTerrainMaxLodDepths = 8u; // depth 0..7 inclusive
-
-struct TerrainParams
-{
-    float terrainOriginX;
-    float terrainOriginZ;
-    float terrainSizeMeter;
-    u32   gridN;
-
-    float heightMinMeter;
-    float heightRangeMeter;
-    float heightmapTexel;  // 1 / rho
-    float worldPerTexel;   // T / rho
-
-    u32 heightmapRes;    // rho (auto-derived)
-    u32 maxDepth;        // 0 = root, maxDepth = leaf
-    u32 numPatches;
-    u32 _pad0;
-
-    float lodRangeStart[kTerrainMaxLodDepths]; // r_s[d] = k * r_e[d]
-    float lodRangeEnd[kTerrainMaxLodDepths];   // r_e[d] = base * 2^(maxDepth - d)
-};
-static_assert(sizeof(TerrainParams) == 48u + 2ULL * kTerrainMaxLodDepths * sizeof(float), "TerrainGlobalsCB");
+// (Terrain heightmap params removed 2026-06-23 — voxel/SDF terrain rewrite.)

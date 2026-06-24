@@ -108,38 +108,6 @@ CullingNode::CullingNode(render::RenderDevice& rd)
 		});
 #endif // PROFILING_LEVEL >= 1
 
-	// --- Terrain cull count readback ring (mirrors mesh Phase1/Phase2 pattern) ---
-	m_TerrainPhase1CountReadback = Buffer::Create(rd, "CullingPass::TerrainPhase1CountReadback",
-		{
-			.count              = kReadbackSlots,
-			.elementSizeInBytes = sizeof(u32),
-			.mapDirection       = 2,
-			.bufferUsage        = eBufferUsage_TransferDest,
-		});
-	m_TerrainPhase2CountReadback = Buffer::Create(rd, "CullingPass::TerrainPhase2CountReadback",
-		{
-			.count              = kReadbackSlots,
-			.elementSizeInBytes = sizeof(u32),
-			.mapDirection       = 2,
-			.bufferUsage        = eBufferUsage_TransferDest,
-		});
-#if PROFILING_LEVEL >= 1
-	m_TerrainPhase1LodStatsReadback = Buffer::Create(rd, "CullingPass::TerrainPhase1LodStatsReadback",
-		{
-			.count              = kReadbackSlots * kTerrainLodStatsDepths,
-			.elementSizeInBytes = sizeof(u32),
-			.mapDirection       = 2,
-			.bufferUsage        = eBufferUsage_TransferDest,
-		});
-#endif
-	m_TerrainPhase2LodStatsReadback = Buffer::Create(rd, "CullingPass::TerrainPhase2LodStatsReadback",
-		{
-			.count              = kReadbackSlots * kTerrainLodStatsDepths,
-			.elementSizeInBytes = sizeof(u32),
-			.mapDirection       = 2,
-			.bufferUsage        = eBufferUsage_TransferDest,
-		});
-
 	// --- HiZ texture (previousPow2 of window so every SPD reduction is exactly 2x2) ---
 	m_pHiZTexture = Texture::Create(rd, "CullingPass::HiZTexture",
 		{
@@ -308,55 +276,6 @@ void CullingNode::PublishReadbackStats()
 		g_FrameData.phase2TriangleCandidates = p2m[base + 2];
 	}
 #endif // PROFILING_LEVEL >= 1
-
-	// --- Terrain cull stats ---
-	if (m_pTerrainNode)
-	{
-		g_FrameData.terrainTotalPatches = m_pTerrainNode->GetTotalNodeCount();
-		const u32 perPatchTris          = m_pTerrainNode->GetPerPatchTriangles();
-
-		if (auto* t1 = static_cast< u32* >(m_TerrainPhase1CountReadback->MappedMemory()))
-		{
-			const u32 cnt = t1[m_ReadbackIdx];
-			g_FrameData.terrainPhase1DrawCount = cnt;
-			g_FrameData.terrainPhase1Triangles = cnt * perPatchTris;
-		}
-		if (auto* t2 = static_cast< u32* >(m_TerrainPhase2CountReadback->MappedMemory()))
-		{
-			const u32 cnt = t2[m_ReadbackIdx];
-			g_FrameData.terrainPhase2DrawCount = cnt;
-			g_FrameData.terrainPhase2Triangles = cnt * perPatchTris;
-		}
-#if PROFILING_LEVEL >= 1
-		if (auto* t1lod = static_cast< u32* >(m_TerrainPhase1LodStatsReadback->MappedMemory()))
-		{
-			const u32 base = m_ReadbackIdx * kTerrainLodStatsDepths;
-			for (u32 i = 0u; i < kTerrainLodStatsDepths; ++i)
-				g_FrameData.terrainPhase1LodPatches[i] = t1lod[base + i];
-		}
-		if (auto* t2lod = static_cast< u32* >(m_TerrainPhase2LodStatsReadback->MappedMemory()))
-		{
-			const u32 base = m_ReadbackIdx * kTerrainLodStatsDepths;
-			for (u32 i = 0u; i < kTerrainLodStatsDepths; ++i)
-				g_FrameData.terrainPhase2LodPatches[i] = t2lod[base + i];
-		}
-#endif
-	}
-	else
-	{
-		g_FrameData.terrainTotalPatches    = 0u;
-		g_FrameData.terrainPhase1DrawCount = 0u;
-		g_FrameData.terrainPhase2DrawCount = 0u;
-		g_FrameData.terrainPhase1Triangles = 0u;
-		g_FrameData.terrainPhase2Triangles = 0u;
-#if PROFILING_LEVEL >= 1
-		for (u32 i = 0u; i < kTerrainLodStatsDepths; ++i)
-		{
-			g_FrameData.terrainPhase1LodPatches[i] = 0u;
-			g_FrameData.terrainPhase2LodPatches[i] = 0u;
-		}
-#endif
-	}
 }
 
 MeshCullOutputs CullingNode::MakeMeshCullOutputs(u32 numInstances, u32 phase) const
@@ -408,32 +327,14 @@ void CullingNode::Apply(render::CommandContext& context, const SceneRenderView& 
 	{
 		BAAMBOO_PROFILE_SCOPE(context, "Phase1Cull");
 		DispatchMeshCull(context, numInstances, kPhase1Cull);
-		if (m_pTerrainNode)
-			m_pTerrainNode->DispatchTerrainCull(context, CullingNode::kPhase1Cull, m_pHiZTexture, renderView);
 
 		context.CopyBufferRegion(m_Phase1CountReadback, m_DrawCountBuffer, sizeof(u32), m_ReadbackIdx * sizeof(u32), 0);
 		context.TransitionBufferToRead(m_DrawCountBuffer, ePipelineStage::DrawIndirect, 0, true);
-
-		if (m_pTerrainNode)
-		{
-			const auto& pTerrainCount = m_pTerrainNode->GetDrawCountBuffer();
-			if (pTerrainCount)
-				context.CopyBufferRegion(m_TerrainPhase1CountReadback, pTerrainCount, sizeof(u32), m_ReadbackIdx * sizeof(u32), 0);
-#if PROFILING_LEVEL >= 1
-			const auto& pTerrainLodStats = m_pTerrainNode->GetLodStatsBuffer();
-			if (pTerrainLodStats)
-				context.CopyBufferRegion(m_TerrainPhase1LodStatsReadback, pTerrainLodStats,
-					kTerrainLodStatsDepths * sizeof(u32),
-					m_ReadbackIdx * kTerrainLodStatsDepths * sizeof(u32), 0);
-#endif
-		}
 	}
 	{
 		BAAMBOO_PROFILE_SCOPE_STATS(context, "Phase1Draw");
 		if (m_pGBufferNode)
 			m_pGBufferNode->DrawGBufferPhase1(context, MakeMeshCullOutputs(numInstances, kPhase1Cull));
-		if (m_pTerrainNode && m_pGBufferNode)
-			m_pTerrainNode->DrawTerrainPhase1(context, m_pGBufferNode->GetPhase2RenderTarget(), renderView);
 
 #if PROFILING_LEVEL >= 1
 		const u32 statsBytes = kMeshletStatsFields * sizeof(u32);
@@ -455,32 +356,14 @@ void CullingNode::Apply(render::CommandContext& context, const SceneRenderView& 
 	{
 		BAAMBOO_PROFILE_SCOPE(context, "Phase2Cull");
 		DispatchMeshCull(context, numInstances, kPhase2Cull);
-		if (m_pTerrainNode)
-			m_pTerrainNode->DispatchTerrainCull(context, CullingNode::kPhase2Cull, m_pHiZTexture, renderView);
 
 		context.CopyBufferRegion(m_Phase2CountReadback, m_DrawCountBuffer, sizeof(u32), m_ReadbackIdx * sizeof(u32), 0);
 		context.TransitionBufferToRead(m_DrawCountBuffer, ePipelineStage::DrawIndirect, 0, true);
-
-		if (m_pTerrainNode)
-		{
-			const auto& pTerrainCount = m_pTerrainNode->GetDrawCountBuffer();
-			if (pTerrainCount)
-				context.CopyBufferRegion(m_TerrainPhase2CountReadback, pTerrainCount, sizeof(u32), m_ReadbackIdx * sizeof(u32), 0);
-#if PROFILING_LEVEL >= 1
-			const auto& pTerrainLodStats = m_pTerrainNode->GetLodStatsBuffer();
-			if (pTerrainLodStats)
-				context.CopyBufferRegion(m_TerrainPhase2LodStatsReadback, pTerrainLodStats,
-					kTerrainLodStatsDepths * sizeof(u32),
-					m_ReadbackIdx * kTerrainLodStatsDepths * sizeof(u32), 0);
-#endif
-		}
 	}
 	{
 		BAAMBOO_PROFILE_SCOPE_STATS(context, "Phase2Draw");
 		if (m_pGBufferNode)
 			m_pGBufferNode->DrawGBufferPhase2(context, MakeMeshCullOutputs(numInstances, kPhase2Cull));
-		if (m_pTerrainNode && m_pGBufferNode)
-			m_pTerrainNode->DrawTerrainPhase2(context, m_pGBufferNode->GetPhase2RenderTarget(), renderView);
 
 #if PROFILING_LEVEL >= 1
 		const u32 statsBytes = kMeshletStatsFields * sizeof(u32);
@@ -503,8 +386,6 @@ void CullingNode::Resize(u32 width, u32 height, u32 depth)
 	}
 	if (m_pGBufferNode)
 		m_pGBufferNode->Resize(width, height, depth);
-	if (m_pTerrainNode)
-		m_pTerrainNode->Resize(width, height, depth); // currently no-op, kept for symmetry
 }
 
 
