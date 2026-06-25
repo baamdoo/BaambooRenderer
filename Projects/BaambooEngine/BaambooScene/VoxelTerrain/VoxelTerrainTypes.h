@@ -34,13 +34,6 @@ struct VoxelTerrainSettings
     float normalEpsilonMultiplier = 0.5f;
 };
 
-struct VoxelChunkCoord
-{
-    i32 x = 0;
-    i32 y = 0;
-    i32 z = 0;
-};
-
 struct VoxelTerrainChunkDesc
 {
     float3               originWorld = float3(0.0f);

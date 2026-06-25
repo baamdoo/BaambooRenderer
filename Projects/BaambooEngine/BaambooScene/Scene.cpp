@@ -28,7 +28,7 @@ Scene::Scene(const std::string& name)
 	: m_Name(name)
 {
 	m_pTransformSystem   = new TransformSystem(m_Registry);
-	m_pVoxelTerrainSystem = new VoxelTerrainSystem(m_Registry, m_pTransformSystem);
+	m_pVoxelTerrainSystem = new VoxelTerrainSystem(m_Registry);
 	m_pStaticMeshSystem  = new StaticMeshSystem(m_Registry);
 	m_pSkyLightSystem    = new SkyLightSystem(m_Registry, m_pTransformSystem);
 	m_pAtmosphereSystem  = new AtmosphereSystem(m_Registry, m_pSkyLightSystem);
@@ -291,9 +291,6 @@ void Scene::Update(f32 dt, const EditorCamera& edCamera)
 
 	s_SceneRunningTime += dt;
 
-	if (m_pVoxelTerrainSystem)
-		m_pVoxelTerrainSystem->UpdateRenderData(edCamera);
-
 	for (auto entity : m_pTransformSystem->UpdateRenderData(edCamera))
 	{
 		u64& dirtyMarks = m_EntityDirtyMasks[entity];
@@ -445,6 +442,7 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport,
 	m_pAtmosphereSystem->CollectRenderData(view);
 	m_pCloudSystem->CollectRenderData(view);
 	m_pPostProcessSystem->CollectRenderData(view);
+	m_pVoxelTerrainSystem->CollectRenderData(view);
 	return view;
 }
 

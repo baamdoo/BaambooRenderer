@@ -133,20 +133,6 @@ struct VoxelTerrainComponent
 	float3 transformBoxEulerDegrees = float3(0.0f, 30.0f, 0.0f);
 	float  transformUniformScale = 1.5f;
 	float3 transformNonUniformScale = float3(1.6f, 0.75f, 1.25f);
-
-	u32 meshRevision = 0u;
-	bool bDirtyMark = true;
-};
-
-//-------------------------------------------------------------------------
-// VoxelTerrainChunkComponent : System-owned render chunk for voxel terrain
-//-------------------------------------------------------------------------
-struct VoxelTerrainChunkComponent
-{
-	entt::entity root = entt::null;
-	baamboo::VoxelChunkCoord coord = {};
-	u32 chunkIndex = kInvalidIndex;
-	bool bTransformLocked = true;
 };
 
 //-------------------------------------------------------------------------

@@ -1317,6 +1317,12 @@ void Dx12CommandContext::UAVBarrier(const Arc< render::Buffer >& pBuffer, bool b
 	m_Impl->UAVBarrier(dx12Buffer.get(), bFlushImmediate);
 }
 
+void Dx12CommandContext::TransitionBufferToIndirectArgs(const Arc< render::Buffer >& pBuffer, u64 offsetInBytes, bool bFlushImmediate)
+{
+	TransitionBufferToRead(pBuffer, render::ePipelineStage::Copy, offsetInBytes, false);
+	TransitionBufferToRead(pBuffer, render::ePipelineStage::DrawIndirect, offsetInBytes, bFlushImmediate);
+}
+
 void Dx12CommandContext::AliasingBarrier(Dx12Resource* pResourceBefore, Dx12Resource* pResourceAfter, bool bFlushImmediate)
 {
 	m_Impl->AliasingBarrier(pResourceBefore, pResourceAfter, bFlushImmediate);

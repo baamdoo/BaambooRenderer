@@ -1,5 +1,6 @@
 #pragma once
 #include "GBufferNode.h"
+#include "VoxelChunkRenderNode.h"
 
 namespace baamboo
 {
@@ -36,6 +37,7 @@ public:
 
 	// --- Sub-node registration (app constructs both, links here) ---
 	void SetGBufferNode(const Arc< GBufferNode >& pNode) { m_pGBufferNode = pNode; }
+	void SetVoxelNode(const Arc< VoxelChunkRenderNode >& pNode) { m_pVoxelNode = pNode; }
 
 	// --- Shared HiZ exposure (for future SSAO/reflections that need depth pyramid) ---
 	Arc< render::Texture > GetHiZTexture() const { return m_pHiZTexture; }
@@ -53,7 +55,8 @@ private:
 
 private:
 	// --- Sub-nodes (draw responsibility, owned via Arc) ---
-	Arc< GBufferNode > m_pGBufferNode;
+	Arc< GBufferNode >          m_pGBufferNode;
+	Arc< VoxelChunkRenderNode > m_pVoxelNode;
 
 	// --- Mesh cull resources ---
 	Arc< render::Buffer > m_DrawIndexBuffer;

@@ -21,7 +21,6 @@ class CloudSystem;
 class PostProcessSystem;
 class VoxelTerrainSystem;
 
-// Surface feature requirements — OR-union of what this frame's passes need from SurfaceResolve.
 // Lets the resolve skip producing caches that no pass consumes this frame (demand-driven).
 enum SurfaceRequirementBits : u32
 {
@@ -67,6 +66,13 @@ struct FrameData
 	Weak< render::Texture > pVelocity;
 	Weak< render::Texture > pCoreNormal;
 	Weak< render::Texture > pCoreMaterial;
+
+	// Voxel chunks
+	Weak< render::Buffer > pVoxelChunks;
+	Weak< render::Buffer > pVoxelVertices;
+	Weak< render::Buffer > pVoxelMeshlets;
+	Weak< render::Buffer > pVoxelMeshletVertices;
+	Weak< render::Buffer > pVoxelMeshletTriangles;
 
 	// Scene buffers (Color + depth + HiZ)
 	Weak< render::Texture > pColor;
@@ -154,8 +160,6 @@ public:
 	const entt::registry& Registry() const { return m_Registry; }
 	[[nodiscard]]
 	TransformSystem* GetTransformSystem() const { return m_pTransformSystem; }
-	[[nodiscard]]
-	VoxelTerrainSystem* GetVoxelTerrainSystem() const { return m_pVoxelTerrainSystem; }
 
 	const std::vector< Arc< render::RenderNode > >& GetRenderNodes() const { return m_RenderGraph.GetRenderNodes(); }
 	const Arc< render::RenderNode >& GetRenderNodeByName(const std::string& nodeName) const { return m_RenderGraph.GetRenderNodeByName(nodeName); }

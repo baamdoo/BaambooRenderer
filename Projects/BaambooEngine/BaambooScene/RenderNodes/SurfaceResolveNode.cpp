@@ -1,6 +1,7 @@
 #include "BaambooPch.h"
 #include "SurfaceResolveNode.h"
 
+#include "ShaderTypes.h"
 #include "RenderCommon/RenderDevice.h"
 #include "RenderCommon/CommandContext.h"
 #include "RenderCommon/CpuProfiler.h"
@@ -33,6 +34,21 @@ SurfaceResolveNode::SurfaceResolveNode(render::RenderDevice& rd)
 	m_pResolvePSO->SetComputeShader(
 		Shader::Create(rd, "SurfaceResolveCS", { .stage = eShaderStage::Compute, .filename = "SurfaceResolveCS" })
 	).Build();
+
+	auto MakeFallback = [&rd](const char* name, u64 elemSize) -> Arc< Buffer >
+	{
+		return Buffer::Create(rd, name,
+			{
+				.count              = 1,
+				.elementSizeInBytes = elemSize,
+				.bufferUsage        = eBufferUsage_Storage,
+			});
+	};
+	m_pVoxelChunksFallback          = MakeFallback("SurfaceResolvePass::VoxelChunksFallback", sizeof(VoxelChunk));
+	m_pVoxelVertexFallback          = MakeFallback("SurfaceResolvePass::VoxelVertexFallback", sizeof(::Vertex));
+	m_pVoxelMeshletFallback         = MakeFallback("SurfaceResolvePass::VoxelMeshletFallback", sizeof(Meshlet));
+	m_pVoxelMeshletVertexFallback   = MakeFallback("SurfaceResolvePass::VoxelMeshletVertexFallback", sizeof(u32));
+	m_pVoxelMeshletTriangleFallback = MakeFallback("SurfaceResolvePass::VoxelMeshletTriangleFallback", sizeof(u32));
 }
 
 void SurfaceResolveNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)
@@ -70,6 +86,24 @@ void SurfaceResolveNode::Apply(render::CommandContext& context, const SceneRende
 	context.StageDescriptor("g_VBuf1", pVBuf1, g_FrameData.pPointClampNearest);
 	context.StageDescriptor("g_CoreNormal", m_pCoreNormal);
 	context.StageDescriptor("g_CoreMaterial", m_pCoreMaterial);
+
+	auto pVoxChunks   = g_FrameData.pVoxelChunks.lock();
+	auto pVoxVerts    = g_FrameData.pVoxelVertices.lock();
+	auto pVoxMeshlets = g_FrameData.pVoxelMeshlets.lock();
+	auto pVoxMv       = g_FrameData.pVoxelMeshletVertices.lock();
+	auto pVoxMt       = g_FrameData.pVoxelMeshletTriangles.lock();
+
+	if (pVoxChunks)   context.TransitionBufferToRead(pVoxChunks,   ePipelineStage::ComputeShader);
+	if (pVoxVerts)    context.TransitionBufferToRead(pVoxVerts,    ePipelineStage::ComputeShader);
+	if (pVoxMeshlets) context.TransitionBufferToRead(pVoxMeshlets, ePipelineStage::ComputeShader);
+	if (pVoxMv)       context.TransitionBufferToRead(pVoxMv,       ePipelineStage::ComputeShader);
+	if (pVoxMt)       context.TransitionBufferToRead(pVoxMt,       ePipelineStage::ComputeShader);
+
+	context.StageDescriptor("g_VoxelChunks",           pVoxChunks   ? pVoxChunks   : m_pVoxelChunksFallback);
+	context.StageDescriptor("g_VoxelVertices",         pVoxVerts    ? pVoxVerts    : m_pVoxelVertexFallback);
+	context.StageDescriptor("g_VoxelMeshlets",         pVoxMeshlets ? pVoxMeshlets : m_pVoxelMeshletFallback);
+	context.StageDescriptor("g_VoxelMeshletVertices",  pVoxMv       ? pVoxMv       : m_pVoxelMeshletVertexFallback);
+	context.StageDescriptor("g_VoxelMeshletTriangles", pVoxMt       ? pVoxMt       : m_pVoxelMeshletTriangleFallback);
 
 	context.Dispatch2D< 16, 16 >(m_pCoreNormal->Width(), m_pCoreNormal->Height());
 

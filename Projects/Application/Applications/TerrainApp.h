@@ -17,12 +17,8 @@ private:
 
 	void ConfigureRenderGraph();
 	void ConfigureSceneObjects();
-	void RebuildVoxelTerrain();
 
 	baamboo::CameraController_FirstPerson m_CameraController;
 
 	baamboo::Entity m_VoxelTerrainRootEntity;
-	baamboo::Entity m_VoxelTerrainChunkEntity;
-
-	bool m_bVoxelMeshVisible = true;
 };

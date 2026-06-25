@@ -40,4 +40,12 @@ uint VisFlags(uint v0)        { return (v0 >> 27) & 0x7u; }
 uint VisMeshletIndex(uint v1) { return v1 >> 7; }
 uint VisTriLocal(uint v1)     { return v1 & 0x7Fu; }
 
+#define VISID_VOXEL_BIT VISID_TERRAIN_BIT
+uint PackVisID0Voxel(uint chunkIndex)
+{
+    return VISID_VALID_BIT | VISID_VOXEL_BIT | (chunkIndex & 0x00FFFFFFu);
+}
+bool VisIsVoxel(uint v0)    { return (v0 & VISID_VALID_BIT) != 0u && (v0 & VISID_VOXEL_BIT) != 0u; }
+uint VisChunkIndex(uint v0) { return v0 & 0x00FFFFFFu; }
+
 #endif // VISIBILITY_BUFFER_HG

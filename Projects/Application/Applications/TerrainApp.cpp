@@ -8,6 +8,7 @@
 #include "BaambooScene/Components.h"
 #include "BaambooScene/RenderNodes/GBufferNode.h"
 #include "BaambooScene/RenderNodes/CullingNode.h"
+#include "BaambooScene/RenderNodes/VoxelChunkRenderNode.h"
 #include "BaambooScene/RenderNodes/SkyboxNode.h"
 #include "BaambooScene/RenderNodes/LightingNode.h"
 #include "BaambooScene/RenderNodes/SurfaceResolveNode.h"
@@ -30,8 +31,6 @@ namespace
 {
 
 constexpr const char* kVoxelTerrainRootTag = "VoxelTerrainRoot";
-constexpr const char* kVoxelTerrainChunkTag = "VoxelTerrainChunk";
-constexpr const char* kVoxelTerrainGeneratedPath = "$generated/VoxelTerrainChunk";
 
 } // namespace
 
@@ -181,7 +180,6 @@ void TerrainApp::DrawUI()
 		else
 		{
 			auto& terrain = m_VoxelTerrainRootEntity.GetComponent< VoxelTerrainComponent >();
-			bool bRefreshMesh = false;
 			bool bRebuildChunk = false;
 
 			if (ImGui::BeginCombo("Field Preset", GetVoxelTerrainFieldPresetName(terrain.fieldPreset)))
@@ -251,7 +249,6 @@ void TerrainApp::DrawUI()
 				break;
 			}
 
-			bRefreshMesh |= ImGui::Checkbox("Shaded Mesh", &m_bVoxelMeshVisible);
 			ImGui::DragFloat("FD Epsilon Mult", &terrain.settings.normalEpsilonMultiplier, 0.01f, 0.01f, 4.0f, "%.2f");
 			if (ImGui::IsItemDeactivatedAfterEdit())
 				bRebuildChunk = true;
@@ -262,15 +259,7 @@ void TerrainApp::DrawUI()
 				bRebuildChunk = true;
 
 			if (bRebuildChunk)
-			{
-				RebuildVoxelTerrain();
-				bRefreshMesh = false;
-			}
-			if (bRefreshMesh)
-			{
-				if (VoxelTerrainSystem* voxelSystem = m_pScene ? m_pScene->GetVoxelTerrainSystem() : nullptr)
-					voxelSystem->SetMeshVisible(m_bVoxelMeshVisible);
-			}
+				m_pScene->Registry().patch< VoxelTerrainComponent >(m_VoxelTerrainRootEntity.ID(), [](auto&) {});
 
 			ImGui::Separator();
 			ImGui::Text("Chunk Size      %.1f m", terrain.settings.chunkWorldSizeMeter);
@@ -363,8 +352,10 @@ void TerrainApp::ConfigureRenderGraph()
 	{
 		auto pGBufferNode = MakeArc< GBufferNode >(device);
 		auto pCullingNode = MakeArc< CullingNode >(device);
+		auto pVoxelNode   = MakeArc< VoxelChunkRenderNode >(device);
 
 		pCullingNode->SetGBufferNode(pGBufferNode);
+		pCullingNode->SetVoxelNode(pVoxelNode);
 
 		m_pScene->AddRenderNode(pCullingNode);
 	}
@@ -385,24 +376,6 @@ void TerrainApp::ConfigureSceneObjects()
 		transform.transform.scale = float3(1.0f);
 		transform.transform.Update();
 		m_pScene->Registry().patch< TransformComponent >(m_VoxelTerrainRootEntity.ID(), [](auto&) {});
-	}
-
-	m_VoxelTerrainChunkEntity = m_pScene->CreateEntity(kVoxelTerrainChunkTag);
-	m_VoxelTerrainRootEntity.AttachChild(m_VoxelTerrainChunkEntity.ID());
-	{
-		auto& chunkComponent = m_VoxelTerrainChunkEntity.AttachComponent< VoxelTerrainChunkComponent >();
-		chunkComponent.root = m_VoxelTerrainRootEntity.ID();
-
-		auto& mesh = m_VoxelTerrainChunkEntity.AttachComponent< StaticMeshComponent >();
-		mesh.tag = kVoxelTerrainChunkTag;
-		mesh.path = kVoxelTerrainGeneratedPath;
-		mesh.maxLOD = 0u;
-
-		auto& material = m_VoxelTerrainChunkEntity.AttachComponent< MaterialComponent >();
-		material.name = "Voxel Terrain Reference";
-		material.tint = float4(0.74f, 0.82f, 0.92f, 1.0f);
-		material.roughness = 0.72f;
-		material.metallic = 0.0f;
 	}
 
 	{
@@ -426,18 +399,4 @@ void TerrainApp::ConfigureSceneObjects()
 		pp.tonemap.ev100 = 0.0f;
 		pp.tonemap.gamma = 2.2f;
 	}
-
-	RebuildVoxelTerrain();
-}
-
-void TerrainApp::RebuildVoxelTerrain()
-{
-	if (!m_pScene || !m_VoxelTerrainRootEntity.IsValid())
-		return;
-
-	VoxelTerrainSystem* voxelSystem = m_pScene->GetVoxelTerrainSystem();
-	if (!voxelSystem)
-		return;
-
-	voxelSystem->Rebuild(m_VoxelTerrainRootEntity.ID());
 }

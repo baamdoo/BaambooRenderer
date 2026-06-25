@@ -91,6 +91,11 @@ public:
     virtual void TransitionBarrier(const Arc< Texture >& pTexture, eTextureLayout newState, u32 subresource = ALL_SUBRESOURCES, bool flushImmediate = false) = 0;
     virtual void UAVBarrier(const Arc< Buffer >& pBuffer, bool bFlushImmediate = false) = 0;
 
+    virtual void TransitionBufferToIndirectArgs(const Arc< Buffer >& pBuffer, u64 offsetInBytes = 0, bool bFlushImmediate = true)
+    {
+        TransitionBufferToRead(pBuffer, ePipelineStage::DrawIndirect, offsetInBytes, bFlushImmediate);
+    }
+
     // === Render Target ===
     virtual void BeginRenderPass(Arc< RenderTarget > renderTarget) = 0;
     virtual void EndRenderPass() = 0;

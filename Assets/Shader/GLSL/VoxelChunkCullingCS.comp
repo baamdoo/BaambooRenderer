@@ -1,0 +1,76 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#define _CULL
+#include "DescriptorCommon.hg"
+
+#define VOXEL_CULL_PHASE1 0u
+
+layout(set = 1, binding = 0) readonly buffer VoxelChunkBuffer
+{
+    VoxelChunk g_VoxelChunks[];
+};
+
+layout(set = 1, binding = 1) buffer IndirectCommandBuffer
+{
+    IndirectCommandData g_IndirectCommands[];
+};
+
+layout(set = 1, binding = 2) buffer DrawCountBuffer
+{
+    uint g_DrawCount;
+};
+
+layout(push_constant) uniform PushConstants
+{
+    uint g_NumChunks;
+    uint g_CullingPhase;
+} g_Push;
+
+
+bool IsAABBOutside(vec4 frustum[6], vec3 aabbMin, vec3 aabbMax)
+{
+    for (int i = 0; i < 5; ++i)
+    {
+        vec4 pl = frustum[i];
+        vec3 pV = vec3(
+            pl.x >= 0.0 ? aabbMax.x : aabbMin.x,
+            pl.y >= 0.0 ? aabbMax.y : aabbMin.y,
+            pl.z >= 0.0 ? aabbMax.z : aabbMin.z);
+
+        if (dot(pl.xyz, pV) + pl.w < 0.0)
+            return true;
+    }
+
+    return false;
+}
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+    uint chunkID = gl_GlobalInvocationID.x;
+    if (chunkID >= g_Push.g_NumChunks)
+        return;
+
+    // Only Phase 1 emits; Phase 2's cleared draw count keeps the second pass empty.
+    if (g_Push.g_CullingPhase != VOXEL_CULL_PHASE1)
+        return;
+
+    VoxelChunk chunk = g_VoxelChunks[chunkID];
+
+    // Empty chunks (all-air / all-solid) carry no meshlets — never emit a draw.
+    if (chunk.meshletCount == 0u)
+        return;
+
+    vec3 aabbMin = vec3(chunk.aabbMinX, chunk.aabbMinY, chunk.aabbMinZ);
+    vec3 aabbMax = vec3(chunk.aabbMaxX, chunk.aabbMaxY, chunk.aabbMaxZ);
+    if (IsAABBOutside(g_CullData.frustum, aabbMin, aabbMax))
+        return;
+
+    uint outID = atomicAdd(g_DrawCount, 1u);
+
+    g_IndirectCommands[outID].drawID      = chunkID;
+    g_IndirectCommands[outID].groupCountX = chunk.meshletCount;
+    g_IndirectCommands[outID].groupCountY = 1u;
+    g_IndirectCommands[outID].groupCountZ = 1u;
+}

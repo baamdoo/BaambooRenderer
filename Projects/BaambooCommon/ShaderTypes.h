@@ -45,6 +45,7 @@ struct IndirectCommandData
     u32 groupCountZ;
 };
 
+
 struct TransformData
 {
     mat4 mLocalToWorld;
@@ -360,4 +361,38 @@ struct CloudShadowData
 };
 
 
-// (Terrain heightmap params removed 2026-06-23 — voxel/SDF terrain rewrite.)
+// =========================================================================
+// Voxel Chunk
+// =========================================================================
+struct VoxelChunk
+{
+    float3 originWS;
+    float  voxelSizeMeter;
+
+    float3 aabbMin;
+    u32    lodDepth;
+
+    float3 aabbMax;
+    u32    transitionMask;
+
+    u32    vertexOffset;          // slab base into the voxel Vertex pool
+    u32    vertexCount;
+    u32    meshletOffset;         // slab base into the voxel Meshlet pool
+    u32    meshletCount;
+
+    u32    meshletVertexOffset;   // slab base into the voxel MeshletVertices pool
+    u32    meshletTriangleOffset; // slab base into the voxel MeshletTriangles pool
+    u32    slabId;
+    u32    padding0;
+
+    u32    terrainInstanceLo;
+    u32    terrainInstanceHi;
+    i32    chunkCoordX;
+    i32    chunkCoordY;
+
+    i32    chunkCoordZ;
+    u32    lod;
+    u32    fieldRevision;
+    u32    extractionRevision;
+};
+static_assert(sizeof(VoxelChunk) == 112);

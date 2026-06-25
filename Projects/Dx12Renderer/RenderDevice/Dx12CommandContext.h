@@ -31,6 +31,7 @@ public:
 	virtual void TransitionBufferToWrite(const Arc< render::Buffer >& pBuffer, render::ePipelineStage dstStage, u64 offsetInBytes = 0, bool bFlushImmediate = false) override;
 	virtual void TransitionBarrier(const Arc< render::Texture >& pTexture, render::eTextureLayout newState, u32 subresource = ALL_SUBRESOURCES, bool bFlushImmediate = false) override;
 	virtual void UAVBarrier(const Arc< render::Buffer >& pBuffer, bool bFlushImmediate) override;
+	virtual void TransitionBufferToIndirectArgs(const Arc< render::Buffer >& pBuffer, u64 offsetInBytes = 0, bool bFlushImmediate = true) override;
 
 	void TransitionBarrier(Dx12Resource* pResource, const struct BarrierState& stateAfter, u32 subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, bool bFlushImmediate = true);
 	void AliasingBarrier(Dx12Resource* pResourceBefore, Dx12Resource* pResourceAfter, bool bFlushImmediate = false);

@@ -20,6 +20,54 @@ layout(set = 1, binding = 2) uniform usampler2D g_VBuf1;
 layout(set = 1, binding = 3, rg16_snorm) writeonly uniform image2D g_CoreNormal;
 layout(set = 1, binding = 4, rgba8) writeonly uniform image2D g_CoreMaterial;
 
+layout(set = 1, binding = 5) readonly buffer VoxelChunkBuffer          { VoxelChunk g_VoxelChunks[]; };
+layout(set = 1, binding = 6) readonly buffer VoxelVertexBuffer         { Vertex        g_VoxelVertices[]; };
+layout(set = 1, binding = 7) readonly buffer VoxelMeshletBuffer        { Meshlet       g_VoxelMeshlets[]; };
+layout(set = 1, binding = 8) readonly buffer VoxelMeshletVertexBuffer  { uint          g_VoxelMeshletVertices[]; };
+layout(set = 1, binding = 9) readonly buffer VoxelMeshletTriangleBuffer{ uint          g_VoxelMeshletTriangles[]; };
+
+
+ResolvedSurface ResolveVoxelSurface(uint v0, uint v1, vec2 pixelCenter, vec2 viewport)
+{
+    uint chunkID         = VisChunkIndex(v0);
+    uint localMeshletIdx = VisMeshletIndex(v1);
+    uint triLocal        = VisTriLocal(v1);
+
+    VoxelChunk chunk   = g_VoxelChunks[chunkID];
+    Meshlet       meshlet = g_VoxelMeshlets[chunk.meshletOffset + localMeshletIdx];
+
+    uint tPacked3  = g_VoxelMeshletTriangles[chunk.meshletTriangleOffset + meshlet.triangleOffset + triLocal];
+    uint locals[3] = uint[3](tPacked3 & 0xFFu, (tPacked3 >> 8) & 0xFFu, (tPacked3 >> 16) & 0xFFu);
+
+    vec3 originWS = vec3(chunk.originX, chunk.originY, chunk.originZ);
+
+    vec3 posWS[3];
+    vec3 nrm[3];
+    for (uint k = 0u; k < 3u; ++k)
+    {
+        uint vi   = chunk.vertexOffset + g_VoxelMeshletVertices[chunk.meshletVertexOffset + meshlet.vertexOffset + locals[k]];
+        Vertex vv = g_VoxelVertices[vi];
+        posWS[k]  = originWS + vec3(vv.posX, vv.posY, vv.posZ);
+        nrm[k]    = vec3(vv.normalX, vv.normalY, vv.normalZ);
+    }
+
+    vec4 c[3];
+    for (uint k = 0u; k < 3u; ++k)
+        c[k] = g_Camera.mViewProj * vec4(posWS[k], 1.0);
+
+    vec2 ndc  = (pixelCenter / viewport) * 2.0 - 1.0; // Vulkan: no y flip (mProj[1][1] already negated)
+    vec3 bary = Barycentrics(ndc, c[0], c[1], c[2]);
+    vec3 N    = normalize(bary.x * nrm[0] + bary.y * nrm[1] + bary.z * nrm[2]);
+
+    ResolvedSurface s;
+    s.matClass  = MATCLASS_STANDARD;
+    s.N         = N;
+    s.roughness = 0.9;
+    s.baseColor = vec3(0.5);
+    s.metallic  = 0.0;
+    return s;
+}
+
 
 layout(local_size_x = 16, local_size_y = 16) in;
 void main()
@@ -40,7 +88,12 @@ void main()
 
     uint v1 = texelFetch(g_VBuf1, px, 0).r;
     vec2 pixelCenter = vec2(px) + 0.5;
-    ResolvedSurface s = ResolveMeshSurface(v0, v1, pixelCenter, g_Push.viewport);
+
+    ResolvedSurface s;
+    if (VisIsVoxel(v0))
+        s = ResolveVoxelSurface(v0, v1, pixelCenter, g_Push.viewport);
+    else
+        s = ResolveMeshSurface(v0, v1, pixelCenter, g_Push.viewport);
 
     imageStore(g_CoreNormal,   px, vec4(OctEncode(s.N), 0.0, 0.0));
     imageStore(g_CoreMaterial, px, vec4(s.roughness, float(s.matClass) / 255.0, 0.0, 0.0));

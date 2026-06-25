@@ -172,7 +172,7 @@ void CullingNode::DispatchMeshCull(render::CommandContext& context, u32 numInsta
 	context.Dispatch1D< 64 >(numInstances);
 
 	context.TransitionBufferToRead(m_CulledIndirectCommandBuffer, ePipelineStage::DrawIndirect);
-	context.TransitionBufferToRead(m_DrawCountBuffer, ePipelineStage::DrawIndirect);
+	context.TransitionBufferToIndirectArgs(m_DrawCountBuffer, 0, false);
 	context.TransitionBufferToRead(m_DrawIndexBuffer, ePipelineStage::TaskShader, 0, true);
 }
 
@@ -327,6 +327,8 @@ void CullingNode::Apply(render::CommandContext& context, const SceneRenderView& 
 	{
 		BAAMBOO_PROFILE_SCOPE(context, "Phase1Cull");
 		DispatchMeshCull(context, numInstances, kPhase1Cull);
+		if (m_pVoxelNode)
+			m_pVoxelNode->DispatchChunkCull(context, kPhase1Cull, m_pHiZTexture, renderView);
 
 		context.CopyBufferRegion(m_Phase1CountReadback, m_DrawCountBuffer, sizeof(u32), m_ReadbackIdx * sizeof(u32), 0);
 		context.TransitionBufferToRead(m_DrawCountBuffer, ePipelineStage::DrawIndirect, 0, true);
@@ -335,6 +337,8 @@ void CullingNode::Apply(render::CommandContext& context, const SceneRenderView& 
 		BAAMBOO_PROFILE_SCOPE_STATS(context, "Phase1Draw");
 		if (m_pGBufferNode)
 			m_pGBufferNode->DrawGBufferPhase1(context, MakeMeshCullOutputs(numInstances, kPhase1Cull));
+		if (m_pVoxelNode && m_pGBufferNode)
+			m_pVoxelNode->DrawChunksPhase1(context, m_pGBufferNode->GetPhase2RenderTarget(), renderView);
 
 #if PROFILING_LEVEL >= 1
 		const u32 statsBytes = kMeshletStatsFields * sizeof(u32);
@@ -356,6 +360,8 @@ void CullingNode::Apply(render::CommandContext& context, const SceneRenderView& 
 	{
 		BAAMBOO_PROFILE_SCOPE(context, "Phase2Cull");
 		DispatchMeshCull(context, numInstances, kPhase2Cull);
+		if (m_pVoxelNode)
+			m_pVoxelNode->DispatchChunkCull(context, kPhase2Cull, m_pHiZTexture, renderView);
 
 		context.CopyBufferRegion(m_Phase2CountReadback, m_DrawCountBuffer, sizeof(u32), m_ReadbackIdx * sizeof(u32), 0);
 		context.TransitionBufferToRead(m_DrawCountBuffer, ePipelineStage::DrawIndirect, 0, true);
@@ -364,6 +370,8 @@ void CullingNode::Apply(render::CommandContext& context, const SceneRenderView& 
 		BAAMBOO_PROFILE_SCOPE_STATS(context, "Phase2Draw");
 		if (m_pGBufferNode)
 			m_pGBufferNode->DrawGBufferPhase2(context, MakeMeshCullOutputs(numInstances, kPhase2Cull));
+		if (m_pVoxelNode && m_pGBufferNode)
+			m_pVoxelNode->DrawChunksPhase2(context, m_pGBufferNode->GetPhase2RenderTarget(), renderView);
 
 #if PROFILING_LEVEL >= 1
 		const u32 statsBytes = kMeshletStatsFields * sizeof(u32);
@@ -386,6 +394,8 @@ void CullingNode::Resize(u32 width, u32 height, u32 depth)
 	}
 	if (m_pGBufferNode)
 		m_pGBufferNode->Resize(width, height, depth);
+	if (m_pVoxelNode)
+		m_pVoxelNode->Resize(width, height, depth);
 }
 
 

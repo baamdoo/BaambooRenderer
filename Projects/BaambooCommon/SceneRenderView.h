@@ -5,6 +5,7 @@
 #include "RenderCommon/RenderNode.h"
 
 #include <mutex>
+#include <functional>
 
 enum eComponentType
 {
@@ -191,6 +192,27 @@ struct PostProcessRenderView
 	} tonemap;
 };
 
+struct VoxelTerrainRenderView
+{
+	bool   bValid   = false;
+	u32    revision = 0u;
+
+	u64  terrainInstance    = 0u;
+	int3 chunkCoord         = int3(0);
+	u32  lod                = 0u;
+	u32  fieldRevision      = 0u;
+	u32  extractionRevision = 0u;
+
+	float3 originWorld             = float3(0.0f);
+	float  chunkWorldSizeMeter     = 64.0f;
+	float  voxelSizeMeter          = 1.0f;
+	u32    cellsPerAxis            = 32u;
+	u32    samplesPerAxis          = 33u;
+	float  normalEpsilonMultiplier = 0.5f;
+
+	std::function< float(const float3&) > SDF;
+};
+
 struct DebugRenderView
 {
 	u64 id;
@@ -249,6 +271,8 @@ struct SceneRenderView
 	CloudRenderView       cloud;
 	PostProcessRenderView postProcess;
 	DebugRenderView       debug;
+
+	VoxelTerrainRenderView voxelTerrain;
 
 	bool             bFrozen = false;
 	CameraRenderView frozenCamera = {};

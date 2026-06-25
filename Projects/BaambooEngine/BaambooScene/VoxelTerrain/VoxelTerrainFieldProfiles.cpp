@@ -273,15 +273,15 @@ VoxelTerrainChunkDesc CreateVoxelTerrainChunkDesc(
         break;
     }
     case VoxelTerrainFieldPreset::AxisAlignedBox:
-        desc.SDF = [center = terrain.boxCenter,
+        desc.SDF = [center = chunkOriginWorld + terrain.boxCenter,
             halfExtent = terrain.boxHalfExtent](const float3& p)
             {
                 return SDF::AxisAlignedBox(p, center, halfExtent);
             };
         break;
     case VoxelTerrainFieldPreset::Capsule:
-        desc.SDF = [segmentA = terrain.capsuleSegmentA,
-            segmentB = terrain.capsuleSegmentB,
+        desc.SDF = [segmentA = chunkOriginWorld + terrain.capsuleSegmentA,
+            segmentB = chunkOriginWorld + terrain.capsuleSegmentB,
             radius = terrain.capsuleRadius](const float3& p)
             {
                 return SDF::Capsule(p, segmentA, segmentB, radius);
@@ -290,7 +290,7 @@ VoxelTerrainChunkDesc CreateVoxelTerrainChunkDesc(
     case VoxelTerrainFieldPreset::UniformTransformedBox:
     {
         const quat rotation = MakeEulerYXZRotation(terrain.transformBoxEulerDegrees);
-        desc.SDF = [center = terrain.transformBoxCenter,
+        desc.SDF = [center = chunkOriginWorld + terrain.transformBoxCenter,
             rotation,
             uniformScale = terrain.transformUniformScale,
             halfExtent = terrain.transformBoxHalfExtent](const float3& p)
@@ -302,7 +302,7 @@ VoxelTerrainChunkDesc CreateVoxelTerrainChunkDesc(
     case VoxelTerrainFieldPreset::NonUniformDistanceLikeBox:
     {
         const quat rotation = MakeEulerYXZRotation(terrain.transformBoxEulerDegrees);
-        desc.SDF = [center = terrain.transformBoxCenter,
+        desc.SDF = [center = chunkOriginWorld + terrain.transformBoxCenter,
             rotation,
             nonUniformScale = terrain.transformNonUniformScale,
             halfExtent = terrain.transformBoxHalfExtent](const float3& p)

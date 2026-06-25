@@ -103,6 +103,42 @@ struct IndirectCommandData
     uint groupCountZ;
 };
 
+
+//-------------------------------------------------------------------------
+// Voxel terrain chunk
+//-------------------------------------------------------------------------
+struct VoxelChunk
+{
+    float originX, originY, originZ;
+    float voxelSizeMeter;
+
+    float aabbMinX, aabbMinY, aabbMinZ;
+    uint  lodDepth;
+
+    float aabbMaxX, aabbMaxY, aabbMaxZ;
+    uint  transitionMask;
+
+    uint vertexOffset;
+    uint vertexCount;
+    uint meshletOffset;
+    uint meshletCount;
+
+    uint meshletVertexOffset;
+    uint meshletTriangleOffset;
+    uint slabId;
+    uint padding0;
+
+    uint terrainInstanceLo;
+    uint terrainInstanceHi;
+    int  chunkCoordX;
+    int  chunkCoordY;
+
+    int  chunkCoordZ;
+    uint lod;
+    uint fieldRevision;
+    uint extractionRevision;
+};
+
 #ifdef _HLSL
 struct CullData
 {
