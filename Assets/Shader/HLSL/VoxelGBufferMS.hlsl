@@ -47,12 +47,12 @@ void main(
     uint ti                = GTid.x;
 
     StructuredBuffer< VoxelChunk > Chunks   = GetResource(g_VoxelChunks.index);
-    StructuredBuffer< Meshlet >       Meshlets = GetResource(g_VoxelMeshlets.index);
+    StructuredBuffer< Meshlet >    Meshlets = GetResource(g_VoxelMeshlets.index);
 
     if (ti == 0)
     {
         VoxelChunk chunk   = Chunks[g_DrawID];
-        Meshlet       meshlet = Meshlets[chunk.meshletOffset + localMeshletIndex];
+        Meshlet    meshlet = Meshlets[chunk.meshletOffset + localMeshletIndex];
 
         sh_OriginWS       = float3(chunk.originX, chunk.originY, chunk.originZ);
         sh_VertexSlabBase = chunk.vertexOffset;

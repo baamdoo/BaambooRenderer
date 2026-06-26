@@ -203,14 +203,13 @@ struct VoxelTerrainRenderView
 	u32  fieldRevision      = 0u;
 	u32  extractionRevision = 0u;
 
-	float3 originWorld             = float3(0.0f);
-	float  chunkWorldSizeMeter     = 64.0f;
-	float  voxelSizeMeter          = 1.0f;
-	u32    cellsPerAxis            = 32u;
-	u32    samplesPerAxis          = 33u;
-	float  normalEpsilonMultiplier = 0.5f;
+	float3 originWorld         = float3(0.0f);
+	float  chunkWorldSizeMeter = 64.0f;
+	float  voxelSizeMeter      = 1.0f;
+	u32    cellsPerAxis        = 32u;
+	u32    samplesPerAxis      = 33u;
 
-	std::function< float(const float3&) > SDF;
+	VoxelTerrainGenParams genParams = {};
 };
 
 struct DebugRenderView

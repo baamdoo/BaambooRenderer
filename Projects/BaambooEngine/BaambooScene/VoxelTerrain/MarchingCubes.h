@@ -1,24 +1,17 @@
 #pragma once
-#include "SDFSampleGrid.h"
-#include "TerrainMeshData.h"
-#include "VoxelTerrainTypes.h"
+#include "Primitives.h"
 
 namespace baamboo
 {
 
-struct MarchingCubesBuildParams
-{
-    bool bEstimateNormals = false;
-    float normalEpsilonMultiplier = 0.5f;
-};
-
+// GPU marching-cubes lookup table (256x16 triangle-edge table)
 class MarchingCubes
 {
 public:
-    static TerrainMeshData BuildMesh(
-        const SDFSampleGrid&         sampleGrid,
-        const VoxelTerrainChunkDesc& chunkDesc,
-        const MarchingCubesBuildParams& params = MarchingCubesBuildParams());
+    static u32 TriangleCountForCubeIndex(u32 cubeIndex);
+
+    static constexpr u32 kFlatTriangleTableSize = 256u * 16u;
+    static void FillFlatTriangleTable(i32* out4096);
 };
 
 } // namespace baamboo

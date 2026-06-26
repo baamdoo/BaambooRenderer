@@ -240,11 +240,11 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
             frameData.bInitialized = false;
         }
     }
-    /*else if (m_FrameData[m_ContextIndex].bInitialized)
+    else if (m_FrameData[m_ContextIndex].bInitialized)
     {
         UpdateCameraAndEnvironment(sceneView, ctx);
         return;
-    }*/
+    }
 
     ResetFrameBuffers();
 

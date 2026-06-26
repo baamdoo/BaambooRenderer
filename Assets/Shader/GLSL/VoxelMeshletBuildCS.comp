@@ -1,0 +1,52 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "DescriptorCommon.hg"
+
+layout(push_constant) uniform MeshletBuildPushConstants
+{
+    uint g_ChunkID;
+    uint g_MeshletSlabBase;
+    uint g_TrianglesPerMeshlet;
+    uint g_MaxMeshlets;
+    uint g_MaxTriangles;
+} pc;
+
+layout(set = 1, binding = 0) buffer McCounterBuffer  { uint       g_MCCounter[]; };
+layout(set = 1, binding = 1) buffer OutMeshletBuffer { Meshlet    g_OutMeshlets[]; };
+layout(set = 1, binding = 2) buffer OutChunkBuffer   { VoxelChunk g_OutChunks[]; };
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+    uint m = gl_GlobalInvocationID.x;
+    if (m >= pc.g_MaxMeshlets)
+        return;
+
+    // clamp to slab capacity -- guards every downstream count against a runaway extract
+    uint totalTris   = min(g_MCCounter[0], pc.g_MaxTriangles);
+    uint K           = pc.g_TrianglesPerMeshlet;
+    uint numMeshlets = min((totalTris + K - 1u) / K, pc.g_MaxMeshlets);
+
+    if (m == 0u) // lane 0 publishes the GPU-driven counts to the chunk row
+    {
+        g_OutChunks[pc.g_ChunkID].vertexCount  = totalTris * 3u;
+        g_OutChunks[pc.g_ChunkID].meshletCount = numMeshlets;
+    }
+
+    if (m >= numMeshlets)
+        return;
+
+    uint triBase  = m * K;
+    uint triCount = min(K, totalTris - triBase);
+    uint o        = pc.g_MeshletSlabBase + m;
+
+    g_OutMeshlets[o].vertexOffset   = triBase * 3u; // 3 verts/triangle
+    g_OutMeshlets[o].triangleOffset = triBase;
+    g_OutMeshlets[o].vertexCount    = triCount * 3u;
+    g_OutMeshlets[o].triangleCount  = triCount;
+    g_OutMeshlets[o].centerX = 0.0; g_OutMeshlets[o].centerY = 0.0; g_OutMeshlets[o].centerZ = 0.0;
+    g_OutMeshlets[o].radius  = 0.0;
+    g_OutMeshlets[o].coneAxisX = 0.0; g_OutMeshlets[o].coneAxisY = 0.0; g_OutMeshlets[o].coneAxisZ = 0.0;
+    g_OutMeshlets[o].coneCutoff = 1.0;
+}

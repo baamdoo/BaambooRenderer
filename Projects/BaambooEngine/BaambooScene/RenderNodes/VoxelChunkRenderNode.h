@@ -1,7 +1,7 @@
 #pragma once
 #include "RenderCommon/RenderNode.h"
+#include "ShaderTypes.h"
 #include "BaambooScene/VoxelTerrain/VoxelTerrainTypes.h"
-#include "BaambooScene/VoxelTerrain/TerrainMeshData.h"
 
 struct VoxelTerrainRenderView;
 
@@ -15,11 +15,18 @@ using Super = render::RenderNode;
 public:
 	static constexpr u32 kMaxChunks        = 1024u;
 	static constexpr u32 kMaxResidentSlabs = 8u;
-	// Per-slab capacities — sized for a worst-case 32^3 oracle chunk + headroom.
-	static constexpr u32 kVertexSlabCapacity   = 98304u;  // verts / chunk
-	static constexpr u32 kMeshletVertexSlabCap = 131072u; // meshlet-local vertex indices
+	// Per-slab capacities -- sized for a worst-case 64^3 chunk + headroom.
+	static constexpr u32 kVertexSlabCapacity   = 294912u; // verts / chunk (= 98304 tris)
+	static constexpr u32 kMeshletVertexSlabCap = 393216u; // meshlet-local vertex indices
 	static constexpr u32 kMeshletTriSlabCap    = 131072u; // packed triangle words
-	static constexpr u32 kMeshletSlabCapacity  = 4096u;   // meshlets / chunk
+	static constexpr u32 kMeshletSlabCapacity  = 8192u;   // meshlets / chunk (ceil(98304/21)=4682)
+
+	static constexpr u32 kDensityApron     = kVoxelDensityApron;
+	static constexpr u32 kDensityVolumeDim = kDefaultVoxelSamplesPerAxis + 2u * kVoxelDensityApron; // 65 + 4 = 69
+
+	// Per-corner v1: 3 verts/triangle, K triangles/meshlet so 3*K <= VoxelGBufferMS maxvertices (64).
+	static constexpr u32 kTrianglesPerMeshlet  = 21u;                      // 3*21 = 63 <= 64
+	static constexpr u32 kMaxTrianglesPerChunk = kVertexSlabCapacity / 3u;
 
 	VoxelChunkRenderNode(render::RenderDevice& rd);
 	virtual ~VoxelChunkRenderNode() = default;
@@ -33,15 +40,18 @@ public:
 	void DrawChunksPhase2(render::CommandContext& context, Arc< render::RenderTarget > rt, const SceneRenderView& renderView);
 
 private:
-	bool SetOracleChunk(const VoxelTerrainChunkDesc& desc, const VoxelTerrainRenderView& terrainView);
-	bool EnsureUpload(render::CommandContext& context);
+	void CapturePending(const VoxelTerrainRenderView& terrainView); // pending metadata for the GPU build
+	bool EnsureChunkResident(render::CommandContext& context);      // GPU path: slab + static index arrays + row
 	u32  AllocateSlab();
 	void DiscardPending(u32 rejectedRevision);
 	void DrawChunksImpl(render::CommandContext& context, Arc< render::RenderTarget > rt, const SceneRenderView& renderView);
 	void PublishPools();
 
+	void DispatchDensity(render::CommandContext& context, const VoxelTerrainRenderView& terrainView);
+	void DispatchExtraction(render::CommandContext& context, const VoxelTerrainRenderView& terrainView);
+
 private:
-	// --- Persistent geometry pools (device-local storage; never per-frame reset) ---
+	// --- Persistent geometry pools (device-local; never per-frame reset) ---
 	Arc< render::Buffer > m_pVertexPool;
 	Arc< render::Buffer > m_pMeshletPool;
 	Arc< render::Buffer > m_pMeshletVertexPool;
@@ -56,8 +66,7 @@ private:
 	std::vector< u32 > m_FreeSlabs;
 	u32                m_SlabHighWater = 0u;
 
-	// --- Pending CPU upload ---
-	TerrainMeshData m_PendingMesh;
+	// --- Pending build (filled on revision change, consumed by EnsureChunkResident) ---
 	float3          m_PendingOriginWS     = float3(0.0f);
 	float           m_PendingVoxelSize    = 1.0f;
 	float           m_PendingChunkWorldSz = 64.0f;
@@ -69,15 +78,27 @@ private:
 	u32             m_PendingRevision           = kInvalidIndex;
 	bool            m_bHasPending              = false;
 
-	u32  m_NumChunks        = 0u;
-	u32  m_ChunkMeshletCount = 0u; // CPU-known meshlet count of the resident chunk (Phase 1 emit)
-	u32  m_ChunkSlabId      = kInvalidIndex; // reused across rebuilds (single chunk)
-	u32  m_BuiltRevision    = kInvalidIndex; // VoxelTerrainRenderView::revision last built (sentinel => first frame builds)
-	u32  m_RejectedRevision = kInvalidIndex;
+	u32  m_NumChunks         = 0u;
+	u32  m_ChunkSlabId       = kInvalidIndex; // reused across rebuilds (single chunk)
+	u32  m_BuiltRevision     = kInvalidIndex; // last built revision (sentinel => first frame builds)
+	u32  m_RejectedRevision  = kInvalidIndex;
 
 	// --- Pipelines ---
 	Box< render::ComputePipeline >  m_pChunkCullingPSO;
 	Box< render::GraphicsPipeline > m_pVoxelGBufferPSO;
+	Box< render::ComputePipeline >  m_pMCExtractPSO;
+	Box< render::ComputePipeline >  m_pMeshletBuildPSO;
+
+	// --- GPU density volume (R32, dim^3) ---
+	Arc< render::Texture >          m_pDensityVolume; // written by VoxelDensityCS; MC reads the linear copy below
+	Arc< render::Buffer >           m_pDensityField;  // linear density copy the MC extract samples
+	Box< render::ComputePipeline >  m_pDensityPSO;
+
+	// --- GPU marching-cubes extract + meshlet build ---
+	Arc< render::Buffer > m_pMCTriTable; // 256x16 MC triangle-edge table (SSBO, uploaded once)
+	Arc< render::Buffer > m_pMCCounter;  // [triangleCount, activeCellCount]
+	bool m_bTriTableUploaded   = false;  // tri-table SSBO uploaded (global, once)
+	bool m_bSlabStaticUploaded = false;  // identity/pattern index arrays uploaded (per slab)
 };
 
 

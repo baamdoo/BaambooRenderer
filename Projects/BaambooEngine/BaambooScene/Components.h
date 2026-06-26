@@ -117,22 +117,6 @@ struct VoxelTerrainComponent
 {
 	baamboo::VoxelTerrainSettings settings = {};
 	float3 terrainOriginWorld = float3(0.0f);
-
-	baamboo::VoxelTerrainFieldPreset fieldPreset = baamboo::VoxelTerrainFieldPreset::SphereRegression;
-	baamboo::VoxelTerrainFieldPreset builtFieldPreset = baamboo::VoxelTerrainFieldPreset::SphereRegression;
-
-	float3 boxCenter = float3(32.0f, 32.0f, 32.0f);
-	float3 boxHalfExtent = float3(15.0f, 11.0f, 17.0f);
-
-	float3 capsuleSegmentA = float3(18.0f, 24.0f, 18.0f);
-	float3 capsuleSegmentB = float3(46.0f, 40.0f, 46.0f);
-	float  capsuleRadius = 7.0f;
-
-	float3 transformBoxCenter = float3(32.0f, 32.0f, 32.0f);
-	float3 transformBoxHalfExtent = float3(8.0f, 6.0f, 10.0f);
-	float3 transformBoxEulerDegrees = float3(0.0f, 30.0f, 0.0f);
-	float  transformUniformScale = 1.5f;
-	float3 transformNonUniformScale = float3(1.6f, 0.75f, 1.25f);
 };
 
 //-------------------------------------------------------------------------

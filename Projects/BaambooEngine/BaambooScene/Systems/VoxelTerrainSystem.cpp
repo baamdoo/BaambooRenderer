@@ -1,17 +1,14 @@
 #include "BaambooPch.h"
 #include "VoxelTerrainSystem.h"
 
-#include "../VoxelTerrain/VoxelTerrainFieldProfiles.h"
+#include "../VoxelTerrain/VoxelTerrainTypes.h"
 
 namespace baamboo
 {
 
 void VoxelTerrainSystem::OnComponentUpdated(entt::registry& registry, entt::entity entity)
 {
-    auto& terrain = registry.get< VoxelTerrainComponent >(entity);
-
-    ++m_MeshRevision;
-    terrain.builtFieldPreset = terrain.fieldPreset;
+    ++m_MeshRevision; // voxel node rebuilds its chunk only when this changes
     Super::OnComponentUpdated(registry, entity);
 }
 
@@ -21,25 +18,30 @@ void VoxelTerrainSystem::CollectRenderData(SceneRenderView& outView) const
     for (auto entity : view)
     {
         const auto& terrain = view.get< VoxelTerrainComponent >(entity);
-
-        VoxelTerrainChunkDesc desc = CreateVoxelTerrainChunkDesc(terrain, terrain.terrainOriginWorld);
+        const VoxelTerrainSettings& s = terrain.settings;
 
         VoxelTerrainRenderView& vt = outView.voxelTerrain;
-        vt.bValid                  = true;
-        vt.revision                = m_MeshRevision;
-        vt.terrainInstance         = entt::to_integral(entity);
-        vt.chunkCoord              = int3(0);
-        vt.lod                     = 0u;
-        vt.fieldRevision           = m_MeshRevision;
-        vt.extractionRevision      = kExtractionRevision;
-        vt.originWorld             = desc.originWorld;
-        vt.chunkWorldSizeMeter     = desc.settings.chunkWorldSizeMeter;
-        vt.voxelSizeMeter          = desc.settings.voxelSizeMeter;
-        vt.cellsPerAxis            = desc.settings.cellsPerAxis;
-        vt.samplesPerAxis          = desc.settings.samplesPerAxis;
-        vt.normalEpsilonMultiplier = desc.settings.normalEpsilonMultiplier;
-        vt.SDF                     = std::move(desc.SDF);
-        break;
+        vt.bValid              = true;
+        vt.revision            = m_MeshRevision;
+        vt.terrainInstance     = entt::to_integral(entity);
+        vt.chunkCoord          = int3(0);
+        vt.lod                 = 0u;
+        vt.fieldRevision       = m_MeshRevision;
+        vt.extractionRevision  = kExtractionRevision;
+        vt.originWorld         = terrain.terrainOriginWorld;
+        vt.chunkWorldSizeMeter = s.chunkWorldSizeMeter;
+        vt.voxelSizeMeter      = s.voxelSizeMeter;
+        vt.cellsPerAxis        = s.cellsPerAxis;
+        vt.samplesPerAxis      = s.samplesPerAxis;
+
+        VoxelTerrainGenParams& gp = vt.genParams;
+        gp = {};
+        gp.chunkOriginWS  = terrain.terrainOriginWorld;
+        gp.voxelSizeMeter = s.voxelSizeMeter;
+        gp.cellsPerAxis   = s.cellsPerAxis;
+        gp.samplesPerAxis = s.samplesPerAxis;
+        gp.apron          = kVoxelDensityApron;
+        break; // single chunk; TODO:multi-chunk streaming
     }
 }
 

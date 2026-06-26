@@ -396,3 +396,48 @@ struct VoxelChunk
     u32    extractionRevision;
 };
 static_assert(sizeof(VoxelChunk) == 112);
+
+// =========================================================================
+// Voxel Terrain Generation Params
+// =========================================================================
+struct VoxelTerrainGenParams
+{
+    float3 chunkOriginWS;       // chunk origin (world)
+    float  voxelSizeMeter;
+
+    u32    cellsPerAxis;        // C
+    u32    samplesPerAxis;      // C+1 (oracle-aligned interior span)
+    u32    apron;               // A; volume dim = C+1+2A
+    u32    fieldMode;           // 0 = heightfield (exact, oracle-diffable), 1 = procedural
+
+    u32    heightShape;         // 0 = constant, 1 = plane, 2 = periodic
+    float  baseHeightMeter;
+    float  slopeX;
+    float  slopeZ;
+
+    float  anchorXMeter;
+    float  anchorZMeter;
+    float  amplitudeMeter;
+    float  wavelengthXMeter;
+
+    float  wavelengthZMeter;
+    u32    seed;
+    float  frequency;           // base mountain-noise frequency (cycles/m)
+    u32    octaves;
+
+    float  lacunarity;
+    float  gain;                // fBm persistence
+    float  warpStrength;        // domain-warp displacement (m)
+    float  warpFrequency;
+
+    float  mountainAmplitude;   // m
+    float  ridgeAmplitude;      // m
+    float  ridgeFrequency;
+    float  caveAmplitude;       // m
+
+    float  caveFrequency;
+    float  caveThreshold;       // carve where Worley F1 < threshold
+    float  hardFloorY;
+    float  hardFloorStrength;   // m
+};
+static_assert(sizeof(VoxelTerrainGenParams) == 128);

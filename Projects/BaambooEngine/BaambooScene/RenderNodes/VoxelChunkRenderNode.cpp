@@ -6,7 +6,7 @@
 #include "RenderCommon/CommandContext.h"
 
 #include "BaambooScene/Scene.h"
-#include "BaambooScene/VoxelTerrain/SDFChunk.h"
+#include "BaambooScene/VoxelTerrain/MarchingCubes.h"
 
 namespace baamboo
 {
@@ -17,6 +17,7 @@ VoxelChunkRenderNode::VoxelChunkRenderNode(render::RenderDevice& rd)
 {
 	using namespace render;
 
+	// Persistent geometry slabs (no index buffer; the mesh-shader path consumes meshlets).
 	m_pVertexPool = Buffer::Create(rd, "VoxelChunkPass::VertexPool",
 		{
 			.count              = kMaxResidentSlabs * kVertexSlabCapacity,
@@ -65,7 +66,6 @@ VoxelChunkRenderNode::VoxelChunkRenderNode(render::RenderDevice& rd)
 
 	m_FreeSlabs.reserve(kMaxResidentSlabs);
 
-	// --- Pipelines ---
 	auto pCullingCS = Shader::Create(rd, "VoxelChunkCullingCS",
 		{ .stage = eShaderStage::Compute, .filename = "VoxelChunkCullingCS" });
 	m_pChunkCullingPSO = ComputePipeline::Create(rd, "VoxelChunkCullingPSO");
@@ -80,34 +80,69 @@ VoxelChunkRenderNode::VoxelChunkRenderNode(render::RenderDevice& rd)
 		m_pVoxelGBufferPSO = GraphicsPipeline::Create(rd, "VoxelGBufferPSO");
 		m_pVoxelGBufferPSO->SetMeshShaders(pMS, pPS)
 			              .SetRenderTarget(pSharedRT)
-			              .SetCullMode(eCullMode::None) // closed iso-surface; winding handled by reversed-Z depth
+			              .SetCullMode(eCullMode::None)                            // closed iso-surface
 			              .SetDepthWriteEnable(true, eCompareOp::Greater).Build(); // reversed-Z
 	}
+
+	// Density volume + the linear copy the MC extract actually samples (texture is write-only for now).
+	const u32 kDensityVoxelCount = kDensityVolumeDim * kDensityVolumeDim * kDensityVolumeDim;
+	m_pDensityVolume = Texture::Create(rd, "VoxelChunkPass::DensityVolume",
+		{
+			.imageType  = eImageType::Texture3D,
+			.resolution = uint3(kDensityVolumeDim, kDensityVolumeDim, kDensityVolumeDim),
+			.format     = eFormat::R32_FLOAT,
+			.imageUsage = eTextureUsage_Storage | eTextureUsage_Sample,
+		});
+	m_pDensityField = Buffer::Create(rd, "VoxelChunkPass::DensityField",
+		{
+			.count              = kDensityVoxelCount,
+			.elementSizeInBytes = sizeof(float),
+			.bufferUsage        = eBufferUsage_Storage,
+		});
+
+	auto pDensityCS = Shader::Create(rd, "VoxelDensityCS",
+		{ .stage = eShaderStage::Compute, .filename = "VoxelDensityCS" });
+	m_pDensityPSO = ComputePipeline::Create(rd, "VoxelDensityPSO");
+	m_pDensityPSO->SetComputeShader(pDensityCS).Build();
+
+	m_pMCTriTable = Buffer::Create(rd, "VoxelChunkPass::MCTriTable",
+		{
+			.count              = MarchingCubes::kFlatTriangleTableSize,
+			.elementSizeInBytes = sizeof(i32),
+			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest,
+		});
+	m_pMCCounter = Buffer::Create(rd, "VoxelChunkPass::MCCounter",
+		{
+			.count              = 2, // [triangleCount, activeCellCount]
+			.elementSizeInBytes = sizeof(u32),
+			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest, // TransferDest: ClearBuffer uses vkCmdFillBuffer
+		});
+
+	auto pMCExtractCS = Shader::Create(rd, "VoxelMarchingCubesCS",
+		{ .stage = eShaderStage::Compute, .filename = "VoxelMarchingCubesCS" });
+	m_pMCExtractPSO = ComputePipeline::Create(rd, "VoxelMarchingCubesPSO");
+	m_pMCExtractPSO->SetComputeShader(pMCExtractCS).Build();
+
+	auto pMeshletBuildCS = Shader::Create(rd, "VoxelMeshletBuildCS",
+		{ .stage = eShaderStage::Compute, .filename = "VoxelMeshletBuildCS" });
+	m_pMeshletBuildPSO = ComputePipeline::Create(rd, "VoxelMeshletBuildPSO");
+	m_pMeshletBuildPSO->SetComputeShader(pMeshletBuildCS).Build();
 
 	PublishPools();
 }
 
-bool VoxelChunkRenderNode::SetOracleChunk(const VoxelTerrainChunkDesc& desc, const VoxelTerrainRenderView& terrainView)
+void VoxelChunkRenderNode::CapturePending(const VoxelTerrainRenderView& vt)
 {
-	SDFChunk chunk(desc);
-	if (!chunk.BuildSamples() || !chunk.BuildMesh())
-	{
-		fprintf(stderr, "[VoxelChunkRenderNode] oracle chunk generation failed.\n");
-		return false;
-	}
-
-	m_PendingMesh               = chunk.MeshData(); // copy (vertices/meshlets/...)
-	m_PendingOriginWS           = desc.originWorld;
-	m_PendingVoxelSize          = desc.settings.voxelSizeMeter;
-	m_PendingChunkWorldSz       = desc.settings.chunkWorldSizeMeter;
-	m_PendingTerrainInstance    = terrainView.terrainInstance;
-	m_PendingChunkCoord         = terrainView.chunkCoord;
-	m_PendingLOD                = terrainView.lod;
-	m_PendingFieldRevision      = terrainView.fieldRevision;
-	m_PendingExtractionRevision = terrainView.extractionRevision;
-	m_PendingRevision           = terrainView.revision;
+	m_PendingOriginWS           = vt.originWorld;
+	m_PendingVoxelSize          = vt.voxelSizeMeter;
+	m_PendingChunkWorldSz       = vt.chunkWorldSizeMeter;
+	m_PendingTerrainInstance    = vt.terrainInstance;
+	m_PendingChunkCoord         = vt.chunkCoord;
+	m_PendingLOD                = vt.lod;
+	m_PendingFieldRevision      = vt.fieldRevision;
+	m_PendingExtractionRevision = vt.extractionRevision;
+	m_PendingRevision           = vt.revision;
 	m_bHasPending               = true;
-	return true;
 }
 
 u32 VoxelChunkRenderNode::AllocateSlab()
@@ -121,39 +156,13 @@ u32 VoxelChunkRenderNode::AllocateSlab()
 	if (m_SlabHighWater < kMaxResidentSlabs)
 		return m_SlabHighWater++;
 
-	return kInvalidIndex; // pool exhausted (Phase 5 streaming will grow x2)
+	return kInvalidIndex; // pool exhausted (multi-chunk streaming will grow x2)
 }
 
-bool VoxelChunkRenderNode::EnsureUpload(render::CommandContext& context)
+bool VoxelChunkRenderNode::EnsureChunkResident(render::CommandContext& context)
 {
 	if (!m_bHasPending)
 		return true;
-
-	const u32 numV  = m_PendingMesh.NumVertices();
-	const u32 numML = m_PendingMesh.NumMeshlets();
-	const u32 numMV = static_cast< u32 >(m_PendingMesh.meshletVertices.size());
-	const u32 numMT = static_cast< u32 >(m_PendingMesh.meshletTriangles.size());
-
-	if (numV == 0u || numML == 0u)
-	{
-		m_NumChunks         = 0u; // empty chunk: valid payload with no draw work
-		m_ChunkMeshletCount = 0u;
-		m_BuiltRevision     = m_PendingRevision;
-		m_RejectedRevision  = kInvalidIndex;
-		m_bHasPending       = false;
-		return true;
-	}
-
-	if (numV > kVertexSlabCapacity || numMV > kMeshletVertexSlabCap || numMT > kMeshletTriSlabCap  || numML > kMeshletSlabCapacity)
-	{
-		fprintf(stderr,
-			"[VoxelChunkRenderNode] chunk exceeds slab capacity "
-			"(V %u/%u, MV %u/%u, MT %u/%u, ML %u/%u) — skipped; bump *SlabCapacity.\n",
-			numV, kVertexSlabCapacity, numMV, kMeshletVertexSlabCap,
-			numMT, kMeshletTriSlabCap, numML, kMeshletSlabCapacity);
-		DiscardPending(m_PendingRevision);
-		return false;
-	}
 
 	if (m_ChunkSlabId == kInvalidIndex)
 		m_ChunkSlabId = AllocateSlab();
@@ -169,11 +178,34 @@ bool VoxelChunkRenderNode::EnsureUpload(render::CommandContext& context)
 	const u32 mtBase = m_ChunkSlabId * kMeshletTriSlabCap;
 	const u32 mlBase = m_ChunkSlabId * kMeshletSlabCapacity;
 
-	context.UploadData(m_pVertexPool,          m_PendingMesh.vertices.data(),         numV,  sizeof(::Vertex),  (u64)vBase  * sizeof(::Vertex));
-	context.UploadData(m_pMeshletVertexPool,   m_PendingMesh.meshletVertices.data(),  numMV, sizeof(u32),     (u64)mvBase * sizeof(u32));
-	context.UploadData(m_pMeshletTrianglePool, m_PendingMesh.meshletTriangles.data(), numMT, sizeof(u32),     (u64)mtBase * sizeof(u32));
-	context.UploadData(m_pMeshletPool,         m_PendingMesh.meshlets.data(),         numML, sizeof(Meshlet), (u64)mlBase * sizeof(Meshlet));
+	if (!m_bTriTableUploaded)
+	{
+		std::vector< i32 > triTable(MarchingCubes::kFlatTriangleTableSize);
+		MarchingCubes::FillFlatTriangleTable(triTable.data());
+		context.UploadData(m_pMCTriTable, triTable.data(), MarchingCubes::kFlatTriangleTableSize, sizeof(i32), 0);
+		m_bTriTableUploaded = true;
+	}
 
+	// Per-corner meshlets are field-independent: vertices = identity, triangles = repeating {3t,3t+1,3t+2}. Upload once per slab.
+	if (!m_bSlabStaticUploaded)
+	{
+		std::vector< u32 > identityMV(kMeshletVertexSlabCap);
+		for (u32 i = 0u; i < kMeshletVertexSlabCap; ++i)
+			identityMV[i] = i;
+
+		std::vector< u32 > patternMT(kMeshletTriSlabCap);
+		for (u32 p = 0u; p < kMeshletTriSlabCap; ++p)
+		{
+			const u32 t = p % kTrianglesPerMeshlet;
+			patternMT[p] = ((3u * t + 2u) << 16) | ((3u * t + 1u) << 8) | (3u * t);
+		}
+
+		context.UploadData(m_pMeshletVertexPool,   identityMV.data(), kMeshletVertexSlabCap, sizeof(u32), (u64)mvBase * sizeof(u32));
+		context.UploadData(m_pMeshletTrianglePool, patternMT.data(),  kMeshletTriSlabCap,    sizeof(u32), (u64)mtBase * sizeof(u32));
+		m_bSlabStaticUploaded = true;
+	}
+
+	// vertexCount/meshletCount stay 0; VoxelMeshletBuildCS patches them after extraction.
 	VoxelChunk row = {};
 	row.originWS              = m_PendingOriginWS;
 	row.voxelSizeMeter        = m_PendingVoxelSize;
@@ -182,9 +214,9 @@ bool VoxelChunkRenderNode::EnsureUpload(render::CommandContext& context)
 	row.lodDepth              = m_PendingLOD;
 	row.transitionMask        = 0u;
 	row.vertexOffset          = vBase;
-	row.vertexCount           = numV;
+	row.vertexCount           = 0u;
 	row.meshletOffset         = mlBase;
-	row.meshletCount          = numML;
+	row.meshletCount          = 0u;
 	row.meshletVertexOffset   = mvBase;
 	row.meshletTriangleOffset = mtBase;
 	row.slabId                = m_ChunkSlabId;
@@ -199,11 +231,10 @@ bool VoxelChunkRenderNode::EnsureUpload(render::CommandContext& context)
 	row.extractionRevision   = m_PendingExtractionRevision;
 	context.UploadData(m_pChunkTableBuffer, &row, 1, sizeof(VoxelChunk), 0);
 
-	m_NumChunks         = 1u;
-	m_ChunkMeshletCount = numML;
-	m_BuiltRevision     = m_PendingRevision;
-	m_RejectedRevision  = kInvalidIndex;
-	m_bHasPending       = false;
+	m_NumChunks        = 1u;
+	m_BuiltRevision    = m_PendingRevision;
+	m_RejectedRevision = kInvalidIndex;
+	m_bHasPending      = false;
 	return true;
 }
 
@@ -214,6 +245,96 @@ void VoxelChunkRenderNode::DiscardPending(u32 rejectedRevision)
 	m_RejectedRevision = rejectedRevision;
 }
 
+void VoxelChunkRenderNode::DispatchDensity(render::CommandContext& context, const VoxelTerrainRenderView& vt)
+{
+	using namespace render;
+	if (!m_pDensityPSO || !m_pDensityVolume)
+		return;
+
+	const u32 dim = vt.genParams.samplesPerAxis + 2u * vt.genParams.apron; // C+1+2A
+	if (dim == 0u || dim > kDensityVolumeDim)
+	{
+		fprintf(stderr, "[VoxelDensity] dim %u exceeds volume %u -- density skipped.\n", dim, kDensityVolumeDim);
+		return;
+	}
+
+	context.SetRenderPipeline(m_pDensityPSO.get());
+
+	context.TransitionBarrier(m_pDensityVolume, eTextureLayout::General);
+	context.TransitionBufferToWrite(m_pDensityField, ePipelineStage::ComputeShader);
+
+	context.SetComputeDynamicUniformBuffer("g_VoxelGenParams", vt.genParams);
+	context.StageDescriptor("g_OutDensityTex",   m_pDensityVolume);
+	context.StageDescriptor("g_OutDensityDebug", m_pDensityField);
+
+	context.Dispatch3D< 4, 4, 4 >(dim, dim, dim);
+
+	context.TransitionBarrier(m_pDensityVolume, eTextureLayout::ShaderReadOnly);
+}
+
+void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, const VoxelTerrainRenderView& vt)
+{
+	using namespace render;
+	if (!m_pMCExtractPSO || !m_pMeshletBuildPSO || m_ChunkSlabId == kInvalidIndex)
+		return;
+
+	const u32 C      = vt.genParams.cellsPerAxis;
+	const u32 apron  = vt.genParams.apron;
+	const u32 vBase  = m_ChunkSlabId * kVertexSlabCapacity;
+	const u32 mlBase = m_ChunkSlabId * kMeshletSlabCapacity;
+	if (C == 0u)
+		return;
+
+	// Pass A: marching cubes -- each active cell atomic-appends its per-corner triangle vertices to the slab.
+	context.ClearBuffer(m_pMCCounter, 0u); // [triangleCount, activeCellCount]
+
+	context.TransitionBufferToRead(m_pMCTriTable, ePipelineStage::ComputeShader);
+	context.TransitionBufferToRead(m_pDensityField, ePipelineStage::ComputeShader);
+	context.TransitionBufferToWrite(m_pMCCounter, ePipelineStage::ComputeShader);
+	context.TransitionBufferToWrite(m_pVertexPool, ePipelineStage::ComputeShader);
+
+	context.SetRenderPipeline(m_pMCExtractPSO.get());
+	struct
+	{
+		u32   cellsPerAxis;
+		u32   apron;
+		float voxelSizeMeter;
+		u32   vertexSlabBase;
+		u32   maxTriangles;
+	} mc = { C, apron, vt.genParams.voxelSizeMeter, vBase, kMaxTrianglesPerChunk };
+	context.SetComputeConstants(sizeof(mc), &mc);
+	context.StageDescriptor("g_TriTable",     m_pMCTriTable);
+	context.StageDescriptor("g_DensityField", m_pDensityField);
+	context.StageDescriptor("g_MCCounter",    m_pMCCounter);
+	context.StageDescriptor("g_OutVertices",  m_pVertexPool);
+	context.Dispatch3D< 4, 4, 4 >(C, C, C);
+
+	context.UAVBarrier(m_pMCCounter, true); // extract -> meshlet build
+	context.UAVBarrier(m_pVertexPool);
+
+	// Pass B: pack sequential meshlets and patch vertexCount/meshletCount into the chunk row.
+	context.TransitionBufferToWrite(m_pMeshletPool, ePipelineStage::ComputeShader);
+	context.TransitionBufferToWrite(m_pChunkTableBuffer, ePipelineStage::ComputeShader);
+
+	context.SetRenderPipeline(m_pMeshletBuildPSO.get());
+	struct
+	{
+		u32 chunkID;
+		u32 meshletSlabBase;
+		u32 trianglesPerMeshlet;
+		u32 maxMeshlets;
+		u32 maxTriangles;
+	} mb = { 0u, mlBase, kTrianglesPerMeshlet, kMeshletSlabCapacity, kMaxTrianglesPerChunk };
+	context.SetComputeConstants(sizeof(mb), &mb);
+	context.StageDescriptor("g_MCCounter",   m_pMCCounter);
+	context.StageDescriptor("g_OutMeshlets", m_pMeshletPool);
+	context.StageDescriptor("g_OutChunks",   m_pChunkTableBuffer);
+	context.Dispatch1D< 64 >(kMeshletSlabCapacity);
+
+	context.UAVBarrier(m_pMeshletPool);
+	context.UAVBarrier(m_pChunkTableBuffer, true);
+}
+
 void VoxelChunkRenderNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)
 {
 	UNUSED(context);
@@ -222,7 +343,7 @@ void VoxelChunkRenderNode::Apply(render::CommandContext& context, const SceneRen
 
 void VoxelChunkRenderNode::DispatchChunkCull(render::CommandContext& context, u32 phase, const Arc< render::Texture >& pHiZTexture, const SceneRenderView& renderView)
 {
-	UNUSED(pHiZTexture); // HiZ occlusion deferred to Phase 5 (multi-chunk).
+	UNUSED(pHiZTexture); // HiZ occlusion deferred to a later (multi-chunk) phase
 	using namespace render;
 
 	const VoxelTerrainRenderView& vt = renderView.voxelTerrain;
@@ -231,26 +352,21 @@ void VoxelChunkRenderNode::DispatchChunkCull(render::CommandContext& context, u3
 		vt.revision != m_PendingRevision &&
 		vt.revision != m_RejectedRevision)
 	{
-		VoxelTerrainChunkDesc desc;
-		desc.originWorld                      = vt.originWorld;
-		desc.settings.chunkWorldSizeMeter     = vt.chunkWorldSizeMeter;
-		desc.settings.voxelSizeMeter          = vt.voxelSizeMeter;
-		desc.settings.cellsPerAxis            = vt.cellsPerAxis;
-		desc.settings.samplesPerAxis          = vt.samplesPerAxis;
-		desc.settings.normalEpsilonMultiplier = vt.normalEpsilonMultiplier;
-		desc.SDF                              = vt.SDF;
-		if (!SetOracleChunk(desc, vt))
-			DiscardPending(vt.revision);
+		// GPU build: density volume -> marching cubes -> vertex/meshlet pools + row count patch.
+		CapturePending(vt);
+		if (EnsureChunkResident(context))
+		{
+			DispatchDensity(context, vt);
+			DispatchExtraction(context, vt);
+		}
 	}
-
-	EnsureUpload(context);
 
 	if (phase != 0u /* CullingNode::kPhase1Cull */)
 		return;
 
 	context.ClearBuffer(m_pDrawCountBuffer, 0);
 
-	if (m_NumChunks == 0u || m_ChunkMeshletCount == 0u)
+	if (m_NumChunks == 0u) // no resident chunk -> the cull CS would emit no draws; skip it
 	{
 		context.TransitionBufferToRead(m_pDrawCountBuffer, ePipelineStage::DrawIndirect, 0, true);
 		return;
@@ -258,9 +374,9 @@ void VoxelChunkRenderNode::DispatchChunkCull(render::CommandContext& context, u3
 
 	context.SetRenderPipeline(m_pChunkCullingPSO.get());
 
-	context.TransitionBufferToWrite(m_pIndirectCommands, ePipelineStage::ComputeShader); // (c) producer side
-	context.TransitionBufferToWrite(m_pDrawCountBuffer, ePipelineStage::ComputeShader); // (b) clear -> cull write
-	context.TransitionBufferToRead(m_pChunkTableBuffer, ePipelineStage::ComputeShader); // (a) upload -> cull read
+	context.TransitionBufferToWrite(m_pIndirectCommands, ePipelineStage::ComputeShader);
+	context.TransitionBufferToWrite(m_pDrawCountBuffer, ePipelineStage::ComputeShader);
+	context.TransitionBufferToRead(m_pChunkTableBuffer, ePipelineStage::ComputeShader);
 
 	struct
 	{

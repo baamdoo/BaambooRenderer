@@ -1,0 +1,117 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "DescriptorCommon.hg"
+
+layout(push_constant) uniform McPushConstants
+{
+    uint  g_CellsPerAxis;
+    uint  g_Apron;
+    float g_VoxelSizeMeter;
+    uint  g_VertexSlabBase;
+    uint  g_MaxTriangles;
+} pc;
+
+layout(set = 1, binding = 0) readonly buffer DensityFieldBuffer { float  g_DensityField[]; };
+layout(set = 1, binding = 1)          buffer McCounterBuffer    { uint   g_MCCounter[]; };
+layout(set = 1, binding = 2)          buffer OutVertexBuffer    { Vertex g_OutVertices[]; };
+layout(set = 1, binding = 3) readonly buffer TriTableBuffer     { int    g_TriTable[]; };
+
+const uvec3 kCornerOffset[8] = uvec3[8](
+    uvec3(0, 0, 0), uvec3(1, 0, 0), uvec3(1, 1, 0), uvec3(0, 1, 0),
+    uvec3(0, 0, 1), uvec3(1, 0, 1), uvec3(1, 1, 1), uvec3(0, 1, 1));
+    
+const uvec2 kEdgeCorners[12] = uvec2[12](
+    uvec2(0, 1), uvec2(1, 2), uvec2(2, 3), uvec2(3, 0),
+    uvec2(4, 5), uvec2(5, 6), uvec2(6, 7), uvec2(7, 4),
+    uvec2(0, 4), uvec2(1, 5), uvec2(2, 6), uvec2(3, 7));
+
+uint FlatTexel(uvec3 t, uint dim)
+{
+    return (t.z * dim + t.y) * dim + t.x;
+}
+
+// Isosurface vertex on `edge`: position interpolates the two corner samples, normal = density gradient.
+Vertex MakeEdgeVertex(int edge, float cv[8], vec3 cp[8], vec3 cg[8])
+{
+    uvec2 ec = kEdgeCorners[edge];
+    float v0 = cv[ec.x], v1 = cv[ec.y];
+    vec3  p0 = cp[ec.x], p1 = cp[ec.y];
+    vec3  g0 = cg[ec.x], g1 = cg[ec.y];
+
+    float tt  = (abs(v0 - v1) < 1e-6) ? 0.0 : v0 / (v0 - v1); // zero crossing along the edge
+    vec3  pos = mix(p0, p1, tt);
+    vec3  g   = mix(g0, g1, tt);
+    float gl2 = dot(g, g);
+    vec3  n   = (gl2 > 1e-12) ? g * inversesqrt(gl2) : vec3(0.0, 1.0, 0.0);
+
+    Vertex vert;
+    vert.posX = pos.x; vert.posY = pos.y; vert.posZ = pos.z;
+    vert.u = 0.0; vert.v = 0.0;
+    vert.normalX = n.x; vert.normalY = n.y; vert.normalZ = n.z;
+    vert.tangentX = 0.0; vert.tangentY = 0.0; vert.tangentZ = 0.0;
+    return vert;
+}
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+void main()
+{
+    uvec3 cell = gl_GlobalInvocationID;
+    uint  C    = pc.g_CellsPerAxis;
+    if (cell.x >= C || cell.y >= C || cell.z >= C)
+        return;
+
+    uint dim = C + 1u + 2u * pc.g_Apron;
+
+    // sample 8 corners + a central-difference gradient at each (apron guarantees the neighbours)
+    float cornerVal[8];
+    vec3  cornerPos[8];
+    vec3  cornerGrad[8];
+    uint  cubeIndex = 0u;
+    for (uint i = 0u; i < 8u; ++i)
+    {
+        uvec3 gc = cell + kCornerOffset[i];
+        uvec3 tx = gc + pc.g_Apron;
+        float d  = g_DensityField[FlatTexel(tx, dim)];
+
+        cornerVal[i]  = d;
+        cornerPos[i]  = vec3(gc) * pc.g_VoxelSizeMeter;
+        cornerGrad[i] = vec3(
+            g_DensityField[FlatTexel(tx + uvec3(1u, 0u, 0u), dim)] - g_DensityField[FlatTexel(tx - uvec3(1u, 0u, 0u), dim)],
+            g_DensityField[FlatTexel(tx + uvec3(0u, 1u, 0u), dim)] - g_DensityField[FlatTexel(tx - uvec3(0u, 1u, 0u), dim)],
+            g_DensityField[FlatTexel(tx + uvec3(0u, 0u, 1u), dim)] - g_DensityField[FlatTexel(tx - uvec3(0u, 0u, 1u), dim)]);
+
+        if (d < 0.0)
+            cubeIndex |= (1u << i); // solid corner sets the bit
+    }
+
+    if (cubeIndex == 0u || cubeIndex == 255u)
+        return; // fully inside/outside -> no surface
+
+    // triangle count = tri-table entries until the -1 terminator
+    uint triCount = 0u;
+    for (uint e = 0u; e < 15u; e += 3u)
+    {
+        if (g_TriTable[cubeIndex * 16u + e] < 0)
+            break;
+        ++triCount;
+    }
+
+    uint baseTri = atomicAdd(g_MCCounter[0], triCount); // reserve a contiguous triangle range
+    atomicAdd(g_MCCounter[1], 1u);                      // active-cell tally
+
+    if (baseTri + triCount > pc.g_MaxTriangles)
+        return; // slab overflow -> drop
+
+    for (uint t = 0u; t < triCount; ++t)
+    {
+        int eA = g_TriTable[cubeIndex * 16u + t * 3u + 0u];
+        int eB = g_TriTable[cubeIndex * 16u + t * 3u + 1u];
+        int eC = g_TriTable[cubeIndex * 16u + t * 3u + 2u];
+
+        uint v0 = pc.g_VertexSlabBase + (baseTri + t) * 3u;
+        g_OutVertices[v0 + 0u] = MakeEdgeVertex(eA, cornerVal, cornerPos, cornerGrad);
+        g_OutVertices[v0 + 1u] = MakeEdgeVertex(eC, cornerVal, cornerPos, cornerGrad); // oracle winding: eA, eC, eB
+        g_OutVertices[v0 + 2u] = MakeEdgeVertex(eB, cornerVal, cornerPos, cornerGrad);
+    }
+}

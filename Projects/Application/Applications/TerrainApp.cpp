@@ -16,7 +16,6 @@
 #include "BaambooScene/RenderNodes/PostProcessNode.h"
 #include "BaambooScene/Systems/TransformSystem.h"
 #include "BaambooScene/Systems/VoxelTerrainSystem.h"
-#include "BaambooScene/VoxelTerrain/VoxelTerrainFieldProfiles.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -182,80 +181,11 @@ void TerrainApp::DrawUI()
 			auto& terrain = m_VoxelTerrainRootEntity.GetComponent< VoxelTerrainComponent >();
 			bool bRebuildChunk = false;
 
-			if (ImGui::BeginCombo("Field Preset", GetVoxelTerrainFieldPresetName(terrain.fieldPreset)))
-			{
-				for (u32 i = 0u; i < GetVoxelTerrainFieldPresetCount(); ++i)
-				{
-					const VoxelTerrainFieldPreset preset = GetVoxelTerrainFieldPresetAt(i);
-					const bool bSelected = terrain.fieldPreset == preset;
-					if (ImGui::Selectable(GetVoxelTerrainFieldPresetName(preset), bSelected))
-					{
-						terrain.fieldPreset = preset;
-						bRebuildChunk = true;
-					}
-
-					if (bSelected)
-						ImGui::SetItemDefaultFocus();
-				}
-				ImGui::EndCombo();
-			}
-
-			ImGui::Text("Built Preset    %s", GetVoxelTerrainFieldPresetName(terrain.builtFieldPreset));
 			ImGui::DragFloat3("Terrain Origin", glm::value_ptr(terrain.terrainOriginWorld), 0.5f, 0.0f, 0.0f, "%.2f m");
 			if (ImGui::IsItemDeactivatedAfterEdit())
 				bRebuildChunk = true;
 
-			switch (terrain.fieldPreset)
-			{
-			case VoxelTerrainFieldPreset::AxisAlignedBox:
-				ImGui::Text("Box Center     %.1f, %.1f, %.1f", terrain.boxCenter.x, terrain.boxCenter.y, terrain.boxCenter.z);
-				ImGui::Text("Box Half Ext   %.1f, %.1f, %.1f", terrain.boxHalfExtent.x, terrain.boxHalfExtent.y, terrain.boxHalfExtent.z);
-				break;
-			case VoxelTerrainFieldPreset::Capsule:
-				ImGui::Text("Capsule A      %.1f, %.1f, %.1f", terrain.capsuleSegmentA.x, terrain.capsuleSegmentA.y, terrain.capsuleSegmentA.z);
-				ImGui::Text("Capsule B      %.1f, %.1f, %.1f", terrain.capsuleSegmentB.x, terrain.capsuleSegmentB.y, terrain.capsuleSegmentB.z);
-				ImGui::Text("Capsule Radius %.1f m", terrain.capsuleRadius);
-				break;
-			case VoxelTerrainFieldPreset::UniformTransformedBox:
-				ImGui::Text("Box Center     %.1f, %.1f, %.1f", terrain.transformBoxCenter.x, terrain.transformBoxCenter.y, terrain.transformBoxCenter.z);
-				ImGui::Text("Box Half Ext   %.1f, %.1f, %.1f", terrain.transformBoxHalfExtent.x, terrain.transformBoxHalfExtent.y, terrain.transformBoxHalfExtent.z);
-				ImGui::Text("Rotation XYZ   %.1f, %.1f, %.1f deg", terrain.transformBoxEulerDegrees.x, terrain.transformBoxEulerDegrees.y, terrain.transformBoxEulerDegrees.z);
-				ImGui::Text("Uniform Scale  %.2f", terrain.transformUniformScale);
-				break;
-			case VoxelTerrainFieldPreset::NonUniformDistanceLikeBox:
-				ImGui::Text("Box Center     %.1f, %.1f, %.1f", terrain.transformBoxCenter.x, terrain.transformBoxCenter.y, terrain.transformBoxCenter.z);
-				ImGui::Text("Box Half Ext   %.1f, %.1f, %.1f", terrain.transformBoxHalfExtent.x, terrain.transformBoxHalfExtent.y, terrain.transformBoxHalfExtent.z);
-				ImGui::Text("Rotation XYZ   %.1f, %.1f, %.1f deg", terrain.transformBoxEulerDegrees.x, terrain.transformBoxEulerDegrees.y, terrain.transformBoxEulerDegrees.z);
-				ImGui::Text("NonUni Scale   %.2f, %.2f, %.2f", terrain.transformNonUniformScale.x, terrain.transformNonUniformScale.y, terrain.transformNonUniformScale.z);
-				break;
-			case VoxelTerrainFieldPreset::HeightFieldFlat:
-			case VoxelTerrainFieldPreset::HeightFieldSloped:
-			case VoxelTerrainFieldPreset::HeightFieldPeriodic:
-				if (const VoxelTerrainHeightFieldParameters* params = GetVoxelTerrainHeightFieldParameters(terrain.fieldPreset))
-				{
-					ImGui::Text("Height Shape   %s", GetVoxelTerrainHeightFieldShapeName(params->shape));
-					ImGui::Text("Base Height    %.2f m", params->baseHeightMeter);
-					ImGui::Text("Anchor XZ      %.2f, %.2f m", params->anchorXMeter, params->anchorZMeter);
-					if (params->shape == VoxelTerrainHeightFieldShape::Plane)
-						ImGui::Text("Slope XZ       %.3f, %.3f", params->slopeX, params->slopeZ);
-					if (params->shape == VoxelTerrainHeightFieldShape::Periodic)
-					{
-						ImGui::Text("Amplitude      %.2f m", params->amplitudeMeter);
-						ImGui::Text("Wavelength XZ  %.2f, %.2f m", params->wavelengthXMeter, params->wavelengthZMeter);
-					}
-				}
-				break;
-			case VoxelTerrainFieldPreset::SphereRegression:
-				break;
-			}
-
-			ImGui::DragFloat("FD Epsilon Mult", &terrain.settings.normalEpsilonMultiplier, 0.01f, 0.01f, 4.0f, "%.2f");
-			if (ImGui::IsItemDeactivatedAfterEdit())
-				bRebuildChunk = true;
-
-			terrain.settings.normalEpsilonMultiplier = std::max(terrain.settings.normalEpsilonMultiplier, 0.01f);
-
-			if (ImGui::Button("Rebuild CPU Chunk"))
+			if (ImGui::Button("Rebuild"))
 				bRebuildChunk = true;
 
 			if (bRebuildChunk)
@@ -266,7 +196,6 @@ void TerrainApp::DrawUI()
 			ImGui::Text("Cells / Axis    %u", terrain.settings.cellsPerAxis);
 			ImGui::Text("Samples / Axis  %u", terrain.settings.samplesPerAxis);
 			ImGui::Text("Voxel Size      %.2f m", terrain.settings.voxelSizeMeter);
-			ImGui::Text("FD Epsilon      %.2f x voxel", terrain.settings.normalEpsilonMultiplier);
 		}
 	}
 	ImGui::End();

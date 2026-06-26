@@ -1,0 +1,35 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "VoxelTerrainCommon.hg"
+
+layout(set = 1, binding = 0, std140) uniform VoxelGenParamsUBO
+{
+    VoxelTerrainGenParams gp;
+} g_VoxelGenParams;
+
+layout(set = 1, binding = 1, r32f) writeonly uniform image3D g_OutDensityTex;
+
+layout(set = 1, binding = 2) writeonly buffer DensityDebugBuffer
+{
+    float g_OutDensityDebug[];
+};
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+void main()
+{
+    VoxelTerrainGenParams gp = g_VoxelGenParams.gp;
+
+    uint  dim = gp.samplesPerAxis + 2u * gp.apron; // C+1+2A
+    uvec3 tID = gl_GlobalInvocationID;
+    if (tID.x >= dim || tID.y >= dim || tID.z >= dim)
+        return;
+
+    vec3  worldPos = VoxelTexelToWorld(gp, tID);
+    float density  = VoxelTerrainDensity(gp, worldPos);
+
+    imageStore(g_OutDensityTex, ivec3(tID), vec4(density, 0.0, 0.0, 0.0));
+
+    uint flatIndex = (tID.z * dim + tID.y) * dim + tID.x;
+    g_OutDensityDebug[flatIndex] = density;
+}
