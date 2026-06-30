@@ -11,7 +11,7 @@ cbuffer MeshletBuildPushConstants : register(b0, ROOT_CONSTANT_SPACE)
 
 ConstantBuffer< DescriptorHeapIndex > g_MCCounter   : register(b1, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_OutMeshlets : register(b2, ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_OutChunks   : register(b3, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_OutCounts   : register(b3, ROOT_CONSTANT_SPACE);
 
 [numthreads(64, 1, 1)]
 void main(uint3 dt : SV_DispatchThreadID)
@@ -26,11 +26,10 @@ void main(uint3 dt : SV_DispatchThreadID)
     uint K           = g_TrianglesPerMeshlet;
     uint numMeshlets = min((totalTris + K - 1u) / K, g_MaxMeshlets);
 
-    if (m == 0u) // lane 0 publishes the GPU-driven counts to the chunk row
+    if (m == 0u) // lane 0 publishes the GPU-driven meshlet count to the chunk's counts row
     {
-        RWStructuredBuffer< VoxelChunk > Chunks = GetResource(g_OutChunks.index);
-        Chunks[g_ChunkID].vertexCount  = totalTris * 3u;
-        Chunks[g_ChunkID].meshletCount = numMeshlets;
+        RWStructuredBuffer< VoxelChunkCounts > Counts = GetResource(g_OutCounts.index);
+        Counts[g_ChunkID].meshletCount = numMeshlets;
     }
 
     if (m >= numMeshlets)
@@ -39,16 +38,16 @@ void main(uint3 dt : SV_DispatchThreadID)
     uint triBase  = m * K;
     uint triCount = min(K, totalTris - triBase);
 
-    Meshlet ml;
-    ml.vertexOffset   = triBase * 3u; // 3 verts/triangle
-    ml.triangleOffset = triBase;
-    ml.vertexCount    = triCount * 3u;
-    ml.triangleCount  = triCount;
-    ml.centerX = 0.0; ml.centerY = 0.0; ml.centerZ = 0.0; // bounds/cone unused (chunk-level cull only)
-    ml.radius  = 0.0;
-    ml.coneAxisX = 0.0; ml.coneAxisY = 0.0; ml.coneAxisZ = 0.0;
-    ml.coneCutoff = 1.0;
+    Meshlet meshlet;
+    meshlet.vertexOffset   = triBase * 3u; // 3 verts/triangle
+    meshlet.triangleOffset = triBase;
+    meshlet.vertexCount    = triCount * 3u;
+    meshlet.triangleCount  = triCount;
+    meshlet.centerX = 0.0; meshlet.centerY = 0.0; meshlet.centerZ = 0.0; // bounds/cone unused (chunk-level cull only)
+    meshlet.radius  = 0.0;
+    meshlet.coneAxisX = 0.0; meshlet.coneAxisY = 0.0; meshlet.coneAxisZ = 0.0;
+    meshlet.coneCutoff = 1.0;
 
     RWStructuredBuffer< Meshlet > OutM = GetResource(g_OutMeshlets.index);
-    OutM[g_MeshletSlabBase + m] = ml;
+    OutM[g_MeshletSlabBase + m] = meshlet;
 }

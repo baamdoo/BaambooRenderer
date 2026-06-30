@@ -33,6 +33,11 @@ private:
 	Arc< render::RenderTarget > m_pRenderTargetPhase2; // LOAD all attachments (same textures, different load ops)
 
 	Box< render::GraphicsPipeline > m_pGBufferPSO;
+
+	Arc< render::Buffer > m_pVoxelVertexFallback;
+	Arc< render::Buffer > m_pVoxelMeshletFallback;
+	Arc< render::Buffer > m_pVoxelMeshletVertexFallback;
+	Arc< render::Buffer > m_pVoxelMeshletTriangleFallback;
 };
 
 

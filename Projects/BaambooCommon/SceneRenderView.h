@@ -16,8 +16,9 @@ enum eComponentType
 	CSkyLight    = 4,
 	CAtmosphere  = 5,
 	CCloud       = 6,
-	CLocalLight  = 7,
-	CPostProcess = 8,
+	CLocalLight   = 7,
+	CPostProcess  = 8,
+	CVoxelTerrain = 9,
 
 	// ...
 	NumComponents

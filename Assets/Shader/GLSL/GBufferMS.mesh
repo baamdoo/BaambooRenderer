@@ -19,6 +19,11 @@ layout(push_constant) uniform PushConstants
     uint phase;
 } g_Push;
 
+layout(set = 1, binding = 4) readonly buffer GBufVoxelVertexBuffer          { Vertex  g_VoxelVertices[]; };
+layout(set = 1, binding = 5) readonly buffer GBufVoxelMeshletBuffer         { Meshlet g_VoxelMeshlets[]; };
+layout(set = 1, binding = 6) readonly buffer GBufVoxelMeshletVertexBuffer   { uint    g_VoxelMeshletVertices[]; };
+layout(set = 1, binding = 7) readonly buffer GBufVoxelMeshletTriangleBuffer { uint    g_VoxelMeshletTriangles[]; };
+
 
 uint hash(uint a)
 {
@@ -95,7 +100,7 @@ bool TriangleCull(vec4 ca, vec4 cb, vec4 cc)
 }
 
 
-// Lane 0 loads everything once, derived offsets are cached in shared memory. To reduce LSGB stall which is the largest bottleneck in a frame.
+// Thread-0 loads everything once, derived offsets are cached in shared memory. To reduce LSGB stall which is the largest bottleneck in a frame.
 shared mat4 sh_LocalToWorld;
 shared uint sh_VOffset;
 shared uint sh_MvOffset;
@@ -105,6 +110,7 @@ shared uint sh_TriangleCount;
 shared uint sh_VertexOffset;
 shared uint sh_TriangleOffset;
 shared uint sh_MaterialID;
+shared uint sh_IsVoxel; // 1 = voxel chunk instance (geometry from voxel pools, voxel visID)
 
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 layout(triangles, max_vertices = 64, max_primitives = 124) out;
@@ -118,7 +124,8 @@ void main()
 		InstanceData  instance  = g_Instances[Payload.drawID];
 		MeshData      mesh      = g_Meshes[instance.meshID];
 		TransformData transform = g_TransformBuffer.transforms[instance.transformID];
-		Meshlet       meshlet   = g_MeshletBuffer.meshlets[mi];
+
+		Meshlet meshlet = (instance.isVoxel != 0u) ? g_VoxelMeshlets[mi] : g_MeshletBuffer.meshlets[mi];
 
 		sh_LocalToWorld   = transform.mLocalToWorld;
 		sh_VOffset        = mesh.vOffset;
@@ -129,6 +136,7 @@ void main()
 		sh_VertexOffset   = meshlet.vertexOffset;
 		sh_TriangleOffset = meshlet.triangleOffset;
 		sh_MaterialID     = instance.materialID;
+		sh_IsVoxel        = instance.isVoxel;
 	}
 	barrier();
 
@@ -136,9 +144,11 @@ void main()
 
 	for (uint i = ti; i < sh_VertexCount; i += gl_WorkGroupSize.x)
 	{
-		uint vi = g_MeshletVertexBuffer.meshletVertices[sh_VertexOffset + sh_MvOffset + i];
+		uint vi = (sh_IsVoxel != 0u)
+			? g_VoxelMeshletVertices[sh_VertexOffset + sh_MvOffset + i]
+			: g_MeshletVertexBuffer.meshletVertices[sh_VertexOffset + sh_MvOffset + i];
 
-		Vertex vertex   = g_VertexBuffer.vertices[vi + sh_VOffset];
+		Vertex vertex   = (sh_IsVoxel != 0u) ? g_VoxelVertices[vi + sh_VOffset] : g_VertexBuffer.vertices[vi + sh_VOffset];
 		vec3  position  = vec3(vertex.posX, vertex.posY, vertex.posZ);
 		vec4  posWORLD  = sh_LocalToWorld * vec4(position, 1.0);
 
@@ -153,7 +163,9 @@ void main()
 	uint baseTriOffset = sh_TriangleOffset + sh_MtOffset;
 	for (uint i = ti; i < sh_TriangleCount; i += gl_WorkGroupSize.x)
 	{
-		uint tPacked3 = g_MeshletTriangleBuffer.meshletTriangles[baseTriOffset + i];
+		uint tPacked3 = (sh_IsVoxel != 0u)
+			? g_VoxelMeshletTriangles[baseTriOffset + i]
+			: g_MeshletTriangleBuffer.meshletTriangles[baseTriOffset + i];
 
 		uint t0 = tPacked3 & 0xFF;
         uint t1 = (tPacked3 >> 8) & 0xFF;
@@ -165,9 +177,12 @@ void main()
 		vec4 cb = gl_MeshVerticesEXT[t1].gl_Position;
 		vec4 cc = gl_MeshVerticesEXT[t2].gl_Position;
 
-		gl_MeshPrimitivesEXT[i].gl_CullPrimitiveEXT = TriangleCull(ca, cb, cc);
+		// TODO: LOD streaming and culling on voxels
+		gl_MeshPrimitivesEXT[i].gl_CullPrimitiveEXT = (sh_IsVoxel != 0u) ? false : TriangleCull(ca, cb, cc);
 
-		outVisID0[i] = PackVisID0Mesh(Payload.drawID, Payload.lodLevel, 0u);
+		outVisID0[i] = (sh_IsVoxel != 0u)
+			? PackVisID0Voxel(Payload.drawID)
+			: PackVisID0Mesh(Payload.drawID, Payload.lodLevel, 0u);
 		outVisID1[i] = PackVisID1(mi, i);
 	}
 }

@@ -2,6 +2,7 @@
 #define _MESH
 #define _TRANSFORM
 #define _CULL
+#define _VOXEL
 #include "Common.hlsli"
 #include "VisibilityBuffer.hlsli"
 
@@ -21,14 +22,10 @@ cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
     uint   g_Phase;
 };
 
-static StructuredBuffer< Vertex >  Vertices         = GetResource(g_Vertices.index);
-static StructuredBuffer< Meshlet > Meshlets         = GetResource(g_Meshlets.index);
-static StructuredBuffer< uint >    MeshletVertices  = GetResource(g_MeshletVertices.index);
-static StructuredBuffer< uint >    MeshletTriangles = GetResource(g_MeshletTriangles.index);
-
 static StructuredBuffer< MeshData >      Meshes     = GetResource(g_Meshes.index);
 static StructuredBuffer< InstanceData >  Instances  = GetResource(g_Instances.index);
 static StructuredBuffer< TransformData > Transforms = GetResource(g_Transforms.index);
+
 
 uint hash(uint a)
 {
@@ -128,6 +125,11 @@ groupshared uint     sh_TriangleCount;
 groupshared uint     sh_VertexOffset;
 groupshared uint     sh_TriangleOffset;
 groupshared uint     sh_MaterialID;
+groupshared uint     sh_IsVoxel;    // 1 = voxel chunk instance (geometry from voxel pools, voxel visID)
+groupshared uint     sh_Lod;
+groupshared uint     sh_VtxHeapIdx; // bindless heap index of the chosen vertex pool
+groupshared uint     sh_MvHeapIdx;  // ... meshlet-vertex pool
+groupshared uint     sh_MtHeapIdx;  // ... meshlet-triangle pool
 
 groupshared float4 s_ClipPos[64];
 
@@ -152,7 +154,9 @@ void main(
         InstanceData  instance  = Instances[instanceID];
         TransformData transform = Transforms[instance.transformID];
         MeshData      mesh      = Meshes[instance.meshID];
-        Meshlet       meshlet   = Meshlets[mi];
+
+        StructuredBuffer< Meshlet > Meshlets = GetResource(instance.isVoxel ? g_VoxelMeshlets.index : g_MeshStreams.meshlets);
+        Meshlet meshlet = Meshlets[mi];
 
         sh_LocalToWorld   = transform.mLocalToWorld;
         sh_VOffset        = mesh.vOffset;
@@ -163,10 +167,18 @@ void main(
         sh_VertexOffset   = meshlet.vertexOffset;
         sh_TriangleOffset = meshlet.triangleOffset;
 		sh_MaterialID     = instance.materialID;
+        sh_IsVoxel        = instance.isVoxel;
+        sh_Lod            = Payload.lod;
+        sh_VtxHeapIdx     = instance.isVoxel ? g_VoxelVertices.index         : g_MeshStreams.vertices;
+        sh_MvHeapIdx      = instance.isVoxel ? g_VoxelMeshletVertices.index  : g_MeshStreams.meshletVertices;
+        sh_MtHeapIdx      = instance.isVoxel ? g_VoxelMeshletTriangles.index : g_MeshStreams.meshletTriangles;
     }
     GroupMemoryBarrierWithGroupSync();
 
     SetMeshOutputCounts(sh_VertexCount, sh_TriangleCount);
+
+    StructuredBuffer< Vertex > Vertices        = GetResource(sh_VtxHeapIdx);
+    StructuredBuffer< uint >   MeshletVertices = GetResource(sh_MvHeapIdx);
 
     for (uint i = ti; i < sh_VertexCount; i += 32)
     {
@@ -193,6 +205,7 @@ void main(
     // Per-vertex outputs(s_ClipPos[i]) are written by different invocations.
     GroupMemoryBarrierWithGroupSync();
 
+    StructuredBuffer< uint > MeshletTriangles = GetResource(sh_MtHeapIdx);
     uint baseTriByteOffset = sh_MtOffset + sh_TriangleOffset;
     for (uint i = ti; i < sh_TriangleCount; i += 32)
     {
@@ -207,9 +220,13 @@ void main(
         float4 ca = s_ClipPos[t0];
         float4 cb = s_ClipPos[t1];
         float4 cc = s_ClipPos[t2];
-        primAttrs[i].cullPrimitive = TriangleCull(ca, cb, cc);
 
-        primAttrs[i].visID0 = PackVisID0Mesh(g_DrawID & 0x00FFFFFFu, Payload.lod, 0u);
+        // TODO: LOD streaming and culling on voxels
+        primAttrs[i].cullPrimitive = (sh_IsVoxel != 0u) ? false : TriangleCull(ca, cb, cc);
+
+        primAttrs[i].visID0 = (sh_IsVoxel != 0u)
+            ? PackVisID0Voxel(g_DrawID & 0x00FFFFFFu)
+            : PackVisID0Mesh(g_DrawID & 0x00FFFFFFu, sh_Lod, 0u);
         primAttrs[i].visID1 = PackVisID1(mi, i);
     }
 }

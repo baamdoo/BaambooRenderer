@@ -104,7 +104,7 @@ Dx12SceneResource::Dx12SceneResource(Dx12RenderDevice& rd)
 
     for (auto& frameData : m_FrameData)
     {
-        frameData.pMeshDataAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshDataPool", sizeof(MeshData), _MB(8LL));
+        frameData.pMeshDataAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshDataPool", sizeof(MeshData), _MB(8LL), render::eBufferUsage_Storage); // Storage/UAV: voxel mCount patch CS writes lods[0].mCount
         frameData.pInstanceAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, "InstancePool", sizeof(InstanceData), _MB(8LL));
 
         frameData.pTransformAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, "TransformPool", sizeof(TransformData), _MB(8LL));
@@ -115,6 +115,7 @@ Dx12SceneResource::Dx12SceneResource(Dx12RenderDevice& rd)
         frameData.pCullBuffer             = Dx12ConstantBuffer::Create(m_RenderDevice, "CullBuffer", sizeof(CullData));
         frameData.pSceneEnvironmentBuffer = Dx12ConstantBuffer::Create(m_RenderDevice, "SceneEnvironmentBuffer", sizeof(SceneEnvironmentData));
         frameData.pFrozenCameraBuffer     = Dx12ConstantBuffer::Create(m_RenderDevice, "FrozenCameraBuffer", sizeof(FrozenCameraData));
+        frameData.pMeshStreamsBuffer      = Dx12ConstantBuffer::Create(m_RenderDevice, "MeshStreamsCBV", sizeof(u32) * 5);
     }
 
     m_pTLAS = Dx12TopLevelAS::Create(m_RenderDevice, "SceneTLAS");
@@ -256,6 +257,14 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
         transform.mLocalToWorld = transformView.mWorld;
         transform.mWorldToLocal = transformView.mWorldInverse;
         transforms.push_back(transform);
+    }
+    if (sceneView.voxelTerrain.bValid)
+    {
+        const float3& originWS = sceneView.voxelTerrain.originWorld;
+        TransformData voxelTransform = {};
+        voxelTransform.mLocalToWorld = mat4(1.0f); voxelTransform.mLocalToWorld[3] = float4( originWS, 1.0f);
+        voxelTransform.mWorldToLocal = mat4(1.0f); voxelTransform.mWorldToLocal[3] = float4(-originWS, 1.0f);
+        transforms.push_back(voxelTransform);
     }
     UpdateFrameBuffer(ctx, transforms.data(), (u32)transforms.size(), sizeof(TransformData), *m_FrameData[m_ContextIndex].pTransformAllocator, BarrierStates::ShaderResource);
 
@@ -509,6 +518,22 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
 
         meshes.push_back(mesh);
     }
+    if (sceneView.voxelTerrain.bValid)
+    {
+        const float half = sceneView.voxelTerrain.chunkWorldSizeMeter * 0.5f; // origin is applied by the voxel transform, not here
+
+        MeshData voxelMesh = {};
+        voxelMesh.vOffset = 0;
+        voxelMesh.maxLOD  = 0;
+        voxelMesh.center  = float3(half);      // chunk-local
+        voxelMesh.radius  = half * 1.7320508f; // cube half-diagonal
+        // these fields will be filled by the voxel patch CS
+        voxelMesh.lods[0].mCount   = 0;
+        voxelMesh.lods[0].mOffset  = 0;
+        voxelMesh.lods[0].mvOffset = 0;
+        voxelMesh.lods[0].mtOffset = 0;
+        meshes.push_back(voxelMesh);
+    }
     UpdateFrameBuffer(ctx, meshes.data(), (u32)meshes.size(), sizeof(MeshData), *m_FrameData[m_ContextIndex].pMeshDataAllocator, BarrierStates::ShaderResource);
     
     if (m_pVertexAllocator->GetElementCount() < vTotalCount) 
@@ -583,6 +608,19 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
             }
         }
     }
+    // Voxel chunk: prepend it at the head of instance buffer
+    if (sceneView.voxelTerrain.bValid)
+    {
+        InstanceData voxelInstance = {};
+        voxelInstance.meshID      = (u32)sceneView.meshes.size();      // the appended voxel MeshData
+        voxelInstance.transformID = (u32)sceneView.transforms.size();  // the appended voxel TransformData
+        voxelInstance.materialID  = kInvalidIndex;
+        voxelInstance.visOffset   = 0;                                 // unused: voxel skips per-meshlet cull
+        voxelInstance.isVoxel     = 1;
+        instances.insert(instances.begin() + kVoxelChunkInstanceBase, voxelInstance); // instanceID == chunkID
+    }
+    m_NumInstances = (u32)instances.size();
+
     if (m_pTLAS->NumInstances() > 0)
     {
         m_pTLAS->Prepare();
@@ -607,25 +645,17 @@ void Dx12SceneResource::BindSceneResources(render::CommandContext& context)
     d3d12CommandList2->SetComputeRootConstantBufferView(cameraRootIdx, m_FrameData[m_ContextIndex].pCameraBuffer->GpuAddress());
     d3d12CommandList2->SetGraphicsRootConstantBufferView(cameraRootIdx, m_FrameData[m_ContextIndex].pCameraBuffer->GpuAddress());
 
-    auto vRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, kGlobalDescriptorSpace, 1);
-    d3d12CommandList2->SetComputeRoot32BitConstant(vRootIdx, m_pVertexAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
-    d3d12CommandList2->SetGraphicsRoot32BitConstant(vRootIdx, m_pVertexAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
-
-    auto iRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, kGlobalDescriptorSpace, 2);
-    d3d12CommandList2->SetComputeRoot32BitConstant(iRootIdx, m_pIndexAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
-    d3d12CommandList2->SetGraphicsRoot32BitConstant(iRootIdx, m_pIndexAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
-
-    auto mRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, kGlobalDescriptorSpace, 3);
-    d3d12CommandList2->SetComputeRoot32BitConstant(mRootIdx, m_pMeshletAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
-    d3d12CommandList2->SetGraphicsRoot32BitConstant(mRootIdx, m_pMeshletAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
-
-    auto mvRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, kGlobalDescriptorSpace, 4);
-    d3d12CommandList2->SetComputeRoot32BitConstant(mvRootIdx, m_pMeshletVertexAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
-    d3d12CommandList2->SetGraphicsRoot32BitConstant(mvRootIdx, m_pMeshletVertexAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
-
-    auto mtRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, kGlobalDescriptorSpace, 5);
-    d3d12CommandList2->SetComputeRoot32BitConstant(mtRootIdx, m_pMeshletTriangleAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
-    d3d12CommandList2->SetGraphicsRoot32BitConstant(mtRootIdx, m_pMeshletTriangleAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
+    const u32 meshStreams[5] = {
+        m_pVertexAllocator->GetBuffer()->GetShaderResourceHandle(),
+        m_pIndexAllocator->GetBuffer()->GetShaderResourceHandle(),
+        m_pMeshletAllocator->GetBuffer()->GetShaderResourceHandle(),
+        m_pMeshletVertexAllocator->GetBuffer()->GetShaderResourceHandle(),
+        m_pMeshletTriangleAllocator->GetBuffer()->GetShaderResourceHandle(),
+    };
+    memcpy(m_FrameData[m_ContextIndex].pMeshStreamsBuffer->MappedMemory(), meshStreams, sizeof(meshStreams));
+    auto meshStreamsRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_CBV, kGlobalDescriptorSpace, 1);
+    d3d12CommandList2->SetComputeRootConstantBufferView(meshStreamsRootIdx, m_FrameData[m_ContextIndex].pMeshStreamsBuffer->GpuAddress());
+    d3d12CommandList2->SetGraphicsRootConstantBufferView(meshStreamsRootIdx, m_FrameData[m_ContextIndex].pMeshStreamsBuffer->GpuAddress());
 
     auto mdRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, kGlobalDescriptorSpace, 6);
     d3d12CommandList2->SetComputeRoot32BitConstant(mdRootIdx, m_FrameData[m_ContextIndex].pMeshDataAllocator->GetBuffer()->GetShaderResourceHandle(), 0);
@@ -887,6 +917,11 @@ Arc< Dx12StructuredBuffer > Dx12SceneResource::GetMeshletBuffer() const
 Arc< render::TopLevelAccelerationStructure > Dx12SceneResource::GetTLAS() const
 {
     return StaticCast< render::TopLevelAccelerationStructure >(m_pTLAS);
+}
+
+Arc< render::Buffer > Dx12SceneResource::GetMeshDataBuffer() const
+{
+    return m_FrameData[m_ContextIndex].pMeshDataAllocator->GetBuffer();
 }
 
 void Dx12SceneResource::ResetFrameBuffers()

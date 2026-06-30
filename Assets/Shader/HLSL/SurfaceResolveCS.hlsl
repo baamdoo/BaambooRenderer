@@ -15,7 +15,7 @@ ConstantBuffer< DescriptorHeapIndex > g_VBuf1          : register(b2, ROOT_CONST
 ConstantBuffer< DescriptorHeapIndex > g_CoreNormal     : register(b3, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_CoreMaterial   : register(b4, ROOT_CONSTANT_SPACE);
 
-ConstantBuffer< DescriptorHeapIndex > g_VoxelChunks           : register(b5, ROOT_CONSTANT_SPACE);
+ConstantBuffer< VoxelChunkDesc >      g_VoxelChunkDesc        : register(b0, space1);
 ConstantBuffer< DescriptorHeapIndex > g_VoxelVertices         : register(b6, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_VoxelMeshlets         : register(b7, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_VoxelMeshletVertices  : register(b8, ROOT_CONSTANT_SPACE);
@@ -24,18 +24,16 @@ ConstantBuffer< DescriptorHeapIndex > g_VoxelMeshletTriangles : register(b9, ROO
 
 ResolvedSurface ResolveVoxelSurface(uint v0, uint v1, float2 pixelCenter, float2 viewport)
 {
-    StructuredBuffer< VoxelChunk > Chunks           = GetResource(g_VoxelChunks.index);
-    StructuredBuffer< Vertex >        Vertices         = GetResource(g_VoxelVertices.index);
-    StructuredBuffer< Meshlet >       Meshlets         = GetResource(g_VoxelMeshlets.index);
-    StructuredBuffer< uint >          MeshletVertices  = GetResource(g_VoxelMeshletVertices.index);
-    StructuredBuffer< uint >          MeshletTriangles = GetResource(g_VoxelMeshletTriangles.index);
+    StructuredBuffer< Vertex >  Vertices         = GetResource(g_VoxelVertices.index);
+    StructuredBuffer< Meshlet > Meshlets         = GetResource(g_VoxelMeshlets.index);
+    StructuredBuffer< uint >    MeshletVertices  = GetResource(g_VoxelMeshletVertices.index);
+    StructuredBuffer< uint >    MeshletTriangles = GetResource(g_VoxelMeshletTriangles.index);
 
-    uint chunkID         = VisChunkIndex(v0);
-    uint localMeshletIdx = VisMeshletIndex(v1);
-    uint triLocal        = VisTriLocal(v1);
+    uint meshletIdx = VisMeshletIndex(v1); // absolute voxel meshlet-pool index (task shader baked the offset, matching the mesh path)
+    uint triLocal   = VisTriLocal(v1);
 
-    VoxelChunk chunk   = Chunks[chunkID];
-    Meshlet       meshlet = Meshlets[chunk.meshletOffset + localMeshletIdx];
+    VoxelChunkDesc chunk   = g_VoxelChunkDesc; // TODO: multi-chunk voxels
+    Meshlet        meshlet = Meshlets[meshletIdx];
 
     uint tPacked3  = MeshletTriangles[chunk.meshletTriangleOffset + meshlet.triangleOffset + triLocal];
     uint locals[3] = { tPacked3 & 0xFF, (tPacked3 >> 8) & 0xFF, (tPacked3 >> 16) & 0xFF };
@@ -47,6 +45,7 @@ ResolvedSurface ResolveVoxelSurface(uint v0, uint v1, float2 pixelCenter, float2
     [unroll] for (uint k = 0; k < 3; ++k)
     {
         uint vi = chunk.vertexOffset + MeshletVertices[chunk.meshletVertexOffset + meshlet.vertexOffset + locals[k]];
+
         Vertex vv = Vertices[vi];
         posWS[k] = originWS + float3(vv.posX, vv.posY, vv.posZ);
         nrm[k]   = float3(vv.normalX, vv.normalY, vv.normalZ);
@@ -57,7 +56,7 @@ ResolvedSurface ResolveVoxelSurface(uint v0, uint v1, float2 pixelCenter, float2
         c[k] = mul(g_Camera.mViewProj, float4(posWS[k], 1.0));
 
     float2 ndc = (pixelCenter / viewport) * 2.0 - 1.0;
-    ndc.y = -ndc.y; // D3D NDC y-up vs pixel y-down
+    ndc.y = -ndc.y; // NDC y-up vs pixel y-down
 
     float3 bary = Barycentrics(ndc, c[0], c[1], c[2]);
     float3 N    = normalize(bary.x * nrm[0] + bary.y * nrm[1] + bary.z * nrm[2]);

@@ -1,0 +1,25 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "DescriptorCommon.hg"
+
+layout(push_constant) uniform PushConstants
+{
+    uint g_VoxelMeshID;
+};
+
+layout(set = 1, binding = 0) readonly buffer VoxelCountsBuffer
+{
+    VoxelChunkCounts g_VoxelCounts[];
+};
+
+layout(set = 1, binding = 1) buffer MeshDataPatchBuffer
+{
+    MeshData g_MeshData[];
+};
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+    g_MeshData[g_VoxelMeshID].lods[0].mCount = g_VoxelCounts[VOXEL_CHUNK_INSTANCE_BASE].meshletCount;
+}

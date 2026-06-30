@@ -20,21 +20,20 @@ layout(set = 1, binding = 2) uniform usampler2D g_VBuf1;
 layout(set = 1, binding = 3, rg16_snorm) writeonly uniform image2D g_CoreNormal;
 layout(set = 1, binding = 4, rgba8) writeonly uniform image2D g_CoreMaterial;
 
-layout(set = 1, binding = 5) readonly buffer VoxelChunkBuffer          { VoxelChunk g_VoxelChunks[]; };
-layout(set = 1, binding = 6) readonly buffer VoxelVertexBuffer         { Vertex        g_VoxelVertices[]; };
-layout(set = 1, binding = 7) readonly buffer VoxelMeshletBuffer        { Meshlet       g_VoxelMeshlets[]; };
-layout(set = 1, binding = 8) readonly buffer VoxelMeshletVertexBuffer  { uint          g_VoxelMeshletVertices[]; };
-layout(set = 1, binding = 9) readonly buffer VoxelMeshletTriangleBuffer{ uint          g_VoxelMeshletTriangles[]; };
+layout(set = 1, binding = 0, std140) uniform VoxelChunkDescUBO { VoxelChunkDesc d; } g_VoxelChunkDesc;
+layout(set = 1, binding = 6) readonly buffer VoxelVertexBuffer         { Vertex  g_VoxelVertices[]; };
+layout(set = 1, binding = 7) readonly buffer VoxelMeshletBuffer        { Meshlet g_VoxelMeshlets[]; };
+layout(set = 1, binding = 8) readonly buffer VoxelMeshletVertexBuffer  { uint    g_VoxelMeshletVertices[]; };
+layout(set = 1, binding = 9) readonly buffer VoxelMeshletTriangleBuffer{ uint    g_VoxelMeshletTriangles[]; };
 
 
 ResolvedSurface ResolveVoxelSurface(uint v0, uint v1, vec2 pixelCenter, vec2 viewport)
 {
-    uint chunkID         = VisChunkIndex(v0);
-    uint localMeshletIdx = VisMeshletIndex(v1);
-    uint triLocal        = VisTriLocal(v1);
+    uint meshletIdx = VisMeshletIndex(v1); // absolute voxel meshlet-pool index (task shader baked the offset, matching the mesh path)
+    uint triLocal   = VisTriLocal(v1);
 
-    VoxelChunk chunk   = g_VoxelChunks[chunkID];
-    Meshlet       meshlet = g_VoxelMeshlets[chunk.meshletOffset + localMeshletIdx];
+    VoxelChunkDesc chunk   = g_VoxelChunkDesc.d; // TODO: multi-chunk voxels
+    Meshlet        meshlet = g_VoxelMeshlets[meshletIdx];
 
     uint tPacked3  = g_VoxelMeshletTriangles[chunk.meshletTriangleOffset + meshlet.triangleOffset + triLocal];
     uint locals[3] = uint[3](tPacked3 & 0xFFu, (tPacked3 >> 8) & 0xFFu, (tPacked3 >> 16) & 0xFFu);

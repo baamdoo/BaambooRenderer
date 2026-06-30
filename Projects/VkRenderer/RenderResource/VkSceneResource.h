@@ -53,6 +53,9 @@ struct VkSceneResource : public render::SceneResource
 
     virtual const Arc< render::Buffer >& GetArgumentBuffer() const;
 
+    [[nodiscard]]
+    virtual Arc< render::Buffer > GetMeshDataBuffer() const override;
+
     // TEMP
     std::vector< VkDescriptorImageInfo > imageInfos;
 

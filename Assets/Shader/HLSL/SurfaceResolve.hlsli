@@ -89,10 +89,10 @@ struct VisTriangle
 
 VisTriangle FetchVisTriangle(uint v0, uint v1)
 {
-    StructuredBuffer< Vertex >        Vertices         = GetResource(g_Vertices.index);
-    StructuredBuffer< Meshlet >       Meshlets         = GetResource(g_Meshlets.index);
-    StructuredBuffer< uint >          MeshletVertices  = GetResource(g_MeshletVertices.index);
-    StructuredBuffer< uint >          MeshletTriangles = GetResource(g_MeshletTriangles.index);
+    StructuredBuffer< Vertex >        Vertices         = GetResource(g_MeshStreams.vertices);
+    StructuredBuffer< Meshlet >       Meshlets         = GetResource(g_MeshStreams.meshlets);
+    StructuredBuffer< uint >          MeshletVertices  = GetResource(g_MeshStreams.meshletVertices);
+    StructuredBuffer< uint >          MeshletTriangles = GetResource(g_MeshStreams.meshletTriangles);
     StructuredBuffer< MeshData >      Meshes           = GetResource(g_Meshes.index);
     StructuredBuffer< InstanceData >  Instances        = GetResource(g_Instances.index);
     StructuredBuffer< TransformData > Transforms       = GetResource(g_Transforms.index);

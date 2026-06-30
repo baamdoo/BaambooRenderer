@@ -189,7 +189,7 @@ void LightCullingNode::Apply(render::CommandContext& context, const SceneRenderV
 	context.Dispatch1D< 1 >(1);
 
 	// === Pass 3: Write ===
-	context.UAVBarrier(m_pLightGridBuffer);
+	context.TransitionBufferToRead (m_pLightGridBuffer,     ePipelineStage::ComputeShader);
 	context.TransitionBufferToWrite(m_pLightListDataBuffer, ePipelineStage::ComputeShader);
 
 	context.SetRenderPipeline(m_pWritePSO.get());
@@ -199,7 +199,6 @@ void LightCullingNode::Apply(render::CommandContext& context, const SceneRenderV
 	context.StageDescriptor("g_LightListDataBuffer", m_pLightListDataBuffer);
 	context.Dispatch3D< 4, 4, 4 >(m_NumTilesX, m_NumTilesY, CLUSTER_SLICES_Z);
 
-	context.TransitionBufferToRead(m_pLightGridBuffer,     ePipelineStage::ComputeShader);
 	context.TransitionBufferToRead(m_pLightListDataBuffer, ePipelineStage::ComputeShader);
 
 	g_FrameData.pLightGridBuffer     = m_pLightGridBuffer;

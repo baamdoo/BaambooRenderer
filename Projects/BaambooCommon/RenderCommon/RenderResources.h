@@ -654,8 +654,20 @@ enum ePipelineStage : u64
     RayTracingShader           = 0x00200000ULL,
 
     TaskShader = 0x00080000ULL,
-	MeshShader = 0x00100000ULL
+	MeshShader = 0x00100000ULL,
+
+	AllShader  = 0x1000000000ULL
 };
+
+inline constexpr ePipelineStage operator|(ePipelineStage a, ePipelineStage b)
+{
+    return static_cast< ePipelineStage >(static_cast< u64 >(a) | static_cast< u64 >(b));
+}
+inline constexpr ePipelineStage& operator|=(ePipelineStage& a, ePipelineStage b)
+{
+    a = a | b;
+    return a;
+}
 
 enum class ePrimitiveTopology
 {
@@ -880,6 +892,8 @@ public:
 
     virtual const Arc< Buffer >& GetArgumentBuffer() const { return nullptr; }
     virtual Arc< TopLevelAccelerationStructure > GetTLAS() const { return nullptr; }
+
+    virtual Arc< Buffer > GetMeshDataBuffer() const { return nullptr; }
 
     [[nodiscard]]
     u32 NumInstances() const { return m_NumInstances; }

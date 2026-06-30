@@ -305,8 +305,8 @@ void ClosestHit_Primary(inout HitPayload hp, in BuiltInTriangleIntersectionAttri
 {
     StructuredBuffer< MeshData >     Meshes      = GetResource(g_Meshes.index);
     StructuredBuffer< InstanceData > Instances   = GetResource(g_Instances.index);
-    StructuredBuffer< uint >         IndexBuffer = GetResource(g_Indices.index);
-    StructuredBuffer< Vertex >       VertexBuf   = GetResource(g_Vertices.index);
+    StructuredBuffer< uint >         IndexBuffer = GetResource(g_MeshStreams.indices);
+    StructuredBuffer< Vertex >       VertexBuf   = GetResource(g_MeshStreams.vertices);
     StructuredBuffer< MaterialData > Materials   = GetResource(g_Materials.index);
 
     InstanceData instance = Instances[InstanceID()];

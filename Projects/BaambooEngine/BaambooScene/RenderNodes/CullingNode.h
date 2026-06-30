@@ -47,6 +47,7 @@ public:
 
 private:
 	void DispatchMeshCull(render::CommandContext& context, u32 numInstances, u32 phase);
+	void PatchVoxelMeshData(render::CommandContext& context, const SceneRenderView& renderView);
 	void BuildHiZ(render::CommandContext& context);
 	void EnsureMeshletVisibility(u32 numRequiredWords);
 	void PublishReadbackStats();
@@ -74,6 +75,7 @@ private:
 	// --- Compute pipelines ---
 	Box< render::ComputePipeline > m_pInstanceCullingPSO;
 	Box< render::ComputePipeline > m_pHiZGenerationPSO;
+	Box< render::ComputePipeline > m_pVoxelMeshDataPatchPSO; // stamps GPU meshlet count into the voxel instance's MeshData
 
 	// --- Readback ring ---
 	static constexpr u32  kReadbackSlots = kMaxFramesInFlight;

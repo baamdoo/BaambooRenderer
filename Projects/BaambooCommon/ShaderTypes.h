@@ -34,7 +34,11 @@ struct InstanceData
     u32 materialID;
 
     u32 visOffset;
+    u32 isVoxel;
 };
+
+// Voxel chunk i lives at instance (VOXEL_CHUNK_INSTANCE_BASE + i) and VoxelChunkCounts[i]
+constexpr u32 kVoxelChunkInstanceBase = 0u;
 
 struct IndirectCommandData
 {
@@ -364,38 +368,23 @@ struct CloudShadowData
 // =========================================================================
 // Voxel Chunk
 // =========================================================================
-struct VoxelChunk
+struct VoxelChunkDesc
 {
     float3 originWS;
-    float  voxelSizeMeter;
-
-    float3 aabbMin;
-    u32    lodDepth;
-
-    float3 aabbMax;
-    u32    transitionMask;
-
     u32    vertexOffset;          // slab base into the voxel Vertex pool
-    u32    vertexCount;
-    u32    meshletOffset;         // slab base into the voxel Meshlet pool
-    u32    meshletCount;
 
     u32    meshletVertexOffset;   // slab base into the voxel MeshletVertices pool
     u32    meshletTriangleOffset; // slab base into the voxel MeshletTriangles pool
-    u32    slabId;
     u32    padding0;
-
-    u32    terrainInstanceLo;
-    u32    terrainInstanceHi;
-    i32    chunkCoordX;
-    i32    chunkCoordY;
-
-    i32    chunkCoordZ;
-    u32    lod;
-    u32    fieldRevision;
-    u32    extractionRevision;
+    u32    padding1;
 };
-static_assert(sizeof(VoxelChunk) == 112);
+static_assert(sizeof(VoxelChunkDesc) == 32);
+
+struct VoxelChunkCounts
+{
+    u32 meshletCount;
+};
+static_assert(sizeof(VoxelChunkCounts) == 4);
 
 // =========================================================================
 // Voxel Terrain Generation Params

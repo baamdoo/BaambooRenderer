@@ -126,6 +126,10 @@ CullingNode::CullingNode(render::RenderDevice& rd)
 	m_pHiZGenerationPSO = ComputePipeline::Create(rd, "HiZGenerationPSO");
 	m_pHiZGenerationPSO->SetComputeShader(pHiZGenerationCS).Build();
 
+	auto pVoxelPatchCS = Shader::Create(rd, "VoxelMeshDataPatchCS", { .stage = eShaderStage::Compute, .filename = "VoxelMeshDataPatchCS" });
+	m_pVoxelMeshDataPatchPSO = ComputePipeline::Create(rd, "VoxelMeshDataPatchPSO");
+	m_pVoxelMeshDataPatchPSO->SetComputeShader(pVoxelPatchCS).Build();
+
 	g_FrameData.pHiZ = m_pHiZTexture;
 }
 
@@ -174,6 +178,41 @@ void CullingNode::DispatchMeshCull(render::CommandContext& context, u32 numInsta
 	context.TransitionBufferToRead(m_CulledIndirectCommandBuffer, ePipelineStage::DrawIndirect);
 	context.TransitionBufferToIndirectArgs(m_DrawCountBuffer, 0, false);
 	context.TransitionBufferToRead(m_DrawIndexBuffer, ePipelineStage::TaskShader, 0, true);
+}
+
+void CullingNode::PatchVoxelMeshData(render::CommandContext& context, const SceneRenderView& renderView)
+{
+	using namespace render;
+
+	if (!m_pVoxelMeshDataPatchPSO || !renderView.voxelTerrain.bValid)
+		return; // no voxel chunk authored this frame
+
+	auto& rm = m_RenderDevice.GetResourceManager();
+	auto& sr = rm.GetSceneResource();
+
+	auto pVoxelCounts = g_FrameData.pVoxelChunkCounts.lock();
+	auto pMeshData    = sr.GetMeshDataBuffer();
+	if (!pVoxelCounts || !pMeshData)
+		return;
+
+	context.SetRenderPipeline(m_pVoxelMeshDataPatchPSO.get());
+
+	context.TransitionBufferToRead(pVoxelCounts, ePipelineStage::ComputeShader);
+	context.TransitionBufferToWrite(pMeshData, ePipelineStage::ComputeShader);
+
+	// The voxel MeshData was appended after the static meshes, so its index == static mesh count.
+	struct
+	{
+		u32 voxelMeshID;
+	} constant = { (u32)renderView.meshes.size() };
+	context.SetComputeConstants(sizeof(constant), &constant);
+
+	context.StageDescriptor("g_VoxelCounts", pVoxelCounts);
+	context.StageDescriptor("g_MeshData", pMeshData);
+
+	context.Dispatch(1, 1, 1);
+
+	context.TransitionBufferToRead(pMeshData, ePipelineStage::AllShader);
 }
 
 // =========================================================================
@@ -299,7 +338,6 @@ MeshCullOutputs CullingNode::MakeMeshCullOutputs(u32 numInstances, u32 phase) co
 // =========================================================================
 void CullingNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)
 {
-	UNUSED(renderView);
 	using namespace render;
 
 	auto& rm = m_RenderDevice.GetResourceManager();
@@ -322,13 +360,18 @@ void CullingNode::Apply(render::CommandContext& context, const SceneRenderView& 
 	PublishReadbackStats();
 
 	// ============================================================
+	// VOXEL: build chunk geometry, then patch its GPU meshlet count into the unified MeshData.
+	// ============================================================
+	if (m_pVoxelNode)
+		m_pVoxelNode->BuildChunkGeometryIfNeeded(context, renderView);
+	PatchVoxelMeshData(context, renderView);
+
+	// ============================================================
 	// PHASE 1
 	// ============================================================
 	{
 		BAAMBOO_PROFILE_SCOPE(context, "Phase1Cull");
 		DispatchMeshCull(context, numInstances, kPhase1Cull);
-		if (m_pVoxelNode)
-			m_pVoxelNode->DispatchChunkCull(context, kPhase1Cull, m_pHiZTexture, renderView);
 
 		context.CopyBufferRegion(m_Phase1CountReadback, m_DrawCountBuffer, sizeof(u32), m_ReadbackIdx * sizeof(u32), 0);
 		context.TransitionBufferToRead(m_DrawCountBuffer, ePipelineStage::DrawIndirect, 0, true);
@@ -337,8 +380,6 @@ void CullingNode::Apply(render::CommandContext& context, const SceneRenderView& 
 		BAAMBOO_PROFILE_SCOPE_STATS(context, "Phase1Draw");
 		if (m_pGBufferNode)
 			m_pGBufferNode->DrawGBufferPhase1(context, MakeMeshCullOutputs(numInstances, kPhase1Cull));
-		if (m_pVoxelNode && m_pGBufferNode)
-			m_pVoxelNode->DrawChunksPhase1(context, m_pGBufferNode->GetPhase2RenderTarget(), renderView);
 
 #if PROFILING_LEVEL >= 1
 		const u32 statsBytes = kMeshletStatsFields * sizeof(u32);
@@ -360,8 +401,6 @@ void CullingNode::Apply(render::CommandContext& context, const SceneRenderView& 
 	{
 		BAAMBOO_PROFILE_SCOPE(context, "Phase2Cull");
 		DispatchMeshCull(context, numInstances, kPhase2Cull);
-		if (m_pVoxelNode)
-			m_pVoxelNode->DispatchChunkCull(context, kPhase2Cull, m_pHiZTexture, renderView);
 
 		context.CopyBufferRegion(m_Phase2CountReadback, m_DrawCountBuffer, sizeof(u32), m_ReadbackIdx * sizeof(u32), 0);
 		context.TransitionBufferToRead(m_DrawCountBuffer, ePipelineStage::DrawIndirect, 0, true);
@@ -370,8 +409,6 @@ void CullingNode::Apply(render::CommandContext& context, const SceneRenderView& 
 		BAAMBOO_PROFILE_SCOPE_STATS(context, "Phase2Draw");
 		if (m_pGBufferNode)
 			m_pGBufferNode->DrawGBufferPhase2(context, MakeMeshCullOutputs(numInstances, kPhase2Cull));
-		if (m_pVoxelNode && m_pGBufferNode)
-			m_pVoxelNode->DrawChunksPhase2(context, m_pGBufferNode->GetPhase2RenderTarget(), renderView);
 
 #if PROFILING_LEVEL >= 1
 		const u32 statsBytes = kMeshletStatsFields * sizeof(u32);

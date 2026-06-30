@@ -253,46 +253,48 @@ static DXGI_FORMAT ConvertToDx12Format(render::eFormat format)
 static D3D12_BARRIER_SYNC ConvertToD3D12BarrierSync(render::ePipelineStage stage)
 {
 	using namespace render;
-	switch (stage)
-	{
-	case ePipelineStage::None:         return D3D12_BARRIER_SYNC_NONE;
-	case ePipelineStage::TopPipe:      return D3D12_BARRIER_SYNC_ALL;
-	case ePipelineStage::BottomPipe:   return D3D12_BARRIER_SYNC_ALL;
-	case ePipelineStage::DrawIndirect: return D3D12_BARRIER_SYNC_EXECUTE_INDIRECT;
+	const u64 s = static_cast< u64 >(stage);
+	if (s == 0)
+		return D3D12_BARRIER_SYNC_NONE;
 
-	case ePipelineStage::VertexInput:  return D3D12_BARRIER_SYNC_INDEX_INPUT | D3D12_BARRIER_SYNC_VERTEX_SHADING;
-	case ePipelineStage::VertexShader: return D3D12_BARRIER_SYNC_VERTEX_SHADING;
-	case ePipelineStage::HullShader:	 
-	case ePipelineStage::DomainShader:	 
-	case ePipelineStage::GeometryShader: 
-	case ePipelineStage::TaskShader:
-	case ePipelineStage::MeshShader:
-		return D3D12_BARRIER_SYNC_NON_PIXEL_SHADING;
-	case ePipelineStage::PixelShader: 
-	case ePipelineStage::ShadingRate:
-		return D3D12_BARRIER_SYNC_PIXEL_SHADING;
+	// Whole-pipe markers dominate any combination.
+	if ((s & (TopPipe | BottomPipe)) != 0)
+		return D3D12_BARRIER_SYNC_ALL;
 
-	case ePipelineStage::EarlyFragmentTests:
-	case ePipelineStage::LateFragmentTests: 
-		return D3D12_BARRIER_SYNC_DEPTH_STENCIL;
-	case ePipelineStage::ColorAttachmentOutput: return D3D12_BARRIER_SYNC_RENDER_TARGET;
-	case ePipelineStage::ComputeShader:         return D3D12_BARRIER_SYNC_COMPUTE_SHADING;
+	auto has = [s](ePipelineStage bit) { return (s & static_cast< u64 >(bit)) != 0; };
 
-	case ePipelineStage::AllTransfer:
-	case ePipelineStage::Copy:
-	case ePipelineStage::Blit: 
-		return D3D12_BARRIER_SYNC_COPY;
-	case ePipelineStage::Resolve: return D3D12_BARRIER_SYNC_RESOLVE;
+	D3D12_BARRIER_SYNC sync = D3D12_BARRIER_SYNC_NONE;
+	if (has(DrawIndirect))
+		sync |= D3D12_BARRIER_SYNC_EXECUTE_INDIRECT;
+	if (has(VertexInput))
+		sync |= D3D12_BARRIER_SYNC_INDEX_INPUT | D3D12_BARRIER_SYNC_VERTEX_SHADING;
+	if (has(VertexShader))
+		sync |= D3D12_BARRIER_SYNC_VERTEX_SHADING;
+	if (has(HullShader) || has(DomainShader) || has(GeometryShader) || has(TaskShader) || has(MeshShader))
+		sync |= D3D12_BARRIER_SYNC_NON_PIXEL_SHADING;
+	if (has(PixelShader) || has(ShadingRate))
+		sync |= D3D12_BARRIER_SYNC_PIXEL_SHADING;
+	if (has(EarlyFragmentTests) || has(LateFragmentTests))
+		sync |= D3D12_BARRIER_SYNC_DEPTH_STENCIL;
+	if (has(ColorAttachmentOutput))
+		sync |= D3D12_BARRIER_SYNC_RENDER_TARGET;
+	if (has(ComputeShader))
+		sync |= D3D12_BARRIER_SYNC_COMPUTE_SHADING;
+	if (has(AllTransfer) || has(Copy) || has(Blit))
+		sync |= D3D12_BARRIER_SYNC_COPY;
+	if (has(Resolve))
+		sync |= D3D12_BARRIER_SYNC_RESOLVE;
+	if (has(Clear))
+		sync |= D3D12_BARRIER_SYNC_CLEAR_UNORDERED_ACCESS_VIEW;
+	if (has(AccelerationStructureBuild))
+		sync |= D3D12_BARRIER_SYNC_BUILD_RAYTRACING_ACCELERATION_STRUCTURE;
+	if (has(RayTracingShader))
+		sync |= D3D12_BARRIER_SYNC_RAYTRACING;
+	if (has(AllShader))
+		sync |= D3D12_BARRIER_SYNC_ALL_SHADING;
 
-	case ePipelineStage::Clear:                 return D3D12_BARRIER_SYNC_CLEAR_UNORDERED_ACCESS_VIEW;
-
-	case ePipelineStage::AccelerationStructureBuild: return D3D12_BARRIER_SYNC_BUILD_RAYTRACING_ACCELERATION_STRUCTURE;
-	case ePipelineStage::RayTracingShader:           return D3D12_BARRIER_SYNC_RAYTRACING;
-
-	default:
-		assert(false && "Invalid pipeline stage bit!"); break;
-	}
-	return D3D12_BARRIER_SYNC_NONE;
+	assert(sync != D3D12_BARRIER_SYNC_NONE && "Invalid pipeline stage bit(s)!");
+	return sync;
 }
 
 #define DX12_COMPAREOP(op) ConvertToDx12CompareOp(op)

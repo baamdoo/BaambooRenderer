@@ -286,41 +286,41 @@ static VkShaderStageFlags ConvertToVkShaderStage(render::eShaderStage stage)
 static VkPipelineStageFlagBits2 ConvertToVkPipelineStage2(render::ePipelineStage stage)
 {
 	using namespace render;
-	switch (stage)
-	{
-	case ePipelineStage::None                 : return VK_PIPELINE_STAGE_2_NONE;
-	case ePipelineStage::TopPipe              : return VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-	case ePipelineStage::DrawIndirect         : return VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
-	case ePipelineStage::VertexInput          : return VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT;
-	case ePipelineStage::VertexShader         : return VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
-	case ePipelineStage::HullShader           : return VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT;
-	case ePipelineStage::DomainShader         : return VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT;
-	case ePipelineStage::GeometryShader       : return VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT;
-	case ePipelineStage::PixelShader          : return VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-	case ePipelineStage::EarlyFragmentTests   : return VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
-	case ePipelineStage::LateFragmentTests    : return VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-	case ePipelineStage::ColorAttachmentOutput: return VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-	case ePipelineStage::ComputeShader        : return VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-	case ePipelineStage::AllTransfer          : return VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
-	case ePipelineStage::BottomPipe           : return VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
-	case ePipelineStage::Host                 : return VK_PIPELINE_STAGE_2_HOST_BIT;
-	case ePipelineStage::Copy                 : return VK_PIPELINE_STAGE_2_COPY_BIT;
-	case ePipelineStage::Resolve              : return VK_PIPELINE_STAGE_2_RESOLVE_BIT;
-	case ePipelineStage::Blit                 : return VK_PIPELINE_STAGE_2_BLIT_BIT;
-	case ePipelineStage::Clear                : return VK_PIPELINE_STAGE_2_CLEAR_BIT;
+	const u64 s = static_cast< u64 >(stage);
+	if (s == 0)
+		return VK_PIPELINE_STAGE_2_NONE;
 
-	case ePipelineStage::ShadingRate               : return VK_PIPELINE_STAGE_2_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR;
-	case ePipelineStage::AccelerationStructureBuild: return VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
-	case ePipelineStage::RayTracingShader          : return VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR;
+	auto has = [s](ePipelineStage bit) { return (s & static_cast< u64 >(bit)) != 0; };
 
-	case ePipelineStage::TaskShader: return VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT;
-	case ePipelineStage::MeshShader: return VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT;
+	VkPipelineStageFlags2 flags = 0;
+	if (has(TopPipe))                    flags |= VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+	if (has(DrawIndirect))               flags |= VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
+	if (has(VertexInput))                flags |= VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT;
+	if (has(VertexShader))               flags |= VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
+	if (has(HullShader))                 flags |= VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT;
+	if (has(DomainShader))               flags |= VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT;
+	if (has(GeometryShader))             flags |= VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT;
+	if (has(PixelShader))                flags |= VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+	if (has(EarlyFragmentTests))         flags |= VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
+	if (has(LateFragmentTests))          flags |= VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
+	if (has(ColorAttachmentOutput))      flags |= VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+	if (has(ComputeShader))              flags |= VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+	if (has(AllTransfer))                flags |= VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
+	if (has(BottomPipe))                 flags |= VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+	if (has(Host))                       flags |= VK_PIPELINE_STAGE_2_HOST_BIT;
+	if (has(Copy))                       flags |= VK_PIPELINE_STAGE_2_COPY_BIT;
+	if (has(Resolve))                    flags |= VK_PIPELINE_STAGE_2_RESOLVE_BIT;
+	if (has(Blit))                       flags |= VK_PIPELINE_STAGE_2_BLIT_BIT;
+	if (has(Clear))                      flags |= VK_PIPELINE_STAGE_2_CLEAR_BIT;
+	if (has(ShadingRate))                flags |= VK_PIPELINE_STAGE_2_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR;
+	if (has(AccelerationStructureBuild)) flags |= VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
+	if (has(RayTracingShader))           flags |= VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR;
+	if (has(TaskShader))                 flags |= VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT;
+	if (has(MeshShader))                 flags |= VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT;
+	if (has(AllShader))                  flags |= VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
 
-	default:
-		assert(false && "Invalid pipeline stage bit!"); break;
-	}
-
-	return VK_PIPELINE_STAGE_2_NONE;
+	assert(flags != 0 && "Invalid pipeline stage bit(s)!");
+	return static_cast< VkPipelineStageFlagBits2 >(flags);
 }
 
 #define VK_COMPAREOP(op) ConvertToVkCompareOp(op)

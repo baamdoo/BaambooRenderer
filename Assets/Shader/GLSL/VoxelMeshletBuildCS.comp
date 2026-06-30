@@ -12,9 +12,9 @@ layout(push_constant) uniform MeshletBuildPushConstants
     uint g_MaxTriangles;
 } pc;
 
-layout(set = 1, binding = 0) buffer McCounterBuffer  { uint       g_MCCounter[]; };
-layout(set = 1, binding = 1) buffer OutMeshletBuffer { Meshlet    g_OutMeshlets[]; };
-layout(set = 1, binding = 2) buffer OutChunkBuffer   { VoxelChunk g_OutChunks[]; };
+layout(set = 1, binding = 0) buffer McCounterBuffer  { uint g_MCCounter[]; };
+layout(set = 1, binding = 1) buffer OutMeshletBuffer { Meshlet g_OutMeshlets[]; };
+layout(set = 1, binding = 2) buffer OutCountsBuffer  { VoxelChunkCounts g_OutCounts[]; };
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 void main()
@@ -28,10 +28,9 @@ void main()
     uint K           = pc.g_TrianglesPerMeshlet;
     uint numMeshlets = min((totalTris + K - 1u) / K, pc.g_MaxMeshlets);
 
-    if (m == 0u) // lane 0 publishes the GPU-driven counts to the chunk row
+    if (m == 0u) // Thread-0 publishes the GPU-driven meshlet count to the chunk's counts row
     {
-        g_OutChunks[pc.g_ChunkID].vertexCount  = totalTris * 3u;
-        g_OutChunks[pc.g_ChunkID].meshletCount = numMeshlets;
+        g_OutCounts[pc.g_ChunkID].meshletCount = numMeshlets;
     }
 
     if (m >= numMeshlets)

@@ -44,7 +44,6 @@ SurfaceResolveNode::SurfaceResolveNode(render::RenderDevice& rd)
 				.bufferUsage        = eBufferUsage_Storage,
 			});
 	};
-	m_pVoxelChunksFallback          = MakeFallback("SurfaceResolvePass::VoxelChunksFallback", sizeof(VoxelChunk));
 	m_pVoxelVertexFallback          = MakeFallback("SurfaceResolvePass::VoxelVertexFallback", sizeof(::Vertex));
 	m_pVoxelMeshletFallback         = MakeFallback("SurfaceResolvePass::VoxelMeshletFallback", sizeof(Meshlet));
 	m_pVoxelMeshletVertexFallback   = MakeFallback("SurfaceResolvePass::VoxelMeshletVertexFallback", sizeof(u32));
@@ -87,19 +86,17 @@ void SurfaceResolveNode::Apply(render::CommandContext& context, const SceneRende
 	context.StageDescriptor("g_CoreNormal", m_pCoreNormal);
 	context.StageDescriptor("g_CoreMaterial", m_pCoreMaterial);
 
-	auto pVoxChunks   = g_FrameData.pVoxelChunks.lock();
 	auto pVoxVerts    = g_FrameData.pVoxelVertices.lock();
 	auto pVoxMeshlets = g_FrameData.pVoxelMeshlets.lock();
 	auto pVoxMv       = g_FrameData.pVoxelMeshletVertices.lock();
 	auto pVoxMt       = g_FrameData.pVoxelMeshletTriangles.lock();
 
-	if (pVoxChunks)   context.TransitionBufferToRead(pVoxChunks,   ePipelineStage::ComputeShader);
 	if (pVoxVerts)    context.TransitionBufferToRead(pVoxVerts,    ePipelineStage::ComputeShader);
 	if (pVoxMeshlets) context.TransitionBufferToRead(pVoxMeshlets, ePipelineStage::ComputeShader);
 	if (pVoxMv)       context.TransitionBufferToRead(pVoxMv,       ePipelineStage::ComputeShader);
 	if (pVoxMt)       context.TransitionBufferToRead(pVoxMt,       ePipelineStage::ComputeShader);
 
-	context.StageDescriptor("g_VoxelChunks",           pVoxChunks   ? pVoxChunks   : m_pVoxelChunksFallback);
+	context.SetComputeDynamicUniformBuffer("g_VoxelChunkDesc", g_FrameData.voxelChunkDesc);
 	context.StageDescriptor("g_VoxelVertices",         pVoxVerts    ? pVoxVerts    : m_pVoxelVertexFallback);
 	context.StageDescriptor("g_VoxelMeshlets",         pVoxMeshlets ? pVoxMeshlets : m_pVoxelMeshletFallback);
 	context.StageDescriptor("g_VoxelMeshletVertices",  pVoxMv       ? pVoxMv       : m_pVoxelMeshletVertexFallback);

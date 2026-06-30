@@ -448,12 +448,12 @@ void main(uint3 tID : SV_DispatchThreadID)
     if (tID.x >= imgSize.x || tID.y >= imgSize.y)
         return;
 
-    Texture2D< float >    DepthBuffer          = GetResource(g_DepthBuffer.index);
-    RWTexture2D< float2 > BlueNoiseLUT         = GetResource(g_BlueNoiseLUT.index);
-    Texture3D< float4 >   AerialPerspectiveLUT = GetResource(g_AerialPerspectiveLUT.index);
+    Texture2D< float >  DepthBuffer          = GetResource(g_DepthBuffer.index);
+    Texture2D< float2 > BlueNoiseLUT         = GetResource(g_BlueNoiseLUT.index);
+    Texture3D< float4 > AerialPerspectiveLUT = GetResource(g_AerialPerspectiveLUT.index);
 
-    float2 uv       = float2(tID.xy + 0.5) / float2(imgSize);
-    float  depth    = DepthBuffer.Sample(g_PointClampSampler, uv).r;
+    float2 uv    = float2(tID.xy + 0.5) / float2(imgSize);
+    float  depth = DepthBuffer.Sample(g_PointClampSampler, uv).r;
 
     CloudData      Cloud      = GetCloudData();
     AtmosphereData Atmosphere = GetAtmosphereData();
@@ -491,7 +491,7 @@ void main(uint3 tID : SV_DispatchThreadID)
         uint3 wrappedCoordinate  = uint3(fullResPixelCoords, g_Frame) & moduloMasks;
         int2  noiseUV            = int2(wrappedCoordinate.x, wrappedCoordinate.z * 128.0 + wrappedCoordinate.y);
 
-        jitter = BlueNoiseLUT.Load(noiseUV).rr;
+        jitter = BlueNoiseLUT.Load(int3(noiseUV, 0)).rr;
     }
 
     CloudResult cloud = RaymarchCloud(rayOrigin, rayDirection, maxDistance, jitter);

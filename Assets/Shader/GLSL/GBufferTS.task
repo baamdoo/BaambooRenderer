@@ -63,7 +63,7 @@ struct TaskPayload
 };
 taskPayloadSharedEXT TaskPayload Payload;
 
-// Lane 0 loads everything once, derived offsets are cached in shared memory to reduce LSGB stall.
+// Thread-0 loads everything once, derived offsets are cached in shared memory to reduce LSGB stall.
 shared mat4  sh_LocalToWorld;
 shared float sh_MaxScale;
 shared uint  sh_VisOffset;
@@ -71,6 +71,7 @@ shared uint  sh_Lod;
 shared uint  sh_MeshletOffset;
 shared uint  sh_MeshletCount;
 shared uint  sh_DrawID;
+shared uint  sh_IsVoxel;
 
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 void main()
@@ -98,6 +99,7 @@ void main()
 		sh_MeshletOffset = mesh.lods[lod].mOffset;
 		sh_MeshletCount  = mesh.lods[lod].mCount;
 		sh_DrawID        = drawID;
+		sh_IsVoxel       = instance.isVoxel;
 	}
 	barrier();
 
@@ -115,7 +117,12 @@ void main()
 	uint myTriCount = 0u; // triangleCount of THIS thread's meshlet, only when accept
 #endif
 
-	if (bValid)
+	if (bValid && sh_IsVoxel != 0u)
+	{
+		// TODO: culling on voxels
+		accept = true;
+	}
+	else if (bValid)
 	{
 		bool bPrevVis   = (g_MeshletVisibilityBuffer[visWord] & visBitMsk) != 0u;
 	    bool bOcclusion = (g_CullData.cullFlags & CULL_FLAG_MESHLET_OCCLUSION) != 0u;

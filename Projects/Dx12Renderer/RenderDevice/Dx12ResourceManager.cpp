@@ -144,11 +144,7 @@ Dx12ResourceManager::Dx12ResourceManager(Dx12RenderDevice& rd)
 
     // Global CBVs
     m_pGlobalRootSignature->AddCBV(0, kGlobalDescriptorSpace);           // g_Camera
-    m_pGlobalRootSignature->AddConstants(1, kGlobalDescriptorSpace, 1);  // g_Vertices
-    m_pGlobalRootSignature->AddConstants(2, kGlobalDescriptorSpace, 1);  // g_Indices
-    m_pGlobalRootSignature->AddConstants(3, kGlobalDescriptorSpace, 1);  // g_Meshlets
-    m_pGlobalRootSignature->AddConstants(4, kGlobalDescriptorSpace, 1);  // g_MeshletVertices
-    m_pGlobalRootSignature->AddConstants(5, kGlobalDescriptorSpace, 1);  // g_MeshletTriangles
+    m_pGlobalRootSignature->AddCBV(1, kGlobalDescriptorSpace);           // g_MeshStreams CBV (vertices/indices/meshlets/meshletVertices/meshletTriangles heap indices)
     m_pGlobalRootSignature->AddConstants(6, kGlobalDescriptorSpace, 1);  // g_Meshes
     m_pGlobalRootSignature->AddConstants(7, kGlobalDescriptorSpace, 1);  // g_Instances
     m_pGlobalRootSignature->AddCBV(8, kGlobalDescriptorSpace);           // g_CullData

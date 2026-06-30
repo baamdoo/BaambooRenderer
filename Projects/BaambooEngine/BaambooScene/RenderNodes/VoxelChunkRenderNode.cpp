@@ -43,46 +43,13 @@ VoxelChunkRenderNode::VoxelChunkRenderNode(render::RenderDevice& rd)
 			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest,
 		});
 
-	m_pChunkTableBuffer = Buffer::Create(rd, "VoxelChunkPass::ChunkTable",
+	m_pChunkCountsBuffer = Buffer::Create(rd, "VoxelChunkPass::ChunkCounts",
 		{
 			.count              = kMaxChunks,
-			.elementSizeInBytes = sizeof(VoxelChunk),
-			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest,
+			.elementSizeInBytes = sizeof(VoxelChunkCounts),
+			.bufferUsage        = eBufferUsage_Storage,
 		});
-	m_pIndirectCommands = Buffer::Create(rd, "VoxelChunkPass::IndirectCommands",
-		{
-			.count              = kMaxChunks,
-			.elementSizeInBytes = sizeof(IndirectCommandData),
-			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_Indirect,
-		});
-	m_pDrawCountBuffer = Buffer::Create(rd, "VoxelChunkPass::DrawCount",
-		{
-			.count              = 1,
-			.elementSizeInBytes = sizeof(u32),
-			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_Indirect
-			                    | eBufferUsage_TransferSource | eBufferUsage_TransferDest
-			                    | eBufferUsage_ShaderDeviceAddress,
-		});
-
 	m_FreeSlabs.reserve(kMaxResidentSlabs);
-
-	auto pCullingCS = Shader::Create(rd, "VoxelChunkCullingCS",
-		{ .stage = eShaderStage::Compute, .filename = "VoxelChunkCullingCS" });
-	m_pChunkCullingPSO = ComputePipeline::Create(rd, "VoxelChunkCullingPSO");
-	m_pChunkCullingPSO->SetComputeShader(pCullingCS).Build();
-
-	auto pSharedRT = g_FrameData.pPhase2Draw.lock();
-	if (pSharedRT)
-	{
-		auto pMS = Shader::Create(rd, "VoxelGBufferMS", { .stage = eShaderStage::Mesh,     .filename = "VoxelGBufferMS" });
-		auto pPS = Shader::Create(rd, "GBufferPS",      { .stage = eShaderStage::Fragment, .filename = "GBufferPS" });
-
-		m_pVoxelGBufferPSO = GraphicsPipeline::Create(rd, "VoxelGBufferPSO");
-		m_pVoxelGBufferPSO->SetMeshShaders(pMS, pPS)
-			              .SetRenderTarget(pSharedRT)
-			              .SetCullMode(eCullMode::None)                            // closed iso-surface
-			              .SetDepthWriteEnable(true, eCompareOp::Greater).Build(); // reversed-Z
-	}
 
 	// Density volume + the linear copy the MC extract actually samples (texture is write-only for now).
 	const u32 kDensityVoxelCount = kDensityVolumeDim * kDensityVolumeDim * kDensityVolumeDim;
@@ -115,7 +82,7 @@ VoxelChunkRenderNode::VoxelChunkRenderNode(render::RenderDevice& rd)
 		{
 			.count              = 2, // [triangleCount, activeCellCount]
 			.elementSizeInBytes = sizeof(u32),
-			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest, // TransferDest: ClearBuffer uses vkCmdFillBuffer
+			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest,
 		});
 
 	auto pMCExtractCS = Shader::Create(rd, "VoxelMarchingCubesCS",
@@ -128,21 +95,11 @@ VoxelChunkRenderNode::VoxelChunkRenderNode(render::RenderDevice& rd)
 	m_pMeshletBuildPSO = ComputePipeline::Create(rd, "VoxelMeshletBuildPSO");
 	m_pMeshletBuildPSO->SetComputeShader(pMeshletBuildCS).Build();
 
-	PublishPools();
-}
-
-void VoxelChunkRenderNode::CapturePending(const VoxelTerrainRenderView& vt)
-{
-	m_PendingOriginWS           = vt.originWorld;
-	m_PendingVoxelSize          = vt.voxelSizeMeter;
-	m_PendingChunkWorldSz       = vt.chunkWorldSizeMeter;
-	m_PendingTerrainInstance    = vt.terrainInstance;
-	m_PendingChunkCoord         = vt.chunkCoord;
-	m_PendingLOD                = vt.lod;
-	m_PendingFieldRevision      = vt.fieldRevision;
-	m_PendingExtractionRevision = vt.extractionRevision;
-	m_PendingRevision           = vt.revision;
-	m_bHasPending               = true;
+	g_FrameData.pVoxelChunkCounts      = m_pChunkCountsBuffer;
+	g_FrameData.pVoxelVertices         = m_pVertexPool;
+	g_FrameData.pVoxelMeshlets         = m_pMeshletPool;
+	g_FrameData.pVoxelMeshletVertices  = m_pMeshletVertexPool;
+	g_FrameData.pVoxelMeshletTriangles = m_pMeshletTrianglePool;
 }
 
 u32 VoxelChunkRenderNode::AllocateSlab()
@@ -159,24 +116,19 @@ u32 VoxelChunkRenderNode::AllocateSlab()
 	return kInvalidIndex; // pool exhausted (multi-chunk streaming will grow x2)
 }
 
-bool VoxelChunkRenderNode::EnsureChunkResident(render::CommandContext& context)
+bool VoxelChunkRenderNode::EnsureChunkResident(render::CommandContext& context, const VoxelTerrainRenderView& vt)
 {
-	if (!m_bHasPending)
-		return true;
-
 	if (m_ChunkSlabId == kInvalidIndex)
 		m_ChunkSlabId = AllocateSlab();
 	if (m_ChunkSlabId == kInvalidIndex)
 	{
 		fprintf(stderr, "[VoxelChunkRenderNode] slab pool exhausted.\n");
-		DiscardPending(m_PendingRevision);
 		return false;
 	}
 
 	const u32 vBase  = m_ChunkSlabId * kVertexSlabCapacity;
 	const u32 mvBase = m_ChunkSlabId * kMeshletVertexSlabCap;
 	const u32 mtBase = m_ChunkSlabId * kMeshletTriSlabCap;
-	const u32 mlBase = m_ChunkSlabId * kMeshletSlabCapacity;
 
 	if (!m_bTriTableUploaded)
 	{
@@ -187,7 +139,7 @@ bool VoxelChunkRenderNode::EnsureChunkResident(render::CommandContext& context)
 	}
 
 	// Per-corner meshlets are field-independent: vertices = identity, triangles = repeating {3t,3t+1,3t+2}. Upload once per slab.
-	if (!m_bSlabStaticUploaded)
+	if (!m_SlabStaticUploaded[m_ChunkSlabId])
 	{
 		std::vector< u32 > identityMV(kMeshletVertexSlabCap);
 		for (u32 i = 0u; i < kMeshletVertexSlabCap; ++i)
@@ -202,47 +154,18 @@ bool VoxelChunkRenderNode::EnsureChunkResident(render::CommandContext& context)
 
 		context.UploadData(m_pMeshletVertexPool,   identityMV.data(), kMeshletVertexSlabCap, sizeof(u32), (u64)mvBase * sizeof(u32));
 		context.UploadData(m_pMeshletTrianglePool, patternMT.data(),  kMeshletTriSlabCap,    sizeof(u32), (u64)mtBase * sizeof(u32));
-		m_bSlabStaticUploaded = true;
+		m_SlabStaticUploaded[m_ChunkSlabId] = true;
 	}
 
-	// vertexCount/meshletCount stay 0; VoxelMeshletBuildCS patches them after extraction.
-	VoxelChunk row = {};
-	row.originWS              = m_PendingOriginWS;
-	row.voxelSizeMeter        = m_PendingVoxelSize;
-	row.aabbMin               = m_PendingOriginWS;
-	row.aabbMax               = m_PendingOriginWS + float3(m_PendingChunkWorldSz);
-	row.lodDepth              = m_PendingLOD;
-	row.transitionMask        = 0u;
-	row.vertexOffset          = vBase;
-	row.vertexCount           = 0u;
-	row.meshletOffset         = mlBase;
-	row.meshletCount          = 0u;
-	row.meshletVertexOffset   = mvBase;
-	row.meshletTriangleOffset = mtBase;
-	row.slabId                = m_ChunkSlabId;
-	row.padding0              = 0u;
-	row.terrainInstanceLo    = static_cast< u32 >(m_PendingTerrainInstance & 0xFFFFFFFFull);
-	row.terrainInstanceHi    = static_cast< u32 >((m_PendingTerrainInstance >> 32) & 0xFFFFFFFFull);
-	row.chunkCoordX          = m_PendingChunkCoord.x;
-	row.chunkCoordY          = m_PendingChunkCoord.y;
-	row.chunkCoordZ          = m_PendingChunkCoord.z;
-	row.lod                  = m_PendingLOD;
-	row.fieldRevision        = m_PendingFieldRevision;
-	row.extractionRevision   = m_PendingExtractionRevision;
-	context.UploadData(m_pChunkTableBuffer, &row, 1, sizeof(VoxelChunk), 0);
+	VoxelChunkDesc desc = {};
+	desc.originWS              = vt.originWorld;
+	desc.vertexOffset          = vBase;
+	desc.meshletVertexOffset   = mvBase;
+	desc.meshletTriangleOffset = mtBase;
+	g_FrameData.voxelChunkDesc = desc;
 
-	m_NumChunks        = 1u;
-	m_BuiltRevision    = m_PendingRevision;
-	m_RejectedRevision = kInvalidIndex;
-	m_bHasPending      = false;
+	m_BuiltRevision = vt.revision;
 	return true;
-}
-
-void VoxelChunkRenderNode::DiscardPending(u32 rejectedRevision)
-{
-	m_bHasPending      = false;
-	m_PendingRevision  = kInvalidIndex;
-	m_RejectedRevision = rejectedRevision;
 }
 
 void VoxelChunkRenderNode::DispatchDensity(render::CommandContext& context, const VoxelTerrainRenderView& vt)
@@ -314,7 +237,7 @@ void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, c
 
 	// Pass B: pack sequential meshlets and patch vertexCount/meshletCount into the chunk row.
 	context.TransitionBufferToWrite(m_pMeshletPool, ePipelineStage::ComputeShader);
-	context.TransitionBufferToWrite(m_pChunkTableBuffer, ePipelineStage::ComputeShader);
+	context.TransitionBufferToWrite(m_pChunkCountsBuffer, ePipelineStage::ComputeShader);
 
 	context.SetRenderPipeline(m_pMeshletBuildPSO.get());
 	struct
@@ -326,13 +249,13 @@ void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, c
 		u32 maxTriangles;
 	} mb = { 0u, mlBase, kTrianglesPerMeshlet, kMeshletSlabCapacity, kMaxTrianglesPerChunk };
 	context.SetComputeConstants(sizeof(mb), &mb);
-	context.StageDescriptor("g_MCCounter",   m_pMCCounter);
+	context.StageDescriptor("g_MCCounter", m_pMCCounter);
 	context.StageDescriptor("g_OutMeshlets", m_pMeshletPool);
-	context.StageDescriptor("g_OutChunks",   m_pChunkTableBuffer);
+	context.StageDescriptor("g_OutCounts", m_pChunkCountsBuffer);
 	context.Dispatch1D< 64 >(kMeshletSlabCapacity);
 
 	context.UAVBarrier(m_pMeshletPool);
-	context.UAVBarrier(m_pChunkTableBuffer, true);
+	context.UAVBarrier(m_pChunkCountsBuffer, true);
 }
 
 void VoxelChunkRenderNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)
@@ -341,120 +264,21 @@ void VoxelChunkRenderNode::Apply(render::CommandContext& context, const SceneRen
 	UNUSED(renderView);
 }
 
-void VoxelChunkRenderNode::DispatchChunkCull(render::CommandContext& context, u32 phase, const Arc< render::Texture >& pHiZTexture, const SceneRenderView& renderView)
+void VoxelChunkRenderNode::BuildChunkGeometryIfNeeded(render::CommandContext& context, const SceneRenderView& renderView)
 {
-	UNUSED(pHiZTexture); // HiZ occlusion deferred to a later (multi-chunk) phase
 	using namespace render;
 
 	const VoxelTerrainRenderView& vt = renderView.voxelTerrain;
 	if (vt.bValid &&
-		vt.revision != m_BuiltRevision &&
-		vt.revision != m_PendingRevision &&
-		vt.revision != m_RejectedRevision)
+		vt.revision != m_BuiltRevision)
 	{
 		// GPU build: density volume -> marching cubes -> vertex/meshlet pools + row count patch.
-		CapturePending(vt);
-		if (EnsureChunkResident(context))
+		if (EnsureChunkResident(context, vt))
 		{
 			DispatchDensity(context, vt);
 			DispatchExtraction(context, vt);
 		}
 	}
-
-	if (phase != 0u /* CullingNode::kPhase1Cull */)
-		return;
-
-	context.ClearBuffer(m_pDrawCountBuffer, 0);
-
-	if (m_NumChunks == 0u) // no resident chunk -> the cull CS would emit no draws; skip it
-	{
-		context.TransitionBufferToRead(m_pDrawCountBuffer, ePipelineStage::DrawIndirect, 0, true);
-		return;
-	}
-
-	context.SetRenderPipeline(m_pChunkCullingPSO.get());
-
-	context.TransitionBufferToWrite(m_pIndirectCommands, ePipelineStage::ComputeShader);
-	context.TransitionBufferToWrite(m_pDrawCountBuffer, ePipelineStage::ComputeShader);
-	context.TransitionBufferToRead(m_pChunkTableBuffer, ePipelineStage::ComputeShader);
-
-	struct
-	{
-		u32 numChunks;
-		u32 cullingPhase;
-	} constant = {
-		.numChunks    = m_NumChunks,
-		.cullingPhase = phase,
-	};
-	context.SetComputeConstants(sizeof(constant), &constant);
-
-	context.StageDescriptor("g_VoxelChunks",      m_pChunkTableBuffer);
-	context.StageDescriptor("g_IndirectCommands", m_pIndirectCommands);
-	context.StageDescriptor("g_DrawCount",        m_pDrawCountBuffer);
-
-	context.Dispatch1D< 64 >(m_NumChunks);
-
-	context.TransitionBufferToRead(m_pIndirectCommands, ePipelineStage::DrawIndirect);
-	context.TransitionBufferToIndirectArgs(m_pDrawCountBuffer, 0, true);
-}
-
-void VoxelChunkRenderNode::DrawChunksPhase1(render::CommandContext& context, Arc< render::RenderTarget > rt, const SceneRenderView& renderView)
-{
-	DrawChunksImpl(context, rt, renderView);
-}
-
-void VoxelChunkRenderNode::DrawChunksPhase2(render::CommandContext& context, Arc< render::RenderTarget > rt, const SceneRenderView& renderView)
-{
-	UNUSED(context);
-	UNUSED(rt);
-	UNUSED(renderView);
-}
-
-void VoxelChunkRenderNode::DrawChunksImpl(render::CommandContext& context, Arc< render::RenderTarget > rt, const SceneRenderView& renderView)
-{
-	using namespace render;
-	UNUSED(renderView);
-
-	if (!m_pVoxelGBufferPSO || !rt || m_NumChunks == 0u)
-		return;
-
-	context.TransitionBufferToRead(m_pChunkTableBuffer,      ePipelineStage::MeshShader);
-	context.TransitionBufferToRead(m_pVertexPool,            ePipelineStage::MeshShader);
-	context.TransitionBufferToRead(m_pMeshletPool,           ePipelineStage::MeshShader);
-	context.TransitionBufferToRead(m_pMeshletVertexPool,     ePipelineStage::MeshShader);
-	context.TransitionBufferToRead(m_pMeshletTrianglePool,   ePipelineStage::MeshShader);
-
-	context.BeginRenderPass(rt);
-	{
-		context.SetRenderPipeline(m_pVoxelGBufferPSO.get());
-
-		context.StageDescriptor("g_VoxelChunks",           m_pChunkTableBuffer);
-		context.StageDescriptor("g_VoxelVertices",         m_pVertexPool);
-		context.StageDescriptor("g_VoxelMeshlets",         m_pMeshletPool);
-		context.StageDescriptor("g_VoxelMeshletVertices",  m_pMeshletVertexPool);
-		context.StageDescriptor("g_VoxelMeshletTriangles", m_pMeshletTrianglePool);
-
-		context.DrawMeshTasksIndirectCount(
-			m_pIndirectCommands,
-			offsetof(IndirectCommandData, groupCountX),
-			m_pDrawCountBuffer,
-			kMaxChunks,
-			sizeof(IndirectCommandData));
-	}
-	context.EndRenderPass();
-
-	rt->InvalidateImageLayout();
-
-	PublishPools();
-}
-
-void VoxelChunkRenderNode::PublishPools()
-{
-	g_FrameData.pVoxelChunks           = m_pChunkTableBuffer;
-	g_FrameData.pVoxelVertices         = m_pVertexPool;
-	g_FrameData.pVoxelMeshlets         = m_pMeshletPool;
-	g_FrameData.pVoxelMeshletVertices  = m_pMeshletVertexPool;
-	g_FrameData.pVoxelMeshletTriangles = m_pMeshletTrianglePool;
 }
 
 void VoxelChunkRenderNode::Resize(u32 width, u32 height, u32 depth)

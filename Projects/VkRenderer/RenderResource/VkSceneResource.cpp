@@ -374,6 +374,14 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 		transform.mWorldToLocal = transformView.mWorldInverse;
 		transforms.push_back(transform);
 	}
+	if (sceneView.voxelTerrain.bValid)
+	{
+		const float3& originWS = sceneView.voxelTerrain.originWorld;
+		TransformData voxelTransform = {};
+		voxelTransform.mLocalToWorld    = mat4(1.0f); voxelTransform.mLocalToWorld[3] = float4( originWS, 1.0f);
+		voxelTransform.mWorldToLocal    = mat4(1.0f); voxelTransform.mWorldToLocal[3] = float4(-originWS, 1.0f);
+		transforms.push_back(voxelTransform);
+	}
 	UpdateFrameBuffer(ctx, transforms.data(), (u32)transforms.size(), sizeof(TransformData), *m_FrameData[m_ContextIndex].pTransformAllocator, VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 
 	imageInfos.clear();
@@ -636,6 +644,21 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 
 		meshes.push_back(mesh);
 	}
+	if (sceneView.voxelTerrain.bValid)
+	{
+		const float half = sceneView.voxelTerrain.chunkWorldSizeMeter * 0.5f; // origin is applied by the voxel transform, not here
+		MeshData voxelMesh = {};
+		voxelMesh.vOffset = 0;
+		voxelMesh.maxLOD  = 0;
+		voxelMesh.center  = float3(half);      // chunk-local
+		voxelMesh.radius  = half * 1.7320508f; // cube half-diagonal
+		// these fields will be filled by the voxel patch CS
+		voxelMesh.lods[0].mCount   = 0;         
+		voxelMesh.lods[0].mOffset  = 0;
+		voxelMesh.lods[0].mvOffset = 0;
+		voxelMesh.lods[0].mtOffset = 0;
+		meshes.push_back(voxelMesh);
+	}
 	UpdateFrameBuffer(ctx, meshes.data(), (u32)meshes.size(), sizeof(MeshData), *m_FrameData[m_ContextIndex].pMeshDataAllocator, VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 
 	u32 meshletVisibilityCursor = 0;
@@ -674,6 +697,19 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 		}
 	}
 	m_NumMeshletVisibilitySlots = meshletVisibilityCursor;
+
+	// Voxel chunk: prepend it at the head of instance buffer
+	if (sceneView.voxelTerrain.bValid)
+	{
+		InstanceData voxelInstance = {};
+		voxelInstance.meshID      = (u32)sceneView.meshes.size();      // the appended voxel MeshData
+		voxelInstance.transformID = (u32)sceneView.transforms.size();  // the appended voxel TransformData
+		voxelInstance.materialID  = kInvalidIndex;
+		voxelInstance.visOffset   = 0;                                 // unused: voxel skips per-meshlet cull
+		voxelInstance.isVoxel     = 1;
+		instances.insert(instances.begin() + kVoxelChunkInstanceBase, voxelInstance); // instanceID == chunkID
+	}
+	m_NumInstances = (u32)instances.size();
 	UpdateFrameBuffer(ctx, instances.data(), (u32)instances.size(), sizeof(InstanceData), *m_FrameData[m_ContextIndex].pInstanceAllocator, VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 	//UpdateFrameBuffer(ctx, indirects.data(), (u32)indirects.size(), sizeof(IndirectCommandData), *m_FrameData[m_ContextIndex].pIndirectCommandAllocator, VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 
@@ -903,5 +939,10 @@ VkDescriptorBufferInfo VkSceneResource::GetInstanceInfo() const
 const Arc< render::Buffer >& VkSceneResource::GetArgumentBuffer() const
 {
 	return nullptr; // m_FrameData[m_ContextIndex].pIndirectCommandAllocator->GetAllocationBuffer();
+}
+
+Arc< render::Buffer > VkSceneResource::GetMeshDataBuffer() const
+{
+	return m_FrameData[m_ContextIndex].pMeshDataAllocator->GetAllocationBuffer();
 }
 } // namespace vk

@@ -333,6 +333,12 @@ void Scene::Update(f32 dt, const EditorCamera& edCamera)
 		dirtyMarks |= (1 << eComponentType::CPostProcess);
 	}
 
+	for (auto entity : m_pVoxelTerrainSystem->UpdateRenderData(edCamera))
+	{
+		u64& dirtyMarks = m_EntityDirtyMasks[entity];
+		dirtyMarks |= (1 << eComponentType::CVoxelTerrain);
+	}
+
 	auto valuesView = m_EntityDirtyMasks | std::views::values;
 	m_bDirtyMarks = std::reduce(std::execution::par, valuesView.begin(), valuesView.end(), 0ULL) > 0;
 }

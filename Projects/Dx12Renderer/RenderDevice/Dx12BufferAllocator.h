@@ -74,7 +74,7 @@ private:
 class StaticBufferAllocator
 {
 public:
-    StaticBufferAllocator(Dx12RenderDevice& rd, const std::string& name, u64 elementSizeInBytes, u64 numElements);
+    StaticBufferAllocator(Dx12RenderDevice& rd, const std::string& name, u64 elementSizeInBytes, u64 numElements, u32 extraUsage = 0);
     ~StaticBufferAllocator();
 
     struct Allocation
@@ -114,6 +114,7 @@ private:
     u64 m_SizeInBytes        = 0;
     u64 m_ElementSizeInBytes = 0;
     u64 m_OffsetInBytes      = 0;
+    u32 m_ExtraUsage         = 0; // extra eBufferUsage_* flags OR'd into the backing buffer (e.g. Storage/UAV)
 };
 
 }

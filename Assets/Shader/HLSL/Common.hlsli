@@ -9,6 +9,15 @@ struct DescriptorHeapIndex
     uint index;
 };
 
+struct GeometryStreams
+{
+    uint vertices;
+    uint indices;
+    uint meshlets;
+    uint meshletVertices;
+    uint meshletTriangles;
+};
+
 #ifdef _CAMERA
 struct CameraData
 {
@@ -44,13 +53,10 @@ struct FrozenCameraData
 #endif // _FROZENCAMERA
 
 #ifdef _MESH
-ConstantBuffer< DescriptorHeapIndex > g_Vertices         : register(b1, space0);
-ConstantBuffer< DescriptorHeapIndex > g_Indices          : register(b2, space0);
-ConstantBuffer< DescriptorHeapIndex > g_Meshlets         : register(b3, space0);
-ConstantBuffer< DescriptorHeapIndex > g_MeshletVertices  : register(b4, space0);
-ConstantBuffer< DescriptorHeapIndex > g_MeshletTriangles : register(b5, space0);
-ConstantBuffer< DescriptorHeapIndex > g_Meshes           : register(b6, space0);
-ConstantBuffer< DescriptorHeapIndex > g_Instances        : register(b7, space0);
+// Geometry stream handles (vertex / index / meshlet / meshlet-vertex / meshlet-triangle pools)
+ConstantBuffer< GeometryStreams >     g_MeshStreams : register(b1, space0);
+ConstantBuffer< DescriptorHeapIndex > g_Meshes      : register(b6, space0);
+ConstantBuffer< DescriptorHeapIndex > g_Instances   : register(b7, space0);
 #endif // _MESH
 
 #ifdef _CULL
@@ -154,6 +160,14 @@ CloudData GetCloudData()
 #define ROOT_CONSTANT_SPACE     space100
 #define MISS_ARGUMENT_SPACE     space200
 #define HITGROUP_ARGUMENT_SPACE space300
+
+#ifdef _VOXEL
+// Voxel chunk geometry pools — separate from the shared mesh pools since they are GPU-generated.
+ConstantBuffer< DescriptorHeapIndex > g_VoxelVertices         : register(b4, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_VoxelMeshlets         : register(b5, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_VoxelMeshletVertices  : register(b6, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_VoxelMeshletTriangles : register(b7, ROOT_CONSTANT_SPACE);
+#endif // _VOXEL
 
 #define SAMPLER_INDEX_LINEAR_CLAMP     s0
 #define SAMPLER_INDEX_LINEAR_WRAP      s1

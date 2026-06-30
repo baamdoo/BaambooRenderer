@@ -92,6 +92,7 @@ struct InstanceData
 	uint materialID;
 
 	uint visOffset;
+	uint isVoxel;
 };
 
 struct IndirectCommandData
@@ -107,36 +108,23 @@ struct IndirectCommandData
 //-------------------------------------------------------------------------
 // Voxel terrain chunk
 //-------------------------------------------------------------------------
-struct VoxelChunk
+// Voxel chunk i lives at instance (VOXEL_CHUNK_INSTANCE_BASE + i) and VoxelChunkCounts[i]
+#define VOXEL_CHUNK_INSTANCE_BASE 0u
+
+struct VoxelChunkDesc
 {
     float originX, originY, originZ;
-    float voxelSizeMeter;
+    uint  vertexOffset;          // slab base into the voxel Vertex pool
 
-    float aabbMinX, aabbMinY, aabbMinZ;
-    uint  lodDepth;
+    uint  meshletVertexOffset;   // slab base into the voxel MeshletVertices pool
+    uint  meshletTriangleOffset; // slab base into the voxel MeshletTriangles pool
+    uint  padding0;
+    uint  padding1;
+};
 
-    float aabbMaxX, aabbMaxY, aabbMaxZ;
-    uint  transitionMask;
-
-    uint vertexOffset;
-    uint vertexCount;
-    uint meshletOffset;
+struct VoxelChunkCounts
+{
     uint meshletCount;
-
-    uint meshletVertexOffset;
-    uint meshletTriangleOffset;
-    uint slabId;
-    uint padding0;
-
-    uint terrainInstanceLo;
-    uint terrainInstanceHi;
-    int  chunkCoordX;
-    int  chunkCoordY;
-
-    int  chunkCoordZ;
-    uint lod;
-    uint fieldRevision;
-    uint extractionRevision;
 };
 
 #ifdef _HLSL

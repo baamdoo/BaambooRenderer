@@ -12,6 +12,19 @@ void VoxelTerrainSystem::OnComponentUpdated(entt::registry& registry, entt::enti
     Super::OnComponentUpdated(registry, entity);
 }
 
+std::vector< u64 > VoxelTerrainSystem::UpdateRenderData(const EditorCamera& edCamera)
+{
+    UNUSED(edCamera);
+
+    std::vector< u64 > markedEntities;
+    markedEntities.reserve(m_DirtyEntities.size());
+    for (auto entity : m_DirtyEntities)
+        markedEntities.emplace_back(entt::to_integral(entity));
+
+    ClearDirtyEntities();
+    return markedEntities;
+}
+
 void VoxelTerrainSystem::CollectRenderData(SceneRenderView& outView) const
 {
     auto view = m_Registry.view< VoxelTerrainComponent >();

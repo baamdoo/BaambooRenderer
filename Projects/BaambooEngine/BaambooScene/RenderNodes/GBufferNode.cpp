@@ -86,6 +86,20 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 			          .SetDepthWriteEnable(true, eCompareOp::Greater).Build();
 	}
 
+	auto MakeFallback = [&rd](const char* name, u64 elemSize) -> Arc< Buffer >
+	{
+		return Buffer::Create(rd, name,
+			{
+				.count              = 1,
+				.elementSizeInBytes = elemSize,
+				.bufferUsage        = eBufferUsage_Storage,
+			});
+	};
+	m_pVoxelVertexFallback          = MakeFallback("GBufferPass::VoxelVertexFallback", sizeof(::Vertex));
+	m_pVoxelMeshletFallback         = MakeFallback("GBufferPass::VoxelMeshletFallback", sizeof(Meshlet));
+	m_pVoxelMeshletVertexFallback   = MakeFallback("GBufferPass::VoxelMeshletVertexFallback", sizeof(u32));
+	m_pVoxelMeshletTriangleFallback = MakeFallback("GBufferPass::VoxelMeshletTriangleFallback", sizeof(u32));
+
 	//
 	g_FrameData.pPhase2Draw = m_pRenderTargetPhase2;
 }
@@ -123,6 +137,12 @@ void GBufferNode::DrawGBufferImpl(render::CommandContext& context, Arc< render::
 	using namespace render;
 
 	const bool bHasInstances = cullOutputs.numInstances > 0;
+
+	auto pVoxVerts    = g_FrameData.pVoxelVertices.lock();
+	auto pVoxMeshlets = g_FrameData.pVoxelMeshlets.lock();
+	auto pVoxMv       = g_FrameData.pVoxelMeshletVertices.lock();
+	auto pVoxMt       = g_FrameData.pVoxelMeshletTriangles.lock();
+
 	if (bHasInstances)
 	{
 		if (cullOutputs.phase == CullingNode::kPhase2Cull)
@@ -130,6 +150,11 @@ void GBufferNode::DrawGBufferImpl(render::CommandContext& context, Arc< render::
 			context.TransitionBarrier(cullOutputs.pHiZ, eTextureLayout::ShaderReadOnly);
 		}
 		context.TransitionBufferToWrite(cullOutputs.pMeshletVisibility, ePipelineStage::TaskShader);
+
+		if (pVoxVerts)    context.TransitionBufferToRead(pVoxVerts,    ePipelineStage::TaskShader | ePipelineStage::MeshShader);
+		if (pVoxMeshlets) context.TransitionBufferToRead(pVoxMeshlets, ePipelineStage::TaskShader | ePipelineStage::MeshShader);
+		if (pVoxMv)       context.TransitionBufferToRead(pVoxMv,       ePipelineStage::TaskShader | ePipelineStage::MeshShader);
+		if (pVoxMt)       context.TransitionBufferToRead(pVoxMt,       ePipelineStage::TaskShader | ePipelineStage::MeshShader);
 
 #if PROFILING_LEVEL >= 1
 		if (cullOutputs.pMeshletStats)
@@ -163,6 +188,11 @@ void GBufferNode::DrawGBufferImpl(render::CommandContext& context, Arc< render::
 		if (cullOutputs.pMeshletStats)
 			context.StageDescriptor("g_MeshletStats", cullOutputs.pMeshletStats);
 #endif
+
+		context.StageDescriptor("g_VoxelVertices",         pVoxVerts    ? pVoxVerts    : m_pVoxelVertexFallback);
+		context.StageDescriptor("g_VoxelMeshlets",         pVoxMeshlets ? pVoxMeshlets : m_pVoxelMeshletFallback);
+		context.StageDescriptor("g_VoxelMeshletVertices",  pVoxMv       ? pVoxMv       : m_pVoxelMeshletVertexFallback);
+		context.StageDescriptor("g_VoxelMeshletTriangles", pVoxMt       ? pVoxMt       : m_pVoxelMeshletTriangleFallback);
 
 		context.DrawMeshTasksIndirectCount(
 			cullOutputs.pIndirectCommands,

@@ -12,14 +12,12 @@ public:
 
     virtual void OnComponentUpdated(entt::registry& registry, entt::entity entity) override;
 
+    virtual std::vector< u64 > UpdateRenderData(const EditorCamera& edCamera) override;
     virtual void CollectRenderData(SceneRenderView& outView) const override;
 
 private:
     static constexpr u32 kExtractionRevision = 0u;
 
-    // Bumped on every authoring edit (OnComponentUpdated), snapshotted into SceneRenderView so the
-    // voxel node rebuilds its chunk only when this changes. Kept here rather than on the component
-    // so VoxelTerrainComponent stays pure authoring data, like every other component.
     u32 m_MeshRevision = 0u;
 };
 

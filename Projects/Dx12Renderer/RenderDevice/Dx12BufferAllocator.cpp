@@ -126,10 +126,11 @@ void DynamicBufferAllocator::Page::Reset()
 //-------------------------------------------------------------------------
 // Static-Buffer Allocator
 //-------------------------------------------------------------------------
-StaticBufferAllocator::StaticBufferAllocator(Dx12RenderDevice& rd, const std::string& name, u64 elementSizeInBytes, u64 numElements)
+StaticBufferAllocator::StaticBufferAllocator(Dx12RenderDevice& rd, const std::string& name, u64 elementSizeInBytes, u64 numElements, u32 extraUsage)
 	: m_RenderDevice(rd)
 	, m_Name(name)
 	, m_ElementSizeInBytes(elementSizeInBytes)
+	, m_ExtraUsage(extraUsage)
 {
 	Resize(elementSizeInBytes, static_cast<u32>(numElements));
 }
@@ -181,7 +182,7 @@ void StaticBufferAllocator::Resize(u32 numElements)
 
 void StaticBufferAllocator::Resize(u64 elementSizeInBytes, u32 numElements)
 {
-	auto pNewBuffer = Dx12StructuredBuffer::Create(m_RenderDevice, m_Name.c_str(), elementSizeInBytes, numElements, render::eBufferUsage_TransferSource | render::eBufferUsage_TransferDest);
+	auto pNewBuffer = Dx12StructuredBuffer::Create(m_RenderDevice, m_Name.c_str(), elementSizeInBytes, numElements, render::eBufferUsage_TransferSource | render::eBufferUsage_TransferDest | m_ExtraUsage);
 
 	if (m_OffsetInBytes > 0 && m_pBuffer)
 	{

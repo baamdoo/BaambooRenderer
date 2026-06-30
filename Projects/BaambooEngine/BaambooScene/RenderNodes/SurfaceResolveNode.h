@@ -20,7 +20,6 @@ private:
 	Arc< render::Texture >         m_pCoreMaterial;
 	Box< render::ComputePipeline > m_pResolvePSO;
 
-	Arc< render::Buffer > m_pVoxelChunksFallback;
 	Arc< render::Buffer > m_pVoxelVertexFallback;
 	Arc< render::Buffer > m_pVoxelMeshletFallback;
 	Arc< render::Buffer > m_pVoxelMeshletVertexFallback;

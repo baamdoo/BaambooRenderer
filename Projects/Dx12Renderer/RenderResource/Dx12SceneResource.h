@@ -57,6 +57,9 @@ struct Dx12SceneResource : public render::SceneResource
     [[nodiscard]]
     virtual Arc< render::TopLevelAccelerationStructure > GetTLAS() const override;
 
+    [[nodiscard]]
+    virtual Arc< render::Buffer > GetMeshDataBuffer() const override;
+
 private:
     void ResetFrameBuffers();
     void UpdateFrameBuffer(Dx12CommandContext& context, const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator& targetBuffer, const BarrierState& stateAfter);
@@ -88,6 +91,7 @@ private:
         Arc< Dx12ConstantBuffer > pCullBuffer;
         Arc< Dx12ConstantBuffer > pSceneEnvironmentBuffer;
         Arc< Dx12ConstantBuffer > pFrozenCameraBuffer;
+        Arc< Dx12ConstantBuffer > pMeshStreamsBuffer; // CBV holding the 5 geometry-pool heap indices (g_MeshStreams)
 
         bool bInitialized = false;
 

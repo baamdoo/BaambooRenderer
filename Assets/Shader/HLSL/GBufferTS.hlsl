@@ -43,7 +43,7 @@ ConstantBuffer< DescriptorHeapIndex > g_MeshletStats            : register(b3, R
 #endif // PROFILING_LEVEL >= 1
 
 
-static StructuredBuffer< Meshlet >       Meshlets   = GetResource(g_Meshlets.index);
+static StructuredBuffer< Meshlet >       Meshlets   = GetResource(g_MeshStreams.meshlets);
 static StructuredBuffer< MeshData >      Meshes     = GetResource(g_Meshes.index);
 static StructuredBuffer< InstanceData >  Instances  = GetResource(g_Instances.index);
 static StructuredBuffer< TransformData > Transforms = GetResource(g_Transforms.index);
@@ -65,6 +65,7 @@ groupshared uint     sh_VisOffset;
 groupshared uint     sh_Lod;
 groupshared uint     sh_MeshletOffset;
 groupshared uint     sh_MeshletCount;
+groupshared uint     sh_IsVoxel;
 
 [numthreads(32, 1, 1)]
 void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
@@ -91,6 +92,7 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
         sh_Lod           = lod;
         sh_MeshletOffset = mesh.lods[lod].mOffset;
         sh_MeshletCount  = mesh.lods[lod].mCount;
+        sh_IsVoxel       = instance.isVoxel;
     }
     GroupMemoryBarrierWithGroupSync();
 
@@ -107,7 +109,12 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
     uint myTriCount = 0u; // triangleCount of THIS thread's meshlet, only when accept
 #endif
 
-    if (bValid)
+    if (bValid && sh_IsVoxel != 0u)
+    {
+        // TODO: culling on voxels
+        accept = true;
+    }
+    else if (bValid)
     {
         RWStructuredBuffer< uint > MeshletVisibility = GetResource(g_MeshletVisibilityBuffer.index);
 
