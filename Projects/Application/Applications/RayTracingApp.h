@@ -1,6 +1,9 @@
 #pragma once
 #include "BaambooEngine.h"
 
+#include <string>
+#include <string_view>
+
 namespace baamboo
 {
 class PathTracerNode;
@@ -14,6 +17,8 @@ public:
 	virtual void Update(float dt) override;
 	virtual void Release() override;
 
+	void ConfigurePathTracerAutomation(bool bDumpAOV, bool bExitAfterDump, std::string_view referenceSceneName = "cornell_box");
+
 private:
 	virtual bool InitWindow() override;
 	virtual bool LoadScene() override;
@@ -24,4 +29,8 @@ private:
 
 	baamboo::CameraController_FirstPerson m_CameraController;
 	Weak< baamboo::PathTracerNode > m_pPathTracerNode;
+
+	std::string m_PathTracerReferenceScene = "cornell_box";
+	bool m_bAutoDumpAOV      = false;
+	bool m_bExitAfterAOVDump = false;
 };

@@ -4,9 +4,13 @@
 #define DESCRIPTORSET_COMMON 0
 
 #define INVALID_INDEX 0xffffffff
-
+#define MATERIAL_FLAG_FACE_NORMALS 1u
 #ifndef PROFILING_LEVEL
 #define PROFILING_LEVEL 1
+#endif
+
+#ifndef PT_VALIDATION
+#define PT_VALIDATION 1
 #endif
 
 #define FLT_MAX          (3.402823466e+38)
@@ -218,7 +222,7 @@ struct MaterialData
 	float subsurface;
     float transmission;
     uint  materialType;
-	uint  padding1;
+	uint  materialFlags;
 
 	uint albedoID;
 	uint normalID;

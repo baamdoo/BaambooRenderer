@@ -37,6 +37,8 @@ public:
 
     virtual ResourceManager& GetResourceManager() const = 0;
 
+    virtual bool SaveTextureToEXR(const Arc< Texture >& pTexture, const char* path) = 0;
+
     inline u32 ContextIndex() const { return m_ContextIndex; }
     inline u32 NumContexts() const { return m_NumContexts; }
     void SetNumContexts(u32 num) { m_NumContexts = num; }

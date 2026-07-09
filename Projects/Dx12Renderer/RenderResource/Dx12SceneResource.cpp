@@ -292,6 +292,8 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
         material.sheenRoughness     = materialView.sheenRoughness;
         material.subsurface         = materialView.subsurface;
         material.transmission       = materialView.transmission;
+        material.materialType       = materialView.materialType;
+        material.materialFlags      = materialView.materialFlags;
 
         material.albedoID = kInvalidIndex;
         if (!materialView.albedoTex.empty())

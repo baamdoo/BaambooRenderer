@@ -41,11 +41,11 @@ namespace
             : DirectX::WIC_FLAGS_IGNORE_SRGB;
     }
 
-    DXGI_FORMAT GetRgba8Format(render::eTextureColorSpace colorSpace)
+    DXGI_FORMAT GetWicResourceFormat(DXGI_FORMAT sourceFormat, render::eTextureColorSpace colorSpace)
     {
         return colorSpace == render::eTextureColorSpace::SRGB
-            ? DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
-            : DXGI_FORMAT_R8G8B8A8_UNORM;
+            ? DirectX::MakeSRGB(sourceFormat)
+            : DirectX::MakeLinear(sourceFormat);
     }
 
     Arc< Dx12Texture > CreateTextureFromScratchImage(
@@ -136,7 +136,7 @@ Dx12ResourceManager::Dx12ResourceManager(Dx12RenderDevice& rd)
     m_pGlobalRootSignature->AddConstants(0, kCommandSignatureSpace, 1);
     // Root Constant: space100, b0
     m_pGlobalRootSignature->AddConstants(0, kMaxLocalRootConstants - 1);
-    // DescriptorHeapIndices: space100, b1 ~ b16
+    // DescriptorHeapIndices: space100, b1 ~ b19
     for (u32 i = 1; i < kMaxDescriptorHeapIndices + 1; ++i)
     {
         m_pGlobalRootSignature->AddConstants(i, 1);
@@ -296,7 +296,18 @@ Arc< render::Texture > Dx12ResourceManager::LoadTexture(const std::string& filep
         DirectX::ScratchImage image;
         HRESULT hr = DirectX::LoadFromWICFile(path.c_str(), GetWicFlags(colorSpace), &metadata, image);
         if (SUCCEEDED(hr))
-            hr = GenerateMipChainIfRequested(image, metadata, bGenerateMips);
+        {
+            const DXGI_FORMAT requestedFormat = GetWicResourceFormat(metadata.format, colorSpace);
+            if (requestedFormat != metadata.format && !image.OverrideFormat(requestedFormat))
+            {
+                hr = E_FAIL;
+            }
+            else
+            {
+                metadata = image.GetMetadata();
+                hr = GenerateMipChainIfRequested(image, metadata, bGenerateMips);
+            }
+        }
         if (FAILED(hr))
         {
             __debugbreak();
@@ -696,3 +707,4 @@ Arc< Dx12Texture > Dx12ResourceManager::CreateFlatCubeTexture(const char* name, 
 }
 
 } // namespace dx12
+

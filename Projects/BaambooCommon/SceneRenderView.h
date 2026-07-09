@@ -98,6 +98,8 @@ struct MaterialRenderView
 
 	float  subsurface;
 	float  transmission;
+	u32    materialType = 0u;
+	u32    materialFlags = 0u;
 
 	std::string albedoTex;
 	std::string normalTex;

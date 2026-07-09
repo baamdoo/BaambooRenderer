@@ -41,9 +41,9 @@ ModelLoader::ModelLoader(fs::path filepath, MeshDescriptor descriptor)
 		//aiProcess_FindDegenerates |
 		aiProcess_GenBoundingBoxes |
 		aiProcess_ValidateDataStructure |
-		aiProcess_JoinIdenticalVertices |
-		aiProcess_ConvertToLeftHanded;
+		aiProcess_JoinIdenticalVertices;
 	importFlags |= (descriptor.bOptimize ? aiProcess_OptimizeMeshes | aiProcess_ImproveCacheLocality : 0);
+	importFlags |= (descriptor.bConvertToLeftHanded ? aiProcess_ConvertToLeftHanded : 0);
 	//importFlags |= (descriptor.bWindingCW ? aiProcess_FlipWindingOrder : 0);
 	//importFlags |= ((descriptor.rendererAPI == eRendererAPI::D3D11 || descriptor.rendererAPI == eRendererAPI::D3D12) ? aiProcess_ConvertToLeftHanded : 0);
 

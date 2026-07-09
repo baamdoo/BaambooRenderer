@@ -110,6 +110,7 @@ struct MeshDescriptor
 	bool bLoadAnimations   = false;
 	bool bOptimize         = false;
 	bool bWindingCW        = false;
+	bool bConvertToLeftHanded = true;
 	bool bGenerateMeshlets = false;
 	
 	u8 numLODs = 1;

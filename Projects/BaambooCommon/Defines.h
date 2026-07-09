@@ -27,6 +27,11 @@
 #define PROFILING_LEVEL 1
 #endif
 
+// Keep this in sync with PT_VALIDATION in Assets/Shader/Common.bsh.
+#ifndef PT_VALIDATION
+#define PT_VALIDATION 1
+#endif
+
 #define _KB(x) (x * 1024)
 #define _MB(x) (x * 1024 * 1024)
 

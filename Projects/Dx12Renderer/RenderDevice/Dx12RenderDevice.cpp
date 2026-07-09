@@ -13,8 +13,14 @@
 #include "RenderResource/Dx12Shader.h"
 #include "RenderResource/Dx12ShaderBindingTable.h"
 #include "RenderResource/Dx12AccelerationStructure.h"
+#include "RenderResource/Dx12Texture.h"
+#include "RenderResource/Dx12Buffer.h"
 
 #include "D3D12MemAlloc.h"
+
+#pragma warning(push, 0)
+#include <tinyexr/tinyexr.h> // declarations only; TINYEXR_IMPLEMENTATION lives in Dx12EXRSupport.cpp
+#pragma warning(pop)
 
 namespace dx12
 {
@@ -283,6 +289,110 @@ SyncObject Dx12RenderDevice::ExecuteCommand(Arc< Dx12CommandContext >&& pContext
 render::ResourceManager& Dx12RenderDevice::GetResourceManager() const
 {
 	return *m_pResourceManager;
+}
+
+bool Dx12RenderDevice::SaveTextureToEXR(const Arc< render::Texture >& pTexture, const char* path)
+{
+	if (!pTexture || !path)
+		return false;
+
+	auto pTex = StaticCast< Dx12Texture >(pTexture);
+
+	ID3D12Resource2* pSrcResource = pTex->GetD3D12Resource();
+	if (!pSrcResource)
+		return false;
+
+	const u32 width  = pTex->GetWidth();
+	const u32 height = pTex->GetHeight();
+
+	// Part 1 only dumps RGBA32_FLOAT AOVs (albedo / normal / depth). Keep the readback path
+	// trivial (straight float copy, no half->float). Extend here if other formats are needed.
+	const DXGI_FORMAT format = pTex->GetFormat();
+	if (format != DXGI_FORMAT_R32G32B32A32_FLOAT)
+	{
+		printf("[SaveTextureToEXR] '%s': unsupported format %d (expected RGBA32_FLOAT)\n", path, static_cast< int >(format));
+		return false;
+	}
+
+	// GetCopyableFootprints wants a D3D12_RESOURCE_DESC; the texture exposes a DESC1.
+	const D3D12_RESOURCE_DESC1 desc1 = pTex->Desc();
+	D3D12_RESOURCE_DESC desc = {};
+	desc.Dimension        = desc1.Dimension;
+	desc.Alignment        = desc1.Alignment;
+	desc.Width            = desc1.Width;
+	desc.Height           = desc1.Height;
+	desc.DepthOrArraySize = desc1.DepthOrArraySize;
+	desc.MipLevels        = desc1.MipLevels;
+	desc.Format           = desc1.Format;
+	desc.SampleDesc       = desc1.SampleDesc;
+	desc.Layout           = desc1.Layout;
+	desc.Flags            = desc1.Flags;
+
+	D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint = {};
+	UINT   numRows        = 0;
+	UINT64 rowSizeInBytes = 0;
+	UINT64 totalBytes     = 0;
+	m_d3d12Device->GetCopyableFootprints(&desc, 0, 1, 0, &footprint, &numRows, &rowSizeInBytes, &totalBytes);
+
+	// Read-back buffer is auto-mapped on creation (mapDirection == 2 -> READBACK heap).
+	render::Buffer::CreationInfo ci = {};
+	ci.count              = static_cast< u32 >(totalBytes);
+	ci.elementSizeInBytes = 1;
+	ci.mapDirection       = 2; // read-back
+	ci.bufferUsage        = render::eBufferUsage_TransferDest;
+	auto pReadback   = render::Buffer::Create(*this, "EXRReadback", std::move(ci));
+	auto pReadbackDx = StaticCast< Dx12Buffer >(pReadback);
+
+	// Copy texture -> read-back buffer, then block on the GPU (one-shot DIRECT submit).
+	auto pContext = BeginCommand(D3D12_COMMAND_LIST_TYPE_DIRECT);
+	pContext->TransitionBarrier(pTex.get(), BarrierStates::CopySource);
+
+	D3D12_TEXTURE_COPY_LOCATION dst = {};
+	dst.pResource       = pReadbackDx->GetD3D12Resource();
+	dst.Type            = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+	dst.PlacedFootprint = footprint;
+
+	D3D12_TEXTURE_COPY_LOCATION src = {};
+	src.pResource        = pSrcResource;
+	src.Type             = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+	src.SubresourceIndex = 0;
+
+	pContext->GetD3D12CommandList()->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+	pContext->Close();
+	ExecuteCommand(std::move(pContext)).Wait();
+
+	// De-pad rows (RowPitch is 256B-aligned) into tightly packed RGB floats (alpha dropped).
+	const u8* pMapped = reinterpret_cast< const u8* >(pReadbackDx->MappedMemory());
+	if (!pMapped)
+		return false;
+
+	const u32 rowPitch = footprint.Footprint.RowPitch;
+	std::vector< float > image(static_cast< size_t >(width) * height * 3u);
+	for (u32 y = 0; y < height; ++y)
+	{
+		const float* pRow = reinterpret_cast< const float* >(pMapped + static_cast< size_t >(y) * rowPitch);
+		for (u32 x = 0; x < width; ++x)
+		{
+			const float* pSrcPixel = pRow + x * 4u; // RGBA32F
+			float*       pDstPixel = image.data() + (static_cast< size_t >(y) * width + x) * 3u;
+			pDstPixel[0] = pSrcPixel[0];
+			pDstPixel[1] = pSrcPixel[1];
+			pDstPixel[2] = pSrcPixel[2];
+		}
+	}
+
+	const char* pErr = nullptr;
+	const int   ret  = SaveEXR(image.data(), static_cast< int >(width), static_cast< int >(height), 3, /*save_as_fp16*/ 0, path, &pErr);
+	if (ret != TINYEXR_SUCCESS)
+	{
+		printf("[SaveTextureToEXR] '%s': tinyexr error %d (%s)\n", path, ret, pErr ? pErr : "unknown");
+		if (pErr)
+			FreeEXRErrorMessage(pErr);
+		return false;
+	}
+
+	printf("[SaveTextureToEXR] wrote '%s' (%ux%u RGB)\n", path, width, height);
+	return true;
 }
 
 DXGI_SAMPLE_DESC Dx12RenderDevice::GetMultisampleQualityLevels(DXGI_FORMAT format, D3D12_MULTISAMPLE_QUALITY_LEVEL_FLAGS flags) const

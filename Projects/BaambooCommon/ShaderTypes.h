@@ -138,7 +138,7 @@ struct MaterialData
     float subsurface;
     float transmission;
     u32   materialType;
-    u32   padding1;
+    u32   materialFlags;
 
     u32 albedoID;
     u32 normalID;
@@ -156,6 +156,7 @@ struct MaterialData
     u32 padding3;
 };
 
+static constexpr u32 MATERIAL_FLAG_FACE_NORMALS = 1u << 0u;
 
 struct DirectionalLight
 {

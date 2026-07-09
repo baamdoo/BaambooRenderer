@@ -64,6 +64,8 @@ public:
 	inline VmaAllocator vmaAllocator() const { return m_vmaAllocator; }
 	virtual render::ResourceManager& GetResourceManager() const override;
 
+	virtual bool SaveTextureToEXR(const Arc< render::Texture >& pTexture, const char* path) override;
+
 	inline VkRenderPass vkMainRenderPass() const { return m_vkMainRenderPass; }
 	void SetMainRenderPass(VkRenderPass vkRenderPass) { m_vkMainRenderPass = vkRenderPass; }
 

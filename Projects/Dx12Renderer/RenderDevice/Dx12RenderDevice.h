@@ -78,6 +78,8 @@ public:
 	inline D3D12MA::Allocator* dmaAllocator() const { return m_dmaAllocator; }
 	virtual render::ResourceManager& GetResourceManager() const override;
 
+	virtual bool SaveTextureToEXR(const Arc< render::Texture >& pTexture, const char* path) override;
+
 	[[nodiscard]]
 	inline u32 GetSRVDescriptorSize() const { return m_SRVDescriptorSize; }
 	[[nodiscard]]

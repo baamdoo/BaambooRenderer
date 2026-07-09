@@ -151,6 +151,7 @@ struct MaterialComponent
 
 	float subsurface   = 0.0f;
 	float transmission = 0.0f;
+	u32   materialType = 0u;
 
 	bool bFaceNormals = false;
 

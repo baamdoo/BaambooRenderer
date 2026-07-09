@@ -267,6 +267,12 @@ render::ResourceManager& VkRenderDevice::GetResourceManager() const
 	return *m_pResourceManager;
 }
 
+bool VkRenderDevice::SaveTextureToEXR(const Arc< render::Texture >& pTexture, const char* path)
+{
+	(void)pTexture;
+	return false;
+}
+
 DescriptorSet& VkRenderDevice::AllocateDescriptorSet(VkDescriptorSetLayout vkSetLayout) const
 {
 	return m_pGlobalDescriptorPool->AllocateSet(vkSetLayout);

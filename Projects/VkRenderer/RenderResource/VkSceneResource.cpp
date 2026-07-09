@@ -415,6 +415,8 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 
 		material.subsurface   = materialView.subsurface;
 		material.transmission = materialView.transmission;
+		material.materialType = materialView.materialType;
+		material.materialFlags      = materialView.materialFlags;
 
 		material.albedoID = kInvalidIndex;
 		if (!materialView.albedoTex.empty())

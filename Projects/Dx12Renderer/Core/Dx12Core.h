@@ -115,7 +115,7 @@ constexpr u32 kMaxNumDescriptorPerPool[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES] = {
 constexpr u32 kMaxGlobalDescriptors = 8192;
 constexpr u32 kMaxRootIndex = D3D12_MAX_ROOT_COST;
 constexpr u32 kMaxRootConstants = 32u;
-constexpr u32 kMaxDescriptorHeapIndices = 18u;
+constexpr u32 kMaxDescriptorHeapIndices = 19u;
 constexpr u32 kMaxLocalRootConstants = kMaxRootConstants - kMaxDescriptorHeapIndices;
 constexpr u32 kMaxViews = (kMaxRootIndex - kMaxRootConstants) / 2;
 

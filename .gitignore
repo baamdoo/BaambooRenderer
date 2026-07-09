@@ -44,10 +44,18 @@
 *.app
 Output
 
+# PathTracer reference cross-validation tools — versioned in a SEPARATE git repository
+# (nested .git at Tools/).  BaambooRenderer ignores the folder entirely; clone the tools
+# repo into this same path to use them.
+/Tools/
+
 # Assets
 *.cap
 packages/
 packages.config
+Generated/
+Model/
+External/
 
 # Agents
 Docs/

@@ -1,6 +1,3 @@
-// Conventions
-//   * Lobe-internal math is in LOCAL FRAME (N = +z, T = +x, B = +y)
-
 #ifndef _HLSL_BXDF_HEADER
 #define _HLSL_BXDF_HEADER
 
@@ -11,7 +8,8 @@ namespace BxDF
 {
 
 // ── Common types ─────────────────────────────────────────────────────────
-
+// Conventions : Lobe is in LOCAL FRAME (N = +z, T = +x, B = +y)
+    
 // Tangent-space basis at a shading point. T x B == N (right-handed local).
 struct Frame
 {
@@ -22,22 +20,22 @@ struct Frame
 
 struct SurfaceParameters
 {
-    float3 P;          // shading position (world)
-    float3 Ng;         // geometric normal (world); used for ray offset
-    Frame  frame;      // tangent-space basis at P
+    float3 P;
+    float3 Ng;    // geometric normal (world); used for ray offset
+    Frame  frame; // tangent-space basis at P
 
-    float3 baseColor;  // dielectric diffuse / metal F0 tint
-    float  metallic;   // [0, 1]
-    float  roughness;  // perceptual; lobe alpha = roughness * roughness
-    float  ior;        // index of refraction (dielectric Fresnel / BTDF)
+    float3 baseColor;
+    float  metallic;
+    float  roughness;
+    float  ior;
 
-    float  clearcoat;          // [0,1] presence of a clear top coat
-    float  clearcoatRoughness; // perceptual roughness of that coat
-    float  transmission;       // [0,1] dielectric refract-vs-reflect fraction
-    float3 sheenColor;         // grazing-angle retroreflective fuzz tint
-    float  sheenRoughness;     // perceptual roughness of the sheen lobe
-    float3 specularColor;      // KHR_materials_specular: dielectric F0 tint, default (1,1,1)
-    float  specularStrength;   // KHR_materials_specular: F0 scalar magnitude, default 1.0
+    float  clearcoat;
+    float  clearcoatRoughness;
+    float  transmission;
+    float3 sheenColor;
+    float  sheenRoughness;
+    float3 specularColor;
+    float  specularStrength;
 };
 
 struct BSDFSample
@@ -46,12 +44,10 @@ struct BSDFSample
     float3 weight;
     float  pdf;
     uint   lobe;
-    uint   isDelta;   // 1 ⇔ pdf is a discrete probability on a δ-direction (smooth dielectric R/T);
-                      //     integrator must skip MIS for emission seen via this bounce
-                      //     (PBRT-v4 specularBounce flag — integrators.cpp:671-676)
+    uint   isDelta; // is direc-delta lobe
 };
 
-// Lobe IDs — used for MIS lobe-tagging in the path tracer.
+// Lobe IDs
 static const uint LOBE_DIFFUSE      = 0u;
 static const uint LOBE_SPECULAR     = 1u;
 static const uint LOBE_CLEARCOAT    = 2u;
@@ -59,7 +55,7 @@ static const uint LOBE_TRANSMISSION = 3u;
 static const uint LOBE_SHEEN        = 4u;
 static const uint LOBE_SUBSURFACE   = 5u;
 
-// ── Local-frame trig (operate on local vectors; w.z == cos θ) ────────────
+// ── Local-frame helpers (w.z == cos θ) ────────────
 float CosTheta    (float3 w) { return w.z; }
 float Cos2Theta   (float3 w) { return w.z * w.z; }
 float AbsCosTheta (float3 w) { return abs(w.z); }
@@ -67,7 +63,7 @@ float Sin2Theta   (float3 w) { return max(0.0, 1.0 - Cos2Theta(w)); }
 
 bool SameHemisphere(float3 wo, float3 wi) { return wo.z * wi.z > 0.0; }
 
-// ── World ↔ Local conversion ─────────────────────────────────────────────
+// ── World ↔ Local conversion helpers ─────────────────────────────────────────────
 float3 ToLocal(Frame f, float3 vW)
 {
     return float3(dot(vW, f.T), dot(vW, f.B), dot(vW, f.N));
@@ -79,7 +75,8 @@ float3 ToWorld(Frame f, float3 vL)
 }
 
 
-// ── Lobe namespaces ─────────────────────────────
+// ── Lobes ─────────────────────────────
+    
 // Reference: https://seblagarde.wordpress.com/2013/04/29/memo-on-fresnel-equations/
 namespace Fresnel
 {
@@ -140,17 +137,23 @@ float EvaluatePDF(float3 wo, float3 wi)
     return AbsCosTheta(wi) * (1.0 / PI);
 }
 
-// Disney "Burley" diffuse — 5.3 Diffuse model details
+// Disney "Burley" diffuse — Burley 2012 §5.3.
 float3 EvaluateBRDF(float3 albedo, float roughness, float3 wo, float3 wi)
 {
-    float3 H  = normalize(wo + wi);
-    float LoH = saturate(dot(wi, H));
-    
-    float FD90 = 0.5 + 2.0 * roughness * LoH * LoH;
-    
-    float a = 1.0 - wi.z; float a2 = a * a; float a5 = a2 * a2 * a;
-    float b = 1.0 - wo.z; float b2 = b * b; float b5 = b2 * b2 * b;
-    return (albedo / PI) * (1.0 + (FD90 - 1.0) * a5) * (1.0 + (FD90 - 1.0) * b5);
+    float i  = 1.0 - CosTheta(wi);
+    float i2 = i * i;
+    float i5 = i2 * i2 * i;
+            
+    float o  = 1.0 - CosTheta(wo);
+    float o2 = o * o;
+    float o5 = o2 * o2 * o;
+            
+    float3 H    = normalize(wo + wi);
+    float  LoH  = saturate(dot(wi, H));
+    float  FD90 = 0.5 + 2.0 * roughness * LoH * LoH;
+            
+    float3 f = (albedo / PI) * (1.0 + (FD90 - 1.0) * i5) * (1.0 + (FD90 - 1.0) * o5);
+    return f;
 }
 
 float3 SampleRay(float3 wo, float2 u)
@@ -343,7 +346,7 @@ float3 SampleRay(float3 wo, float alpha, float2 u)
 } // namespace Clearcoat
 
 
-// Reference: https://www.graphics.cornell.edu/~bjw/microfacetbsdf.pdf
+// Reference: https://www.graphics.cornell.edu/~bjw/microfacetbsdf.pdf    
 namespace Dielectric
 {
 
@@ -436,7 +439,7 @@ float EvaluatePDF(float3 wo, float3 wi, float aT, float aB, float eta)
     if (IsSmooth(aT, aB))
         return 0.0;
 
-    float  eta_p;
+    float eta_p;
     float3 wh;
     if (!IsTransmittable(wo, wi, eta, wh, eta_p))
         return 0.0;
@@ -445,6 +448,32 @@ float EvaluatePDF(float3 wo, float3 wi, float aT, float aB, float eta)
     float G = GGX::G1(wo, aT, aB);
     float J = Jacobian(wo, wi, wh, eta_p);
     return D * G * abs(dot(wo, wh)) * J / abs(CosTheta(wo));
+}
+        
+float3 EvaluateBRDF(float3 wo, float3 wi, float aT, float aB, float eta)
+{
+    if (IsSmooth(aT, aB))
+        return 0.0;
+
+    if (!SameHemisphere(wo, wi))
+        return 0.0;
+
+    float3 wh = wo + wi;
+    if (dot(wh, wh) == 0.0)
+        return 0.0;
+
+    wh = normalize(wh);
+    if (wh.z < 0.0)
+        wh = -wh;
+
+    float D = GGX::D(wh, aT, aB);
+    float G = GGX::G2(wo, wi, aT, aB);
+    float F = Fresnel::Dielectric(dot(wo, wh), 1.0, eta);
+    float denom = 4.0 * AbsCosTheta(wo) * AbsCosTheta(wi);
+    if (denom <= 0.0)
+        return 0.0;
+
+    return float3(F, F, F) * D * G / denom;
 }
 
 float3 EvaluateBTDF(float3 wo, float3 wi, float aT, float aB, float eta)
@@ -464,6 +493,11 @@ float3 EvaluateBTDF(float3 wo, float3 wi, float aT, float aB, float eta)
     return D * G * (1.0 - F) * J * abs(dot(wo, wh)) / (abs(CosTheta(wo) * CosTheta(wi)) * sq(eta_p));
 }
 
+float3 EvaluateBSDF(float3 wo, float3 wi, float aT, float aB, float eta)
+{
+    return SameHemisphere(wo, wi) ? EvaluateBRDF(wo, wi, aT, aB, eta) : EvaluateBTDF(wo, wi, aT, aB, eta);
+}
+
 BSDFSample SampleRay(float3 wo, float aT, float aB, float eta, float uc, float2 u)
 {
     BSDFSample bs;
@@ -471,7 +505,7 @@ BSDFSample SampleRay(float3 wo, float aT, float aB, float eta, float uc, float2 
     bs.pdf     = 0.0;                 // default == INVALID
     bs.weight  = float3(0.0, 0.0, 0.0);
     bs.lobe    = LOBE_TRANSMISSION;
-    bs.isDelta = 0u;                  // overridden to 1u in the smooth (delta) branch below
+    bs.isDelta = 0u;                  // overridden to 1u in the smooth branch below
 
     bool isSmooth = (eta == 1.0) || IsSmooth(aT, aB);
     if (isSmooth)
@@ -489,7 +523,7 @@ BSDFSample SampleRay(float3 wo, float aT, float aB, float eta, float uc, float2 
             bs.pdf     = R / (R + T);
             bs.weight  = f * AbsCosTheta(wi) / bs.pdf;
             bs.lobe    = LOBE_SPECULAR;
-            bs.isDelta = 1u;          // δ-reflect (PBRT-v4 BxDFFlags::SpecularReflection)
+            bs.isDelta = 1u;
         }
         else
         {
@@ -505,7 +539,7 @@ BSDFSample SampleRay(float3 wo, float aT, float aB, float eta, float uc, float2 
             bs.pdf     = T / (R + T);
             bs.weight  = f * AbsCosTheta(wi) / bs.pdf;
             bs.lobe    = LOBE_TRANSMISSION;
-            bs.isDelta = 1u;          // δ-transmit (PBRT-v4 BxDFFlags::SpecularTransmission)
+            bs.isDelta = 1u;
         }
 
         return bs;
@@ -565,7 +599,6 @@ BSDFSample SampleRay(float3 wo, float aT, float aB, float eta, float uc, float2 
 }
 
 } // namespace Dielectric
-
 
 }  // namespace BxDF
 

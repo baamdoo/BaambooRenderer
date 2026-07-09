@@ -110,6 +110,8 @@ std::vector< u64 > StaticMeshSystem::UpdateRenderData(const EditorCamera& edCame
             entry.material.sheenRoughness     = materialComponent.sheenRoughness;
             entry.material.subsurface         = materialComponent.subsurface;
             entry.material.transmission       = materialComponent.transmission;
+            entry.material.materialType       = materialComponent.materialType;
+            entry.material.materialFlags      = materialComponent.bFaceNormals ? MATERIAL_FLAG_FACE_NORMALS : 0u;
 
             entry.material.albedoTex       = materialComponent.albedoTex;
             entry.material.normalTex       = materialComponent.normalTex;

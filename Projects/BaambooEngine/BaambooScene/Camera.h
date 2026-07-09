@@ -87,6 +87,11 @@ public:
 
 	void SetLookAt(const float3& pos, const float3& target)
 	{
+		SetLookAt(pos, target, float3(0.0f, 1.0f, 0.0f));
+	}
+
+	void SetLookAt(const float3& pos, const float3& target, const float3& worldUp)
+	{
 		m_Transform.position = pos;
 
 		float3 forward = target - pos;
@@ -98,9 +103,9 @@ public:
 		}
 		forward /= fLen;
 
-		float3 up = float3(0.0f, 1.0f, 0.0f);
+		float3 up = glm::length(worldUp) > 1.0e-6f ? glm::normalize(worldUp) : float3(0.0f, 1.0f, 0.0f);
 		if (std::abs(glm::dot(forward, up)) > 0.9999f)
-			up = float3(0.0f, 0.0f, 1.0f);
+			up = std::abs(forward.y) < 0.9999f ? float3(0.0f, 1.0f, 0.0f) : float3(0.0f, 0.0f, 1.0f);
 
 		m_Transform.SetOrientation(glm::transpose(glm::lookAtLH(float3(0.0f), forward, up)));
 	}
