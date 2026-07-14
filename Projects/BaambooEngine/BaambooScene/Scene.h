@@ -69,11 +69,12 @@ struct FrameData
 
 	// Voxel chunks
 	VoxelChunkDesc voxelChunkDesc;
-	Weak< render::Buffer > pVoxelChunkCounts;
-	Weak< render::Buffer > pVoxelVertices;
-	Weak< render::Buffer > pVoxelMeshlets;
-	Weak< render::Buffer > pVoxelMeshletVertices;
-	Weak< render::Buffer > pVoxelMeshletTriangles;
+	Weak< render::Buffer >  pVoxelChunkCounts;
+	Weak< render::Buffer >  pVoxelVertices;
+	Weak< render::Buffer >  pVoxelMeshlets;
+	Weak< render::Buffer >  pVoxelMeshletVertices;
+	Weak< render::Buffer >  pVoxelMeshletTriangles;
+	Weak< render::Texture > pVoxelErosionDetail;
 
 	// Scene buffers (Color + depth + HiZ)
 	Weak< render::Texture > pColor;

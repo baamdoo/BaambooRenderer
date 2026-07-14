@@ -37,6 +37,8 @@ layout(set = 1, binding = 15) uniform usampler2D g_VBuf1;        // visibility p
 layout(set = 1, binding = 16) uniform sampler2D  g_CoreNormal;   // RG16_SNORM signed oct normal
 layout(set = 1, binding = 17) uniform sampler2D  g_CoreMaterial; // R roughness | G matClass | BA spare
 
+layout(set = 1, binding = 19, std140) uniform VoxelChunkDescUBO { VoxelChunkDesc d; } g_VoxelChunkDesc;
+
 layout(push_constant) uniform DebugConstants
 {
     uint debugView;
@@ -76,19 +78,45 @@ void main()
 
         if (VisIsTerrain(v0))
         {
-            N = OctDecode(texelFetch(g_CoreNormal, pixCoords, 0).xy);
+            // resolve composes the detail normal; core = (base Ng.y, matClass, Lt/5 debug, micro cavity)
+            N         = OctDecode(texelFetch(g_CoreNormal, pixCoords, 0).xy);
+            vec4 core = texelFetch(g_CoreMaterial, pixCoords, 0);
 
+            VoxelChunkDesc chunk = g_VoxelChunkDesc.d;
+
+            // TODO(you)
+            // fallback keeps terrain visible until the material path is ported
             const vec3  surfaceAlbedo = vec3(0.45, 0.38, 0.28);
             const float surfaceRough  = 0.85;
             const vec3  cliffAlbedo   = vec3(0.30, 0.27, 0.22);
             const float cliffRough    = 0.95;
-            float s = smoothstep(0.35, 0.65, clamp(1.0 - N.y, 0.0, 1.0)); // 0 flat .. 1 vertical
+            float sBlend = smoothstep(0.35, 0.65, clamp(1.0 - core.r, 0.0, 1.0)); // 0 flat .. 1 vertical
 
-            albedo     = mix(surfaceAlbedo, cliffAlbedo, s);
+            albedo     = mix(surfaceAlbedo, cliffAlbedo, sBlend);
+            roughness  = max(mix(surfaceRough, cliffRough, sBlend), MIN_ROUGHNESS);
+
+            // micro cavity: valleys darken (self-shadow proxy computed by resolve)
+            if ((chunk.debugFlags & 4u) != 0u)
+                albedo *= 1.0 - core.a;
+
+            if ((chunk.debugFlags & 1u) != 0u)
+            {
+                uint level = uint(round(core.b * 5.0));
+
+                const vec3 kLevelTint[6] = vec3[6](
+                    vec3(0.55, 0.55, 0.55),
+                    vec3(0.25, 0.45, 0.95),
+                    vec3(0.20, 0.85, 0.85),
+                    vec3(0.25, 0.80, 0.25),
+                    vec3(0.95, 0.85, 0.25),
+                    vec3(0.95, 0.30, 0.25)
+                );
+                albedo = mix(albedo, kLevelTint[min(level, 5u)], 0.8);
+            }
+
             ao         = 1.0;
             materialID = INVALID_INDEX;
             emissive   = vec3(0.0);
-            roughness  = max(mix(surfaceRough, cliffRough, s), MIN_ROUGHNESS);
             metallic   = 0.0;
         }
         else
@@ -127,9 +155,12 @@ void main()
             vec3 dbg = vec3(0.0);
             if (g_Debug.debugView == 1u)
             {
-                if (VisIsSky(v0))          dbg = vec3(0.0, 0.0, 1.0);
-                else if (VisIsTerrain(v0)) dbg = vec3(1.0, 0.0, 0.0);
-                else                       dbg = vec3(0.0, 1.0, 0.0);
+                if (VisIsSky(v0))
+                    dbg = vec3(0.0, 0.0, 1.0);
+                else if (VisIsTerrain(v0)) 
+                    dbg = vec3(1.0, 0.0, 0.0);
+                else 
+                    dbg = vec3(0.0, 1.0, 0.0);
             }
             else if (g_Debug.debugView == 2u)
             {

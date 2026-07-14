@@ -53,7 +53,7 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 		                  .AttachTexture(eAttachmentPoint::Color2, pAttachmentVelocity)
 		                  .AttachTexture(eAttachmentPoint::DepthStencil, pAttachmentDepth).Build();
 
-	// Phase 2 render target (LOAD all attachments — same textures, different load ops)
+	// Phase 2 render target (LOAD all attachments - same textures, different load ops)
 	m_pRenderTargetPhase2 = RenderTarget::CreateEmpty(rd, "GBufferPass::RenderPassPhase2");
 	m_pRenderTargetPhase2->AttachTexture(eAttachmentPoint::Color0, pAttachmentVBuf0)
 		                  .AttachTexture(eAttachmentPoint::Color1, pAttachmentVBuf1)
@@ -100,6 +100,13 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 	m_pVoxelMeshletVertexFallback   = MakeFallback("GBufferPass::VoxelMeshletVertexFallback", sizeof(u32));
 	m_pVoxelMeshletTriangleFallback = MakeFallback("GBufferPass::VoxelMeshletTriangleFallback", sizeof(u32));
 
+	m_pErosionDetailFallback = Texture::Create(rd, "GBufferPass::ErosionDetailFallback",
+		{
+			.resolution = uint3(1, 1, 1),
+			.format     = eFormat::RGBA16_FLOAT,
+			.imageUsage = eTextureUsage_Sample,
+		});
+
 	//
 	g_FrameData.pPhase2Draw = m_pRenderTargetPhase2;
 }
@@ -129,9 +136,7 @@ void GBufferNode::DrawGBufferPhase2(render::CommandContext& context, const MeshC
 	g_FrameData.pDepth    = m_pRenderTargetPhase2->Attachment(eAttachmentPoint::DepthStencil);
 }
 
-// =========================================================================
-// DrawGBufferImpl — emit indirect draw.
-// =========================================================================
+// Shared phase-1/phase-2 body: stage voxel/mesh resources and emit the indirect mesh-task draw.
 void GBufferNode::DrawGBufferImpl(render::CommandContext& context, Arc< render::RenderTarget > rt, const MeshCullOutputs& cullOutputs)
 {
 	using namespace render;
@@ -142,6 +147,7 @@ void GBufferNode::DrawGBufferImpl(render::CommandContext& context, Arc< render::
 	auto pVoxMeshlets = g_FrameData.pVoxelMeshlets.lock();
 	auto pVoxMv       = g_FrameData.pVoxelMeshletVertices.lock();
 	auto pVoxMt       = g_FrameData.pVoxelMeshletTriangles.lock();
+	auto pErosion     = g_FrameData.pVoxelErosionDetail.lock();
 
 	if (bHasInstances)
 	{
@@ -155,6 +161,12 @@ void GBufferNode::DrawGBufferImpl(render::CommandContext& context, Arc< render::
 		if (pVoxMeshlets) context.TransitionBufferToRead(pVoxMeshlets, ePipelineStage::TaskShader | ePipelineStage::MeshShader);
 		if (pVoxMv)       context.TransitionBufferToRead(pVoxMv,       ePipelineStage::TaskShader | ePipelineStage::MeshShader);
 		if (pVoxMt)       context.TransitionBufferToRead(pVoxMt,       ePipelineStage::TaskShader | ePipelineStage::MeshShader);
+
+		if (!pErosion && !m_bErosionFallbackTransitioned)
+		{
+			context.TransitionBarrier(m_pErosionDetailFallback, eTextureLayout::ShaderReadOnly);
+			m_bErosionFallbackTransitioned = true;
+		}
 
 #if PROFILING_LEVEL >= 1
 		if (cullOutputs.pMeshletStats)
@@ -193,6 +205,9 @@ void GBufferNode::DrawGBufferImpl(render::CommandContext& context, Arc< render::
 		context.StageDescriptor("g_VoxelMeshlets",         pVoxMeshlets ? pVoxMeshlets : m_pVoxelMeshletFallback);
 		context.StageDescriptor("g_VoxelMeshletVertices",  pVoxMv       ? pVoxMv       : m_pVoxelMeshletVertexFallback);
 		context.StageDescriptor("g_VoxelMeshletTriangles", pVoxMt       ? pVoxMt       : m_pVoxelMeshletTriangleFallback);
+
+		context.SetGraphicsDynamicUniformBuffer("g_VoxelChunkDesc", g_FrameData.voxelChunkDesc);
+		context.StageDescriptor("g_ErosionDetailMap", pErosion ? pErosion : m_pErosionDetailFallback, g_FrameData.pLinearClamp);
 
 		context.DrawMeshTasksIndirectCount(
 			cullOutputs.pIndirectCommands,

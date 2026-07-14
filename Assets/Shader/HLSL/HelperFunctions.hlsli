@@ -19,6 +19,17 @@ float3 sq(float3 x)
     return x * x;
 }
 
+float max3(float v1, float v2, float v3)
+{
+    return max(max(v1, v2), v3);
+}
+
+
+float max3(float3 v)
+{
+	return max(max(v.x, v.y), v.z);
+}
+
 float3 modulo(float3 x, float y)
 {
     return x - y * floor(x / y);
@@ -340,6 +351,34 @@ float3 ClipAABB(float3 aabbMin, float3 aabbMax, float3 history)
         return center + v_clip / ma_unit;
     else
         return history;
+}
+// ---------------- //
+
+// ---------------- //
+// Morton / spatial-sort keys
+// ---------------- //
+// Spread the low 10 bits of x so two zero bits separate each source bit.
+uint MortonPart1By2(uint x)
+{
+    x &= 0x000003FFu;
+    x = (x | (x << 16)) & 0x030000FFu;
+    x = (x | (x <<  8)) & 0x0300F00Fu;
+    x = (x | (x <<  4)) & 0x030C30C3u;
+    x = (x | (x <<  2)) & 0x09249249u;
+    return x;
+}
+
+uint MortonEncode3D(uint3 v)
+{
+    return (MortonPart1By2(v.z) << 2) | (MortonPart1By2(v.y) << 1) | MortonPart1By2(v.x);
+}
+
+// Voxel triangle spatial-sort key: 32^3 blocks over the chunk cube -> 15-bit Morton code.
+uint VoxelTriSortKey(float3 posLocal, float chunkSizeMeter)
+{
+    float blocksPerMeter = 32.0 / max(chunkSizeMeter, 1e-3);
+    uint3 blk = min(uint3(max(posLocal, 0.0) * blocksPerMeter), uint3(31u, 31u, 31u));
+    return MortonEncode3D(blk);
 }
 // ---------------- //
 

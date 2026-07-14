@@ -16,8 +16,6 @@ public:
     virtual void CollectRenderData(SceneRenderView& outView) const override;
 
 private:
-    static constexpr u32 kExtractionRevision = 0u;
-
     u32 m_MeshRevision = 0u;
 };
 

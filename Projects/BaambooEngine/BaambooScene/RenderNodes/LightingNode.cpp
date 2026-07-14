@@ -268,6 +268,8 @@ void LightingNode::Apply(render::CommandContext& context, const SceneRenderView&
 	u32 debugView = renderView.debugFlags.surfaceDebugView;
 	context.SetComputeConstants(sizeof(u32), &debugView);
 
+	context.SetComputeDynamicUniformBuffer("g_VoxelChunkDesc", g_FrameData.voxelChunkDesc);
+
 	assert(g_FrameData.pDepth);
 	assert(
 		g_FrameData.pVBuf0 &&

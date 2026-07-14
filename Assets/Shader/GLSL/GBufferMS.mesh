@@ -3,11 +3,13 @@
 #extension GL_GOOGLE_include_directive: require
 
 #define _CAMERA
+#define _FROZENCAMERA
 #define _MESH
 #define _CULL
 #define _TRANSFORM
 #include "DescriptorCommon.hg"
 #include "VisibilityBuffer.hg"
+#include "VoxelTerrainCommon.hg"
 
 #define CULL_FLAG_BACKFACE 1u
 #define CULL_FLAG_SUBPIXEL 2u
@@ -23,6 +25,9 @@ layout(set = 1, binding = 4) readonly buffer GBufVoxelVertexBuffer          { Ve
 layout(set = 1, binding = 5) readonly buffer GBufVoxelMeshletBuffer         { Meshlet g_VoxelMeshlets[]; };
 layout(set = 1, binding = 6) readonly buffer GBufVoxelMeshletVertexBuffer   { uint    g_VoxelMeshletVertices[]; };
 layout(set = 1, binding = 7) readonly buffer GBufVoxelMeshletTriangleBuffer { uint    g_VoxelMeshletTriangles[]; };
+
+layout(set = 1, binding = 8, std140) uniform VoxelChunkDescUBO { VoxelChunkDesc d; } g_VoxelChunkDesc;
+layout(set = 1, binding = 9) uniform sampler2D g_ErosionDetailMap;
 
 
 uint hash(uint a)
@@ -40,6 +45,10 @@ struct TaskPayload
 {
 	uint drawID;
 	uint lodLevel;
+	uint diceMask;
+	uint slotCount;
+	uint prefix[32];
+	uint lmPacked[4];
     uint meshletIndices[32];
 };
 taskPayloadSharedEXT TaskPayload Payload;
@@ -112,12 +121,33 @@ shared uint sh_TriangleOffset;
 shared uint sh_MaterialID;
 shared uint sh_IsVoxel; // 1 = voxel chunk instance (geometry from voxel pools, voxel visID)
 
+shared vec3 sh_CornerPos[30];
+shared vec3 sh_CornerNrm[30];
+shared uint sh_TriLt[10]; // per-base-tri target level
+shared uint sh_TriLe[10]; // per-base-tri edge levels
+shared uint sh_OutCounts[2];
+
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 layout(triangles, max_vertices = 64, max_primitives = 124) out;
 void main()
 {
-	uint mi = Payload.meshletIndices[gl_WorkGroupID.x]; // + mesh.lods[Payload.lodLevel].mOffset - This addition is already handled in TaskShader
+	// Compacted dispatch: recover (slot, localGroup) from the payload prefix
+	uint slot       = gl_WorkGroupID.x;
+	uint localGroup = 0u;
+	if (Payload.diceMask != 0u)
+	{
+		slot = 0u;
+		for (uint s = 1u; s < Payload.slotCount; ++s)
+			if (Payload.prefix[s] <= gl_WorkGroupID.x)
+				slot = s;
+		localGroup = gl_WorkGroupID.x - Payload.prefix[slot];
+	}
+
+	uint mi = Payload.meshletIndices[slot]; // mesh.mOffset is already baked into the meshlet indices by TaskShader
 	uint ti = gl_LocalInvocationID.x;
+
+	uint slotLm = (Payload.lmPacked[slot >> 3u] >> ((slot & 7u) * 4u)) & 0xFu;
+	bool diced  = (Payload.diceMask & (1u << slot)) != 0u;
 
 	if (ti == 0)
 	{
@@ -140,7 +170,210 @@ void main()
 	}
 	barrier();
 
-	SetMeshOutputsEXT(sh_VertexCount, sh_TriangleCount);
+	uint T = 1u, child = 0u, triBase = 0u;
+	if (diced)
+	{
+		if (slotLm <= 3u)
+		{
+			T       = kDiceTrisPerGroup[slotLm];
+			triBase = localGroup * T;
+		}
+		else
+		{
+			uint numChildsPerTri = 1u << (2u * (slotLm - 3u));
+			triBase = localGroup / numChildsPerTri;
+			child   = localGroup % numChildsPerTri;
+		}
+	}
+	uint numTris = (diced && triBase < sh_TriangleCount) ? min(T, sh_TriangleCount - triBase) : 0u;
+
+	if (diced && numTris != 0u)
+	{
+		for (uint c = ti; c < numTris * 3u; c += gl_WorkGroupSize.x)
+		{
+			// base tri t's corner c sits at meshlet-local slot t*3+c
+			uint local = (triBase + c / 3u) * 3u + (c % 3u);
+			uint vi    = sh_VOffset + g_VoxelMeshletVertices[sh_VertexOffset + sh_MvOffset + local];
+
+			Vertex vv = g_VoxelVertices[vi];
+			sh_CornerPos[c] = vec3(vv.posX, vv.posY, vv.posZ);
+			sh_CornerNrm[c] = vec3(vv.normalX, vv.normalY, vv.normalZ);
+		}
+		barrier();
+
+		// camera position in chunk-local space
+		vec3 cameraPos = g_FrozenCamera.posWORLD - vec3(g_VoxelChunkDesc.d.originX, g_VoxelChunkDesc.d.originY, g_VoxelChunkDesc.d.originZ);
+		for (uint t = ti; t < numTris; t += gl_WorkGroupSize.x)
+		{
+			uint b   = t * 3u;
+			uint le0 = DiceEdgeLevel(sh_CornerPos[b + 0u], sh_CornerPos[b + 1u], cameraPos, g_VoxelChunkDesc.d);
+			uint le1 = DiceEdgeLevel(sh_CornerPos[b + 1u], sh_CornerPos[b + 2u], cameraPos, g_VoxelChunkDesc.d);
+			uint le2 = DiceEdgeLevel(sh_CornerPos[b + 2u], sh_CornerPos[b + 0u], cameraPos, g_VoxelChunkDesc.d);
+
+			sh_TriLe[t] = le0 | (le1 << 4u) | (le2 << 8u);
+			sh_TriLt[t] = max(le0, max(le1, le2));
+		}
+		barrier();
+	}
+
+	// Output counts: emits based on highest level among 3-edges. Flat regime sums per-tri sizes; hier regime emits one level-3 child.
+	bool hier = false;
+	uint outVerts = 0u, outPrims = 0u;
+	if (!diced)
+	{
+		outVerts = sh_VertexCount;
+		outPrims = sh_TriangleCount;
+	}
+	else if (numTris != 0u)
+	{
+		uint Lt0 = sh_TriLt[0];
+		hier = (slotLm >= 4u) && (Lt0 >= 4u);
+		if (hier)
+		{
+			bool bChildActive = child < (1u << (2u * (Lt0 - 3u)));
+			outVerts = bChildActive ? 45u : 0u; // DiceSubVertCount(3)
+			outPrims = bChildActive ? 64u : 0u; // DiceSubTriCount(3)
+		}
+		else if (child == 0u)
+		{
+			for (uint t = 0u; t < numTris; ++t)
+			{
+				uint lt = sh_TriLt[t];
+				outVerts += (lt == 0u) ? 3u : DiceSubVertCount(lt);
+				outPrims += (lt == 0u) ? 1u : DiceSubTriCount(lt);
+			}
+			outVerts = min(outVerts, 64u);
+			outPrims = min(outPrims, 124u);
+		}
+	}
+
+	// publish counts via shared memory
+	if (ti == 0u)
+	{
+		sh_OutCounts[0] = outVerts;
+		sh_OutCounts[1] = outPrims;
+	}
+	barrier();
+	outVerts = sh_OutCounts[0];
+	outPrims = sh_OutCounts[1];
+
+	SetMeshOutputsEXT(outVerts, outPrims);
+	if (outVerts == 0u)
+		return;
+
+	if (diced)
+	{
+		if (hier)
+		{
+			// Handle child diced internally at level 3(FIXED); VBuf1 sub-index = child*64 + local.
+			uint  Lt = sh_TriLt[0];
+			uvec3 le = uvec3(sh_TriLe[0] & 0xFu, (sh_TriLe[0] >> 4u) & 0xFu, (sh_TriLe[0] >> 8u) & 0xFu);
+
+			uvec3 cc0, cc1, cc2;
+			DiceChildCorners(child, Lt, cc0, cc1, cc2);
+
+			for (uint v = ti; v < 45u; v += gl_WorkGroupSize.x)
+			{
+				uvec3 coord = DiceHierCoord(cc0, cc1, cc2, DiceSubVertexCoordInt(v, 3u));
+
+				vec3 posL, nrmL;
+				DiceSubVertex(coord, Lt, le,
+				              sh_CornerPos[0], sh_CornerPos[1], sh_CornerPos[2],
+				              sh_CornerNrm[0], sh_CornerNrm[1], sh_CornerNrm[2],
+				              posL, nrmL);
+
+				vec3 posWS = (sh_LocalToWorld * vec4(posL, 1.0)).xyz;
+				posWS = DisplaceVoxelDice(posWS, nrmL.y, g_FrozenCamera.posWORLD,
+				                          g_VoxelChunkDesc.d, g_ErosionDetailMap);
+
+				gl_MeshVerticesEXT[v].gl_Position = g_Camera.mViewProj * vec4(posWS, 1.0);
+				outPosCLIP_curr[v]                = g_Camera.mViewProjUnjittered     * vec4(posWS, 1.0);
+				outPosCLIP_prev[v]                = g_Camera.mViewProjUnjitteredPrev * vec4(posWS, 1.0);
+			}
+
+			for (uint p = ti; p < 64u; p += gl_WorkGroupSize.x)
+			{
+				gl_PrimitiveTriangleIndicesEXT[p] = DiceSubTriVerts(p, 3u); // local indices into the 45-vert set
+
+				gl_MeshPrimitivesEXT[p].gl_CullPrimitiveEXT = false;
+				outVisID0[p] = PackVisID0Voxel(Payload.drawID);
+				outVisID1[p] = PackVisID1Voxel(mi, triBase, child * 64u + p + 1u);
+			}
+
+			return;
+		}
+
+		for (uint v = ti; v < outVerts; v += gl_WorkGroupSize.x)
+		{
+			// locate the owning base tri by walking the variable-size layout (numTris <= 10)
+			uint t = 0u, vStart = 0u;
+			for (;;)
+			{
+				uint lt2 = sh_TriLt[t];
+				uint sz  = (lt2 == 0u) ? 3u : DiceSubVertCount(lt2);
+				if (v < vStart + sz)
+					break;
+				vStart += sz; ++t;
+			}
+			uint lt    = sh_TriLt[t];
+			uint local = v - vStart;
+
+			vec3 pos, normal;
+			if (lt != 0u)
+			{
+				uvec3 le = uvec3(sh_TriLe[t] & 0xFu, (sh_TriLe[t] >> 4u) & 0xFu, (sh_TriLe[t] >> 8u) & 0xFu);
+				DiceSubVertex(DiceSubVertexCoordInt(local, lt), lt, le,
+				              sh_CornerPos[t * 3u + 0u], sh_CornerPos[t * 3u + 1u], sh_CornerPos[t * 3u + 2u],
+				              sh_CornerNrm[t * 3u + 0u], sh_CornerNrm[t * 3u + 1u], sh_CornerNrm[t * 3u + 2u],
+				              pos, normal);
+			}
+			else
+			{
+				pos    = sh_CornerPos[t * 3u + local];
+				normal = sh_CornerNrm[t * 3u + local];
+			}
+
+			vec3 posWS = (sh_LocalToWorld * vec4(pos, 1.0)).xyz;
+			if (lt != 0u)
+				posWS = DisplaceVoxelDice(posWS, normal.y, g_FrozenCamera.posWORLD, g_VoxelChunkDesc.d, g_ErosionDetailMap);
+
+			gl_MeshVerticesEXT[v].gl_Position = g_Camera.mViewProj * vec4(posWS, 1.0);
+			outPosCLIP_curr[v]                = g_Camera.mViewProjUnjittered     * vec4(posWS, 1.0);
+			outPosCLIP_prev[v]                = g_Camera.mViewProjUnjitteredPrev * vec4(posWS, 1.0);
+		}
+
+		for (uint p = ti; p < outPrims; p += gl_WorkGroupSize.x)
+		{
+			// walk prim/vert layouts together to recover the tri's vertex base
+			uint t = 0u, pStart = 0u, vStart = 0u;
+			for (;;)
+			{
+				uint lt2 = sh_TriLt[t];
+				uint psz = (lt2 == 0u) ? 1u : DiceSubTriCount(lt2);
+				if (p < pStart + psz)
+					break;
+				pStart += psz; vStart += (lt2 == 0u) ? 3u : DiceSubVertCount(lt2); ++t;
+			}
+			uint lt = sh_TriLt[t];
+
+			if (lt != 0u)
+			{
+				uint  st  = p - pStart;
+				uvec3 sub = DiceSubTriVerts(st, lt);
+				gl_PrimitiveTriangleIndicesEXT[p] = uvec3(vStart) + sub;
+				outVisID1[p] = PackVisID1Voxel(mi, triBase + t, st + 1u);
+			}
+			else
+			{
+				gl_PrimitiveTriangleIndicesEXT[p] = uvec3(vStart, vStart + 1u, vStart + 2u);
+				outVisID1[p] = PackVisID1Voxel(mi, triBase + t, 0u); // sentinel 0 = undiced base triangle
+			}
+			gl_MeshPrimitivesEXT[p].gl_CullPrimitiveEXT = false;
+			outVisID0[p] = PackVisID0Voxel(Payload.drawID);
+		}
+
+		return;
+	}
 
 	for (uint i = ti; i < sh_VertexCount; i += gl_WorkGroupSize.x)
 	{
@@ -183,6 +416,8 @@ void main()
 		outVisID0[i] = (sh_IsVoxel != 0u)
 			? PackVisID0Voxel(Payload.drawID)
 			: PackVisID0Mesh(Payload.drawID, Payload.lodLevel, 0u);
-		outVisID1[i] = PackVisID1(mi, i);
+		outVisID1[i] = (sh_IsVoxel != 0u)
+			? PackVisID1Voxel(mi, i, 0u) // sentinel 0 = undiced base triangle
+			: PackVisID1(mi, i);
 	}
 }

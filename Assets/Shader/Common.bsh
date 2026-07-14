@@ -122,8 +122,30 @@ struct VoxelChunkDesc
 
     uint  meshletVertexOffset;   // slab base into the voxel MeshletVertices pool
     uint  meshletTriangleOffset; // slab base into the voxel MeshletTriangles pool
-    uint  padding0;
-    uint  padding1;
+    float chunkSizeMeter;        // world XZ extent
+    uint  diceMaxLevel;          // micro-dicing max subdivision level (0 = off, 1..5)
+
+    // Micro-dicing
+    float diceRadiusMeter;       // camera-distance band where base tris are diced
+    float diceFadeWidthMeter;    // displacement fades to 0 approaching the radius
+    float diceDisplacementScale; // bake-band displacement scale (1 = baked detail height)
+    uint  debugFlags;            // bit0 = dice-level tint
+
+    // Adaptive dicing: subdivision level l(d,e) = log2(K*e / (targetPx*d)).
+    float diceTargetPx;          // target sub-edge screen size (px)
+    float diceKScale;            // K = 0.5 * viewportH * |P11| (frozen camera when culling is frozen)
+    float voxelSizeMeter;        // MC cell size
+    float microAmplitudeMeter;   // octave-0 amplitude
+
+    float microBaseWaveLengthMeter; // largest micro octave wavelength
+    float microLacunarity;
+    float microGain;
+    float microCreaseBoost;      // erosion crease/ridge amplitude modulation strength
+
+    uint  microOctaves;
+    float microSharpness;        // -1 = ridged .. 0 = plain .. +1 = billowed
+    uint  padding2;
+    uint  padding3;
 };
 
 struct VoxelChunkCounts

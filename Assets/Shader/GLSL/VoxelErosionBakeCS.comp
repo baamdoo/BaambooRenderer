@@ -1,0 +1,51 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "VoxelTerrainCommon.hg"
+
+layout(set = 1, binding = 0, std140) uniform VoxelGenParamsUBO
+{
+    VoxelTerrainGenParams gp;
+} g_VoxelGenParams;
+
+layout(set = 1, binding = 1, rgba16f) writeonly uniform image2D g_OutErosionMap;
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+void main()
+{
+    ivec2 mapSize = imageSize(g_OutErosionMap);
+
+    uvec2 tID     = gl_GlobalInvocationID.xy;
+    if (tID.x >= uint(mapSize.x) || tID.y >= uint(mapSize.y))
+        return;
+
+    VoxelTerrainGenParams gp = g_VoxelGenParams.gp;
+
+    float chunkSize = float(gp.cellsPerAxis) * gp.voxelSizeMeter;
+    vec2  uv = (vec2(tID) + 0.5) / float(mapSize.x);
+    vec2  xz = vec2(gp.originX, gp.originZ) + uv * chunkSize;
+
+    vec3  hs  = VoxelTerrainHeight01Deriv(gp, xz);
+    float amp = max(gp.mountainAmplitude, 1e-4);
+
+    vec4  d        = vec4(0.0);
+    vec3  geoDelta = vec3(0.0);
+    float ridge    = 0.0;
+    if (gp.erosionOctaves != 0u)
+    {
+        float fadeTarget = clamp((hs.x - 0.5) * 2.0 / 0.6, -1.0, 1.0);
+        vec2  g   = VoxelTerrainCoarseGrad(gp, xz, 0.25 * gp.erosionScale * gp.erosionCellScale);
+        vec3  has = vec3(hs.x * amp, g * amp * gp.erosionSlopeScale);
+
+        float geoMinWL = VoxelErosionGeoMinWavelength(gp);   // geometry band
+        float outMinWL = 4.0 * chunkSize / float(mapSize.x); // bake texel Nyquist (2x margin)
+        d = VoxelErosionFilterEx(gp, xz, has, fadeTarget, geoMinWL, min(outMinWL, geoMinWL), ridge, geoDelta);
+    }
+
+    float h01Geo       = clamp(hs.x + geoDelta.x / amp, 0.0, 1.0);
+    float h01Full      = clamp(hs.x + d.x / amp, 0.0, 1.0);
+    float detailHeight = (h01Full - h01Geo) * amp; // height delta (m) beyond the geometry band
+    float surfaceY     = gp.originY + gp.surfaceLevelRatio * chunkSize + (h01Geo - 0.5) * gp.mountainAmplitude;
+
+    imageStore(g_OutErosionMap, ivec2(tID), vec4(detailHeight, ridge, surfaceY, 0.0));
+}

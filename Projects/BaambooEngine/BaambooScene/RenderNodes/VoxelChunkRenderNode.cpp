@@ -12,6 +12,8 @@ namespace baamboo
 {
 
 
+// ---- Construction ---------------------------------------------------------
+
 VoxelChunkRenderNode::VoxelChunkRenderNode(render::RenderDevice& rd)
 	: Super(rd, "VoxelChunkPass")
 {
@@ -51,7 +53,7 @@ VoxelChunkRenderNode::VoxelChunkRenderNode(render::RenderDevice& rd)
 		});
 	m_FreeSlabs.reserve(kMaxResidentSlabs);
 
-	// Density volume + the linear copy the MC extract actually samples (texture is write-only for now).
+	// Density volume + the linear copy the MC extract samples.
 	const u32 kDensityVoxelCount = kDensityVolumeDim * kDensityVolumeDim * kDensityVolumeDim;
 	m_pDensityVolume = Texture::Create(rd, "VoxelChunkPass::DensityVolume",
 		{
@@ -95,12 +97,49 @@ VoxelChunkRenderNode::VoxelChunkRenderNode(render::RenderDevice& rd)
 	m_pMeshletBuildPSO = ComputePipeline::Create(rd, "VoxelMeshletBuildPSO");
 	m_pMeshletBuildPSO->SetComputeShader(pMeshletBuildCS).Build();
 
+	// Triangle spatial sort (count -> scan -> scatter), between MC extract and meshlet build.
+	m_pTriSortBins = Buffer::Create(rd, "VoxelChunkPass::TriSortBins",
+		{
+			.count              = kTriSortBins,
+			.elementSizeInBytes = sizeof(u32),
+			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest,
+		});
+
+	auto pTriSortCountCS = Shader::Create(rd, "VoxelTriSortCountCS",
+		{ .stage = eShaderStage::Compute, .filename = "VoxelTriSortCountCS" });
+	m_pTriSortCountPSO = ComputePipeline::Create(rd, "VoxelTriSortCountPSO");
+	m_pTriSortCountPSO->SetComputeShader(pTriSortCountCS).Build();
+
+	auto pTriSortScanCS = Shader::Create(rd, "VoxelTriSortScanCS",
+		{ .stage = eShaderStage::Compute, .filename = "VoxelTriSortScanCS" });
+	m_pTriSortScanPSO = ComputePipeline::Create(rd, "VoxelTriSortScanPSO");
+	m_pTriSortScanPSO->SetComputeShader(pTriSortScanCS).Build();
+
+	auto pTriSortScatterCS = Shader::Create(rd, "VoxelTriSortScatterCS",
+		{ .stage = eShaderStage::Compute, .filename = "VoxelTriSortScatterCS" });
+	m_pTriSortScatterPSO = ComputePipeline::Create(rd, "VoxelTriSortScatterPSO");
+	m_pTriSortScatterPSO->SetComputeShader(pTriSortScatterCS).Build();
+
+	m_pErosionDetailMap = Texture::Create(rd, "VoxelChunkPass::ErosionDetailMap",
+		{
+			.resolution = uint3(kErosionMapDim, kErosionMapDim, 1),
+			.format     = eFormat::RGBA16_FLOAT,
+			.imageUsage = eTextureUsage_Storage | eTextureUsage_Sample,
+		});
+	auto pErosionBakeCS = Shader::Create(rd, "VoxelErosionBakeCS",
+		{ .stage = eShaderStage::Compute, .filename = "VoxelErosionBakeCS" });
+	m_pErosionBakePSO = ComputePipeline::Create(rd, "VoxelErosionBakePSO");
+	m_pErosionBakePSO->SetComputeShader(pErosionBakeCS).Build();
+
 	g_FrameData.pVoxelChunkCounts      = m_pChunkCountsBuffer;
 	g_FrameData.pVoxelVertices         = m_pVertexPool;
 	g_FrameData.pVoxelMeshlets         = m_pMeshletPool;
 	g_FrameData.pVoxelMeshletVertices  = m_pMeshletVertexPool;
 	g_FrameData.pVoxelMeshletTriangles = m_pMeshletTrianglePool;
+	g_FrameData.pVoxelErosionDetail    = m_pErosionDetailMap;
 }
+
+// ---- Chunk residency ------------------------------------------------------
 
 u32 VoxelChunkRenderNode::AllocateSlab()
 {
@@ -113,7 +152,7 @@ u32 VoxelChunkRenderNode::AllocateSlab()
 	if (m_SlabHighWater < kMaxResidentSlabs)
 		return m_SlabHighWater++;
 
-	return kInvalidIndex; // pool exhausted (multi-chunk streaming will grow x2)
+	return kInvalidIndex; // pool exhausted
 }
 
 bool VoxelChunkRenderNode::EnsureChunkResident(render::CommandContext& context, const VoxelTerrainRenderView& vt)
@@ -162,12 +201,18 @@ bool VoxelChunkRenderNode::EnsureChunkResident(render::CommandContext& context, 
 	desc.vertexOffset          = vBase;
 	desc.meshletVertexOffset   = mvBase;
 	desc.meshletTriangleOffset = mtBase;
-	g_FrameData.voxelChunkDesc = desc;
+	desc.chunkSizeMeter        = float(vt.genParams.cellsPerAxis) * vt.genParams.voxelSizeMeter;
+	desc.voxelSizeMeter        = vt.genParams.voxelSizeMeter;
+	g_FrameData.voxelChunkDesc = desc; // live dice/micro params refresh every frame
 
 	m_BuiltRevision = vt.revision;
 	return true;
 }
 
+// ---- GPU dispatch passes ----------------------------------------------------
+
+// This pass only draws the height field on XZ plane so it currently wastes y-samples.
+// TODO: [2-pass] 1) compute height field on XZ plane, 2) compute density by sampling the height field
 void VoxelChunkRenderNode::DispatchDensity(render::CommandContext& context, const VoxelTerrainRenderView& vt)
 {
 	using namespace render;
@@ -232,12 +277,62 @@ void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, c
 	context.StageDescriptor("g_OutVertices",  m_pVertexPool);
 	context.Dispatch3D< 4, 4, 4 >(C, C, C);
 
-	context.UAVBarrier(m_pMCCounter, true); // extract -> meshlet build
+	context.UAVBarrier(m_pMCCounter, true); // extract -> sort
 	context.UAVBarrier(m_pVertexPool);
 
-	// Pass B: pack sequential meshlets and patch vertexCount/meshletCount into the chunk row.
+	// Pass A2: triangle spatial sort into Morton blocks, baked into the meshlet-vertex indirection (vertices stay in place).
+	const u32 mvBase = m_ChunkSlabId * kMeshletVertexSlabCap;
+
+	context.ClearBuffer(m_pTriSortBins, 0u);
+
+	context.TransitionBufferToRead(m_pVertexPool, ePipelineStage::ComputeShader);
+	context.TransitionBufferToWrite(m_pTriSortBins, ePipelineStage::ComputeShader);
+
+	struct
+	{
+		u32   vertexSlabBase;
+		u32   meshletVertexSlabBase;
+		u32   maxTriangles;
+		float chunkSizeMeter;
+	} ts = { vBase, mvBase, kMaxTrianglesPerChunk, float(C) * vt.genParams.voxelSizeMeter };
+
+	// A2.1: histogram
+	context.SetRenderPipeline(m_pTriSortCountPSO.get());
+	context.SetComputeConstants(sizeof(ts), &ts);
+	context.StageDescriptor("g_MCCounter", m_pMCCounter);
+	context.StageDescriptor("g_Vertices",  m_pVertexPool);
+	context.StageDescriptor("g_SortBins",  m_pTriSortBins);
+	context.Dispatch1D< 256 >(kMaxTrianglesPerChunk);
+
+	context.UAVBarrier(m_pTriSortBins, true);
+
+	// A2.2: exclusive scan (single group)
+	static_assert(kTriSortBins % 1024u == 0u, "scan CS strips assume bins % threads == 0");
+	context.SetRenderPipeline(m_pTriSortScanPSO.get());
+	struct { u32 numBins; } sc = { kTriSortBins };
+	context.SetComputeConstants(sizeof(sc), &sc);
+	context.StageDescriptor("g_SortBins", m_pTriSortBins);
+	context.Dispatch1D< 1024 >(1024u);
+
+	context.UAVBarrier(m_pTriSortBins, true);
+
+	// A2.3: scatter the permutation into the meshlet-vertex indirection
+	context.TransitionBufferToWrite(m_pMeshletVertexPool, ePipelineStage::ComputeShader);
+
+	context.SetRenderPipeline(m_pTriSortScatterPSO.get());
+	context.SetComputeConstants(sizeof(ts), &ts);
+	context.StageDescriptor("g_MCCounter",       m_pMCCounter);
+	context.StageDescriptor("g_Vertices",        m_pVertexPool);
+	context.StageDescriptor("g_SortBins",        m_pTriSortBins);
+	context.StageDescriptor("g_OutMeshletVerts", m_pMeshletVertexPool);
+	context.Dispatch1D< 256 >(kMaxTrianglesPerChunk);
+
+	context.UAVBarrier(m_pMeshletVertexPool, true); // sort -> meshlet build
+
+	// Pass B: pack sequential meshlets (+ bounds through the sorted indirection) and patch counts.
 	context.TransitionBufferToWrite(m_pMeshletPool, ePipelineStage::ComputeShader);
 	context.TransitionBufferToWrite(m_pChunkCountsBuffer, ePipelineStage::ComputeShader);
+	context.TransitionBufferToRead(m_pMeshletVertexPool, ePipelineStage::ComputeShader);
 
 	context.SetRenderPipeline(m_pMeshletBuildPSO.get());
 	struct
@@ -247,16 +342,40 @@ void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, c
 		u32 trianglesPerMeshlet;
 		u32 maxMeshlets;
 		u32 maxTriangles;
-	} mb = { 0u, mlBase, kTrianglesPerMeshlet, kMeshletSlabCapacity, kMaxTrianglesPerChunk };
+		u32 vertexSlabBase;
+		u32 meshletVertexSlabBase;
+	} mb = { 0u, mlBase, kTrianglesPerMeshlet, kMeshletSlabCapacity, kMaxTrianglesPerChunk, vBase, mvBase };
 	context.SetComputeConstants(sizeof(mb), &mb);
 	context.StageDescriptor("g_MCCounter", m_pMCCounter);
 	context.StageDescriptor("g_OutMeshlets", m_pMeshletPool);
 	context.StageDescriptor("g_OutCounts", m_pChunkCountsBuffer);
+	context.StageDescriptor("g_Vertices", m_pVertexPool);
+	context.StageDescriptor("g_MeshletVerts", m_pMeshletVertexPool);
 	context.Dispatch1D< 64 >(kMeshletSlabCapacity);
 
 	context.UAVBarrier(m_pMeshletPool);
 	context.UAVBarrier(m_pChunkCountsBuffer, true);
 }
+
+void VoxelChunkRenderNode::DispatchErosionBake(render::CommandContext& context, const VoxelTerrainRenderView& vt)
+{
+	using namespace render;
+	if (!m_pErosionBakePSO || !m_pErosionDetailMap)
+		return;
+
+	context.SetRenderPipeline(m_pErosionBakePSO.get());
+
+	context.TransitionBarrier(m_pErosionDetailMap, eTextureLayout::General);
+
+	context.SetComputeDynamicUniformBuffer("g_VoxelGenParams", vt.genParams);
+	context.StageDescriptor("g_OutErosionMap", m_pErosionDetailMap);
+
+	context.Dispatch2D< 8, 8 >(kErosionMapDim, kErosionMapDim);
+
+	context.TransitionBarrier(m_pErosionDetailMap, eTextureLayout::ShaderReadOnly);
+}
+
+// ---- Frame entry points -----------------------------------------------------
 
 void VoxelChunkRenderNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)
 {
@@ -277,7 +396,31 @@ void VoxelChunkRenderNode::BuildChunkGeometryIfNeeded(render::CommandContext& co
 		{
 			DispatchDensity(context, vt);
 			DispatchExtraction(context, vt);
+			DispatchErosionBake(context, vt); // shading-band erosion detail (lighting consumes)
 		}
+	}
+
+	if (vt.bValid)
+	{
+		VoxelChunkDesc& desc = g_FrameData.voxelChunkDesc;
+		desc.diceMaxLevel          = vt.dice.maxLevel;
+		desc.diceTargetPx          = vt.dice.targetPx;
+		desc.diceRadiusMeter       = vt.dice.radiusM;
+		desc.diceFadeWidthMeter    = vt.dice.fadeWidthMeter;
+		desc.diceDisplacementScale = vt.dice.displacementScale;
+		desc.debugFlags            = vt.dice.debugFlags;
+
+		const CameraRenderView& cam = renderView.bFrozen ? renderView.frozenCamera : renderView.camera;
+		const float2 viewport = renderView.bFrozen ? renderView.frozenViewport : renderView.viewport;
+		desc.diceKScale = 0.5f * viewport.y * std::abs(cam.mProj[1][1]);
+
+		desc.microAmplitudeMeter      = vt.dice.microAmplitudeMeter;
+		desc.microBaseWaveLengthMeter = vt.dice.microBaseWaveLengthMeter;
+		desc.microLacunarity          = vt.dice.microLacunarity;
+		desc.microGain                = vt.dice.microGain;
+		desc.microCreaseBoost         = vt.dice.microCreaseBoost;
+		desc.microSharpness           = vt.dice.microSharpness;
+		desc.microOctaves             = vt.dice.microOctaves;
 	}
 }
 

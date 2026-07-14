@@ -7,14 +7,18 @@ layout(push_constant) uniform MeshletBuildPushConstants
 {
     uint g_ChunkID;
     uint g_MeshletSlabBase;
-    uint g_TrianglesPerMeshlet;
+    uint g_TrianglesPerMeshlet;   // 3*K <= mesh shader max vertices
     uint g_MaxMeshlets;
     uint g_MaxTriangles;
+    uint g_VertexSlabBase;
+    uint g_MeshletVertexSlabBase;
 } pc;
 
 layout(set = 1, binding = 0) buffer McCounterBuffer  { uint g_MCCounter[]; };
 layout(set = 1, binding = 1) buffer OutMeshletBuffer { Meshlet g_OutMeshlets[]; };
 layout(set = 1, binding = 2) buffer OutCountsBuffer  { VoxelChunkCounts g_OutCounts[]; };
+layout(set = 1, binding = 3) readonly buffer VertexPoolBuffer { Vertex g_Vertices[]; };
+layout(set = 1, binding = 4) readonly buffer MeshletVertexIndexBuffer { uint g_MeshletVerts[]; };
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 void main()
@@ -23,12 +27,11 @@ void main()
     if (m >= pc.g_MaxMeshlets)
         return;
 
-    // clamp to slab capacity -- guards every downstream count against a runaway extract
     uint totalTris   = min(g_MCCounter[0], pc.g_MaxTriangles);
     uint K           = pc.g_TrianglesPerMeshlet;
     uint numMeshlets = min((totalTris + K - 1u) / K, pc.g_MaxMeshlets);
 
-    if (m == 0u) // Thread-0 publishes the GPU-driven meshlet count to the chunk's counts row
+    if (m == 0u) // thread 0 publishes the meshlet count to the chunk's counts row
     {
         g_OutCounts[pc.g_ChunkID].meshletCount = numMeshlets;
     }
@@ -40,12 +43,25 @@ void main()
     uint triCount = min(K, totalTris - triBase);
     uint o        = pc.g_MeshletSlabBase + m;
 
-    g_OutMeshlets[o].vertexOffset   = triBase * 3u; // 3 verts/triangle
+    // AABB over meshlet vertices
+    vec3 bmin = vec3(1e30);
+    vec3 bmax = vec3(-1e30);
+    for (uint v = 0u; v < triCount * 3u; ++v)
+    {
+        uint vLocal = g_MeshletVerts[pc.g_MeshletVertexSlabBase + triBase * 3u + v];
+        uint vi     = pc.g_VertexSlabBase + vLocal;
+        vec3 p  = vec3(g_Vertices[vi].posX, g_Vertices[vi].posY, g_Vertices[vi].posZ);
+        bmin = min(bmin, p);
+        bmax = max(bmax, p);
+    }
+    vec3 center = 0.5 * (bmin + bmax);
+
+    g_OutMeshlets[o].vertexOffset   = triBase * 3u;
     g_OutMeshlets[o].triangleOffset = triBase;
     g_OutMeshlets[o].vertexCount    = triCount * 3u;
     g_OutMeshlets[o].triangleCount  = triCount;
-    g_OutMeshlets[o].centerX = 0.0; g_OutMeshlets[o].centerY = 0.0; g_OutMeshlets[o].centerZ = 0.0;
-    g_OutMeshlets[o].radius  = 0.0;
-    g_OutMeshlets[o].coneAxisX = 0.0; g_OutMeshlets[o].coneAxisY = 0.0; g_OutMeshlets[o].coneAxisZ = 0.0;
-    g_OutMeshlets[o].coneCutoff = 1.0;
+    g_OutMeshlets[o].centerX        = center.x; g_OutMeshlets[o].centerY = center.y; g_OutMeshlets[o].centerZ = center.z;
+    g_OutMeshlets[o].radius         = length(bmax - center);
+    g_OutMeshlets[o].coneAxisX      = 0.0; g_OutMeshlets[o].coneAxisY = 0.0; g_OutMeshlets[o].coneAxisZ = 0.0; // cone cull unused
+    g_OutMeshlets[o].coneCutoff     = 1.0;
 }

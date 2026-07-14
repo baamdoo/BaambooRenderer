@@ -37,7 +37,7 @@ struct InstanceData
     u32 isVoxel;
 };
 
-// Voxel chunk i lives at instance (VOXEL_CHUNK_INSTANCE_BASE + i) and VoxelChunkCounts[i]
+// Voxel chunk i lives at instance (kVoxelChunkInstanceBase + i) and VoxelChunkCounts[i]
 constexpr u32 kVoxelChunkInstanceBase = 0u;
 
 struct IndirectCommandData
@@ -372,14 +372,36 @@ struct CloudShadowData
 struct VoxelChunkDesc
 {
     float3 originWS;
-    u32    vertexOffset;          // slab base into the voxel Vertex pool
+    u32    vertexOffset;
 
-    u32    meshletVertexOffset;   // slab base into the voxel MeshletVertices pool
-    u32    meshletTriangleOffset; // slab base into the voxel MeshletTriangles pool
-    u32    padding0;
-    u32    padding1;
+    u32   meshletVertexOffset;
+    u32   meshletTriangleOffset;
+    float chunkSizeMeter;
+    u32   diceMaxLevel;          // micro-dicing max subdivision level (0 = off, 1..5)
+
+    // Micro-dicing
+    float diceRadiusMeter;
+    float diceFadeWidthMeter;    // displacement fades to 0 approaching the radius
+    float diceDisplacementScale;
+    u32   debugFlags;            // bit0 = dice-level tint
+
+    // Adaptive dicing
+    float diceTargetPx;        // target sub-edge screen size (px)
+    float diceKScale;          // K = 0.5 * viewportH * |P11|
+    float voxelSizeMeter;
+    float microAmplitudeMeter;
+
+    float microBaseWaveLengthMeter; // largest micro octave wavelength
+    float microLacunarity;
+    float microGain;
+    float microCreaseBoost;         // erosion crease/ridge amplitude modulation strength
+
+    u32   microOctaves;
+    float microSharpness; // -1 = ridged .. 0 = plain .. +1 = billowed
+    u32   padding2;
+    u32   padding3;
 };
-static_assert(sizeof(VoxelChunkDesc) == 32);
+static_assert(sizeof(VoxelChunkDesc) == 96);
 
 struct VoxelChunkCounts
 {
@@ -392,42 +414,42 @@ static_assert(sizeof(VoxelChunkCounts) == 4);
 // =========================================================================
 struct VoxelTerrainGenParams
 {
-    float3 chunkOriginWS;       // chunk origin (world)
+    float3 chunkOriginWS;
     float  voxelSizeMeter;
 
-    u32    cellsPerAxis;        // C
-    u32    samplesPerAxis;      // C+1 (oracle-aligned interior span)
-    u32    apron;               // A; volume dim = C+1+2A
-    u32    fieldMode;           // 0 = heightfield (exact, oracle-diffable), 1 = procedural
+    u32 cellsPerAxis;
+    u32 samplesPerAxis;
+    u32 apron;
+    u32 seed;
 
-    u32    heightShape;         // 0 = constant, 1 = plane, 2 = periodic
-    float  baseHeightMeter;
-    float  slopeX;
-    float  slopeZ;
+    float frequency;
+    u32   octaves;
+    float lacunarity;
+    float gain;
 
-    float  anchorXMeter;
-    float  anchorZMeter;
-    float  amplitudeMeter;
-    float  wavelengthXMeter;
+    float warpStrength;
+    float warpFrequency;
+    float mountainAmplitude;
+    float detailWeight;
 
-    float  wavelengthZMeter;
-    u32    seed;
-    float  frequency;           // base mountain-noise frequency (cycles/m)
-    u32    octaves;
+    float redistributionExp;
+    float ridgedBlend;
+    float surfaceLevelRatio;
+    float erosionScale;
 
-    float  lacunarity;
-    float  gain;                // fBm persistence
-    float  warpStrength;        // domain-warp displacement (m)
-    float  warpFrequency;
+    float erosionStrength;
+    float erosionGullyWeight;
+    float erosionDetail;
+    float erosionOnsetInput;
+          
+    float erosionOnsetOctave;
+    float erosionCellScale;
+    float erosionNormalization;
+    float erosionSlopeScale;
 
-    float  mountainAmplitude;   // m
-    float  ridgeAmplitude;      // m
-    float  ridgeFrequency;
-    float  caveAmplitude;       // m
-
-    float  caveFrequency;
-    float  caveThreshold;       // carve where Worley F1 < threshold
-    float  hardFloorY;
-    float  hardFloorStrength;   // m
+    u32 erosionOctaves;
+    u32 padding0;
+    u32 padding1;
+    u32 padding2;
 };
 static_assert(sizeof(VoxelTerrainGenParams) == 128);

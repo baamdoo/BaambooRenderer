@@ -1,18 +1,16 @@
 #ifndef VISIBILITY_BUFFER_HLSLI
 #define VISIBILITY_BUFFER_HLSLI
 
-// =========================================================================
-// Visibility buffer (VBuf0 / VBuf1) packing — single source of truth shared by
-// the geometry pass (writer) and SurfaceResolve / Lighting (readers).
-//
+// Visibility buffer (VBuf0 / VBuf1) packing.
 // VBuf0 (R32_UINT):
-//   bit 31      : valid (covered by geometry).  VBuf0 == 0  => sky / empty.
-//   bit 30      : isTerrain.
-//   bits 27..29 : reserved coarse flags (alpha-test, two-sided, ...).
-//   bits 24..26 : LOD (0..7).
-//   bits  0..23 : instanceID (mirrors g_DrawID low 24 bits).
-// VBuf1 (R32_UINT):  mesh only — (meshletIndex << 7) | triLocal (0..126).
-// =========================================================================
+//   bit 31      : valid (covered by geometry); VBuf0 == 0 => sky / empty
+//   bit 30      : isTerrain
+//   bits 27..29 : reserved coarse flags (alpha-test, two-sided, ...)
+//   bits 24..26 : LOD (0..7)
+//   bits  0..23 : instanceID (mirrors g_DrawID low 24 bits)
+// VBuf1 (R32_UINT):
+//   mesh  - (meshletIndex << 7) | triLocal (0..126)
+//   voxel - [31:11] globalTriIdx | [10:0] subTriPlus1 (0 = undiced)
 
 #define VISID_VALID_BIT   (1u << 31)
 #define VISID_TERRAIN_BIT (1u << 30)
@@ -42,6 +40,7 @@ uint VisFlags(uint v0)        { return (v0 >> 27) & 0x7u; }
 uint VisMeshletIndex(uint v1) { return v1 >> 7; }
 uint VisTriLocal(uint v1)     { return v1 & 0x7Fu; }
 
+// ---- voxel packing ----
 #define VISID_VOXEL_BIT VISID_TERRAIN_BIT
 uint PackVisID0Voxel(uint chunkIndex)
 {
@@ -49,5 +48,14 @@ uint PackVisID0Voxel(uint chunkIndex)
 }
 bool VisIsVoxel(uint v0)    { return (v0 & VISID_VALID_BIT) != 0u && (v0 & VISID_VOXEL_BIT) != 0u; }
 uint VisChunkIndex(uint v0) { return v0 & 0x00FFFFFFu; }
+
+#define VOXEL_TRIS_PER_MESHLET 21u
+uint PackVisID1Voxel(uint meshletIndex, uint triLocal, uint subTriPlus1)
+{
+    return ((meshletIndex * VOXEL_TRIS_PER_MESHLET + triLocal) << 11) | (subTriPlus1 & 0x7FFu);
+}
+uint VisVoxelMeshletIndex(uint v1) { return (v1 >> 11) / VOXEL_TRIS_PER_MESHLET; }
+uint VisVoxelTriLocal(uint v1)     { return (v1 >> 11) % VOXEL_TRIS_PER_MESHLET; }
+uint VisVoxelSubTriPlus1(uint v1)  { return v1 & 0x7FFu; }
 
 #endif // VISIBILITY_BUFFER_HLSLI

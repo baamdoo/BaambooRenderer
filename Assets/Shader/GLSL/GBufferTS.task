@@ -12,6 +12,7 @@
 #include "DescriptorCommon.hg"
 #include "HelperFunctions.hg"
 #include "CullingCommon.hg"
+#include "VoxelTerrainCommon.hg"
 
 
 #define CULL_FLAG_MESHLET_FRUSTUM   4u
@@ -41,7 +42,7 @@ layout(set = 1, binding = 2) buffer MeshletVisibilityBuffer
 };
 
 #if PROFILING_LEVEL >= 1
-// Per-phase cull stats counter. Must match GBufferNode::MESHLET_STATS_FIELDS layout:
+// Per-phase cull stats counter (GBufferNode::MESHLET_STATS_FIELDS layout):
 //   [0] = meshletDrawn         — meshlets that survived task-shader cull
 //   [1] = meshletTotal         — meshlet candidates examined (incl. bSkipPhase1 ones)
 //   [2] = triangleCandidates   — sum of triangleCount for drawn meshlets (= mesh shader input)
@@ -54,11 +55,18 @@ layout(set = 1, binding = 3) buffer MeshletStatsBuffer
 #define STATS_TRI_CAND  2u
 #endif // PROFILING_LEVEL >= 1
 
+layout(set = 1, binding = 5) readonly buffer GBufVoxelMeshletBuffer { Meshlet g_VoxelMeshlets[]; };
+layout(set = 1, binding = 8, std140) uniform VoxelChunkDescUBO { VoxelChunkDesc d; } g_VoxelChunkDesc;
+
 
 struct TaskPayload
 {
 	uint drawID;
 	uint lodLevel;
+	uint diceMask;
+	uint slotCount;
+	uint prefix[32];
+	uint lmPacked[4];
     uint meshletIndices[32];
 };
 taskPayloadSharedEXT TaskPayload Payload;
@@ -113,14 +121,31 @@ void main()
 
 	bool bValid = (localMeshletIdx < sh_MeshletCount);
 	bool accept = false;
+
+	uint slotLm       = 0u; // voxel dice budget level for this thread's meshlet (0 = plain/off)
+	uint slotTriCount = 0u;
 #if PROFILING_LEVEL >= 1
-	uint myTriCount = 0u; // triangleCount of THIS thread's meshlet, only when accept
+	uint dbgTriCount = 0u; // triangleCount of THIS thread's meshlet, only when accept
 #endif
 
 	if (bValid && sh_IsVoxel != 0u)
 	{
-		// TODO: culling on voxels
+		Meshlet meshlet = g_VoxelMeshlets[mi];
+
+		vec3  centerWS = (sh_LocalToWorld * vec4(meshlet.centerX, meshlet.centerY, meshlet.centerZ, 1.0)).xyz;
+		float radiusWS = meshlet.radius * sh_MaxScale;
+
 		accept = true;
+
+		// TODO: per-meshlet culling for voxel
+		if ((g_CullData.cullFlags & CULL_FLAG_MESHLET_FRUSTUM) != 0u)
+			accept = !IsFrustumCulled(g_CullData.frustum, centerWS, radiusWS);
+
+		if (accept && g_VoxelChunkDesc.d.diceMaxLevel != 0u)
+		{
+			slotLm       = DiceMeshletBudgetLevel(centerWS, radiusWS, g_FrozenCamera.posWORLD, g_VoxelChunkDesc.d);
+			slotTriCount = meshlet.triangleCount;
+		}
 	}
 	else if (bValid)
 	{
@@ -181,7 +206,7 @@ void main()
 
 #if PROFILING_LEVEL >= 1
 			if (accept)
-				myTriCount = meshlet.triangleCount;
+				dbgTriCount = meshlet.triangleCount;
 #endif
 		}
 	}
@@ -193,24 +218,43 @@ void main()
 	if (accept)
 		Payload.meshletIndices[payloadIndex] = mi;
 
+	// Per-slot MS group budget
+	uint numGroups = accept ? ((slotLm > 0u) ? DiceGroupsForMeshlet(slotLm, slotTriCount) : 1u) : 0u;
+	uint diceMask = subgroupOr((accept && slotLm > 0u) ? (1u << payloadIndex) : 0u);
+
+	uint groupPrefix = subgroupExclusiveAdd(numGroups);
+	if (accept)
+		Payload.prefix[payloadIndex] = groupPrefix;
+
+	for (uint w = 0u; w < 4u; ++w)
+	{
+		uint lmBits = subgroupOr((accept && (payloadIndex >> 3u) == w) ? (slotLm << ((payloadIndex & 7u) * 4u)) : 0u);
+		if (ti == 0u)
+			Payload.lmPacked[w] = lmBits;
+	}
+
 	uint numMeshlets = subgroupBallotBitCount(ballot);
+	uint totalGroups = subgroupAdd(numGroups);
 
 #if PROFILING_LEVEL >= 1
 	uvec4 validBallot = subgroupBallot(bValid);
 	uint  numValid    = subgroupBallotBitCount(validBallot);
-	uint  numTris     = subgroupAdd(myTriCount);
+	uint  numTris     = subgroupAdd(dbgTriCount);
 	if (subgroupElect())
 	{
-		atomicAdd(g_MeshletStats[STATS_DRAWN],    numMeshlets);
-		atomicAdd(g_MeshletStats[STATS_TOTAL],    numValid);
+		atomicAdd(g_MeshletStats[STATS_DRAWN], numMeshlets);
+		atomicAdd(g_MeshletStats[STATS_TOTAL], numValid);
 		atomicAdd(g_MeshletStats[STATS_TRI_CAND], numTris);
 	}
 #endif // PROFILING_LEVEL >= 1
 
 	if (ti == 0)
 	{
-		Payload.drawID   = sh_DrawID;
-		Payload.lodLevel = sh_Lod;
-		EmitMeshTasksEXT(numMeshlets, 1, 1);
+		Payload.drawID    = sh_DrawID;
+		Payload.lodLevel  = sh_Lod;
+		Payload.diceMask  = diceMask;
+		Payload.slotCount = numMeshlets;
+
+		EmitMeshTasksEXT(totalGroups, 1, 1);
 	}
 }

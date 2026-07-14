@@ -2,16 +2,20 @@
 
 cbuffer MeshletBuildPushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
-    uint g_ChunkID;             // chunk-table row to patch
+    uint g_ChunkID;
     uint g_MeshletSlabBase;
-    uint g_TrianglesPerMeshlet; // K; 3*K <= MS maxvertices
+    uint g_TrianglesPerMeshlet;    // 3*K <= mesh shader max vertices
     uint g_MaxMeshlets;
     uint g_MaxTriangles;
+    uint g_VertexSlabBase;
+    uint g_MeshletVertexSlabBase;
 };
 
-ConstantBuffer< DescriptorHeapIndex > g_MCCounter   : register(b1, ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_OutMeshlets : register(b2, ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_OutCounts   : register(b3, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_MCCounter    : register(b1, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_OutMeshlets  : register(b2, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_OutCounts    : register(b3, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_Vertices     : register(b4, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_MeshletVerts : register(b5, ROOT_CONSTANT_SPACE);
 
 [numthreads(64, 1, 1)]
 void main(uint3 dt : SV_DispatchThreadID)
@@ -21,12 +25,12 @@ void main(uint3 dt : SV_DispatchThreadID)
         return;
 
     RWByteAddressBuffer Counter = GetResource(g_MCCounter.index);
-    // clamp to slab capacity -- guards every downstream count against a runaway extract
+    // clamp to slab capacity
     uint totalTris   = min(Counter.Load(0u), g_MaxTriangles);
     uint K           = g_TrianglesPerMeshlet;
     uint numMeshlets = min((totalTris + K - 1u) / K, g_MaxMeshlets);
 
-    if (m == 0u) // lane 0 publishes the GPU-driven meshlet count to the chunk's counts row
+    if (m == 0u) // thread 0 publishes the meshlet count to the chunk's counts row
     {
         RWStructuredBuffer< VoxelChunkCounts > Counts = GetResource(g_OutCounts.index);
         Counts[g_ChunkID].meshletCount = numMeshlets;
@@ -38,15 +42,30 @@ void main(uint3 dt : SV_DispatchThreadID)
     uint triBase  = m * K;
     uint triCount = min(K, totalTris - triBase);
 
+    // AABB over meshlet verts, read through the sorted meshlet-vertex indirection (vertex pool stays in MC order)
+    StructuredBuffer< Vertex > Verts        = GetResource(g_Vertices.index);
+    StructuredBuffer< uint >   MeshletVerts = GetResource(g_MeshletVerts.index);
+    float3 bmin = float3(1e30, 1e30, 1e30);
+    float3 bmax = float3(-1e30, -1e30, -1e30);
+    for (uint v = 0u; v < triCount * 3u; ++v)
+    {
+        uint   vLocal = MeshletVerts[g_MeshletVertexSlabBase + triBase * 3u + v];
+        Vertex vv     = Verts[g_VertexSlabBase + vLocal];
+        float3 p  = float3(vv.posX, vv.posY, vv.posZ);
+        bmin = min(bmin, p);
+        bmax = max(bmax, p);
+    }
+    float3 center = 0.5 * (bmin + bmax);
+
     Meshlet meshlet;
-    meshlet.vertexOffset   = triBase * 3u; // 3 verts/triangle
+    meshlet.vertexOffset   = triBase * 3u;
     meshlet.triangleOffset = triBase;
     meshlet.vertexCount    = triCount * 3u;
     meshlet.triangleCount  = triCount;
-    meshlet.centerX = 0.0; meshlet.centerY = 0.0; meshlet.centerZ = 0.0; // bounds/cone unused (chunk-level cull only)
-    meshlet.radius  = 0.0;
-    meshlet.coneAxisX = 0.0; meshlet.coneAxisY = 0.0; meshlet.coneAxisZ = 0.0;
-    meshlet.coneCutoff = 1.0;
+    meshlet.centerX        = center.x; meshlet.centerY = center.y; meshlet.centerZ = center.z;
+    meshlet.radius         = length(bmax - center);
+    meshlet.coneAxisX      = 0.0; meshlet.coneAxisY = 0.0; meshlet.coneAxisZ = 0.0; // cone cull unused
+    meshlet.coneCutoff     = 1.0;
 
     RWStructuredBuffer< Meshlet > OutM = GetResource(g_OutMeshlets.index);
     OutM[g_MeshletSlabBase + m] = meshlet;

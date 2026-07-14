@@ -48,6 +48,13 @@ SurfaceResolveNode::SurfaceResolveNode(render::RenderDevice& rd)
 	m_pVoxelMeshletFallback         = MakeFallback("SurfaceResolvePass::VoxelMeshletFallback", sizeof(Meshlet));
 	m_pVoxelMeshletVertexFallback   = MakeFallback("SurfaceResolvePass::VoxelMeshletVertexFallback", sizeof(u32));
 	m_pVoxelMeshletTriangleFallback = MakeFallback("SurfaceResolvePass::VoxelMeshletTriangleFallback", sizeof(u32));
+
+	m_pErosionDetailFallback = Texture::Create(rd, "SurfaceResolvePass::ErosionDetailFallback",
+		{
+			.resolution = uint3(1, 1, 1),
+			.format     = eFormat::RGBA16_FLOAT,
+			.imageUsage = eTextureUsage_Sample,
+		});
 }
 
 void SurfaceResolveNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)
@@ -101,6 +108,15 @@ void SurfaceResolveNode::Apply(render::CommandContext& context, const SceneRende
 	context.StageDescriptor("g_VoxelMeshlets",         pVoxMeshlets ? pVoxMeshlets : m_pVoxelMeshletFallback);
 	context.StageDescriptor("g_VoxelMeshletVertices",  pVoxMv       ? pVoxMv       : m_pVoxelMeshletVertexFallback);
 	context.StageDescriptor("g_VoxelMeshletTriangles", pVoxMt       ? pVoxMt       : m_pVoxelMeshletTriangleFallback);
+
+	// Erosion detail inputs for re-running the mesh-shader micro displacement.
+	auto pErosion = g_FrameData.pVoxelErosionDetail.lock();
+	if (!pErosion && !m_bErosionFallbackTransitioned)
+	{
+		context.TransitionBarrier(m_pErosionDetailFallback, eTextureLayout::ShaderReadOnly);
+		m_bErosionFallbackTransitioned = true;
+	}
+	context.StageDescriptor("g_ErosionDetailMap", pErosion ? pErosion : m_pErosionDetailFallback, g_FrameData.pLinearClamp);
 
 	context.Dispatch2D< 16, 16 >(m_pCoreNormal->Width(), m_pCoreNormal->Height());
 

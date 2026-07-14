@@ -3,12 +3,14 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 
 #define _CAMERA
+#define _FROZENCAMERA
 #define _MESH
 #define _TRANSFORM
 #define _MATERIAL
 #include "DescriptorCommon.hg"
 #include "HelperFunctions.hg"
 #include "SurfaceResolve.hg"
+#include "VoxelTerrainCommon.hg"
 
 layout(push_constant) uniform PushConstants
 {
@@ -21,16 +23,21 @@ layout(set = 1, binding = 3, rg16_snorm) writeonly uniform image2D g_CoreNormal;
 layout(set = 1, binding = 4, rgba8) writeonly uniform image2D g_CoreMaterial;
 
 layout(set = 1, binding = 0, std140) uniform VoxelChunkDescUBO { VoxelChunkDesc d; } g_VoxelChunkDesc;
+layout(set = 1, binding = 5) uniform sampler2D g_ErosionDetailMap;
 layout(set = 1, binding = 6) readonly buffer VoxelVertexBuffer         { Vertex  g_VoxelVertices[]; };
 layout(set = 1, binding = 7) readonly buffer VoxelMeshletBuffer        { Meshlet g_VoxelMeshlets[]; };
 layout(set = 1, binding = 8) readonly buffer VoxelMeshletVertexBuffer  { uint    g_VoxelMeshletVertices[]; };
 layout(set = 1, binding = 9) readonly buffer VoxelMeshletTriangleBuffer{ uint    g_VoxelMeshletTriangles[]; };
 
+float g_DebugDiceLevel = 0.0;
+float g_MicroCavity = 0.0;
+
 
 ResolvedSurface ResolveVoxelSurface(uint v0, uint v1, vec2 pixelCenter, vec2 viewport)
 {
-    uint meshletIdx = VisMeshletIndex(v1); // absolute voxel meshlet-pool index (task shader baked the offset, matching the mesh path)
-    uint triLocal   = VisTriLocal(v1);
+    uint meshletIdx  = VisVoxelMeshletIndex(v1); // absolute voxel meshlet-pool index (task shader baked the offset)
+    uint triLocal    = VisVoxelTriLocal(v1);
+    uint subTriPlus1 = VisVoxelSubTriPlus1(v1);  // 0 = undiced base triangle
 
     VoxelChunkDesc chunk   = g_VoxelChunkDesc.d; // TODO: multi-chunk voxels
     Meshlet        meshlet = g_VoxelMeshlets[meshletIdx];
@@ -40,28 +47,121 @@ ResolvedSurface ResolveVoxelSurface(uint v0, uint v1, vec2 pixelCenter, vec2 vie
 
     vec3 originWS = vec3(chunk.originX, chunk.originY, chunk.originZ);
 
+    vec3 pos[3]; // chunk-local
     vec3 posWS[3];
     vec3 nrm[3];
     for (uint k = 0u; k < 3u; ++k)
     {
         uint vi   = chunk.vertexOffset + g_VoxelMeshletVertices[chunk.meshletVertexOffset + meshlet.vertexOffset + locals[k]];
         Vertex vv = g_VoxelVertices[vi];
-        posWS[k]  = originWS + vec3(vv.posX, vv.posY, vv.posZ);
+        pos[k]   = vec3(vv.posX, vv.posY, vv.posZ);
+        posWS[k]  = originWS + pos[k];
         nrm[k]    = vec3(vv.normalX, vv.normalY, vv.normalZ);
+    }
+
+    if (subTriPlus1 != 0u && chunk.diceMaxLevel != 0u)
+    {
+        vec3 cameraPos = g_FrozenCamera.posWORLD - vec3(chunk.originX, chunk.originY, chunk.originZ);
+
+        uint le0  = DiceEdgeLevel(pos[0], pos[1], cameraPos, chunk);
+        uint le1  = DiceEdgeLevel(pos[1], pos[2], cameraPos, chunk);
+        uint le2  = DiceEdgeLevel(pos[2], pos[0], cameraPos, chunk);
+        uint Lt   = max(le0, max(le1, le2));
+        g_DebugDiceLevel = float(Lt) / 5.0;
+
+        if (Lt != 0u)
+        {
+            uint  subIdx = subTriPlus1 - 1u;
+            uvec3 le     = uvec3(le0, le1, le2);
+
+            // Sub-vertex integer coords: flat (Lt <= 3) or hierarchical child*64 + local.
+            uvec3 coords[3];
+            if (Lt <= 3u)
+            {
+                uvec3 sub = DiceSubTriVerts(subIdx, Lt);
+                for (uint k = 0u; k < 3u; ++k)
+                    coords[k] = DiceSubVertexCoordInt(sub[k], Lt);
+            }
+            else
+            {
+                uvec3 cc0, cc1, cc2;
+                DiceChildCorners(subIdx >> 6u, Lt, cc0, cc1, cc2);
+
+                uvec3 sub = DiceSubTriVerts(subIdx & 63u, 3u);
+                for (uint k = 0u; k < 3u; ++k)
+                    coords[k] = DiceHierCoord(cc0, cc1, cc2, DiceSubVertexCoordInt(sub[k], 3u));
+            }
+
+            // stage sub-corner normals, assign after the loop
+            vec3 subNrm[3];
+            for (uint k = 0u; k < 3u; ++k)
+            {
+                vec3 subL, subN;
+                DiceSubVertex(coords[k], Lt, le, pos[0], pos[1], pos[2], nrm[0], nrm[1], nrm[2], subL, subN);
+
+                posWS[k]  = DisplaceVoxelDice(originWS + subL, subN.y, g_FrozenCamera.posWORLD,
+                                              chunk, g_ErosionDetailMap);
+                subNrm[k] = subN;
+            }
+            nrm[0] = subNrm[0];
+            nrm[1] = subNrm[1];
+            nrm[2] = subNrm[2];
+        }
     }
 
     vec4 c[3];
     for (uint k = 0u; k < 3u; ++k)
         c[k] = g_Camera.mViewProj * vec4(posWS[k], 1.0);
 
-    vec2 ndc  = (pixelCenter / viewport) * 2.0 - 1.0; // Vulkan: no y flip (mProj[1][1] already negated)
+    vec2 ndc  = (pixelCenter / viewport) * 2.0 - 1.0;
     vec3 bary = Barycentrics(ndc, c[0], c[1], c[2]);
     vec3 N    = normalize(bary.x * nrm[0] + bary.y * nrm[1] + bary.z * nrm[2]);
+
+    float baseNy = clamp(N.y, 0.0, 1.0);
+
+    // Detail normal (bake slope tier + geometry-locked micro band)
+    {
+        vec3 pWS   = bary.x * posWS[0] + bary.y * posWS[1] + bary.z * posWS[2];
+        vec2 eroUV = (pWS.xz - vec2(chunk.originX, chunk.originZ)) / max(chunk.chunkSizeMeter, 1e-3);
+        vec4 ero   = textureLod(g_ErosionDetailMap, eroUV, 0.0);
+
+        float texelUV = 1.0 / float(textureSize(g_ErosionDetailMap, 0).x);
+        float texelM  = max(chunk.chunkSizeMeter, 1e-3) * texelUV;
+        float hE = textureLod(g_ErosionDetailMap, eroUV + vec2(texelUV, 0.0), 0.0).r;
+        float hW = textureLod(g_ErosionDetailMap, eroUV - vec2(texelUV, 0.0), 0.0).r;
+        float hN = textureLod(g_ErosionDetailMap, eroUV + vec2(0.0, texelUV), 0.0).r;
+        float hS = textureLod(g_ErosionDetailMap, eroUV - vec2(0.0, texelUV), 0.0).r;
+
+        // heightfield gate: only surfaces on the baked height receive erosion detail
+        float hfMask = clamp(1.0 - abs(pWS.y - ero.b) * 0.5, 0.0, 1.0);
+        vec2  ds     = vec2(hE - hW, hN - hS) / (2.0 * texelM) * hfMask;
+
+        if (chunk.microOctaves != 0u && chunk.diceMaxLevel != 0u)
+        {
+            DiceMicroParams mp = DiceMicroFromDesc(chunk);
+            float dCam    = length(pWS - g_FrozenCamera.posWORLD);
+            // geometry-locked: same level and gates as the displacement — shading shows only what is carved
+            float lv      = min(DiceLodLevel(dCam, chunk.voxelSizeMeter, chunk), float(chunk.diceMaxLevel));
+            float wDist   = clamp((chunk.diceRadiusMeter - dCam) / chunk.diceFadeWidthMeter, 0.0, 1.0);
+            float creaseA = 1.0 + chunk.microCreaseBoost * clamp(-ero.g, 0.0, 1.0);
+            vec3  micro   = VoxelMicroHeightDeriv(pWS.xz, lv, mp);
+            float gate    = creaseA * hfMask * wDist * baseNy;
+            ds += micro.yz * gate;
+
+            g_MicroCavity = 0.6 * clamp(-micro.x * gate / max(chunk.microAmplitudeMeter * 2.0, 1e-4), 0.0, 1.0);
+        }
+
+        if (N.y > 0.05)
+        {
+            vec2 slopeAll = -N.xz / N.y + ds; // slope-space composite
+            N = normalize(vec3(-slopeAll.x, 1.0, -slopeAll.y));
+        }
+    }
 
     ResolvedSurface s;
     s.matClass  = MATCLASS_STANDARD;
     s.N         = N;
-    s.roughness = 0.9;
+    s.roughness = baseNy; // terrain reuses the R channel as base Ng.y (cliff-blend input)
     s.baseColor = vec3(0.5);
     s.metallic  = 0.0;
     return s;
@@ -95,5 +195,5 @@ void main()
         s = ResolveMeshSurface(v0, v1, pixelCenter, g_Push.viewport);
 
     imageStore(g_CoreNormal,   px, vec4(OctEncode(s.N), 0.0, 0.0));
-    imageStore(g_CoreMaterial, px, vec4(s.roughness, float(s.matClass) / 255.0, 0.0, 0.0));
+    imageStore(g_CoreMaterial, px, vec4(s.roughness, float(s.matClass) / 255.0, g_DebugDiceLevel, g_MicroCavity)); // .b = Lt/5 (dice debug) | .a = micro cavity
 }

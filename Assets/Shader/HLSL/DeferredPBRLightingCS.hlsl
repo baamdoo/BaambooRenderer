@@ -22,7 +22,9 @@ ConstantBuffer< DescriptorHeapIndex > g_LightListDataBuffer  : register(b14, ROO
 ConstantBuffer< DescriptorHeapIndex > g_VBuf0                : register(b15, ROOT_CONSTANT_SPACE); // visibility surface ID
 ConstantBuffer< DescriptorHeapIndex > g_VBuf1                : register(b16, ROOT_CONSTANT_SPACE); // visibility primitive ID
 ConstantBuffer< DescriptorHeapIndex > g_CoreNormal           : register(b17, ROOT_CONSTANT_SPACE); // RG16_SNORM signed oct normal
-ConstantBuffer< DescriptorHeapIndex > g_CoreMaterial         : register(b18, ROOT_CONSTANT_SPACE); // R roughness | G matClass | BA spare
+ConstantBuffer< DescriptorHeapIndex > g_CoreMaterial         : register(b18, ROOT_CONSTANT_SPACE); // R roughness (terrain: base Ng.y) | G matClass | B dice-level debug (Lt/5) | A micro cavity
+
+ConstantBuffer< VoxelChunkDesc > g_VoxelChunkDesc : register(b1, space1);
 
 cbuffer DebugConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
@@ -72,21 +74,47 @@ void main(uint3 tID : SV_DispatchThreadID)
 
         if (VisIsTerrain(v0))
         {
-            Texture2D< float2 > CoreNormal = GetResource(g_CoreNormal.index);
+            Texture2D< float2 > CoreNormal   = GetResource(g_CoreNormal.index);
+            Texture2D< float4 > CoreMaterial = GetResource(g_CoreMaterial.index);
 
-            N = OctDecode(CoreNormal.Load(int3(texCoords, 0)));
+            // resolve composes the detail normal; core = (base Ng.y, matClass, Lt/5 debug, micro cavity)
+            N           = OctDecode(CoreNormal.Load(int3(texCoords, 0)));
+            float4 core = CoreMaterial.Load(int3(texCoords, 0));
 
+            VoxelChunkDesc chunk = g_VoxelChunkDesc;
+
+            // TODO(you)
+            // fallback keeps terrain visible until the material path is ported
             const float3 surfaceAlbedo = float3(0.45, 0.38, 0.28);
             const float  surfaceRough  = 0.85;
             const float3 cliffAlbedo   = float3(0.30, 0.27, 0.22);
             const float  cliffRough    = 0.95;
-            float s = smoothstep(0.35, 0.65, saturate(1.0 - N.y)); // 0 flat .. 1 vertical
+            float sBlend = smoothstep(0.35, 0.65, saturate(1.0 - core.r)); // 0 flat .. 1 vertical
 
-            albedo     = lerp(surfaceAlbedo, cliffAlbedo, s);
+            albedo    = lerp(surfaceAlbedo, cliffAlbedo, sBlend);
+            roughness = max(lerp(surfaceRough, cliffRough, sBlend), MIN_ROUGHNESS);
+
+            // micro cavity: valleys darken (self-shadow proxy computed by resolve)
+            if ((chunk.debugFlags & 4u) != 0u)
+                albedo *= 1.0 - core.a;
+
+            if ((chunk.debugFlags & 1u) != 0u)
+            {
+                uint lvl = (uint)round(core.b * 5.0);
+                const float3 kLevelTint[6] = {
+                    float3(0.55, 0.55, 0.55),
+                    float3(0.25, 0.45, 0.95),
+                    float3(0.20, 0.85, 0.85),
+                    float3(0.25, 0.80, 0.25),
+                    float3(0.95, 0.85, 0.25),
+                    float3(0.95, 0.30, 0.25)
+                };
+                albedo = lerp(albedo, kLevelTint[min(lvl, 5u)], 0.8);
+            }
+
             ao         = 1.0;
             materialID = INVALID_INDEX;
             emissive   = float3(0.0, 0.0, 0.0);
-            roughness  = max(lerp(surfaceRough, cliffRough, s), MIN_ROUGHNESS);
             metallic   = 0.0;
         }
         else

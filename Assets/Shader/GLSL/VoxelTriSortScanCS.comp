@@ -1,0 +1,47 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "DescriptorCommon.hg"
+
+#define SCAN_THREADS 1024u
+
+layout(push_constant) uniform TriSortScanPushConstants
+{
+    uint g_NumBins; // multiple of SCAN_THREADS; 32768 for 32^3 blocks
+} pc;
+
+layout(set = 1, binding = 0) buffer SortBinBuffer { uint g_SortBins[]; };
+
+shared uint s_StripSum[SCAN_THREADS];
+
+layout(local_size_x = 1024, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+    uint ti            = gl_LocalInvocationID.x;
+    uint binsPerThread = pc.g_NumBins / SCAN_THREADS;
+    uint base          = ti * binsPerThread;
+
+    uint sum = 0u;
+    for (uint i = 0u; i < binsPerThread; ++i)
+        sum += g_SortBins[base + i];
+    s_StripSum[ti] = sum;
+    barrier();
+
+    // Hillis-Steele inclusive scan (read neighbour, barrier, then write own slot)
+    for (uint offset = 1u; offset < SCAN_THREADS; offset <<= 1u)
+    {
+        uint v = (ti >= offset) ? s_StripSum[ti - offset] : 0u;
+        barrier();
+        s_StripSum[ti] += v;
+        barrier();
+    }
+
+    // inclusive - own = exclusive strip start; rewrite own strip in place
+    uint run = s_StripSum[ti] - sum;
+    for (uint i = 0u; i < binsPerThread; ++i)
+    {
+        uint c = g_SortBins[base + i];
+        g_SortBins[base + i] = run;
+        run += c;
+    }
+}

@@ -39,7 +39,7 @@ void TerrainApp::Initialize(eRendererAPI api)
 
 	Super::Initialize(api);
 
-	m_CameraController.SetLookAt(float3(96.0f, 64.0f, -96.0f), float3(32.0f, 32.0f, 32.0f));
+	m_CameraController.SetLookAt(float3(192.0f, 128.0f, -192.0f), float3(64.0f, 64.0f, 64.0f));
 	m_pCamera = new EditorCamera(m_CameraController, m_pWindow->Width(), m_pWindow->Height());
 	m_pCamera->zNear = 0.1f;
 	m_pCamera->zFar  = 1000.0f;
@@ -187,6 +187,83 @@ void TerrainApp::DrawUI()
 
 			if (ImGui::Button("Rebuild"))
 				bRebuildChunk = true;
+
+			if (ImGui::CollapsingHeader("Procedural Surface", ImGuiTreeNodeFlags_DefaultOpen))
+			{
+				auto& gs = terrain.settings;
+				int octaves = (int)gs.octaves;
+				int seed    = (int)gs.seed;
+
+				// Rebuild on change.
+				bRebuildChunk |= ImGui::SliderFloat("Detail Weight",  &gs.detailWeight,      0.0f, 4.0f,  "%.2f");
+				bRebuildChunk |= ImGui::SliderFloat("Ridged Blend",   &gs.ridgedBlend,       0.0f, 1.0f,  "%.2f");
+				bRebuildChunk |= ImGui::SliderFloat("Redistribution", &gs.redistributionExp, 0.2f, 4.0f,  "%.2f");
+				bRebuildChunk |= ImGui::SliderInt  ("Octaves",        &octaves,              1,    8           );
+				bRebuildChunk |= ImGui::SliderFloat("Frequency",      &gs.frequency,         0.005f, 0.2f, "%.4f");
+				bRebuildChunk |= ImGui::SliderFloat("Lacunarity",     &gs.lacunarity,        1.5f, 3.0f,  "%.2f");
+				bRebuildChunk |= ImGui::SliderFloat("Gain",           &gs.gain,              0.2f, 0.8f,  "%.2f");
+				bRebuildChunk |= ImGui::SliderFloat("Warp Strength",  &gs.warpStrength,      0.0f, 3.0f,  "%.2f");
+				bRebuildChunk |= ImGui::SliderFloat("Warp Frequency", &gs.warpFrequency,     0.005f, 0.1f, "%.4f");
+				bRebuildChunk |= ImGui::SliderFloat("Amplitude (m)",  &gs.mountainAmplitude, 0.0f, 64.0f, "%.1f");
+				bRebuildChunk |= ImGui::SliderFloat("Surface Level",  &gs.surfaceLevelRatio,  0.0f, 1.0f,  "%.2f");
+				bRebuildChunk |= ImGui::InputInt   ("Seed",           &seed);
+
+				gs.octaves = (u32)(octaves < 1 ? 1 : octaves);
+				gs.seed    = (u32)(seed    < 0 ? 0 : seed);
+			}
+
+			if (ImGui::CollapsingHeader("Erosion", ImGuiTreeNodeFlags_DefaultOpen))
+			{
+				auto& gs = terrain.settings;
+				int erosionOctaves = (int)gs.erosionOctaves;
+
+				// Rebuild on change.
+				bRebuildChunk |= ImGui::SliderInt  ("Ero Octaves",     &erosionOctaves,           0,     8           );
+				bRebuildChunk |= ImGui::SliderFloat("Ero Scale (m)",   &gs.erosionScale,          5.0f,  48.0f, "%.1f");
+				bRebuildChunk |= ImGui::SliderFloat("Ero Strength",    &gs.erosionStrength,       0.0f,  1.0f,  "%.2f");
+				bRebuildChunk |= ImGui::SliderFloat("Gully Weight",    &gs.erosionGullyWeight,    0.0f,  1.0f,  "%.2f");
+				bRebuildChunk |= ImGui::SliderFloat("Ero Detail",      &gs.erosionDetail,         0.5f,  3.0f,  "%.2f");
+				bRebuildChunk |= ImGui::SliderFloat("Cell Scale",      &gs.erosionCellScale,      0.4f,  1.0f,  "%.2f");
+				bRebuildChunk |= ImGui::SliderFloat("Normalization",   &gs.erosionNormalization,  0.0f,  1.0f,  "%.2f");
+				bRebuildChunk |= ImGui::SliderFloat("Slope Scale",     &gs.erosionSlopeScale,     0.0f,  4.0f,  "%.2f");
+				// Higher onset restricts carving to steeper slopes.
+				bRebuildChunk |= ImGui::SliderFloat("Onset Input",     &gs.erosionOnsetInput,     0.25f, 4.0f,  "%.2f");
+				bRebuildChunk |= ImGui::SliderFloat("Onset Octave",    &gs.erosionOnsetOctave,    0.25f, 4.0f,  "%.2f");
+
+				gs.erosionOctaves = (u32)(erosionOctaves < 0 ? 0 : erosionOctaves);
+			}
+
+			if (ImGui::CollapsingHeader("Micro Dicing", ImGuiTreeNodeFlags_DefaultOpen))
+			{
+				auto& dice = terrain.settings.dice;
+				int  diceMaxLevel = (int)dice.maxLevel;
+				bool bLevelTint   = (dice.debugFlags & 1u) != 0u;
+
+				// Live, no rebuild.
+				ImGui::SliderInt  ("Dice Max Level",  &diceMaxLevel,           0,    5           );
+				ImGui::SliderFloat("Target Px",       &dice.targetPx,          2.0f, 16.0f, "%.1f");
+				ImGui::SliderFloat("Dice Radius (m)", &dice.radiusM,           5.0f, 80.0f, "%.0f");
+				ImGui::SliderFloat("Dice Fade (m)",   &dice.fadeWidthMeter,        1.0f, 20.0f, "%.0f");
+				ImGui::SliderFloat("Disp Scale",      &dice.displacementScale, 0.0f, 2.0f,  "%.2f");
+				if (ImGui::Checkbox("Level Tint", &bLevelTint))
+					dice.debugFlags = bLevelTint ? (dice.debugFlags | 1u) : (dice.debugFlags & ~1u);
+
+				int microOctaves = (int)dice.microOctaves;
+				ImGui::SliderFloat("Micro Amp (m)",      &dice.microAmplitudeMeter,        0.0f,  0.10f, "%.3f");
+				ImGui::SliderFloat("Micro Base WL (m)",  &dice.microBaseWaveLengthMeter,     0.05f, 1.0f,  "%.2f");
+				ImGui::SliderFloat("Micro Lacunarity",   &dice.microLacunarity,  1.5f,  4.0f,  "%.2f");
+				ImGui::SliderFloat("Micro Gain",         &dice.microGain,        0.1f,  0.9f,  "%.2f");
+				ImGui::SliderFloat("Micro Sharpness",    &dice.microSharpness,  -1.0f,  1.0f,  "%.2f"); // -1 ridged .. +1 billowed
+				ImGui::SliderFloat("Micro Crease Boost", &dice.microCreaseBoost, 0.0f,  4.0f,  "%.2f");
+				ImGui::SliderInt  ("Micro Octaves",      &microOctaves,          0,     6     );
+
+				bool bMicroCavity = (dice.debugFlags & 4u) != 0u;
+				if (ImGui::Checkbox("Micro Cavity", &bMicroCavity))
+					dice.debugFlags = bMicroCavity ? (dice.debugFlags | 4u) : (dice.debugFlags & ~4u);
+
+				dice.maxLevel     = (u32)(diceMaxLevel < 0 ? 0 : diceMaxLevel);
+				dice.microOctaves = (u32)(microOctaves < 0 ? 0 : microOctaves);
+			}
 
 			if (bRebuildChunk)
 				m_pScene->Registry().patch< VoxelTerrainComponent >(m_VoxelTerrainRootEntity.ID(), [](auto&) {});

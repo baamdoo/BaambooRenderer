@@ -10,8 +10,8 @@
 
 int main(int argc, char** argv)
 {
-	eRendererAPI rendererAPI = eRendererAPI::D3D12;
-	//eRendererAPI rendererAPI = eRendererAPI::Vulkan;
+	//eRendererAPI rendererAPI = eRendererAPI::D3D12;
+	eRendererAPI rendererAPI = eRendererAPI::Vulkan;
 
 	bool bDumpAOV       = false;
 	bool bExitAfterDump = false;
@@ -34,9 +34,9 @@ int main(int argc, char** argv)
 	//ExampleApp app = {};
 	//BistroApp app = {};
 	//LightingApp app = {};
-	RayTracingApp app = {};
-	app.ConfigurePathTracerAutomation(bDumpAOV, bExitAfterDump, pathTracerScene);
-	//TerrainApp app = {};
+	//RayTracingApp app = {};
+	//app.ConfigurePathTracerAutomation(bDumpAOV, bExitAfterDump, pathTracerScene);
+	TerrainApp app = {};
 	try
 	{
 		app.Initialize(rendererAPI);

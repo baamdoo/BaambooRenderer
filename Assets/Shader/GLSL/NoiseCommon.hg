@@ -471,12 +471,57 @@ float perlinNoise2D(vec2 p, float frequency, uint seed)
                mix(dot01, dot11, u.x), u.y);
 }
 
-float perlinNoise3D(vec3 p, float frequency, uint seed) 
+// Non-tiling gradient (Perlin) noise in world space ~ [-1,1].
+float perlinNoise2DNT(vec2 p, uint seed)
+{
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = fade(f);
+
+    float dot00 = dot(gradientDirection2D(hash2D(uvec2(ivec2(i + vec2(0.0, 0.0))), seed)), f - vec2(0.0, 0.0));
+    float dot10 = dot(gradientDirection2D(hash2D(uvec2(ivec2(i + vec2(1.0, 0.0))), seed)), f - vec2(1.0, 0.0));
+    float dot01 = dot(gradientDirection2D(hash2D(uvec2(ivec2(i + vec2(0.0, 1.0))), seed)), f - vec2(0.0, 1.0));
+    float dot11 = dot(gradientDirection2D(hash2D(uvec2(ivec2(i + vec2(1.0, 1.0))), seed)), f - vec2(1.0, 1.0));
+
+    return mix(mix(dot00, dot10, u.x),
+               mix(dot01, dot11, u.x), u.y);
+}
+
+float valueNoiseHash2D(vec2 p)
+{
+    p = 50.0 * fract(p * 0.3183099 + vec2(0.71, 0.113));
+    return -1.0 + 2.0 * fract(p.x * p.y * (p.x + p.y));
+}
+
+// Value noise with analytic derivatives
+vec3 valueNoiseDeriv2D(vec2 p)
+{
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+
+    vec2 u  = f * f * f * (f * (f * 6.0 - 15.0) + 10.0); // quintic smoothstep
+    vec2 du = 30.0 * f * f * (f * (f - 2.0) + 1.0);      // its derivative
+
+    float a = valueNoiseHash2D(i + vec2(0.0, 0.0));
+    float b = valueNoiseHash2D(i + vec2(1.0, 0.0));
+    float c = valueNoiseHash2D(i + vec2(0.0, 1.0));
+    float d = valueNoiseHash2D(i + vec2(1.0, 1.0));
+
+    float k0 = a;
+    float k1 = b - a;
+    float k2 = c - a;
+    float k4 = a - b - c + d;
+    float val = k0 + k1 * u.x + k2 * u.y + k4 * u.x * u.y;
+    vec2  der = du * (vec2(k1, k2) + k4 * vec2(u.y, u.x));
+    return vec3(val, der);
+}
+
+float perlinNoise3D(vec3 p, float frequency, uint seed)
 {
     vec3 i = floor(p);
     vec3 f = fract(p);
     vec3 u = fade(f);
-    
+
     float dot000 = dot(gradientDirection3D(hash3D(uvec3(ivec3(mod(i + vec3(0, 0, 0), frequency))), seed)), f - vec3(0,0,0));
     float dot001 = dot(gradientDirection3D(hash3D(uvec3(ivec3(mod(i + vec3(0, 0, 1), frequency))), seed)), f - vec3(0,0,1));
     float dot010 = dot(gradientDirection3D(hash3D(uvec3(ivec3(mod(i + vec3(0, 1, 0), frequency))), seed)), f - vec3(0,1,0));

@@ -3,9 +3,11 @@
 #define _TRANSFORM
 #define _MESH
 #define _CULL
+#define _VOXEL
 #include "Common.hlsli"
 #include "HelperFunctions.hlsli"
 #include "CullingCommon.hlsli"
+#include "VoxelTerrainCommon.hlsli"
 
 
 #define CULL_FLAG_MESHLET_FRUSTUM   4u
@@ -30,10 +32,12 @@ cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
 ConstantBuffer< DescriptorHeapIndex > g_HiZTexture              : register(b1, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_MeshletVisibilityBuffer : register(b2, ROOT_CONSTANT_SPACE);
 
+ConstantBuffer< VoxelChunkDesc >      g_VoxelChunkDesc          : register(b0, space1);
+
 #if PROFILING_LEVEL >= 1
 ConstantBuffer< DescriptorHeapIndex > g_MeshletStats            : register(b3, ROOT_CONSTANT_SPACE);
 
-// Per-phase cull stats counter. Must match GBufferNode::MESHLET_STATS_FIELDS layout:
+// Per-phase cull stats counter
 //   [0] = meshletDrawn         — meshlets that survived task-shader cull
 //   [1] = meshletTotal         — meshlet candidates examined (incl. bSkipPhase1 ones)
 //   [2] = triangleCandidates   — sum of triangleCount for drawn meshlets (= mesh shader input)
@@ -52,6 +56,10 @@ static StructuredBuffer< TransformData > Transforms = GetResource(g_Transforms.i
 struct AmplificationPayload
 {
     uint lodLevel;
+    uint diceMask;    // bit per payload slot: voxel meshlet inside the dicing radius (budget Lm > 0)
+    uint slotCount;   // accepted meshlets this wave (prefix-scan upper bound in the MS)
+    uint prefix[32];  // exclusive prefix of per-slot MS group counts (linear dispatch decode)
+    uint lmPacked[4]; // per-slot budget level Lm, 4 bits each, 8 slots per word
     uint meshletIndices[32];
 };
 
@@ -105,14 +113,32 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
 
     bool bValid = (localMeshletIdx < sh_MeshletCount);
     bool accept = false;
+
+    uint slotLm       = 0u; // voxel dice budget level for this thread's meshlet
+    uint slotTriCount = 0u;
 #if PROFILING_LEVEL >= 1
-    uint myTriCount = 0u; // triangleCount of THIS thread's meshlet, only when accept
+    uint dbgTriCount = 0u; // triangleCount of THIS thread's meshlet, only when accept
 #endif
 
     if (bValid && sh_IsVoxel != 0u)
     {
-        // TODO: culling on voxels
+        StructuredBuffer< Meshlet > VoxelMeshlets = GetResource(g_VoxelMeshlets.index);
+        Meshlet meshlet = VoxelMeshlets[mi];
+
+        float3 centerWS = mul(sh_LocalToWorld, float4(meshlet.centerX, meshlet.centerY, meshlet.centerZ, 1.0)).xyz;
+        float  radiusWS = meshlet.radius * sh_MaxScale;
+
         accept = true;
+
+        // TODO: per-meshlet culling for voxel
+        if ((g_CullData.cullFlags & CULL_FLAG_MESHLET_FRUSTUM) != 0u)
+            accept = !IsFrustumCulled(g_CullData.frustum, centerWS, radiusWS);
+
+        if (accept && g_VoxelChunkDesc.diceMaxLevel != 0u)
+        {
+            slotLm       = DiceMeshletBudgetLevel(centerWS, radiusWS, g_FrozenCamera.posWORLD, g_VoxelChunkDesc);
+            slotTriCount = meshlet.triangleCount;
+        }
     }
     else if (bValid)
     {
@@ -177,7 +203,7 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
 
 #if PROFILING_LEVEL >= 1
             if (accept)
-                myTriCount = meshlet.triangleCount;
+                dbgTriCount = meshlet.triangleCount;
 #endif
         }
     }
@@ -186,21 +212,44 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
     if (accept)
         Payload.meshletIndices[payloadIndex] = mi;
 
-    if (GTid.x == 0)
-        Payload.lodLevel = sh_Lod;
+    // Per-slot MS group budget
+    uint numGroups = accept ? ((slotLm > 0u) ? DiceGroupsForMeshlet(slotLm, slotTriCount) : 1u) : 0u;
+    uint diceMask  = WaveActiveBitOr((accept && slotLm > 0u) ? (1u << payloadIndex) : 0u);
+
+    uint groupPrefix = WavePrefixSum(numGroups);
+    if (accept)
+        Payload.prefix[payloadIndex] = groupPrefix;
+
+    // Per-slot budget levels, 4 bits each, 8 slots per word.
+    [unroll]
+    for (uint w = 0; w < 4; ++w)
+    {
+        uint lmBits = WaveActiveBitOr((accept && (payloadIndex >> 3u) == w) ? (slotLm << ((payloadIndex & 7u) * 4u)) : 0u);
+        if (GTid.x == 0)
+            Payload.lmPacked[w] = lmBits;
+    }
 
     uint numMeshlets = WaveActiveCountBits(accept);
+    uint totalGroups = WaveActiveSum(numGroups); // == numMeshlets when nothing dices
+
+    if (GTid.x == 0)
+    {
+        Payload.lodLevel  = sh_Lod;
+        Payload.diceMask  = diceMask;
+        Payload.slotCount = numMeshlets;
+    }
 
 #if PROFILING_LEVEL >= 1
     uint numValid = WaveActiveCountBits(bValid);
-    uint numTris  = WaveActiveSum(myTriCount);
+    uint numTris  = WaveActiveSum(dbgTriCount);
     if (WaveIsFirstLane())
     {
         RWStructuredBuffer< uint > MeshletStats = GetResource(g_MeshletStats.index);
-        InterlockedAdd(MeshletStats[STATS_DRAWN],    numMeshlets);
-        InterlockedAdd(MeshletStats[STATS_TOTAL],    numValid);
+        InterlockedAdd(MeshletStats[STATS_DRAWN], numMeshlets);
+        InterlockedAdd(MeshletStats[STATS_TOTAL], numValid);
         InterlockedAdd(MeshletStats[STATS_TRI_CAND], numTris);
     }
 #endif // PROFILING_LEVEL >= 1
-    DispatchMesh(numMeshlets, 1, 1, Payload);
+    
+    DispatchMesh(totalGroups, 1, 1, Payload);
 }

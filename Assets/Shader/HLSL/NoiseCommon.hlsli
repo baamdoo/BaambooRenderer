@@ -471,6 +471,52 @@ float perlinNoise2D(float2 p, float frequency, uint seed)
                 lerp(dot01, dot11, u.x), u.y);
 }
 
+// Non-tiling gradient (Perlin) noise in world space (no fmod wrap). Output ~[-1,1].
+// Crisper than value noise; use for terrain where the domain is unbounded world meters.
+float perlinNoise2DNT(float2 p, uint seed)
+{
+    float2 i = floor(p);
+    float2 f = frac(p);
+    float2 u = fade(f);
+
+    float dot00 = dot(gradientDirection2D(hash2D(uint2(int2(i + float2(0.0, 0.0))), seed)), f - float2(0.0, 0.0));
+    float dot10 = dot(gradientDirection2D(hash2D(uint2(int2(i + float2(1.0, 0.0))), seed)), f - float2(1.0, 0.0));
+    float dot01 = dot(gradientDirection2D(hash2D(uint2(int2(i + float2(0.0, 1.0))), seed)), f - float2(0.0, 1.0));
+    float dot11 = dot(gradientDirection2D(hash2D(uint2(int2(i + float2(1.0, 1.0))), seed)), f - float2(1.0, 1.0));
+
+    return lerp(lerp(dot00, dot10, u.x),
+                lerp(dot01, dot11, u.x), u.y);
+}
+
+// Value noise with analytic derivatives (iq "noised"). Returns (value in [-1,1], d/dx, d/dy).
+float valueNoiseHash2D(float2 p)
+{
+    p = 50.0 * frac(p * 0.3183099 + float2(0.71, 0.113));
+    return -1.0 + 2.0 * frac(p.x * p.y * (p.x + p.y));
+}
+
+float3 valueNoiseDeriv2D(float2 p)
+{
+    float2 i = floor(p);
+    float2 f = frac(p);
+
+    float2 u  = f * f * f * (f * (f * 6.0 - 15.0) + 10.0); // quintic smoothstep
+    float2 du = 30.0 * f * f * (f * (f - 2.0) + 1.0);      // its derivative
+
+    float a = valueNoiseHash2D(i + float2(0.0, 0.0));
+    float b = valueNoiseHash2D(i + float2(1.0, 0.0));
+    float c = valueNoiseHash2D(i + float2(0.0, 1.0));
+    float d = valueNoiseHash2D(i + float2(1.0, 1.0));
+
+    float  k0 = a;
+    float  k1 = b - a;
+    float  k2 = c - a;
+    float  k4 = a - b - c + d;
+    float  val = k0 + k1 * u.x + k2 * u.y + k4 * u.x * u.y;
+    float2 der = du * (float2(k1, k2) + k4 * float2(u.y, u.x));
+    return float3(val, der);
+}
+
 float perlinNoise3D(float3 p, float frequency, uint seed)
 {
     float3 i = floor(p);

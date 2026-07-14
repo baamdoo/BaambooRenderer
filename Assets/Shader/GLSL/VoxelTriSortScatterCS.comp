@@ -1,0 +1,44 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "DescriptorCommon.hg"
+#include "HelperFunctions.hg"
+
+layout(push_constant) uniform TriSortPushConstants
+{
+    uint  g_VertexSlabBase;
+    uint  g_MeshletVertexSlabBase;
+    uint  g_MaxTriangles;
+    float g_ChunkSizeMeter;
+} pc;
+
+layout(set = 1, binding = 0) buffer McCounterBuffer { uint g_MCCounter[]; };
+layout(set = 1, binding = 1) readonly buffer VertexPoolBuffer { Vertex g_Vertices[]; };
+layout(set = 1, binding = 2) buffer SortBinBuffer { uint g_SortBins[]; };
+layout(set = 1, binding = 3) buffer OutMeshletVertexBuffer { uint g_OutMeshletVerts[]; };
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+    uint t = gl_GlobalInvocationID.x;
+
+    uint totalTris = min(g_MCCounter[0], pc.g_MaxTriangles);
+    if (t >= totalTris)
+        return;
+
+    vec3 c = vec3(0.0);
+    for (uint k = 0u; k < 3u; ++k)
+    {
+        uint vi = pc.g_VertexSlabBase + t * 3u + k;
+        c += vec3(g_Vertices[vi].posX, g_Vertices[vi].posY, g_Vertices[vi].posZ);
+    }
+
+    uint key = VoxelTriSortKey(c / 3.0, pc.g_ChunkSizeMeter);
+    uint dst = atomicAdd(g_SortBins[key], 1u);
+
+    uint d = pc.g_MeshletVertexSlabBase + dst * 3u;
+    uint s = t * 3u; // slab-relative; consumers add the vertex slab base
+    g_OutMeshletVerts[d + 0u] = s + 0u;
+    g_OutMeshletVerts[d + 1u] = s + 1u;
+    g_OutMeshletVerts[d + 2u] = s + 2u;
+}

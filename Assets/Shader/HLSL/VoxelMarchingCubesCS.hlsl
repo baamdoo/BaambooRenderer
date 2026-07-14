@@ -14,14 +14,14 @@ ConstantBuffer< DescriptorHeapIndex > g_MCCounter    : register(b2, ROOT_CONSTAN
 ConstantBuffer< DescriptorHeapIndex > g_OutVertices  : register(b3, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_TriTable     : register(b4, ROOT_CONSTANT_SPACE);
 
-// corner i -> unit-cube offset (matches MarchingCubes.cpp kCornerOffset)
+// corner i -> unit-cube offset
 static const uint3 kCornerOffset[8] =
 {
     uint3(0, 0, 0), uint3(1, 0, 0), uint3(1, 1, 0), uint3(0, 1, 0),
     uint3(0, 0, 1), uint3(1, 0, 1), uint3(1, 1, 1), uint3(0, 1, 1)
 };
 
-// edge -> its two corners (matches MarchingCubes.cpp kEdgeCorners)
+// edge -> its two corners
 static const uint2 kEdgeCorners[12] =
 {
     uint2(0, 1), uint2(1, 2), uint2(2, 3), uint2(3, 0),
@@ -118,7 +118,7 @@ void main(uint3 cell : SV_DispatchThreadID)
 
         uint v0 = g_VertexSlabBase + (baseTri + t) * 3u;
         OutV[v0 + 0u] = MakeEdgeVertex(eA, cornerVal, cornerPos, cornerGrad);
-        OutV[v0 + 1u] = MakeEdgeVertex(eC, cornerVal, cornerPos, cornerGrad); // oracle winding: eA, eC, eB
+        OutV[v0 + 1u] = MakeEdgeVertex(eC, cornerVal, cornerPos, cornerGrad); // winding order: eA, eC, eB
         OutV[v0 + 2u] = MakeEdgeVertex(eB, cornerVal, cornerPos, cornerGrad);
     }
 }

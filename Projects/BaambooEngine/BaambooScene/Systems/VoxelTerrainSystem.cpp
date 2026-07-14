@@ -36,16 +36,12 @@ void VoxelTerrainSystem::CollectRenderData(SceneRenderView& outView) const
         VoxelTerrainRenderView& vt = outView.voxelTerrain;
         vt.bValid              = true;
         vt.revision            = m_MeshRevision;
-        vt.terrainInstance     = entt::to_integral(entity);
-        vt.chunkCoord          = int3(0);
-        vt.lod                 = 0u;
-        vt.fieldRevision       = m_MeshRevision;
-        vt.extractionRevision  = kExtractionRevision;
         vt.originWorld         = terrain.terrainOriginWorld;
         vt.chunkWorldSizeMeter = s.chunkWorldSizeMeter;
-        vt.voxelSizeMeter      = s.voxelSizeMeter;
-        vt.cellsPerAxis        = s.cellsPerAxis;
-        vt.samplesPerAxis      = s.samplesPerAxis;
+
+        // Dice/micro params are live-editable: no revision bump, raster/resolve side only.
+        vt.dice          = s.dice;
+        vt.dice.maxLevel = s.dice.maxLevel > 5u ? 5u : s.dice.maxLevel; // shader ladder tops at L5
 
         VoxelTerrainGenParams& gp = vt.genParams;
         gp = {};
@@ -54,6 +50,32 @@ void VoxelTerrainSystem::CollectRenderData(SceneRenderView& outView) const
         gp.cellsPerAxis   = s.cellsPerAxis;
         gp.samplesPerAxis = s.samplesPerAxis;
         gp.apron          = kVoxelDensityApron;
+
+        // procedural surface (Layer 0)
+        gp.seed              = s.seed;
+        gp.frequency         = s.frequency;
+        gp.octaves           = s.octaves;
+        gp.lacunarity        = s.lacunarity;
+        gp.gain              = s.gain;
+        gp.warpStrength      = s.warpStrength;
+        gp.warpFrequency     = s.warpFrequency;
+        gp.mountainAmplitude = s.mountainAmplitude;
+        gp.detailWeight      = s.detailWeight;
+        gp.redistributionExp = s.redistributionExp;
+        gp.ridgedBlend       = s.ridgedBlend;
+        gp.surfaceLevelRatio = s.surfaceLevelRatio;
+
+        // Erosion filter (Layer 2)
+        gp.erosionScale         = s.erosionScale;
+        gp.erosionStrength      = s.erosionStrength;
+        gp.erosionGullyWeight   = s.erosionGullyWeight;
+        gp.erosionDetail        = s.erosionDetail;
+        gp.erosionOnsetInput    = s.erosionOnsetInput;
+        gp.erosionOnsetOctave   = s.erosionOnsetOctave;
+        gp.erosionCellScale     = s.erosionCellScale;
+        gp.erosionNormalization = s.erosionNormalization;
+        gp.erosionSlopeScale    = s.erosionSlopeScale;
+        gp.erosionOctaves       = s.erosionOctaves;
         break; // single chunk; TODO:multi-chunk streaming
     }
 }

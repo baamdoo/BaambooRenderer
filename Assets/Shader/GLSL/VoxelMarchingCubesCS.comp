@@ -111,7 +111,7 @@ void main()
 
         uint v0 = pc.g_VertexSlabBase + (baseTri + t) * 3u;
         g_OutVertices[v0 + 0u] = MakeEdgeVertex(eA, cornerVal, cornerPos, cornerGrad);
-        g_OutVertices[v0 + 1u] = MakeEdgeVertex(eC, cornerVal, cornerPos, cornerGrad); // oracle winding: eA, eC, eB
+        g_OutVertices[v0 + 1u] = MakeEdgeVertex(eC, cornerVal, cornerPos, cornerGrad); // winding order: eA, eC, eB
         g_OutVertices[v0 + 2u] = MakeEdgeVertex(eB, cornerVal, cornerPos, cornerGrad);
     }
 }
