@@ -39,6 +39,7 @@ std::vector< u64 > StaticMeshSystem::UpdateRenderData(const EditorCamera& edCame
     {
         RemoveRenderData(entt::to_integral(entity));
     }
+    m_ExpiredEntities.clear();
 
     std::vector< u64 > markedEntities;
     for (auto entity : m_DirtyEntities)

@@ -27,7 +27,6 @@ public:
     bool IsUAVSupported() const
     {
         return IsFormatSupported(D3D12_FORMAT_SUPPORT1_TYPED_UNORDERED_ACCESS_VIEW)
-            && IsFormatSupported(D3D12_FORMAT_SUPPORT2_UAV_TYPED_LOAD)
             && IsFormatSupported(D3D12_FORMAT_SUPPORT2_UAV_TYPED_STORE);
     }
 

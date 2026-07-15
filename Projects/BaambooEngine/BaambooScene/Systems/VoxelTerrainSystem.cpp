@@ -16,6 +16,8 @@ std::vector< u64 > VoxelTerrainSystem::UpdateRenderData(const EditorCamera& edCa
 {
     UNUSED(edCamera);
 
+    m_ExpiredEntities.clear();
+
     std::vector< u64 > markedEntities;
     markedEntities.reserve(m_DirtyEntities.size());
     for (auto entity : m_DirtyEntities)

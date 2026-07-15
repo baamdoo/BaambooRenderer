@@ -27,6 +27,8 @@ private:
 	Box< render::ComputePipeline > m_pAerialPerspectivePSO;
 	Box< render::ComputePipeline > m_pDistantSkyLightPSO;
 	Box< render::ComputePipeline > m_pBakeSkyboxPSO;
+
+	bool m_bStaticLutsInitialized = false;
 };
 
 } // namespace baamboo

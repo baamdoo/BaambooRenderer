@@ -104,11 +104,11 @@ Dx12SceneResource::Dx12SceneResource(Dx12RenderDevice& rd)
 
     for (auto& frameData : m_FrameData)
     {
-        frameData.pMeshDataAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshDataPool", sizeof(MeshData), _MB(8LL), render::eBufferUsage_Storage); // Storage/UAV: voxel mCount patch CS writes lods[0].mCount
-        frameData.pInstanceAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, "InstancePool", sizeof(InstanceData), _MB(8LL));
+        frameData.pMeshDataAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshDataPool", sizeof(MeshData), _KB(1LL), render::eBufferUsage_Storage); // Storage/UAV: voxel mCount patch CS writes lods[0].mCount
+        frameData.pInstanceAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, "InstancePool", sizeof(InstanceData), kMaxEntityCount);
 
-        frameData.pTransformAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, "TransformPool", sizeof(TransformData), _MB(8LL));
-        frameData.pMaterialAllocator  = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MaterialPool", sizeof(MaterialData), _MB(8LL));
+        frameData.pTransformAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, "TransformPool", sizeof(TransformData), kMaxEntityCount);
+        frameData.pMaterialAllocator  = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MaterialPool", sizeof(MaterialData), kMaxEntityCount);
         frameData.pLightAllocator     = MakeBox< StaticBufferAllocator >(m_RenderDevice, "LightPool", sizeof(LightData), 1);
 
         frameData.pCameraBuffer           = Dx12ConstantBuffer::Create(m_RenderDevice, "CameraBuffer", sizeof(CameraData));
@@ -630,7 +630,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
     BuildAccelerationStructures();
 
     UpdateFrameBuffer(ctx, instances.data(), (u32)instances.size(), sizeof(InstanceData), *m_FrameData[m_ContextIndex].pInstanceAllocator, BarrierStates::ShaderResource);
-    UpdateFrameBuffer(ctx, &sceneView.light, 1, sizeof(LightData), *m_FrameData[m_ContextIndex].pLightAllocator, BarrierStates::PixelShaderResource);
+    UpdateFrameBuffer(ctx, &sceneView.light, 1, sizeof(LightData), *m_FrameData[m_ContextIndex].pLightAllocator, BarrierStates::ConstantBuffer);
 
     UpdateCameraAndEnvironment(sceneView, ctx);
 }

@@ -66,6 +66,9 @@ Entity Scene::CreateEntity(const std::string& tag)
 
 void Scene::RemoveEntity(Entity entity)
 {
+	if (!entity.IsValid())
+		return;
+
 	printf("Remove entity%d\n", entity.id());
 
 	if (entity.GetComponent< TransformComponent >().hierarchy.parent != entt::null)
@@ -75,10 +78,10 @@ void Scene::RemoveEntity(Entity entity)
 	while (child != entt::null)
 	{
 		auto childEntity = Entity(this, child);
-		auto& transformComponent = childEntity.GetComponent< TransformComponent >();
+		const entt::entity nextSibling = childEntity.GetComponent< TransformComponent >().hierarchy.nextSibling;
 
 		RemoveEntity(childEntity);
-		child = transformComponent.hierarchy.nextSibling;
+		child = nextSibling;
 	}
 
 	//OnEntityRemoved(entity);
@@ -290,6 +293,15 @@ void Scene::Update(f32 dt, const EditorCamera& edCamera)
 	std::lock_guard< std::mutex > lock(m_SceneMutex);
 
 	s_SceneRunningTime += dt;
+	// Remove deletion markers after the render thread has consumed them.
+	for (auto it = m_EntityDirtyMasks.begin(); it != m_EntityDirtyMasks.end();)
+	{
+		const auto entity = static_cast< entt::entity >(it->first);
+		if (it->second == 0 && !m_Registry.valid(entity))
+			it = m_EntityDirtyMasks.erase(it);
+		else
+			++it;
+	}
 
 	for (auto entity : m_pTransformSystem->UpdateRenderData(edCamera))
 	{

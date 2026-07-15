@@ -141,10 +141,11 @@ vec3 ColorTemperatureToRGB(float temperatureK)
 {
     float T = clamp(temperatureK, 1000.0, 10000.0);
 
-    float index = (T - 1000.0) / 1000.0;
-    return mix(COLOR_TEMPERATURE_LUT[int(index)], 
-               COLOR_TEMPERATURE_LUT[int(index) + 1], 
-               fract(index));
+    float scaledIndex = (T - 1000.0) / 1000.0;
+    int lowerIndex = min(int(floor(scaledIndex)), 8);
+    return mix(COLOR_TEMPERATURE_LUT[lowerIndex],
+               COLOR_TEMPERATURE_LUT[lowerIndex + 1],
+               scaledIndex - float(lowerIndex));
 }
 
 vec2 GetStretchedTextureUV(vec2 uv, vec2 resolution)

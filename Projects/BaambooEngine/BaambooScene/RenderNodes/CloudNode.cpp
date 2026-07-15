@@ -94,7 +94,8 @@ void CloudShapeNode::Apply(render::CommandContext& context, const SceneRenderVie
 
         context.Dispatch2D< 8, 8 >(kWeatherMapTextureResolution.x, kWeatherMapTextureResolution.y);*/
     }
-    if (g_FrameData.componentMarker & (1 << eComponentType::CCloud))
+    const bool cloudDirty = (g_FrameData.componentMarker & (1 << eComponentType::CCloud)) != 0;
+    if (!m_bBaseNoiseInitialized || cloudDirty)
     {
         context.SetRenderPipeline(m_pCloudShapeBasePSO.get());
 
@@ -103,6 +104,7 @@ void CloudShapeNode::Apply(render::CommandContext& context, const SceneRenderVie
         context.StageDescriptor("g_OutBaseNoise", m_pBaseNoiseTexture);
 
         context.Dispatch3D< 8, 8, 8 >(kBaseNoiseTextureResolution.x, kBaseNoiseTextureResolution.y, kBaseNoiseTextureResolution.z);
+        m_bBaseNoiseInitialized = true;
     }
 
     g_FrameData.pCloudWeatherMap   = m_pCloudWeatherMap;
@@ -219,6 +221,7 @@ void CloudScatteringNode::Apply(render::CommandContext& context, const SceneRend
         m_pCloudScatteringLUT->Resize(resolution.x, resolution.y, resolution.z);
 
         m_CurrentUprezRatio = renderView.cloud.uprezRatio;
+        m_bHistoryValid = false;
     }
 
     {
@@ -302,8 +305,14 @@ void CloudScatteringNode::Apply(render::CommandContext& context, const SceneRend
         struct
         {
             float  blendAlpha;
+            u32    historyValid;
             float2 invLowResTexSize;
-        } constant = { renderView.cloud.temporalBlendAlpha, float2(1.0 / m_pCloudScatteringLUT->Width(), 1.0 / m_pCloudScatteringLUT->Height()) };
+        } constant = {
+            renderView.cloud.temporalBlendAlpha,
+            m_bHistoryValid ? 1u : 0u,
+            float2(1.0 / m_pCloudScatteringLUT->Width(), 1.0 / m_pCloudScatteringLUT->Height())
+        };
+        static_assert(sizeof(constant) == 16);
         context.SetComputeConstants(sizeof(constant), &constant);
         context.StageDescriptor("g_CloudScatteringLUT", m_pCloudScatteringLUT, g_FrameData.pLinearClamp);
         context.StageDescriptor("g_PrevUprezzedCloudScatteringLUT", m_pPrevUprezzedCloudScatteringLUT, g_FrameData.pLinearClamp);
@@ -313,6 +322,7 @@ void CloudScatteringNode::Apply(render::CommandContext& context, const SceneRend
         context.Dispatch2D< 8, 8 >(m_pUprezzedCloudScatteringLUT->Width(), m_pUprezzedCloudScatteringLUT->Height());
 
         context.CopyTexture(m_pPrevUprezzedCloudScatteringLUT, m_pUprezzedCloudScatteringLUT);
+        m_bHistoryValid = true;
     }
     g_FrameData.pCloudScatteringLUT = m_pUprezzedCloudScatteringLUT;
 }
@@ -325,6 +335,7 @@ void CloudScatteringNode::Resize(u32 width, u32 height, u32 depth)
     m_pCloudScatteringLUT->Resize(halfRes.x, halfRes.y, 1);
     m_pPrevUprezzedCloudScatteringLUT->Resize(width, height, 1);
     m_pUprezzedCloudScatteringLUT->Resize(width, height, 1);
+    m_bHistoryValid = false;
 }
 
 } // namespace baamboo

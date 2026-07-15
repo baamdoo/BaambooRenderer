@@ -26,6 +26,8 @@ private:
 
 	Box< render::ComputePipeline > m_pWeatherMapPSO;
 	Box< render::ComputePipeline > m_pCloudShapeBasePSO;
+
+	bool m_bBaseNoiseInitialized = false;
 };
 
 
@@ -55,6 +57,7 @@ private:
 	Box< render::ComputePipeline > m_pCloudTemporalUprezPSO;
 
 	eCloudUprezRatio m_CurrentUprezRatio = eCloudUprezRatio::X2;
+	bool m_bHistoryValid = false;
 };
 
 } // namespace baamboo

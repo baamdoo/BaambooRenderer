@@ -60,6 +60,7 @@ std::vector< u64 > TransformSystem::UpdateRenderData(const EditorCamera& edCamer
         markedEntities.emplace_back(id);
         RemoveRenderData(id);
     }
+    m_ExpiredEntities.clear();
 
     // Rebuild DFS pre-order cache if hierarchy structure changed
     if (m_bHierarchyDirty)

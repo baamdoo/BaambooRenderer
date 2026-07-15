@@ -14,6 +14,7 @@ layout(set = 1, binding = 3, rgba16f) writeonly uniform image2D g_OutUprezzedClo
 layout(push_constant) uniform Push 
 {
     float blendFactor;
+    uint  historyValid;
     vec2  invLowResTexSize;
 } g_Push;
 
@@ -80,6 +81,11 @@ void main()
     float depth     = texture(g_DepthBuffer, uv).r;
 
     vec4 currentColor = texture(g_CloudScatteringLUT, uv);
+    if (g_Push.historyValid == 0u)
+    {
+        imageStore(g_OutUprezzedCloudScatteringLUT, pixCoords, currentColor);
+        return;
+    }
 
     vec4 posCLIP        = vec4(uv * 2.0 - 1.0, depth, 1.0);
     vec4 posHOMOGENEOUS = g_Camera.mViewProjInv * posCLIP;

@@ -26,6 +26,11 @@ void CameraController_FirstPerson::Update(f32 dt)
 	m_RotationVelocity.y = std::clamp(m_RotationVelocity.y, -config.maxRotationSpeed, config.maxRotationSpeed);
 	m_RotationVelocity.z = std::clamp(m_RotationVelocity.z, -config.maxRotationSpeed, config.maxRotationSpeed);
 
+	if (glm::length(m_RotationVelocity) < 1e-3f)
+	{
+		m_RotationVelocity = glm::zero< float3 >();
+	}
+
 	m_Transform.Rotate(m_RotationVelocity.x * dt, m_RotationVelocity.y * dt, 0);
 
 

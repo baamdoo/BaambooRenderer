@@ -166,10 +166,11 @@ float3 ColorTemperatureToRGB(float temperature_K)
 {
     float T = clamp(temperature_K, 1000.0, 10000.0);
 
-    float index = (T - 1000.0) / 1000.0;
-    return lerp(COLOR_TEMPERATURE_LUT[int(index)], 
-               COLOR_TEMPERATURE_LUT[int(index) + 1], 
-               frac(index));
+    float scaledIndex = (T - 1000.0) / 1000.0;
+    int lowerIndex = min(int(floor(scaledIndex)), 8);
+    return lerp(COLOR_TEMPERATURE_LUT[lowerIndex],
+                COLOR_TEMPERATURE_LUT[lowerIndex + 1],
+                scaledIndex - float(lowerIndex));
 }
 
 float2 GetStretchedTextureUV(float2 uv, float2 resolution)

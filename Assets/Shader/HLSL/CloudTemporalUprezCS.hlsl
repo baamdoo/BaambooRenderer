@@ -5,6 +5,7 @@
 cbuffer Push : register(b0, ROOT_CONSTANT_SPACE)
 {
     float  g_BlendFactor;
+    uint   g_HistoryValid;
     float2 g_InvLowResTexSize;
 };
 
@@ -85,6 +86,12 @@ void main(uint3 tID : SV_DispatchThreadID)
     Texture2D< float4 > PrevUprezzedCloudScatteringLUT = GetResource(g_PrevUprezzedCloudScatteringLUT.index);
 
     float4 currentColor = CloudScatteringLUT.Sample(g_LinearClampSampler, uv);
+    if (g_HistoryValid == 0)
+    {
+        OutUprezzedCloudScatteringLUT[pixCoords] = currentColor;
+        return;
+    }
+
     float  depth        = DepthBuffer.Sample(g_PointClampSampler, uv).r;
 
     float4 posCLIP        = float4(uv.x * 2.0 - 1.0, uv.y * -2.0 + 1.0, depth, 1.0);
