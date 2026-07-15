@@ -150,10 +150,6 @@ premake\premake5.exe vs2022
 
 Open `Baamboo.sln`, build, and run the `Application` project. The active sample is selected in `Projects/Application/main.cpp`. NuGet packages (D3D12 Agility SDK, DXC, DirectXTK12, DirectXTex) are restored automatically on first build.
 
-## Validation
-
-Rendering bugs love to hide in plausible-looking images. The path tracer is therefore developed against an external ground truth: a scene generator emits the same scene description for BaambooRenderer, PBRT-v4, and Mitsuba 3, renders are compared as EXR with SSIM gates (≥ 0.99), and regressions are caught by a deterministic gate suite before any refactor lands. The tooling is versioned separately in [PathTracer_Reference](https://github.com/baamdoo/PathTracer_Reference).
-
 ## Third-Party
 
 [assimp](https://github.com/assimp/assimp) · [EnTT](https://github.com/skypjack/entt) · [GLFW](https://github.com/glfw/glfw) · [glm](https://github.com/g-truc/glm) · [Dear ImGui](https://github.com/ocornut/imgui) · [meshoptimizer](https://github.com/zeux/meshoptimizer) · [stb](https://github.com/nothings/stb) · [gli](https://github.com/g-truc/gli) · [magic_enum](https://github.com/Neargye/magic_enum) · [taskflow](https://github.com/taskflow/taskflow) · [nlohmann/json](https://github.com/nlohmann/json) · [pugixml](https://github.com/zeux/pugixml) · [tinyexr](https://github.com/syoyo/tinyexr) · [D3D12MemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator) · [VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
