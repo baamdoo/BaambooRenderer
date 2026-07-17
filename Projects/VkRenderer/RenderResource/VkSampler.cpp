@@ -16,7 +16,7 @@ VkFilter ConvertToVkSamplerFilter(eFilterMode filter)
         case eFilterMode::Linear:
             return VK_FILTER_LINEAR;
         case eFilterMode::Anisotropic:
-            return VK_FILTER_CUBIC_IMG;
+			return VK_FILTER_LINEAR;
     }
 
     assert(false && "Invalid filter mode!");
@@ -153,9 +153,12 @@ VulkanSampler::VulkanSampler(VkRenderDevice& rd, const char* name, CreationInfo&
 	createInfo.mipmapMode       = VK_SAMPLER_MIPMAP(m_CreationInfo.mipmapMode);
 	createInfo.addressModeU     = 
         createInfo.addressModeV = createInfo.addressModeW = VK_SAMPLER_ADDRESS(m_CreationInfo.addressMode);
-	createInfo.mipLodBias       = m_CreationInfo.mipLodBias;
-	createInfo.anisotropyEnable = m_CreationInfo.maxAnisotropy > 0.0f;
-	createInfo.maxAnisotropy    = m_CreationInfo.maxAnisotropy;
+	createInfo.mipLodBias = m_CreationInfo.mipLodBias;
+	const bool bAnisotropic = m_CreationInfo.filter == eFilterMode::Anisotropic;
+	createInfo.anisotropyEnable = bAnisotropic ? VK_TRUE : VK_FALSE;
+	createInfo.maxAnisotropy = bAnisotropic
+		? std::clamp(m_CreationInfo.maxAnisotropy, 1.0f, m_RenderDevice.DeviceProps().limits.maxSamplerAnisotropy)
+		: 1.0f;
 	createInfo.compareEnable    = VK_COMPAREOP(m_CreationInfo.compareOp) > VK_COMPARE_OP_NEVER;
 	createInfo.compareOp        = VK_COMPAREOP(m_CreationInfo.compareOp);
 	createInfo.minLod           = m_CreationInfo.minLod;

@@ -189,10 +189,12 @@ void ExampleApp::DrawUI()
 			ImGui::PushItemWidth(width * 0.3f);
 			ImGui::Text("ClippingRange");
 			ImGui::InputFloat("##ClipNear", &m_pCamera->zNear, 0, 0, "%.2f");
+			ImGui::PopItemWidth();
 
 			ImGui::PushItemWidth(width * 0.7f);
 			ImGui::SameLine();
 			ImGui::InputFloat("##ClipFar", &m_pCamera->zFar, 0, 0, "%.2f");
+			ImGui::PopItemWidth();
 
 			ImGui::Text("FoV");
 			ImGui::DragFloat("##FoV", &m_pCamera->fov, 0.1f, 1.0f, 90.0f, "%.1f");

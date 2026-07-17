@@ -14,8 +14,11 @@ void main(uint3 tID : SV_DispatchThreadID)
     uint width, height;
     OutCombinedTexture.GetDimensions(width, height);
 
+    if (tID.x >= width || tID.y >= height)
+        return;
+
     // Calculate UV coordinates
-    float2 texCoords = float2(tID.xy) / float2(width, height);
+    float2 texCoords = (float2(tID.xy) + 0.5) / float2(width, height);
 
     Texture2D< float4 > TextureR = GetResource(g_TextureR.index);
     Texture2D< float4 > TextureG = GetResource(g_TextureG.index);

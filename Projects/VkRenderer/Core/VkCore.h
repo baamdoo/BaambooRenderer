@@ -189,6 +189,7 @@ static VkFormat ConvertToVkFormat(render::eFormat format)
 	case eFormat::RGBA32_FLOAT         : return VK_FORMAT_R32G32B32A32_SFLOAT;
 	case eFormat::RGBA32_UINT          : return VK_FORMAT_R32G32B32A32_UINT;
 	case eFormat::RGBA32_SINT          : return VK_FORMAT_R32G32B32A32_SINT;
+	case eFormat::RGB32_FLOAT          : return VK_FORMAT_R32G32B32_SFLOAT;
 	case eFormat::RGB32_UINT           : return VK_FORMAT_R32G32B32_UINT;
 	case eFormat::RGB32_SINT           : return VK_FORMAT_R32G32B32_SINT;
 	case eFormat::RG32_FLOAT           : return VK_FORMAT_R32G32_SFLOAT;
@@ -242,7 +243,7 @@ static VkFormat ConvertToVkFormat(render::eFormat format)
 	case eFormat::RG11B10_UFLOAT : return VK_FORMAT_B10G11R11_UFLOAT_PACK32;
 
 	case eFormat::D32_FLOAT            : return VK_FORMAT_D32_SFLOAT;
-	case eFormat::D24_UNORM_S8_UINT    : return VK_FORMAT_D32_SFLOAT_S8_UINT;
+	case eFormat::D24_UNORM_S8_UINT    : return VK_FORMAT_D24_UNORM_S8_UINT;
 	case eFormat::D16_UNORM            : return VK_FORMAT_D16_UNORM;
 
 	default:

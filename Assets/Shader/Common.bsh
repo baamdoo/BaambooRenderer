@@ -196,6 +196,7 @@ struct TransformData
     float4x4 mWorldToLocal;
 };
 
+// One matrix per element; the CPU uploads an array of this 64-byte record.
 struct BoneTransformData
 {
     float4x4 mBoneTransform;
@@ -208,6 +209,7 @@ struct TransformData
 	mat4 mWorldToLocal;
 };
 
+// One matrix per element; matches the C++ BoneTransformData record.
 struct BoneTransformData
 {
     mat4 mBoneTransform;

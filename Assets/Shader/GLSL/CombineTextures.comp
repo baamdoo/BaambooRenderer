@@ -16,7 +16,7 @@ void main()
     if (any(greaterThanEqual(pixelCoords, imgSize)))
         return;
 
-    vec2  uv         = ivec2(gl_GlobalInvocationID.xy) / vec2(imgSize);
+    vec2  uv         = (vec2(pixelCoords) + 0.5) / vec2(imgSize);
 
     float R = texture(g_TextureR, uv).r;
     float G = texture(g_TextureG, uv).g;

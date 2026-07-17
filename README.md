@@ -1,6 +1,8 @@
 # BaambooRenderer
 
-A real-time rendering engine written from scratch in **C++23**, with two complete graphics backends — **Direct3D 12** (Shader Model 6.6, fully bindless) and **Vulkan 1.4** — running behind a single abstract rendering interface.
+> Development status: Direct3D 12 is the primary backend; Vulkan and selected advanced samples remain experimental while correctness hardening continues.
+
+A real-time rendering engine written from scratch in **C++23**, with a primary **Direct3D 12** backend (Shader Model 6.6, fully bindless) and an experimental **Vulkan 1.4** backend behind a single abstract rendering interface.
 
 The end goal, and the motivation behind this project: learning how **high-quality AAA open-world rendering** is built for high-end PCs — using this engine as a long-term **sandbox for researching and implementing state-of-the-art graphics techniques**.
 
@@ -117,12 +119,12 @@ graph LR
 
 - **One interface, two backends** — engine and application code only touch abstract `render::` types; the D3D12 and Vulkan implementations are separate DLLs loaded at runtime (version-checked ABI), switchable per launch
 - **Two binding models, one shader logic** — the D3D12 backend is fully bindless (`ResourceDescriptorHeap`, SM 6.6, heap indices as root constants); the Vulkan backend uses descriptor indexing (unbounded, partially-bound texture arrays) — the same passes exercise both models
-- **Decoupled game & render loops** — the game loop ticks simulation/ECS at its own rate and publishes immutable `SceneRenderView` snapshots into a bounded queue (oldest dropped on overflow); a dedicated render-loop thread consumes the latest snapshot and walks the render graph with up to 3 frames in flight, so a heavy game tick never stalls GPU submission — and vice versa
+- **Decoupled game & render loops** — the game loop publishes frame data to a bounded queue consumed by a dedicated render thread. Snapshot ownership and synchronization are active hardening areas.
 - **ECS scene** built on EnTT with signal-driven dirty tracking and cross-system dependency propagation
-- **Modern synchronization on both backends** — D3D12 enhanced barriers and Vulkan `synchronization2`, wrapped behind intent-level `CommandContext` calls
+- **Backend synchronization abstraction** — D3D12 enhanced barriers are the primary path; Vulkan `synchronization2` support is experimental and undergoing barrier and lifetime hardening.
 - **Built-in profiling & debug tooling** — GPU draw/meshlet stats read back through a frames-in-flight ring, automatic frame-time anomaly capture, and debug overlays including a frozen-camera frustum mode for inspecting occlusion culling
 
-> Both backends implement the full raster pipeline, including the task/mesh-shader path (D3D12 mesh shaders / `GL_EXT_mesh_shader` on Vulkan). The DXR path tracer is currently Direct3D 12-only.
+> D3D12 is the primary, portfolio-ready backend. Vulkan, the DXR path tracer, and voxel-terrain vertical slices are experimental or still being hardened; capability and feature coverage varies by sample. The DXR path tracer is Direct3D 12-only.
 
 ## Sample Applications
 

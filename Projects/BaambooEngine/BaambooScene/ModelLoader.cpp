@@ -5,6 +5,7 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 #include <assimp/Importer.hpp>
+#include <assimp/GltfMaterial.h>
 
 namespace baamboo
 {
@@ -265,7 +266,7 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
                 material.anisotropy = anisotropy;
 
             float anisotropyRotation = 0.0f;
-            if (aiMat->Get(AI_MATKEY_ANISOTROPY_FACTOR, anisotropyRotation) == AI_SUCCESS)
+            if (aiMat->Get(AI_MATKEY_ANISOTROPY_ROTATION, anisotropyRotation) == AI_SUCCESS)
                 material.anisotropyRotation = anisotropyRotation;
 
             float sheenRoughness = 0.0f;

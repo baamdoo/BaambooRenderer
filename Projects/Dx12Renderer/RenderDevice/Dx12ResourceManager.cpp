@@ -639,16 +639,14 @@ Arc< Dx12Texture > Dx12ResourceManager::CreateFlat2DTexture(const char* name, u3
                 .imageUsage = eTextureUsage_TransferSource
 			});
 
-	u32* pData = (u32*)malloc(4);
-	*pData = color;
-    
-    D3D12_SUBRESOURCE_DATA subresouceData = {};
-    subresouceData.pData      = pData;
-    subresouceData.RowPitch   = 4;
-    subresouceData.SlicePitch = 4;
-    m_RenderDevice.UpdateSubresources(pFlatTexture.get(), 0, 1, &subresouceData);
+	const u32 data = color;
 
-	RELEASE(pData);
+    D3D12_SUBRESOURCE_DATA subresourceData = {};
+    subresourceData.pData      = &data;
+    subresourceData.RowPitch   = sizeof(data);
+    subresourceData.SlicePitch = sizeof(data);
+    m_RenderDevice.UpdateSubresources(pFlatTexture.get(), 0, 1, &subresourceData);
+
 	return pFlatTexture;
 }
 
@@ -666,16 +664,14 @@ Arc< Dx12Texture > Dx12ResourceManager::CreateFlat3DTexture(const char* name, u3
                 .format     = eFormat::RGBA8_UNORM,
             });
 
-    u32* pData = (u32*)malloc(4);
-    *pData = color;
+    const u32 data = color;
 
-    D3D12_SUBRESOURCE_DATA subresouceData = {};
-    subresouceData.pData      = pData;
-    subresouceData.RowPitch   = 4;
-    subresouceData.SlicePitch = 4;
-    m_RenderDevice.UpdateSubresources(pFlatTexture.get(), 0, 1, &subresouceData);
+    D3D12_SUBRESOURCE_DATA subresourceData = {};
+    subresourceData.pData      = &data;
+    subresourceData.RowPitch   = sizeof(data);
+    subresourceData.SlicePitch = sizeof(data);
+    m_RenderDevice.UpdateSubresources(pFlatTexture.get(), 0, 1, &subresourceData);
 
-    RELEASE(pData);
     return pFlatTexture;
 }
 
@@ -693,16 +689,16 @@ Arc< Dx12Texture > Dx12ResourceManager::CreateFlatCubeTexture(const char* name, 
                 .arrayLayers = 6
             });
 
-    u32* pData = (u32*)malloc(4);
-    *pData = color;
+    const u32 data = color;
+    D3D12_SUBRESOURCE_DATA subresourceData[6] = {};
+    for (auto& subresource : subresourceData)
+    {
+        subresource.pData      = &data;
+        subresource.RowPitch   = sizeof(data);
+        subresource.SlicePitch = sizeof(data);
+    }
+    m_RenderDevice.UpdateSubresources(pFlatTexture.get(), 0, 6, subresourceData);
 
-    D3D12_SUBRESOURCE_DATA subresouceData = {};
-    subresouceData.pData      = pData;
-    subresouceData.RowPitch   = 4;
-    subresouceData.SlicePitch = 4;
-    m_RenderDevice.UpdateSubresources(pFlatTexture.get(), 0, 1, &subresouceData);
-
-    RELEASE(pData);
     return pFlatTexture;
 }
 

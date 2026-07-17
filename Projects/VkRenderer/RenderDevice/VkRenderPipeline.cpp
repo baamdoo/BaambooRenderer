@@ -5,12 +5,101 @@
 #include "RenderResource/VkSceneResource.h"
 #include "Utils/FileIO.hpp"
 
+#include <cstddef>
+#include <cstdlib>
+#include <cstring>
+#include <new>
 #include <unordered_set>
 
 namespace vk
 {
 
 using namespace render;
+
+namespace
+{
+bool IsCompatiblePipelineCache(const FileIO::Data& cacheData, const VkPhysicalDeviceProperties& deviceProps)
+{
+	if (!cacheData.data || cacheData.size < sizeof(VkPipelineCacheHeaderVersionOne))
+		return false;
+
+	VkPipelineCacheHeaderVersionOne header = {};
+	std::memcpy(&header, cacheData.data, sizeof(header));
+	return header.headerSize == sizeof(VkPipelineCacheHeaderVersionOne) &&
+		header.headerSize <= cacheData.size &&
+		header.headerVersion == VK_PIPELINE_CACHE_HEADER_VERSION_ONE &&
+		header.vendorID == deviceProps.vendorID &&
+		header.deviceID == deviceProps.deviceID &&
+		std::memcmp(header.pipelineCacheUUID, deviceProps.pipelineCacheUUID, VK_UUID_SIZE) == 0;
+}
+
+VkPipelineCache CreatePipelineCache(VkRenderDevice& renderDevice, const std::string& filename)
+{
+	FileIO::Data cacheData = FileIO::ReadBinary((PIPELINE_PATH / filename).string());
+
+	VkPipelineCacheCreateInfo cacheInfo = {};
+	cacheInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+	if (IsCompatiblePipelineCache(cacheData, renderDevice.DeviceProps()))
+	{
+		cacheInfo.initialDataSize = static_cast<std::size_t>(cacheData.size);
+		cacheInfo.pInitialData = cacheData.data;
+	}
+
+	VkPipelineCache pipelineCache = VK_NULL_HANDLE;
+	const VkResult result = vkCreatePipelineCache(renderDevice.vkDevice(), &cacheInfo, nullptr, &pipelineCache);
+	cacheData.Deallocate();
+	VK_CHECK(result);
+	return pipelineCache;
+}
+
+void WritePipelineCache(VkRenderDevice& renderDevice, VkPipelineCache pipelineCache, const std::string& filename)
+{
+	for (;;)
+	{
+		std::size_t cacheSize = 0;
+		const VkResult sizeResult =
+			vkGetPipelineCacheData(renderDevice.vkDevice(), pipelineCache, &cacheSize, nullptr);
+		if (sizeResult != VK_SUCCESS)
+		{
+			VK_CHECK(sizeResult);
+			return;
+		}
+		if (cacheSize == 0)
+			return;
+
+		FileIO::Data writeData = {};
+		writeData.data = std::malloc(cacheSize);
+		if (!writeData.data)
+			throw std::bad_alloc();
+		writeData.size = static_cast<u64>(cacheSize);
+
+		const VkResult dataResult =
+			vkGetPipelineCacheData(renderDevice.vkDevice(), pipelineCache, &cacheSize, writeData.data);
+		if (dataResult == VK_SUCCESS)
+		{
+			writeData.size = static_cast<u64>(cacheSize);
+			try
+			{
+				FileIO::WriteBinary(PIPELINE_PATH.string(), filename, writeData);
+			}
+			catch (...)
+			{
+				writeData.Deallocate();
+				throw;
+			}
+			writeData.Deallocate();
+			return;
+		}
+
+		writeData.Deallocate();
+		if (dataResult != VK_INCOMPLETE)
+		{
+			VK_CHECK(dataResult);
+			return;
+		}
+	}
+}
+} // namespace
 
 #pragma region ConvertToVk
 #define VK_PIPELINE_PRIMITIVETOPOLOGY(topology) ConvertToVkPrimitiveTopology(topology)
@@ -188,10 +277,12 @@ VulkanGraphicsPipeline::~VulkanGraphicsPipeline()
 
 GraphicsPipeline& VulkanGraphicsPipeline::SetVertexInputs(std::vector< VkVertexInputBindingDescription >&& streams, std::vector< VkVertexInputAttributeDescription >&& attributes)
 {
-	m_PipelineDesc.vertexInputInfo.vertexBindingDescriptionCount   = static_cast<u32>(streams.size());
-	m_PipelineDesc.vertexInputInfo.pVertexBindingDescriptions      = streams.data();
-	m_PipelineDesc.vertexInputInfo.vertexAttributeDescriptionCount = static_cast<u32>(attributes.size());
-	m_PipelineDesc.vertexInputInfo.pVertexAttributeDescriptions    = attributes.data();
+	m_VertexBindings = std::move(streams);
+	m_VertexAttributes = std::move(attributes);
+	m_PipelineDesc.vertexInputInfo.vertexBindingDescriptionCount   = static_cast<u32>(m_VertexBindings.size());
+	m_PipelineDesc.vertexInputInfo.pVertexBindingDescriptions      = m_VertexBindings.data();
+	m_PipelineDesc.vertexInputInfo.vertexAttributeDescriptionCount = static_cast<u32>(m_VertexAttributes.size());
+	m_PipelineDesc.vertexInputInfo.pVertexAttributeDescriptions    = m_VertexAttributes.data();
 
 	return *this;
 }
@@ -262,7 +353,7 @@ GraphicsPipeline& VulkanGraphicsPipeline::SetColorBlending(u32 renderTargetIndex
 {
 	m_PipelineDesc.blendStates[renderTargetIndex].blendEnable = VK_TRUE;
 	m_PipelineDesc.blendStates[renderTargetIndex].srcColorBlendFactor = VK_PIPELINE_BLENDFACTOR(srcBlend);
-	m_PipelineDesc.blendStates[renderTargetIndex].srcColorBlendFactor = VK_PIPELINE_BLENDFACTOR(dstBlend);
+	m_PipelineDesc.blendStates[renderTargetIndex].dstColorBlendFactor = VK_PIPELINE_BLENDFACTOR(dstBlend);
 	m_PipelineDesc.blendStates[renderTargetIndex].colorBlendOp        = VK_PIPELINE_BLENDOP(blendOp);
 
 	return *this;
@@ -272,7 +363,7 @@ GraphicsPipeline& VulkanGraphicsPipeline::SetAlphaBlending(u32 renderTargetIndex
 {
 	m_PipelineDesc.blendStates[renderTargetIndex].blendEnable         = VK_TRUE;
 	m_PipelineDesc.blendStates[renderTargetIndex].srcAlphaBlendFactor = VK_PIPELINE_BLENDFACTOR(srcBlend);
-	m_PipelineDesc.blendStates[renderTargetIndex].srcAlphaBlendFactor = VK_PIPELINE_BLENDFACTOR(dstBlend);
+	m_PipelineDesc.blendStates[renderTargetIndex].dstAlphaBlendFactor = VK_PIPELINE_BLENDFACTOR(dstBlend);
 	m_PipelineDesc.blendStates[renderTargetIndex].alphaBlendOp        = VK_PIPELINE_BLENDOP(blendOp);
 
 	return *this;
@@ -792,27 +883,7 @@ void VulkanGraphicsPipeline::Build()
 
 	// Pipeline cache
 	std::string filename   = std::string(m_Name) + ".cache";
-	const bool bCacheExist = FileIO::FileExist(PIPELINE_PATH.string() + filename);
-
-	VkPipelineCache vkPipelineCache     = VK_NULL_HANDLE;
-	VkPipelineCacheCreateInfo cacheInfo = {};
-	cacheInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
-	if (bCacheExist) 
-	{
-		FileIO::Data cacheData = FileIO::ReadBinary(PIPELINE_PATH.string() + filename);
-
-		const auto cacheHeader = (VkPipelineCacheHeaderVersionOne*)cacheData.data;
-		if (cacheHeader->deviceID == m_RenderDevice.DeviceProps().deviceID &&
-			cacheHeader->vendorID == m_RenderDevice.DeviceProps().vendorID &&
-			memcmp(cacheHeader->pipelineCacheUUID, m_RenderDevice.DeviceProps().pipelineCacheUUID, VK_UUID_SIZE) == 0)
-		{
-			cacheInfo.initialDataSize = cacheData.size;
-			cacheInfo.pInitialData    = cacheData.data;
-		}
-		
-		delete cacheHeader;
-	}
-	VK_CHECK(vkCreatePipelineCache(m_RenderDevice.vkDevice(), &cacheInfo, nullptr, &vkPipelineCache));
+	const VkPipelineCache vkPipelineCache = CreatePipelineCache(m_RenderDevice, filename);
 
 	// dynamic state
 	std::vector< VkDynamicState > dynamicStates = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
@@ -847,22 +918,18 @@ void VulkanGraphicsPipeline::Build()
 	pipelineInfo.renderPass          = m_PipelineDesc.renderPass;
 	pipelineInfo.subpass             = 0;
 	pipelineInfo.basePipelineIndex   = -1;
-	VK_CHECK(vkCreateGraphicsPipelines(m_RenderDevice.vkDevice(), vkPipelineCache, 1, &pipelineInfo, nullptr, &m_vkPipeline));
-
-
 	// **
 	// Clean up
 	// **
-	if (!bCacheExist && vkPipelineCache)
+	try
 	{
-		FileIO::Data writeData = {};
-		VK_CHECK(vkGetPipelineCacheData(m_RenderDevice.vkDevice(), vkPipelineCache, &writeData.size, nullptr));
-
-		writeData.data = _aligned_malloc(writeData.size, 64);
-		VK_CHECK(vkGetPipelineCacheData(m_RenderDevice.vkDevice(), vkPipelineCache, &writeData.size, writeData.data));
-
-		FileIO::WriteBinary(PIPELINE_PATH.string(), filename, writeData);
-		writeData.Deallocate();
+		VK_CHECK(vkCreateGraphicsPipelines(m_RenderDevice.vkDevice(), vkPipelineCache, 1, &pipelineInfo, nullptr, &m_vkPipeline));
+		WritePipelineCache(m_RenderDevice, vkPipelineCache, filename);
+	}
+	catch (...)
+	{
+		vkDestroyPipelineCache(m_RenderDevice.vkDevice(), vkPipelineCache, nullptr);
+		throw;
 	}
 	vkDestroyPipelineCache(m_RenderDevice.vkDevice(), vkPipelineCache, nullptr);
 }
@@ -984,27 +1051,7 @@ void VulkanComputePipeline::Build()
 
 	// Pipeline cache
 	std::string filename   = std::string(m_Name) + ".cache";
-	const bool bCacheExist = FileIO::FileExist(PIPELINE_PATH.string() + filename);
-
-	VkPipelineCache vkPipelineCache     = VK_NULL_HANDLE;
-	VkPipelineCacheCreateInfo cacheInfo = {};
-	cacheInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
-	if (bCacheExist)
-	{
-		FileIO::Data cacheData = FileIO::ReadBinary(PIPELINE_PATH.string() + filename);
-
-		const auto cacheHeader = (VkPipelineCacheHeaderVersionOne*)cacheData.data;
-		if (cacheHeader->deviceID == m_RenderDevice.DeviceProps().deviceID &&
-			cacheHeader->vendorID == m_RenderDevice.DeviceProps().vendorID &&
-			memcmp(cacheHeader->pipelineCacheUUID, m_RenderDevice.DeviceProps().pipelineCacheUUID, VK_UUID_SIZE) == 0)
-		{
-			cacheInfo.initialDataSize = cacheData.size;
-			cacheInfo.pInitialData = cacheData.data;
-		}
-
-		delete cacheHeader;
-	}
-	VK_CHECK(vkCreatePipelineCache(m_RenderDevice.vkDevice(), &cacheInfo, nullptr, &vkPipelineCache));
+	const VkPipelineCache vkPipelineCache = CreatePipelineCache(m_RenderDevice, filename);
 
 	VkComputePipelineCreateInfo pipelineInfo = {};
 	pipelineInfo.sType              = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
@@ -1015,22 +1062,18 @@ void VulkanComputePipeline::Build()
 	pipelineInfo.layout             = m_vkPipelineLayout;
 	pipelineInfo.basePipelineHandle = nullptr;
 	pipelineInfo.basePipelineIndex  = 0;
-	VK_CHECK(vkCreateComputePipelines(m_RenderDevice.vkDevice(), nullptr, 1, &pipelineInfo, nullptr, &m_vkPipeline));
-
-
 	// **
 	// Clean up
 	// **
-	if (!bCacheExist && vkPipelineCache)
+	try
 	{
-		FileIO::Data writeData = {};
-		VK_CHECK(vkGetPipelineCacheData(m_RenderDevice.vkDevice(), vkPipelineCache, &writeData.size, nullptr));
-
-		writeData.data = _aligned_malloc(writeData.size, 64);
-		VK_CHECK(vkGetPipelineCacheData(m_RenderDevice.vkDevice(), vkPipelineCache, &writeData.size, writeData.data));
-
-		FileIO::WriteBinary(PIPELINE_PATH.string(), filename, writeData);
-		writeData.Deallocate();
+		VK_CHECK(vkCreateComputePipelines(m_RenderDevice.vkDevice(), vkPipelineCache, 1, &pipelineInfo, nullptr, &m_vkPipeline));
+		WritePipelineCache(m_RenderDevice, vkPipelineCache, filename);
+	}
+	catch (...)
+	{
+		vkDestroyPipelineCache(m_RenderDevice.vkDevice(), vkPipelineCache, nullptr);
+		throw;
 	}
 	vkDestroyPipelineCache(m_RenderDevice.vkDevice(), vkPipelineCache, nullptr);
 }

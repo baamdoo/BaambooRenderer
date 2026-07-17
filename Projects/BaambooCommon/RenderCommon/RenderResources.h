@@ -890,7 +890,11 @@ public:
     virtual void UpdateSceneResources(const SceneRenderView& renderView, class CommandContext& context) = 0;
     virtual void BindSceneResources(class CommandContext& context) = 0;
 
-    virtual const Arc< Buffer >& GetArgumentBuffer() const { return nullptr; }
+    virtual const Arc< Buffer >& GetArgumentBuffer() const
+    {
+        static const Arc< Buffer > s_Empty;
+        return s_Empty;
+    }
     virtual Arc< TopLevelAccelerationStructure > GetTLAS() const { return nullptr; }
 
     virtual Arc< Buffer > GetMeshDataBuffer() const { return nullptr; }

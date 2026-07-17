@@ -4,7 +4,7 @@
 
 #define _CAMERA
 #define _SCENEENVIRONMENT
-#include "AtmosphereCommon.hg"
+#include "../../GLSL/AtmosphereCommon.hg"
 
 layout(set = 1, binding = 0) uniform sampler2D g_TransmittanceLUT;
 

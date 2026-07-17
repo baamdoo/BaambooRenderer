@@ -90,6 +90,8 @@ private:
 	VkPipelineLayout                     m_vkPipelineLayout = VK_NULL_HANDLE;
 	std::vector< VkDescriptorSetLayout > m_vkSetLayouts;
 	VkShaderStageFlags                   m_PushConstantStages = 0;
+	std::vector< VkVertexInputBindingDescription >   m_VertexBindings;
+	std::vector< VkVertexInputAttributeDescription > m_VertexAttributes;
 
 	struct PipelineDesc
 	{

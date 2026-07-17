@@ -54,7 +54,7 @@ public:
 	void ClearTexture(const Arc< Dx12Texture >& pTexture, const BarrierState& stateAfter);
 	void ClearRenderTarget(const Arc< Dx12Texture >& pTexture);
 	void ClearDepthStencil(const Arc< Dx12Texture >& pTexture, D3D12_CLEAR_FLAGS clearFlags);
-	void ClearUnorderedAccess(const Arc< Dx12Buffer >& pBuffer, u64 offsetInBytes);
+	void ClearUnorderedAccess(const Arc< Dx12Buffer >& pBuffer, u32 value, u64 offsetInBytes);
 	void ClearUnorderedAccess(const Arc< Dx12Texture >& pTexture);
 
 	// ---- Pipeline ----
@@ -601,9 +601,29 @@ void Dx12CommandContext::Impl::ClearDepthStencil(const Arc< Dx12Texture >& pText
 	m_d3d12CommandList10->ClearDepthStencilView(pTexture->GetDepthStencilView(), clearFlags, clearDepth, clearStencil, 0, nullptr);
 }
 
-void Dx12CommandContext::Impl::ClearUnorderedAccess(const Arc< Dx12Buffer >& pBuffer, u64 offsetInBytes)
+void Dx12CommandContext::Impl::ClearUnorderedAccess(const Arc< Dx12Buffer >& pBuffer, u32 value, u64 offsetInBytes)
 {
 	assert(s_pZeroBuffer);
+	assert(offsetInBytes <= pBuffer->SizeInBytes());
+	assert((offsetInBytes & 3ULL) == 0);
+
+	if (value != 0)
+	{
+		std::array< u32, kZeroBufferSize / sizeof(u32) > fillData;
+		fillData.fill(value);
+
+		u64 remaining = pBuffer->SizeInBytes() - offsetInBytes;
+		assert((remaining & 3ULL) == 0);
+		u64 dstOffset = offsetInBytes;
+		while (remaining > 0)
+		{
+			const u64 chunkSize = std::min(remaining, static_cast< u64 >(kZeroBufferSize));
+			UploadData(pBuffer, fillData.data(), static_cast< u32 >(chunkSize / sizeof(u32)), sizeof(u32), dstOffset);
+			dstOffset += chunkSize;
+			remaining -= chunkSize;
+		}
+		return;
+	}
 
 	TransitionBarrier(pBuffer.get(), BarrierStates::BufferCopyDest);
 	TransitionBarrier(s_pZeroBuffer.get(), BarrierStates::BufferCopySource);
@@ -1231,10 +1251,8 @@ void Dx12CommandContext::Close()
 
 void Dx12CommandContext::ClearBuffer(const Arc< render::Buffer >& pBuffer, u32 value, u64 offsetInBytes)
 {
-	UNUSED(value);
-
 	const auto& rhiBuffer = StaticCast<Dx12Buffer>(pBuffer);
-	m_Impl->ClearUnorderedAccess(rhiBuffer, offsetInBytes);
+	m_Impl->ClearUnorderedAccess(rhiBuffer, value, offsetInBytes);
 }
 
 void Dx12CommandContext::ClearTexture(const Arc< render::Texture >& pTexture, render::eTextureLayout newLayout)

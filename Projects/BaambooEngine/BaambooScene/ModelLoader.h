@@ -67,25 +67,25 @@ struct MaterialData
 {
 	std::string name;
 
-	float3 diffuse;
-	float3 specularColor;
-	float  specularStrength;
+	float3 diffuse          = float3(1.0f);
+	float3 specularColor    = float3(1.0f);
+	float  specularStrength = 1.0f;
 
-	float shininess;
-	float metallic;
-	float roughness;
+	float shininess = 32.0f;
+	float metallic  = 0.0f;
+	float roughness = 0.5f;
 
-	float ior;
-	float clearcoat;
-	float clearcoatRoughness;
-	float alphaCutoff;
+	float ior                = 1.0f;
+	float clearcoat          = 0.0f;
+	float clearcoatRoughness = 0.0f;
+	float alphaCutoff        = 0.0f;
 
-	float anisotropy;
-	float anisotropyRotation;
-	float transmission;
+	float anisotropy         = 0.0f;
+	float anisotropyRotation = 0.0f;
+	float transmission       = 0.0f;
 
-	float3 sheenColor;
-	float  sheenRoughness;
+	float3 sheenColor     = float3(0.0f);
+	float  sheenRoughness = 0.0f;
 
 	std::string albedoPath;
 	std::string normalPath;

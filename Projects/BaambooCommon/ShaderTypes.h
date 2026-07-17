@@ -58,8 +58,9 @@ struct TransformData
 
 struct BoneTransformData
 {
-    mat4 mBones[kMaxBones];
+    mat4 mBoneTransform;
 };
+static_assert(sizeof(BoneTransformData) == 64);
 
 
 struct CameraData
@@ -76,6 +77,7 @@ struct CameraData
     float  zFar;
     float3 padding0;
 };
+static_assert(sizeof(CameraData) == 416);
 
 
 // Frozen camera — debug purpose

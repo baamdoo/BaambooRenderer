@@ -199,7 +199,7 @@ Arc< render::Texture > VkResourceManager::LoadTexture(const std::string& filepat
 		region.imageExtent = { width, height, 1 };
 		UploadData(pTex, (void*)pData, texSizeInBytes, region, bGenerateMips);
 
-		RELEASE(pData);
+		stbi_image_free(pData);
 
 		return pTex;
 	}
@@ -399,11 +399,9 @@ Arc< render::Texture > VkResourceManager::CreateFlat2DTexture(const char* name, 
 				.imageUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT
 			});
 
-	u32* pData = (u32*)malloc(4);
-	*pData = color;
-
+	const u32 data = color;
 	VkBufferImageCopy region = {};
-	region.imageSubresource = 
+	region.imageSubresource =
 	{
 		.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
 		.mipLevel       = 0,
@@ -411,9 +409,8 @@ Arc< render::Texture > VkResourceManager::CreateFlat2DTexture(const char* name, 
 		.layerCount     = 1
 	};
 	region.imageExtent = { 1, 1, 1 };
-	UploadData(flatTexture, pData, sizeof(u32) * 4, region);
+	UploadData(flatTexture, &data, sizeof(data), region);
 
-	RELEASE(pData);
 	return flatTexture;
 }
 
@@ -429,9 +426,7 @@ Arc< render::Texture > VkResourceManager::CreateFlat3DTexture(const char* name, 
 				.imageUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT
 			});
 
-	u32* pData = (u32*)malloc(4);
-	*pData = color;
-
+	const u32 data = color;
 	VkBufferImageCopy region = {};
 	region.imageSubresource =
 	{
@@ -441,9 +436,8 @@ Arc< render::Texture > VkResourceManager::CreateFlat3DTexture(const char* name, 
 		.layerCount     = 1
 	};
 	region.imageExtent = { 1, 1, 1 };
-	UploadData(flatTexture, pData, sizeof(u32) * 4, region);
+	UploadData(flatTexture, &data, sizeof(data), region);
 
-	RELEASE(pData);
 	return flatTexture;
 }
 
@@ -460,21 +454,18 @@ Arc< render::Texture > VkResourceManager::CreateFlatCubeTexture(const char* name
 				.arrayLayers = 6,
 			});
 
-	u32* pData = (u32*)malloc(4);
-	*pData = color;
-
+	const u32 data[6] = { color, color, color, color, color, color };
 	VkBufferImageCopy region = {};
 	region.imageSubresource =
 	{
 		.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
 		.mipLevel       = 0,
 		.baseArrayLayer = 0,
-		.layerCount     = 1
+		.layerCount     = 6
 	};
 	region.imageExtent = { 1, 1, 1 };
-	UploadData(flatTexture, pData, sizeof(u32) * 4, region);
+	UploadData(flatTexture, data, sizeof(data), region);
 
-	RELEASE(pData);
 	return flatTexture;
 }
 

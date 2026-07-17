@@ -15,7 +15,7 @@ struct Subresource
 	}
 	bool operator==(const Subresource& other) const { return baseMip == other.baseMip && mipLevels == other.mipLevels && baseLayer == other.baseLayer && arrayLayers == other.arrayLayers; }
 	bool operator<(const Subresource& other) const {
-		return std::tie(baseMip, mipLevels, baseLayer, arrayLayers) < std::tie(other.baseMip, other.baseLayer, other.baseLayer, other.arrayLayers);
+		return std::tie(baseMip, mipLevels, baseLayer, arrayLayers) < std::tie(other.baseMip, other.mipLevels, other.baseLayer, other.arrayLayers);
 	}
 
 	u32 baseMip;

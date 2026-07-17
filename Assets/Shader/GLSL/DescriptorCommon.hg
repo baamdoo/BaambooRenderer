@@ -19,7 +19,9 @@ layout(set = DESCRIPTORSET_COMMON, binding = 0) uniform Camera
 	vec3  posWORLD;
 	float zNear;
 	float zFar;
-	vec3  padding0;
+	float padding0X;
+	float padding0Y;
+	float padding0Z;
 } g_Camera;
 #endif // _CAMERA
 

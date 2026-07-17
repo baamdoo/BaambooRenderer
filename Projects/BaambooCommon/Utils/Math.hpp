@@ -89,7 +89,7 @@ inline glm::vec2 GetHaltonSequence(uint32_t idx)
 	return kHaltonSequence[idx % kMaxHaltonSequence];
 }
 
-static float2 RaySphereIntersection(float3 rayOrigin, float3 rayDir, float3 sphereCenter, float sphereRadius)
+inline float2 RaySphereIntersection(float3 rayOrigin, float3 rayDir, float3 sphereCenter, float sphereRadius)
 {
 	float3 centerToOrigin = rayOrigin - sphereCenter;
 

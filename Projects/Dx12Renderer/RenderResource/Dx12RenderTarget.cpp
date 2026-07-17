@@ -58,8 +58,9 @@ void Dx12RenderTarget::Reset()
 {
     using namespace render;
 
-    m_pAttachments.clear();
-    m_pAttachments.reserve(eAttachmentPoint::NumAttachmentPoints);
+    m_pAttachments.assign(eAttachmentPoint::NumAttachmentPoints, nullptr);
+    m_NumColors = 0;
+    m_bLoadAttachmentBits = 0;
 }
 
 D3D12_VIEWPORT Dx12RenderTarget::GetViewport(float2 scale, float2 bias, float minDepth, float maxDepth) const

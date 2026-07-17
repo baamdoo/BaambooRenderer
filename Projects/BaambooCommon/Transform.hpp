@@ -30,8 +30,9 @@ public:
     {
         glm::quat qYaw   = glm::angleAxis(dYaw, glm::vec3(0, 1, 0));
         glm::quat qPitch = glm::angleAxis(dPitch, glm::vec3(1, 0, 0));
+        glm::quat qRoll  = glm::angleAxis(dRoll, glm::vec3(0, 0, 1));
 
-        m_Orientation = qYaw * m_Orientation * qPitch;
+        m_Orientation = qYaw * m_Orientation * qPitch * qRoll;
         m_Orientation = glm::normalize(m_Orientation);
 
         float y, x, z;

@@ -197,10 +197,6 @@ public:
 	u32 GetAnimationClipCount() const { return static_cast<u32>(m_AnimationClips.size()); }
 
 private:
-	u32 StoreMeshData(const MeshData& meshData);
-	u32 StoreSkeletonData(const Skeleton& skeleton);
-	u32 StoreAnimationClip(const AnimationClip& clip);
-
 	void OnEntityRemoved(Entity entity);
 
 private:

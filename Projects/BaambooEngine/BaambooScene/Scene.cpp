@@ -239,30 +239,6 @@ void Scene::RemoveRenderNode(const std::string& nodeName)
 	m_RenderGraph.RemoveRenderNode(nodeName);
 }
 
-u32 Scene::StoreMeshData(const MeshData& meshData)
-{
-	static u32 nextMeshID = 0;
-	u32 id = nextMeshID++;
-	m_MeshData[id] = meshData;
-	return id;
-}
-
-u32 Scene::StoreSkeletonData(const Skeleton& skeleton)
-{
-	static u32 nextSkeletonID = 0;
-	u32 id = nextSkeletonID++;
-	m_Skeletons[id] = skeleton;
-	return id;
-}
-
-u32 Scene::StoreAnimationClip(const AnimationClip& clip)
-{
-	static u32 nextClipID = 0;
-	u32 id = nextClipID++;
-	m_AnimationClips[id] = clip;
-	return id;
-}
-
 void Scene::OnEntityRemoved(Entity entity)
 {
 	Registry().patch< TransformComponent >(entity.ID(), [](auto&) {});
@@ -407,8 +383,6 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport,
 		view.hiZWidth    = 0u;
 		view.hiZHeight   = 0u;
 	}
-
-	view.rg = m_RenderGraph.GetRenderNodes();
 
 	view.pSceneMutex       = &m_SceneMutex;
 	view.pEntityDirtyMarks = m_bDirtyMarks ? &m_EntityDirtyMasks : nullptr;

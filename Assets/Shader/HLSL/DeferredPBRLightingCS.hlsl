@@ -45,6 +45,9 @@ void main(uint3 tID : SV_DispatchThreadID)
     uint width, height;
     OutSceneTexture.GetDimensions(width, height);
 
+    if (tID.x >= width || tID.y >= height)
+        return;
+
     float2 uv = (float2(texCoords.xy) + 0.5) / float2(width, height);
 
     Texture2D< float > DepthBuffer = GetResource(g_DepthBuffer.index);

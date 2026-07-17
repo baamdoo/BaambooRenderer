@@ -253,8 +253,6 @@ struct SceneRenderView
 	u32 hiZWidth;
 	u32 hiZHeight;
 
-	std::vector< Arc< render::RenderNode > > rg;
-
 	std::vector< TransformRenderView >  transforms;
 	std::vector< StaticMeshRenderView > meshes; 
 	std::vector< MaterialRenderView >   materials;

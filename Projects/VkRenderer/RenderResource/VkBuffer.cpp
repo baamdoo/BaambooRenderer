@@ -69,10 +69,14 @@ void VulkanBuffer::Resize(u64 sizeInBytes, bool bReset)
 	{
 		if (!bReset)
 		{
-			auto pContext = m_RenderDevice.BeginCommand(eCommandType::Transfer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
-			pContext->CopyBuffer(vkNewBuffer, m_vkBuffer, SizeInBytes());
-			pContext->Close();
-			m_RenderDevice.ExecuteCommand(pContext); // synchronous — GPU caught up to transfer queue
+			const VkDeviceSize copySize = std::min< VkDeviceSize >(SizeInBytes(), sizeInBytes);
+			if (copySize > 0)
+			{
+				auto pContext = m_RenderDevice.BeginCommand(eCommandType::Transfer, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
+				pContext->CopyBuffer(vkNewBuffer, m_vkBuffer, copySize);
+				pContext->Close();
+				m_RenderDevice.ExecuteCommand(pContext); // synchronous — GPU caught up to transfer queue
+			}
 		}
 		else
 		{

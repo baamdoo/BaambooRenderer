@@ -672,9 +672,23 @@ void VkCommandContext::Impl::FillBuffer(const Arc< VulkanBuffer >& pBuffer, u32 
 	if (!pBuffer)
 		return;
 
+	if (offsetInBytes > pBuffer->SizeInBytes() || (offsetInBytes & 3ULL) != 0)
+	{
+		assert(false);
+		return;
+	}
+	const VkDeviceSize fillSize = pBuffer->SizeInBytes() - offsetInBytes;
+	if ((fillSize & 3ULL) != 0)
+	{
+		assert(false);
+		return;
+	}
+	if (fillSize == 0)
+		return;
+
 	TransitionBarrier(pBuffer, { VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_CLEAR_BIT }, offsetInBytes, true);
 
-	vkCmdFillBuffer(m_vkCommandBuffer, pBuffer->vkBuffer(), offsetInBytes, pBuffer->SizeInBytes(), value);
+	vkCmdFillBuffer(m_vkCommandBuffer, pBuffer->vkBuffer(), offsetInBytes, fillSize, value);
 }
 
 void VkCommandContext::Impl::ClearTexture(

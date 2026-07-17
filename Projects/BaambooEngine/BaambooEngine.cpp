@@ -780,7 +780,6 @@ void Engine::DrawUI()
 					phase2FsEma      = e.fsInvocationsEma;
 				}
 			}
-			const u64    clipInTotal     = phase1ClipIn  + phase2ClipIn;
 			const u64    clipOutTotal    = phase1ClipOut + phase2ClipOut;
 			const double clipInTotalEma  = phase1ClipInEma  + phase2ClipInEma;
 			const double clipOutTotalEma = phase1ClipOutEma + phase2ClipOutEma;
@@ -1239,10 +1238,12 @@ void Engine::DrawUI()
 					ImGui::PushItemWidth(width * 0.3f);
 					ImGui::Text("ClippingRange");
 					bMark |= ImGui::InputFloat("##ClipNear", &cameraComponent.cNear, 0, 0, "%.2f");
+					ImGui::PopItemWidth();
 
 					ImGui::PushItemWidth(width * 0.7f);
 					ImGui::SameLine();
 					bMark |= ImGui::InputFloat("##ClipFar", &cameraComponent.cFar, 0, 0, "%.2f");
+					ImGui::PopItemWidth();
 
 					ImGui::Text("FoV");
 					bMark |= ImGui::DragFloat("##FoV", &cameraComponent.fov, 0.1f, 1.0f, 90.0f, "%.1f");
@@ -1785,30 +1786,39 @@ void Engine::DrawUI()
 						auto& component = ImGui::SelectedEntity.GetComponent< PostProcessComponent >();
 						if (ImGui::CollapsingHeader("Height Fog(TODO)"))
 						{
-							bool bApply = component.effectBits & ePostProcess::HeightFog;
-							bMark |= ImGui::Checkbox("Apply HeightFog", &bApply);
-							component.effectBits =
-								(component.effectBits & ~(1 << ePostProcess::AntiAliasing)) | (bApply << ePostProcess::HeightFog);
+							constexpr u64 effectBit = 1ULL << ePostProcess::HeightFog;
+							bool bApply = (component.effectBits & effectBit) != 0;
+							if (ImGui::Checkbox("Apply HeightFog", &bApply))
+							{
+								component.effectBits = bApply ? (component.effectBits | effectBit) : (component.effectBits & ~effectBit);
+								bMark = true;
+							}
 
 							ImGui::DragFloat("ExponentialFactor", &component.heightFog.exponentialFactor, 0.1f, 0.0f, 20.0f, "%.1f");
 						}
 
 						if (ImGui::CollapsingHeader("Bloom(TODO)"))
 						{
-							bool bApply = component.effectBits & ePostProcess::Bloom;
-							bMark |= ImGui::Checkbox("Apply Bloom", &bApply);
-							component.effectBits =
-								(component.effectBits & ~(1 << ePostProcess::AntiAliasing)) | (bApply << ePostProcess::Bloom);
+							constexpr u64 effectBit = 1ULL << ePostProcess::Bloom;
+							bool bApply = (component.effectBits & effectBit) != 0;
+							if (ImGui::Checkbox("Apply Bloom", &bApply))
+							{
+								component.effectBits = bApply ? (component.effectBits | effectBit) : (component.effectBits & ~effectBit);
+								bMark = true;
+							}
 
 							ImGui::DragInt("FilterSize", &component.bloom.filterSize, 1, 1, 16);
 						}
 
 						if (ImGui::CollapsingHeader("AntiAliasing"))
 						{
-							bool bApply = component.effectBits & (1 << ePostProcess::AntiAliasing);
-							bMark |= ImGui::Checkbox("Apply Anti-Aliasing", &bApply);
-							component.effectBits =
-								(component.effectBits & ~(1 << ePostProcess::AntiAliasing)) | (bApply << ePostProcess::AntiAliasing);
+							constexpr u64 effectBit = 1ULL << ePostProcess::AntiAliasing;
+							bool bApply = (component.effectBits & effectBit) != 0;
+							if (ImGui::Checkbox("Apply Anti-Aliasing", &bApply))
+							{
+								component.effectBits = bApply ? (component.effectBits | effectBit) : (component.effectBits & ~effectBit);
+								bMark = true;
+							}
 
 							auto svCurrentType = magic_enum::enum_name(component.aa.type);
 							if (ImGui::BeginCombo("AntiAliasing Type", svCurrentType.data()))

@@ -212,8 +212,7 @@ void VulkanRenderTarget::Reset()
 
 	m_bLoadAttachmentBits = 0;
 
-	m_pAttachments.clear();
-	m_pAttachments.reserve(eAttachmentPoint::NumAttachmentPoints);
+	m_pAttachments.assign(eAttachmentPoint::NumAttachmentPoints, nullptr);
 
 	if (m_vkFramebuffer) vkDestroyFramebuffer(m_RenderDevice.vkDevice(), m_vkFramebuffer, nullptr);
 	if (m_vkRenderPass) vkDestroyRenderPass(m_RenderDevice.vkDevice(), m_vkRenderPass, nullptr);

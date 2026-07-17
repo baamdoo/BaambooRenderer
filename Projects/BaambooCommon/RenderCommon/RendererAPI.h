@@ -19,7 +19,7 @@ enum class eRendererAPI
 	OpenGL = 3,
 	Metal  = 4,
 };
-static mat4 ApplyRhiNDC(const mat4& mProj_, eRendererAPI api)
+inline mat4 ApplyRhiNDC(const mat4& mProj_, eRendererAPI api)
 {
 	mat4 mProj = mProj_;
 	mProj[1][1] *= api == eRendererAPI::Vulkan ? -1.0f : 1.0f;
