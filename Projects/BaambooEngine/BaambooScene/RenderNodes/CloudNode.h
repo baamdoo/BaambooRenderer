@@ -27,6 +27,7 @@ private:
 	Box< render::ComputePipeline > m_pWeatherMapPSO;
 	Box< render::ComputePipeline > m_pCloudShapeBasePSO;
 
+	u64  m_LastCloudRevision = 0;
 	bool m_bBaseNoiseInitialized = false;
 };
 

@@ -181,8 +181,14 @@ public:
     virtual const std::vector< GpuProfileEntry >& GetLastFrameProfile() const = 0;
 
     virtual double GetLastFrameElapsedTime() const = 0;
+    void SetRenderSequence(u64 sequence) { m_RenderSequence = sequence; }
+    [[nodiscard]]
+    u64 RenderSequence() const { return m_RenderSequence; }
+
 
 private:
+    u64 m_RenderSequence = 0;
+
     template< typename T >
     constexpr T RoundUpAndDivide(T Value, size_t Alignment)
     {

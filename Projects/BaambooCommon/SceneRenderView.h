@@ -5,7 +5,7 @@
 #include "ComponentTypes.h"
 #include "RenderCommon/RenderNode.h"
 
-#include <mutex>
+#include <array>
 #include <functional>
 
 enum eComponentType
@@ -242,7 +242,10 @@ struct DebugLineVertex
 struct SceneRenderView
 {
 	float time;
-	u64   frame;
+	u64   producerSequence;
+
+	u64 sceneRevision;
+	std::array< u64, NumComponents > componentRevisions;
 
 	float2 viewport;
 
@@ -276,8 +279,4 @@ struct SceneRenderView
 	std::vector< DebugLineVertex > debugLines;
 	u64 debugLinesVersion = 0u;
 
-	// for sync producer(SceneRenderView)-consumer(Renderer)
-	std::mutex* pSceneMutex;
-
-	std::unordered_map< u64, u64 >* pEntityDirtyMarks;
 };

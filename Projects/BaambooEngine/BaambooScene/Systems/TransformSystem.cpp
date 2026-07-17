@@ -134,6 +134,13 @@ void TransformSystem::MarkDirty(entt::entity entity)
 
 void TransformSystem::AttachChild(entt::entity parent, entt::entity child)
 {
+    for (auto ancestor = parent; ancestor != entt::null;
+         ancestor = m_Registry.get< TransformComponent >(ancestor).hierarchy.parent)
+    {
+        if (ancestor == child)
+            return;
+    }
+
     auto& childTransform = m_Registry.get< TransformComponent >(child);
     if (childTransform.hierarchy.parent != entt::null)
         DetachChild(child);
@@ -210,6 +217,7 @@ void TransformSystem::DetachChild(entt::entity child)
 
         m_Registry.emplace_or_replace<RootComponent>(child);
         m_bHierarchyDirty = true;
+        MarkDirty(child);
     }
 }
 

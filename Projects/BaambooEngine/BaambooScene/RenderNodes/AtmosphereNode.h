@@ -28,6 +28,7 @@ private:
 	Box< render::ComputePipeline > m_pDistantSkyLightPSO;
 	Box< render::ComputePipeline > m_pBakeSkyboxPSO;
 
+	u64  m_LastAtmosphereRevision = 0;
 	bool m_bStaticLutsInitialized = false;
 };
 

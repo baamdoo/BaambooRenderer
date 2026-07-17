@@ -63,7 +63,7 @@ protected:
 	render::DeviceSettings m_DeviceSettings;
 
 private:
-	u64    m_Frame       = 0;
+	u64    m_ProducerSequence = 0;
 	double m_RunningTime = 0.0;
 
 	std::thread                    m_RenderThread;
@@ -73,7 +73,6 @@ private:
 	Timer m_GameTimer = {};
 	std::atomic< double > m_GameElapsedTime{ 0.0 };
 
-	Timer m_RenderTimer = {};
 	double m_LastFrameGpuTimeElapsed = 0.0;
 
 	// --- GPU/CPU profile ---

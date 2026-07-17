@@ -74,8 +74,6 @@ Arc< Dx12Texture > CombineTextures(Dx12RenderDevice& rd, const char* name, Arc< 
 
 void Dx12SceneResource::PerFrameData::Reset()
 {
-    bInitialized = true;
-
     if (pMeshDataAllocator)
         pMeshDataAllocator->Reset();
     if (pInstanceAllocator)
@@ -189,7 +187,7 @@ void Dx12SceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneV
     CameraData camera = {};
     camera.mView = sceneView.camera.mView;
     camera.mProj = sceneView.postProcess.effectBits & (1 << ePostProcess::AntiAliasing) ?
-        ApplyJittering(sceneView.camera.mProj, baamboo::math::GetHaltonSequence((u32)sceneView.frame)) : sceneView.camera.mProj;
+        ApplyJittering(sceneView.camera.mProj, baamboo::math::GetHaltonSequence((u32)ctx.RenderSequence())) : sceneView.camera.mProj;
     camera.mViewProj               = camera.mProj * camera.mView;
     camera.mViewProjInv            = glm::inverse(camera.mViewProj);
     camera.mViewProjUnjittered     = sceneView.camera.mProj * camera.mView;
@@ -234,7 +232,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
 
     auto& rm  = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
     auto& ctx = static_cast<Dx12CommandContext&>(context);
-    if (sceneView.pEntityDirtyMarks != nullptr)
+    if (sceneView.sceneRevision != m_LastSceneRevision)
     {
         for (auto& frameData : m_FrameData)
         {
@@ -633,6 +631,8 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
     UpdateFrameBuffer(ctx, &sceneView.light, 1, sizeof(LightData), *m_FrameData[m_ContextIndex].pLightAllocator, BarrierStates::ConstantBuffer);
 
     UpdateCameraAndEnvironment(sceneView, ctx);
+    m_FrameData[m_ContextIndex].bInitialized = true;
+    m_LastSceneRevision = sceneView.sceneRevision;
 }
 
 void Dx12SceneResource::BindSceneResources(render::CommandContext& context)

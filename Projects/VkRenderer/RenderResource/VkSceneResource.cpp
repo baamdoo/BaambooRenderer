@@ -109,8 +109,6 @@ Arc< VulkanTexture > CombineTextures(VkRenderDevice& rd, const char* name, Arc< 
 
 void VkSceneResource::PerFrameData::Reset()
 {
-	bInitialized = true;
-
 	if (pMeshDataAllocator)
 		pMeshDataAllocator->Reset();
 	if (pInstanceAllocator)
@@ -285,7 +283,7 @@ void VkSceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneVie
 	CameraData camera = {};
 	camera.mView = sceneView.camera.mView;
 	camera.mProj = ApplyRhiNDC((sceneView.postProcess.effectBits & (1 << ePostProcess::AntiAliasing) ?
-		ApplyJittering(sceneView.camera.mProj, baamboo::math::GetHaltonSequence((u32)sceneView.frame)) : sceneView.camera.mProj), eRendererAPI::Vulkan);
+		ApplyJittering(sceneView.camera.mProj, baamboo::math::GetHaltonSequence((u32)ctx.RenderSequence())) : sceneView.camera.mProj), eRendererAPI::Vulkan);
 	camera.mViewProj               = camera.mProj * camera.mView;
 	camera.mViewProjInv            = glm::inverse(camera.mViewProj);
 	camera.mViewProjUnjittered     = ApplyRhiNDC(sceneView.camera.mProj, eRendererAPI::Vulkan) * camera.mView;
@@ -350,7 +348,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 {
 	auto& rm  = static_cast<VkResourceManager&>(m_RenderDevice.GetResourceManager());
 	auto& ctx = static_cast<VkCommandContext&>(context);
-	if (sceneView.pEntityDirtyMarks != nullptr)
+	if (sceneView.sceneRevision != m_LastSceneRevision)
 	{
 		for (auto& frameData : m_FrameData)
 		{
@@ -719,6 +717,8 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 	ctx.FlushBarriers();
 
 	UpdateCameraAndEnvironment(sceneView, ctx);
+	m_FrameData[m_ContextIndex].bInitialized = true;
+	m_LastSceneRevision = sceneView.sceneRevision;
 }
 
 void VkSceneResource::BindSceneResources(render::CommandContext& context)

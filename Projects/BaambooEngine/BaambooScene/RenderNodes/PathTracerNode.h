@@ -1,7 +1,9 @@
 #pragma once
 #include "Defines.h"
 #include "RenderCommon/RenderNode.h"
+#include "SceneRenderView.h"
 
+#include <array>
 #include <atomic>
 #include <filesystem>
 #include <string>
@@ -65,6 +67,7 @@ private:
 	std::string m_EnvironmentMapPath;
 	std::string m_ReferenceSceneName = "cornell_box";
 	bool   m_bHasCameraState        = false;
+	std::array< u64, NumComponents > m_LastComponentRevisions = {};
 	mat4   m_LastView               = mat4(1.0f);
 	mat4   m_LastProj               = mat4(1.0f);
 	float2 m_LastViewport           = float2(0.0f);

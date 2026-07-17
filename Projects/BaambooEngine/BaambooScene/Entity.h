@@ -2,6 +2,8 @@
 #include "Scene.h"
 #include "Systems/TransformSystem.h"
 
+#include <type_traits>
+
 namespace baamboo
 {
 
@@ -37,6 +39,8 @@ public:
 	template< typename TComponent >
 	size_t RemoveComponent()
 	{
+		static_assert(!std::is_same_v< std::remove_cv_t< TComponent >, TransformComponent >,
+			"TransformComponent is a required core component and cannot be removed independently.");
 		BB_ASSERT(HasAll< TComponent >(), "No component %s in entity_%d!", typeid(TComponent).name(), m_id);
 		return m_pScene->m_Registry.remove< TComponent >(m_id);
 	}

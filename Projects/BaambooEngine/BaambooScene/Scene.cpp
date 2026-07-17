@@ -13,8 +13,6 @@
 #include "Utils/Math.hpp"
 
 #include <queue>
-#include <numeric>
-#include <execution>
 #include <glm/gtx/matrix_decompose.hpp>
 
 namespace baamboo
@@ -60,7 +58,6 @@ Entity Scene::CreateEntity(const std::string& tag)
 
 	printf("create entity_%d\n", newEntity.id());
 
-	m_EntityDirtyMasks.emplace(std::make_pair(newEntity.id(), 0));
 	return newEntity;
 }
 
@@ -87,7 +84,6 @@ void Scene::RemoveEntity(Entity entity)
 	//OnEntityRemoved(entity);
 
 	m_Registry.destroy(entity.ID());
-	m_EntityDirtyMasks.erase(entity.id());
 }
 
 Entity Scene::ImportModel(const fs::path& filepath, MeshDescriptor descriptor)
@@ -106,6 +102,13 @@ Entity Scene::ImportModel(Entity parentEntity, const fs::path& filepath, MeshDes
 
 	auto pLoader   = new ModelLoader(filepath, descriptor);
 	auto pRootNode = pLoader->GetRootNode();
+	if (!pRootNode)
+	{
+		RELEASE(pLoader);
+		m_bLoading = false;
+		return {};
+	}
+
 	m_ModelLoaderCache.emplace(filepath.string(), pLoader);
 
 	std::string parentPath = filepath.parent_path().string() + "/";
@@ -132,13 +135,25 @@ Entity Scene::ImportModel(Entity parentEntity, const fs::path& filepath, MeshDes
 			transformComponent.transform.scale    = scale;
 
 			// Process meshes
-			for (u32 meshIndex : node->meshIndices)
+			const bool bSplitMeshes = node->meshIndices.size() > 1;
+			for (size_t meshOrdinal = 0; meshOrdinal < node->meshIndices.size(); ++meshOrdinal)
 			{
+				const u32 meshIndex = node->meshIndices[meshOrdinal];
 				const MeshData& meshData = pLoader->GetMeshes()[meshIndex];
+
+				Entity meshEntity = entity;
+				if (bSplitMeshes)
+				{
+					const std::string meshName = meshData.name.empty()
+						? node->name + "_Mesh_" + std::to_string(meshOrdinal)
+						: meshData.name;
+					meshEntity = CreateEntity(meshName);
+					entity.AttachChild(meshEntity.ID());
+				}
 
 				{
 					// static mesh
-					auto& meshComponent = entity.AttachComponent< StaticMeshComponent >();
+					auto& meshComponent = meshEntity.AttachComponent< StaticMeshComponent >();
 					meshComponent.tag  = meshData.name;
 					meshComponent.path = filepath.string();
 
@@ -172,7 +187,7 @@ Entity Scene::ImportModel(Entity parentEntity, const fs::path& filepath, MeshDes
 				}
 
 				// Material
-				auto& material = entity.AttachComponent< MaterialComponent >();
+				auto& material = meshEntity.AttachComponent< MaterialComponent >();
 				if (meshData.materialIndex < pLoader->GetMaterials().size())
 				{
 					const MaterialData& matData = pLoader->GetMaterials()[meshData.materialIndex];
@@ -269,66 +284,41 @@ void Scene::Update(f32 dt, const EditorCamera& edCamera)
 	std::lock_guard< std::mutex > lock(m_SceneMutex);
 
 	s_SceneRunningTime += dt;
-	// Remove deletion markers after the render thread has consumed them.
-	for (auto it = m_EntityDirtyMasks.begin(); it != m_EntityDirtyMasks.end();)
+	u64 changedComponents = 0;
+	const auto updateSystem = [&]< typename TSystem >(TSystem* pSystem, eComponentType component)
 	{
-		const auto entity = static_cast< entt::entity >(it->first);
-		if (it->second == 0 && !m_Registry.valid(entity))
-			it = m_EntityDirtyMasks.erase(it);
-		else
-			++it;
+		const bool bChanged = pSystem->HasPendingRenderDataChanges();
+		pSystem->UpdateRenderData(edCamera);
+		if (bChanged)
+			changedComponents |= 1ULL << component;
+	};
+
+	updateSystem(m_pTransformSystem, eComponentType::CTransform);
+
+	const bool bStaticMeshChanged = m_pStaticMeshSystem->HasPendingRenderDataChanges();
+	m_pStaticMeshSystem->UpdateRenderData(edCamera);
+	if (bStaticMeshChanged)
+	{
+		changedComponents |= 1ULL << eComponentType::CStaticMesh;
+		changedComponents |= 1ULL << eComponentType::CMaterial;
 	}
 
-	for (auto entity : m_pTransformSystem->UpdateRenderData(edCamera))
-	{
-		u64& dirtyMarks = m_EntityDirtyMasks[entity];
-		dirtyMarks |= (1 << eComponentType::CTransform);
-	}
+	updateSystem(m_pSkyLightSystem, eComponentType::CSkyLight);
+	updateSystem(m_pAtmosphereSystem, eComponentType::CAtmosphere);
+	updateSystem(m_pCloudSystem, eComponentType::CCloud);
+	updateSystem(m_pLocalLightSystem, eComponentType::CLocalLight);
+	updateSystem(m_pPostProcessSystem, eComponentType::CPostProcess);
+	updateSystem(m_pVoxelTerrainSystem, eComponentType::CVoxelTerrain);
 
-	for (auto entity : m_pStaticMeshSystem->UpdateRenderData(edCamera))
+	if (changedComponents != 0)
 	{
-		u64& dirtyMarks = m_EntityDirtyMasks[entity];
-		dirtyMarks |= (1 << eComponentType::CStaticMesh);
+		++m_SceneRevision;
+		for (u32 component = 0; component < eComponentType::NumComponents; ++component)
+		{
+			if ((changedComponents & (1ULL << component)) != 0)
+				++m_ComponentRevisions[component];
+		}
 	}
-
-	for (auto entity : m_pSkyLightSystem->UpdateRenderData(edCamera))
-	{
-		u64& dirtyMarks = m_EntityDirtyMasks[entity];
-		dirtyMarks |= (1 << eComponentType::CSkyLight);
-	}
-
-	for (auto entity : m_pAtmosphereSystem->UpdateRenderData(edCamera))
-	{
-		u64& dirtyMarks = m_EntityDirtyMasks[entity];
-		dirtyMarks |= (1 << eComponentType::CAtmosphere);
-	}
-
-	for (auto entity : m_pCloudSystem->UpdateRenderData(edCamera))
-	{
-		u64& dirtyMarks = m_EntityDirtyMasks[entity];
-		dirtyMarks |= (1 << eComponentType::CCloud);
-	}
-
-	for (auto entity : m_pLocalLightSystem->UpdateRenderData(edCamera))
-	{
-		u64& dirtyMarks = m_EntityDirtyMasks[entity];
-		dirtyMarks |= (1 << eComponentType::CLocalLight);
-	}
-
-	for (auto entity : m_pPostProcessSystem->UpdateRenderData(edCamera))
-	{
-		u64& dirtyMarks = m_EntityDirtyMasks[entity];
-		dirtyMarks |= (1 << eComponentType::CPostProcess);
-	}
-
-	for (auto entity : m_pVoxelTerrainSystem->UpdateRenderData(edCamera))
-	{
-		u64& dirtyMarks = m_EntityDirtyMasks[entity];
-		dirtyMarks |= (1 << eComponentType::CVoxelTerrain);
-	}
-
-	auto valuesView = m_EntityDirtyMasks | std::views::values;
-	m_bDirtyMarks = std::reduce(std::execution::par, valuesView.begin(), valuesView.end(), 0ULL) > 0;
 }
 
 void Scene::OnWindowResized(u32 width, u32 height)
@@ -362,11 +352,15 @@ void Scene::ClearDebugLinesAlreadyLocked()
 	++m_DebugLinesVersion;
 }
 
-SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport, u64 frame, const render::DeviceSettings& ds) const
+SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport, u64 producerSequence, const render::DeviceSettings& ds) const
 {
+	std::lock_guard< std::mutex > lock(m_SceneMutex);
+
 	SceneRenderView view = {};
-	view.time           = s_SceneRunningTime;
-	view.frame          = frame;
+	view.time               = s_SceneRunningTime;
+	view.producerSequence   = producerSequence;
+	view.sceneRevision      = m_SceneRevision;
+	view.componentRevisions = m_ComponentRevisions;
 	view.viewport       = viewport;
 	view.sseThresholdPx = g_FrameData.sseThresholdPx;
 	view.cullFlags      = g_FrameData.cullFlags;
@@ -383,10 +377,6 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport,
 		view.hiZWidth    = 0u;
 		view.hiZHeight   = 0u;
 	}
-
-	view.pSceneMutex       = &m_SceneMutex;
-	view.pEntityDirtyMarks = m_bDirtyMarks ? &m_EntityDirtyMasks : nullptr;
-
 	view.camera.mView              = edCamera.GetView();
 	view.camera.mProj              = edCamera.GetProj();
 	view.camera.pos                = edCamera.GetPosition();
@@ -399,7 +389,7 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport,
 	{
 		m_FrozenCamera    = view.camera;
 		m_FrozenViewport  = viewport;
-		m_FrozenAtFrame   = frame;
+		m_FrozenAtFrame   = producerSequence;
 		m_bCameraFrozen   = true;
 	}
 	else if (!bRequest && m_bCameraFrozen)
@@ -417,11 +407,8 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport,
 	view.debugFlags.saturationMax         = m_DebugSaturationMax.load(std::memory_order_relaxed);
 	view.debugFlags.lightTypeMask         = m_DebugLightTypeMask.load(std::memory_order_relaxed);
 	view.debugFlags.surfaceDebugView      = m_DebugSurfaceView.load(std::memory_order_relaxed);
-	{
-		std::lock_guard< std::mutex > lock(m_SceneMutex);
-		view.debugLines = m_DebugLines;
-		view.debugLinesVersion = m_DebugLinesVersion;
-	}
+	view.debugLines = m_DebugLines;
+	view.debugLinesVersion = m_DebugLinesVersion;
 
 	m_pTransformSystem->CollectRenderData(view);
 	m_pStaticMeshSystem->CollectRenderData(view);

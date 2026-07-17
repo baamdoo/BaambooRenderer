@@ -16,44 +16,53 @@ Box< T > MakeBox(TArgs&&... args)
     return std::make_unique< T >(std::forward< TArgs >(args)...);
 }
 
-namespace ptr_util
+namespace ptr_detail
 {
 
-BAAMBOO_API bool IsLive(void* ptr);
-BAAMBOO_API void AddToLiveReferences(void* ptr);
-BAAMBOO_API void RemoveFromLiveReferences(void* ptr);
+struct ControlBlock;
+
+struct StrongRefTag
+{
+    explicit StrongRefTag() = default;
+};
+
+BAAMBOO_API bool TryAddStrong(ControlBlock* pControlBlock) noexcept;
+BAAMBOO_API void AddWeak(ControlBlock* pControlBlock) noexcept;
+BAAMBOO_API void ReleaseWeak(ControlBlock* pControlBlock) noexcept;
+BAAMBOO_API bool IsValid(ControlBlock* pControlBlock) noexcept;
 
 }
 
-DLLEXPORT_TEMPLATE template struct BAAMBOO_API std::atomic< uint32_t >;
+
 class BAAMBOO_API ArcBase
 {
 public:
-    ArcBase() : m_refCount(0) {}
-    virtual ~ArcBase() = default;
+    ArcBase();
+    virtual ~ArcBase();
 
     ArcBase(const ArcBase&) = delete;
     ArcBase& operator=(const ArcBase&) = delete;
     ArcBase(ArcBase&&) = delete;
     ArcBase& operator=(ArcBase&&) = delete;
 
-    void AddRef() const 
-    {
-        m_refCount.fetch_add(1, std::memory_order_relaxed);
-    }
-
-    void Release() const 
-    {
-        m_refCount.fetch_sub(1, std::memory_order_acq_rel);
-    }
-
-    uint32_t RefCount() const 
-    {
-        return m_refCount.load(std::memory_order_relaxed);
-    }
+    uint32_t RefCount() const noexcept;
 
 private:
-    mutable std::atomic< uint32_t > m_refCount;
+    template< typename T >
+    friend class Arc;
+
+    template< typename T >
+    friend class Weak;
+
+    void AddRef() const noexcept;
+    bool ReleaseRef() const noexcept;
+
+    ptr_detail::ControlBlock* GetControlBlock() const noexcept
+    {
+        return m_pControlBlock;
+    }
+
+    ptr_detail::ControlBlock* m_pControlBlock = nullptr;
 };
 
 template< typename T >
@@ -135,26 +144,30 @@ public:
     bool operator<(const Arc& other) const noexcept { return m_ptr < other.m_ptr; }
 
 private:
+    template< typename U >
+    friend class Weak;
+
+    Arc(T* ptr, ptr_detail::StrongRefTag) noexcept
+        : m_ptr(ptr)
+    {
+        // no add reference
+    }
+
     void addRef()
     {
         if (m_ptr)
         {
             m_ptr->AddRef();
-            ptr_util::AddToLiveReferences((void*)m_ptr);
         }
     }
 
     void release()
     {
-        if (m_ptr)
+        T* ptr = std::exchange(m_ptr, nullptr);
+
+        if (ptr && ptr->ReleaseRef())
         {
-            m_ptr->Release();
-            if (m_ptr->RefCount() == 0)
-            {
-                delete m_ptr;
-                ptr_util::RemoveFromLiveReferences((void*)m_ptr);
-                m_ptr = nullptr;
-            }
+            delete ptr;
         }
     }
 
@@ -183,35 +196,86 @@ template< typename T >
 class Weak
 {
 public:
-    Weak() = default;
-    Weak(Arc< T > arc)
+    Weak() noexcept = default;
+    Weak(std::nullptr_t) noexcept {}
+    Weak(const Arc< T >& arc) noexcept
+        : m_ptr(arc.get())
+        , m_pControlBlock(m_ptr ? m_ptr->GetControlBlock() : nullptr)
     {
-        m_ptr = arc.get();
+        addWeak();
     }
-    Weak(T* ptr)
+    Weak(T* ptr) noexcept
+        : m_ptr(ptr)
+        , m_pControlBlock(ptr ? ptr->GetControlBlock() : nullptr)
     {
-        m_ptr = ptr;
+        addWeak();
+    }
+    Weak(const Weak& other) noexcept
+        : m_ptr(other.m_ptr)
+        , m_pControlBlock(other.m_pControlBlock)
+    {
+        addWeak();
+    }
+    Weak(Weak&& other) noexcept
+        : m_ptr(std::exchange(other.m_ptr, nullptr))
+        , m_pControlBlock(std::exchange(other.m_pControlBlock, nullptr))
+    {
+    }
+    ~Weak() { releaseWeak(); }
+
+    Weak& operator=(Weak other) noexcept
+    {
+        swap(other);
+        return *this;
     }
 
-    T* operator->() { return m_ptr; }
-    const T* operator->() const { return m_ptr; }
+    Weak& operator=(const Arc< T >& arc) noexcept
+    {
+        Weak(arc).swap(*this);
+        return *this;
+    }
 
-    T& operator*() { return *m_ptr; }
-    const T& operator*() const { return *m_ptr; }
+    void reset() noexcept
+    {
+        Weak().swap(*this);
+    }
+
+    void swap(Weak& other) noexcept
+    {
+        std::swap(m_ptr, other.m_ptr);
+        std::swap(m_pControlBlock, other.m_pControlBlock);
+    }
 
     Arc< T > lock() const noexcept 
     {
-        if (ptr_util::IsLive(m_ptr))
-        {
-            return Arc< T >(m_ptr);
-        }
+        if (!m_pControlBlock)
+            return nullptr;
 
-        return nullptr;
+        if (!ptr_detail::TryAddStrong(m_pControlBlock))
+            return nullptr;
+
+        return Arc< T >(m_ptr, ptr_detail::StrongRefTag{}); // ref count is already added by ptr_detail::TryAddStrong
     }
 
-    bool valid() const { return m_ptr ? ptr_util::IsLive(m_ptr) : false; }
+    bool valid() const { return m_ptr && ptr_detail::IsValid(m_pControlBlock); }
     operator bool() const { return valid(); }
 
 private:
+    void addWeak() noexcept
+    {
+        if (m_pControlBlock)
+            ptr_detail::AddWeak(m_pControlBlock);
+    }
+
+    void releaseWeak() noexcept
+    {
+        m_ptr = nullptr;
+
+        auto* pControlBlock = std::exchange(m_pControlBlock, nullptr);
+        if (pControlBlock)
+            ptr_detail::ReleaseWeak(pControlBlock);
+    }
+
     T* m_ptr = nullptr;
+    ptr_detail::ControlBlock* m_pControlBlock = nullptr;
 };

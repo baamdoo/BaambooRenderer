@@ -94,7 +94,8 @@ void CloudShapeNode::Apply(render::CommandContext& context, const SceneRenderVie
 
         context.Dispatch2D< 8, 8 >(kWeatherMapTextureResolution.x, kWeatherMapTextureResolution.y);*/
     }
-    const bool cloudDirty = (g_FrameData.componentMarker & (1 << eComponentType::CCloud)) != 0;
+    const u64 cloudRevision = renderView.componentRevisions[eComponentType::CCloud];
+    const bool cloudDirty = cloudRevision != m_LastCloudRevision;
     if (!m_bBaseNoiseInitialized || cloudDirty)
     {
         context.SetRenderPipeline(m_pCloudShapeBasePSO.get());
@@ -104,6 +105,7 @@ void CloudShapeNode::Apply(render::CommandContext& context, const SceneRenderVie
         context.StageDescriptor("g_OutBaseNoise", m_pBaseNoiseTexture);
 
         context.Dispatch3D< 8, 8, 8 >(kBaseNoiseTextureResolution.x, kBaseNoiseTextureResolution.y, kBaseNoiseTextureResolution.z);
+        m_LastCloudRevision = cloudRevision;
         m_bBaseNoiseInitialized = true;
     }
 
@@ -240,7 +242,7 @@ void CloudScatteringNode::Apply(render::CommandContext& context, const SceneRend
 
             float time_s;
             u64   frame;
-        } constant = { renderView.cloud.numLightRaymarchSteps, renderView.time, renderView.frame };
+        } constant = { renderView.cloud.numLightRaymarchSteps, renderView.time, context.RenderSequence() };
         context.SetComputeConstants(sizeof(constant), &constant);
         context.SetComputeDynamicUniformBuffer("g_CloudShadow", renderView.cloud.shadow);
         context.StageDescriptor("g_CloudMacroMap", g_FrameData.pCloudWeatherMap.lock(), g_FrameData.pLinearWrap);
@@ -280,7 +282,7 @@ void CloudScatteringNode::Apply(render::CommandContext& context, const SceneRend
 
             float time_s;
             u64   frame;
-        } constant = { renderView.cloud.numCloudRaymarchSteps, renderView.time, renderView.frame };
+        } constant = { renderView.cloud.numCloudRaymarchSteps, renderView.time, context.RenderSequence() };
         context.SetComputeConstants(sizeof(constant), &constant);
         context.StageDescriptor("g_CloudMacroMap", g_FrameData.pCloudWeatherMap.lock(), g_FrameData.pLinearWrap);
         context.StageDescriptor("g_CloudBaseNoise", g_FrameData.pCloudBaseNoiseLUT.lock(), g_FrameData.pLinearWrap);

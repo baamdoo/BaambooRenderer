@@ -178,7 +178,7 @@ void BistroApp::DrawUI()
 			if (m_pScene->IsCameraFrozen())
 			{
 				ImGui::SameLine();
-				ImGui::TextDisabled("(frozen at frame %llu)", (unsigned long long)m_pScene->GetFrozenAtFrame());
+				ImGui::TextDisabled("(frozen at packet %llu)", (unsigned long long)m_pScene->GetFrozenAtFrame());
 			}
 		}
 		ImGui::End();

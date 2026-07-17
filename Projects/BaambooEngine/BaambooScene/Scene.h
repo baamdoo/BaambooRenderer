@@ -5,6 +5,7 @@
 #include "RenderGraph.h"
 
 #include <atomic>
+#include <mutex>
 
 namespace baamboo
 {
@@ -33,8 +34,6 @@ enum SurfaceRequirementBits : u32
 
 struct FrameData
 {
-	u64 componentMarker = 0;
-
 	// MRT
 	Weak< render::RenderTarget > pPhase2Draw;
 
@@ -149,7 +148,7 @@ public:
 	void OnWindowResized(u32 width, u32 height);
 
 	[[nodiscard]]
-	SceneRenderView RenderView(const EditorCamera& edCamera, float2 viewport, u64 frame, const render::DeviceSettings& ds) const;
+	SceneRenderView RenderView(const EditorCamera& edCamera, float2 viewport, u64 producerSequence, const render::DeviceSettings& ds) const;
 
 	[[nodiscard]]
 	const std::string& Name() const { return m_Name; }
@@ -164,7 +163,7 @@ public:
 	TransformSystem* GetTransformSystem() const { return m_pTransformSystem; }
 
 	const std::vector< Arc< render::RenderNode > >& GetRenderNodes() const { return m_RenderGraph.GetRenderNodes(); }
-	const Arc< render::RenderNode >& GetRenderNodeByName(const std::string& nodeName) const { return m_RenderGraph.GetRenderNodeByName(nodeName); }
+	Arc< render::RenderNode > GetRenderNodeByName(const std::string& nodeName) const { return m_RenderGraph.GetRenderNodeByName(nodeName); }
 
 	
 	void SetCameraFreezeRequest(bool bFreeze) { m_CameraFreezeRequest.store(bFreeze); }
@@ -206,8 +205,8 @@ private:
 	std::string m_Name;
 	bool m_bLoading = false;
 
-	// [entity, dirty-components]
-	mutable std::unordered_map< u64, u64 > m_EntityDirtyMasks;
+	u64 m_SceneRevision = 0;
+	std::array< u64, NumComponents > m_ComponentRevisions = {};
 
 	// systems
 	TransformSystem*    m_pTransformSystem   = nullptr;
@@ -220,8 +219,6 @@ private:
 	VoxelTerrainSystem* m_pVoxelTerrainSystem = nullptr;
 
 	RenderGraph m_RenderGraph;
-
-	bool m_bDirtyMarks = false;
 
 	// animations
 	std::unordered_map< u32, MeshData >      m_MeshData;

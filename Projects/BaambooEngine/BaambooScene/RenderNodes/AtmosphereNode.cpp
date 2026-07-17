@@ -132,7 +132,8 @@ void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderVie
 	using namespace render;
 	auto& rm = m_RenderDevice.GetResourceManager();
 
-	const bool atmosphereDirty = (g_FrameData.componentMarker & (1 << eComponentType::CAtmosphere)) != 0;
+	const u64 atmosphereRevision = renderView.componentRevisions[eComponentType::CAtmosphere];
+	const bool atmosphereDirty = atmosphereRevision != m_LastAtmosphereRevision;
 	if (!m_bStaticLutsInitialized || atmosphereDirty)
 	{
 		context.SetRenderPipeline(m_pTransmittancePSO.get());
@@ -155,6 +156,7 @@ void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderVie
 		context.StageDescriptor("g_OutMultiScatteringLUT", m_pMultiScatteringLUT);
 		
 		context.Dispatch2D< 8, 8 >(kMultiScatteringLutResolution.x, kMultiScatteringLutResolution.y);
+		m_LastAtmosphereRevision = atmosphereRevision;
 		m_bStaticLutsInitialized = true;
 	}
 

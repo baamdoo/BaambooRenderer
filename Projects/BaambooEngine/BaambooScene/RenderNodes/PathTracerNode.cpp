@@ -11,7 +11,6 @@
 #include <filesystem>
 #include <fstream>
 #include <cstring>
-#include <mutex>
 #include <vector>
 
 namespace baamboo
@@ -84,26 +83,21 @@ static_assert(sizeof(VALIDATION_AOVS) / sizeof(VALIDATION_AOVS[0]) == PathTracer
               "VALIDATION_AOVS table must match PathTracerNode::VALIDATION_AOV_COUNT");
 #endif // PT_VALIDATION
 
-u64 GatherPathTracerDirtyMask(const SceneRenderView& renderView)
+u64 GatherPathTracerDirtyMask(
+    const SceneRenderView& renderView,
+    const std::array< u64, NumComponents >& lastComponentRevisions)
 {
-    if (!renderView.pEntityDirtyMarks)
-        return 0;
-
-    const auto gather = [&]()
+    u64 dirtyMask = 0;
+    for (u32 component = 0; component < NumComponents; ++component)
     {
-        u64 dirtyMask = 0;
-        for (const auto& entry : *renderView.pEntityDirtyMarks)
-            dirtyMask |= entry.second;
-        return dirtyMask & PATH_TRACER_SCENE_DIRTY_MASK;
-    };
-
-    if (renderView.pSceneMutex)
-    {
-        std::lock_guard< std::mutex > lock(*renderView.pSceneMutex);
-        return gather();
+        const u64 componentMask = 1ULL << component;
+        if ((PATH_TRACER_SCENE_DIRTY_MASK & componentMask) != 0 &&
+            renderView.componentRevisions[component] != lastComponentRevisions[component])
+        {
+            dirtyMask |= componentMask;
+        }
     }
-
-    return gather();
+    return dirtyMask;
 }
 
 } // namespace
@@ -196,7 +190,7 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
         !BytesEqual(m_LastView, renderView.camera.mView) ||
         !BytesEqual(m_LastProj, renderView.camera.mProj) ||
         !BytesEqual(m_LastViewport, renderView.viewport);
-    const u64 sceneDirtyMask = GatherPathTracerDirtyMask(renderView);
+    const u64 sceneDirtyMask = GatherPathTracerDirtyMask(renderView, m_LastComponentRevisions);
     const bool bSceneChanged = sceneDirtyMask != 0;
 
     if (bCameraChanged || bSceneChanged)
@@ -210,6 +204,12 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
         m_LastResetDirtyMask      = sceneDirtyMask;
         m_bHasRendered           = false;
         m_bDumpCompleted.store(false, std::memory_order_release);
+
+        for (u32 component = 0; component < NumComponents; ++component)
+        {
+            if ((sceneDirtyMask & (1ULL << component)) != 0)
+                m_LastComponentRevisions[component] = renderView.componentRevisions[component];
+        }
     }
 
     // Deferred AOV dump: the AOV textures hold the previous completed frame. For
@@ -421,7 +421,7 @@ void PathTracerNode::DumpRenderViewDebug(const SceneRenderView& renderView) cons
     if (!out)
         return;
 
-    out << "frame " << renderView.frame << '\n';
+    out << "producerSequence " << renderView.producerSequence << '\n';
     out << "scene " << m_ReferenceSceneName << '\n';
     out << "viewport " << renderView.viewport.x << ' ' << renderView.viewport.y << '\n';
     out << "accumulatedSamples " << m_AccumulatedSampleCount << '\n';

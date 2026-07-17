@@ -116,9 +116,12 @@ void PostProcessNode::ApplyAntiAliasing(render::CommandContext& context, const S
 	using namespace render;
 
 	auto& rm = m_RenderDevice.GetResourceManager();
+
+	auto pColor       = g_FrameData.pColor.lock();
+	auto pVelocity    = g_FrameData.pVelocity.lock();
 	assert(
-		g_FrameData.pColor &&
-		g_FrameData.pVelocity &&
+		pColor &&
+		pVelocity &&
 		g_FrameData.pLinearClamp
 	);
 	{
@@ -126,8 +129,8 @@ void PostProcessNode::ApplyAntiAliasing(render::CommandContext& context, const S
 
 		context.SetRenderPipeline(m_TAA.pTemporalAntiAliasingPSO.get());
 
-		context.TransitionBarrier(g_FrameData.pColor.lock(), eTextureLayout::ShaderReadOnly);
-		context.TransitionBarrier(g_FrameData.pVelocity.lock(), eTextureLayout::ShaderReadOnly);
+		context.TransitionBarrier(pColor, eTextureLayout::ShaderReadOnly);
+		context.TransitionBarrier(pVelocity, eTextureLayout::ShaderReadOnly);
 		if (!bFirstApply)
 			context.TransitionBarrier(m_TAA.pHistoryTexture, eTextureLayout::ShaderReadOnly);
 		else
@@ -140,8 +143,8 @@ void PostProcessNode::ApplyAntiAliasing(render::CommandContext& context, const S
 			u32    isFirstFrame;
 		} constant = { bFirstApply ? 1.0f : renderView.postProcess.aa.blendFactor, bFirstApply };
 		context.SetComputeConstants(sizeof(constant), &constant);
-		context.StageDescriptor("g_SceneTexture", g_FrameData.pColor.lock(), g_FrameData.pLinearClamp);
-		context.StageDescriptor("g_VelocityTexture", g_FrameData.pVelocity.lock(), g_FrameData.pLinearClamp);
+		context.StageDescriptor("g_SceneTexture", pColor, g_FrameData.pLinearClamp);
+		context.StageDescriptor("g_VelocityTexture", pVelocity, g_FrameData.pLinearClamp);
 		context.StageDescriptor("g_HistoryTexture", bFirstApply ? rm.GetFlatBlackTexture() : m_TAA.pHistoryTexture, g_FrameData.pLinearClamp);
 		context.StageDescriptor("g_OutputImage", m_TAA.pAntiAliasedTexture);
 
@@ -153,7 +156,7 @@ void PostProcessNode::ApplyAntiAliasing(render::CommandContext& context, const S
 		context.SetRenderPipeline(m_TAA.pSharpenPSO.get());
 
 		context.TransitionBarrier(m_TAA.pAntiAliasedTexture, eTextureLayout::ShaderReadOnly);
-		context.TransitionBarrier(g_FrameData.pColor.lock(), eTextureLayout::General);
+		context.TransitionBarrier(pColor, eTextureLayout::General);
 
 		struct
 		{
@@ -161,9 +164,9 @@ void PostProcessNode::ApplyAntiAliasing(render::CommandContext& context, const S
 		} constant = { renderView.postProcess.aa.sharpness };
 		context.SetComputeConstants(sizeof(constant), &constant);
 		context.StageDescriptor("g_AntiAliasedTexture", m_TAA.pAntiAliasedTexture, g_FrameData.pLinearClamp);
-		context.StageDescriptor("g_OutputImage", g_FrameData.pColor.lock());
+		context.StageDescriptor("g_OutputImage", pColor);
 
-		context.Dispatch2D< 16, 16 >(g_FrameData.pColor->Width(), g_FrameData.pColor->Height());
+		context.Dispatch2D< 16, 16 >(pColor->Width(), pColor->Height());
 	}
 
 	m_TAA.ApplyCounter++;
@@ -174,14 +177,16 @@ void PostProcessNode::ApplyToneMapping(render::CommandContext& context, const Sc
 	using namespace render;
 
 	auto& rm = m_RenderDevice.GetResourceManager();
+
+	auto pColor = g_FrameData.pColor.lock();
 	assert(
-		g_FrameData.pColor &&
+		pColor &&
 		g_FrameData.pLinearClamp
 	);
 
 	context.SetRenderPipeline(m_ToneMapping.pToneMappingPSO.get());
 
-	context.TransitionBarrier(g_FrameData.pColor.lock(), eTextureLayout::ShaderReadOnly);
+	context.TransitionBarrier(pColor, eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(m_ToneMapping.pResolvedTexture, eTextureLayout::General);
 
 	// Tone mapping push constants

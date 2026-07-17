@@ -129,7 +129,6 @@ void Engine::Initialize(eRendererAPI eApi)
 	auto pDevice = m_pRendererBackend->GetDevice();
 	assert(pDevice);
 
-	g_FrameData.componentMarker = 0;
 
 	g_FrameData.pPointClamp        = render::Sampler::CreatePointClamp(*pDevice);
 	g_FrameData.pPointWrap         = render::Sampler::CreatePointRepeat(*pDevice);
@@ -148,6 +147,8 @@ void Engine::Initialize(eRendererAPI eApi)
 
 i32 Engine::Run()
 {
+	m_RenderViewQueue.open();
+
 	m_bRunning = true;
 	m_RunningTime = 0.0;
 
@@ -189,7 +190,6 @@ void Engine::Update(float dt)
 		m_bWindowResized = false;
 		m_ResizeWidth    = m_ResizeHeight = -1;
 
-		m_Frame = 0;
 	}
 
 	GameLoop(dt);
@@ -199,11 +199,14 @@ void Engine::Release()
 {
 	Input::Inst()->Reset();
 
-	m_RenderViewQueue.clear();
+	m_bRunning = false;
+	m_RenderViewQueue.close();
 	if (m_RenderThread.joinable())
 	{
 		m_RenderThread.join();
 	}
+	m_RenderViewQueue.clear();
+
 	m_pRendererBackend->WaitIdle();
 
 	RELEASE(m_pCamera);
@@ -255,43 +258,40 @@ void Engine::GameLoop(float dt)
 	ApplyScriptBehaviors(dt);
 	m_pScene->Update(dt, *m_pCamera);
 
-	auto renderView = m_pScene->RenderView(*m_pCamera, float2(m_pWindow->Width(), m_pWindow->Height()), m_Frame, m_pRendererBackend->GetDevice()->GetDeviceSettings());
-	if (m_RenderViewQueue.size() >= kNumToleranceAsyncFrameGameToRender)
-		m_RenderViewQueue.replace(std::move(renderView));
-	else
-		m_RenderViewQueue.push(std::move(renderView));
+	const u64 producerSequence = m_ProducerSequence++;
+	auto renderView = m_pScene->RenderView(*m_pCamera, float2(m_pWindow->Width(), m_pWindow->Height()), producerSequence, m_pRendererBackend->GetDevice()->GetDeviceSettings());
+	m_RenderViewQueue.push_or_replace(std::move(renderView), kNumToleranceAsyncFrameGameToRender);
 }
 
 void Engine::RenderLoop()
 {
+	u64 renderSequence = 0;
 	while (m_bRunning)
 	{
-		if (!ImGui::EntityDeletionQueue.empty())
+		if (auto entity = ImGui::EntityDeletionQueue.try_pop())
 		{
 			std::lock_guard< std::mutex > lock(m_ImGuiMutex);
 
-			auto entity = ImGui::EntityDeletionQueue.try_pop();
 			m_pScene->RemoveEntity(entity.value());
-
 			m_RenderViewQueue.clear();
 		}
 
-		auto renderViewOptional = m_RenderViewQueue.try_pop();
-		if (!renderViewOptional.has_value())
-			continue;
+		auto renderViewOptional = m_RenderViewQueue.wait_pop();
 
-		m_RenderTimer.Tick();
+		if (!renderViewOptional.has_value())
+			break;
+
+		render::CpuProfiler::Thread().BeginFrame();
 
 		// Render
 		const auto& renderView = renderViewOptional.value();
 		{
 			auto& rm = m_pRendererBackend->GetDevice()->GetResourceManager();
 
-			render::CpuProfiler::Thread().BeginFrame(); // Must match the GPU "Frame" scope.
-
 			auto pContext = m_pRendererBackend->BeginFrame();
 			if (pContext)
 			{
+				pContext->SetRenderSequence(renderSequence);
 				rm.GetSceneResource().UpdateSceneResources(renderView, *pContext);
 				rm.GetSceneResource().BindSceneResources(*pContext);
 
@@ -419,20 +419,9 @@ void Engine::RenderLoop()
 					}
 				}
 
-				if (renderView.pEntityDirtyMarks)
-				{
-					assert(renderView.pSceneMutex);
-					std::lock_guard< std::mutex > lock(*renderView.pSceneMutex);
-
-					g_FrameData.componentMarker |= (*renderView.pEntityDirtyMarks)[renderView.cloud.id] & (1 << eComponentType::CCloud);
-					g_FrameData.componentMarker |= (*renderView.pEntityDirtyMarks)[renderView.atmosphere.id] & (1 << eComponentType::CAtmosphere);
-					// .. process other markers if needed
-				}
-
 				if (m_pRendererBackend->GetDevice()->GetDeviceSettings().bDrawUI)
 				{
-					assert(renderView.pSceneMutex);
-					std::lock_guard< std::mutex > lock(*renderView.pSceneMutex);
+					std::lock_guard< std::mutex > lock(m_ImGuiMutex);
 
 					ImGui::DrawUI(*this);
 					for (auto pNode : m_pScene->GetRenderNodes())
@@ -454,15 +443,7 @@ void Engine::RenderLoop()
 				assert(g_FrameData.pColor);
 
 				m_pRendererBackend->EndFrame(std::move(pContext), g_FrameData.pColor.lock(), m_pRendererBackend->GetDevice()->GetDeviceSettings().bDrawUI);
-
-				m_Frame++;
-				g_FrameData.componentMarker = 0;
-				if (renderView.pEntityDirtyMarks)
-				{
-					std::lock_guard< std::mutex > lock(*renderView.pSceneMutex);
-					for (auto& mark : (*renderView.pEntityDirtyMarks)) 
-						mark.second = 0;
-				}
+				++renderSequence;
 			}
 
 			// Close the CPU-side "Frame" scope.
@@ -489,17 +470,21 @@ void Engine::DrawUI()
 		}
 		ImGui::Text("GameLoop   %.3f ms(frame: %.1f FPS)", gameElapsed_ms, 1000.0f / gameElapsed_ms);
 
-		static double renderElapsedCpu_ms = m_RenderTimer.GetDeltaMilliseconds();
-		static double renderElapsedGpu_ms = m_LastFrameGpuTimeElapsed * 1e-6;
-		if (m_RenderTimer.GetTotalSeconds() > 1.0f)
-		{
-			renderElapsedCpu_ms = m_RenderTimer.GetDeltaMilliseconds();
-			renderElapsedGpu_ms = m_LastFrameGpuTimeElapsed * 1e-6;
+		static auto lastRenderStatsUpdate = std::chrono::steady_clock::now() - std::chrono::seconds(1);
+		static double renderElapsedCpu_ms = 0.0;
+		static double renderElapsedGpu_ms = 0.0;
 
-			m_RenderTimer.Reset();
+		const auto now = std::chrono::steady_clock::now();
+		if (now - lastRenderStatsUpdate >= std::chrono::seconds(1))
+		{
+			renderElapsedCpu_ms = m_CpuProfileSnapshot.empty() ? 0.0 : m_CpuProfileSnapshot.front().currentMs;
+			renderElapsedGpu_ms = m_LastFrameGpuTimeElapsed * 1e-6;
+			lastRenderStatsUpdate = now;
 		}
-		ImGui::Text("RenderLoop(CPU) %.3f ms(frame: %.1f FPS)", renderElapsedCpu_ms, 1000.0f / renderElapsedCpu_ms);
-		ImGui::Text("RenderLoop(GPU) %.3f ms(frame: %.1f FPS)", renderElapsedGpu_ms, 1000.0f / renderElapsedGpu_ms);
+		const double renderCpuFps = renderElapsedCpu_ms > 0.0 ? 1000.0 / renderElapsedCpu_ms : 0.0;
+		const double renderGpuFps = renderElapsedGpu_ms > 0.0 ? 1000.0 / renderElapsedGpu_ms : 0.0;
+		ImGui::Text("RenderLoop(CPU) %.3f ms(frame: %.1f FPS)", renderElapsedCpu_ms, renderCpuFps);
+		ImGui::Text("RenderLoop(GPU) %.3f ms(frame: %.1f FPS)", renderElapsedGpu_ms, renderGpuFps);
 
 		// --- GPU Frame Time History Plot ---
 		ImGui::Separator();
@@ -1050,7 +1035,7 @@ void Engine::DrawUI()
 			if (m_pScene->IsCameraFrozen())
 			{
 				ImGui::SameLine();
-				ImGui::TextDisabled("(frozen at frame %llu)", (unsigned long long)m_pScene->GetFrozenAtFrame());
+				ImGui::TextDisabled("(frozen at packet %llu)", (unsigned long long)m_pScene->GetFrozenAtFrame());
 			}
 
 			ImGui::Separator();
@@ -1927,22 +1912,14 @@ void Engine::DrawUI()
 				{
 					if (ImGui::MenuItem("StaticMesh"))
 					{
-						m_ImGuiMutex.lock();
-
 						ImGui::SelectedEntity.AttachComponent< StaticMeshComponent >();
-
-						m_ImGuiMutex.unlock();
 					}
 				}
 				else if (!ImGui::SelectedEntity.HasAny< MaterialComponent >())
 				{
 					if (ImGui::MenuItem("Material"))
 					{
-						m_ImGuiMutex.lock();
-
 						ImGui::SelectedEntity.AttachComponent< MaterialComponent >();
-
-						m_ImGuiMutex.unlock();
 					}
 				}
 
@@ -2189,6 +2166,7 @@ void Engine::ProcessInput()
 			Initialize(eRendererAPI::Vulkan);
 
 			m_bRunning = true;
+			m_RenderViewQueue.open();
 			m_RenderThread = std::thread(&Engine::RenderLoop, this);
 		}
 	}
@@ -2202,6 +2180,7 @@ void Engine::ProcessInput()
 			Initialize(eRendererAPI::D3D12);
 
 			m_bRunning = true;
+			m_RenderViewQueue.open();
 			m_RenderThread = std::thread(&Engine::RenderLoop, this);
 		}
 	}

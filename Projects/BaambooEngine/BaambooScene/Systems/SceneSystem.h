@@ -39,6 +39,9 @@ public:
     virtual std::vector< u64 > UpdateRenderData(const EditorCamera& edCamera) { UNUSED(edCamera); return {}; }
     virtual void CollectRenderData(SceneRenderView& outView) const { UNUSED(outView); }
     virtual void RemoveRenderData(u64 entityId) { UNUSED(entityId); }
+    [[nodiscard]]
+    bool HasPendingRenderDataChanges() const { return !m_DirtyEntities.empty() || !m_ExpiredEntities.empty(); }
+
 
 protected:
     template< typename TDependency >

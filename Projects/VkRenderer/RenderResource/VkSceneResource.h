@@ -101,6 +101,7 @@ private:
         void Reset();
     };
     std::array< PerFrameData, kMaxFramesInFlight > m_FrameData;
+    u64 m_LastSceneRevision = 0;
 
 
     std::unordered_map< std::string, BufferHandle >         m_VertexCache;

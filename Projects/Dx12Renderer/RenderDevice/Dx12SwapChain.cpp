@@ -86,7 +86,7 @@ void Dx12SwapChain::ResizeViewport(u32 width, u32 height)
 	for (auto pTex : m_pBackImages)
 	{
 		assert(pTex);
-		pTex->Release();
+		pTex.reset();
 	}
 
 	DXGI_SWAP_CHAIN_DESC1 desc = {};

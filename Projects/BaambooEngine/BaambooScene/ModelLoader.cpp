@@ -31,6 +31,8 @@ ModelNode::~ModelNode()
 
 ModelLoader::ModelLoader(fs::path filepath, MeshDescriptor descriptor)
 {
+	descriptor.numLODs = std::clamp(descriptor.numLODs, u8{ 1 }, static_cast<u8>(LOD_COUNT));
+
 	i32 importFlags = 
 		aiProcess_CalcTangentSpace |
 		aiProcess_Triangulate |
@@ -54,7 +56,7 @@ ModelLoader::ModelLoader(fs::path filepath, MeshDescriptor descriptor)
 	const auto aiScene = importer.ReadFile(filepath.string(), importFlags);
 	if (!aiScene || aiScene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !aiScene->mRootNode) 
 	{
-		BB_ASSERT(false, "Model Loading Error - %s", importer.GetErrorString());
+		fprintf(stderr, "Model Loading Error (%s) - %s\n", filepath.string().c_str(), importer.GetErrorString());
 		return;
 	}
 
@@ -300,7 +302,7 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
     size_t vertexSize  = meshData.VertexSize();
     size_t vertexCount = meshData.GetVertexCount();
     size_t indexCount  = meshData.lods[0].indices.size();
-    if (descriptor.bOptimize)
+    if (descriptor.bOptimize && !meshData.bHasSkinnedData)
     {
         meshopt_optimizeVertexFetch(meshData.vertices.data(), meshData.lods[0].indices.data(), indexCount, meshData.vertices.data(), vertexCount, sizeof(Vertex));
     }
@@ -610,6 +612,14 @@ void ModelLoader::GenerateMeshlets(MeshData& meshData, u8 lodLevel)
     size_t vertexCount = meshData.GetVertexCount();
     size_t indexCount  = meshData.lods[lodLevel].indices.size();
 
+    auto& lodData = meshData.lods[lodLevel];
+    lodData.meshlets.clear();
+    lodData.meshletVertices.clear();
+    lodData.meshletTriangles.clear();
+
+    if (vertexCount == 0 || indexCount == 0)
+        return;
+
     size_t maxMeshlets = meshopt_buildMeshletsBound(meshData.lods[lodLevel].indices.size(), maxVertices, maxTriangles);
     std::vector< meshopt_Meshlet > meshlets(maxMeshlets);
 
@@ -630,6 +640,12 @@ void ModelLoader::GenerateMeshlets(MeshData& meshData, u8 lodLevel)
         maxTriangles,
         coneWeight
     );
+
+    if (numMeshlets == 0)
+    {
+        lodData.meshletVertices.clear();
+        return;
+    }
 
     const meshopt_Meshlet& last = meshlets[numMeshlets - 1];
     meshData.lods[lodLevel].meshletVertices.resize(last.vertex_offset + last.vertex_count);
