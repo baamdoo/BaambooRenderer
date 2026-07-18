@@ -5,18 +5,6 @@
 namespace vk
 {
 
-static PFN_vkCmdBeginDebugUtilsLabelEXT s_pfnCmdBeginDebugUtilsLabelEXT = nullptr;
-static PFN_vkCmdEndDebugUtilsLabelEXT   s_pfnCmdEndDebugUtilsLabelEXT   = nullptr;
-static bool                             s_bDebugLabelLoaded             = false;
-
-static void LoadDebugUtilsFunctions(VkDevice vkDevice)
-{
-	if (s_bDebugLabelLoaded)
-		return;
-	s_pfnCmdBeginDebugUtilsLabelEXT = (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(vkDevice, "vkCmdBeginDebugUtilsLabelEXT");
-	s_pfnCmdEndDebugUtilsLabelEXT   = (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(vkDevice, "vkCmdEndDebugUtilsLabelEXT");
-	s_bDebugLabelLoaded             = true;
-}
 
 static void UnpackColor(u32 packed, float out[4])
 {
@@ -26,8 +14,21 @@ static void UnpackColor(u32 packed, float out[4])
 	out[3] = float((packed >> 24) & 0xFF) / 255.0f;
 }
 
-void VkTimer::Init(VkDevice vkDevice, const VkPhysicalDeviceFeatures& deviceFeatures, u32 maxQueriesPerFrame)
+void VkTimer::Init(
+	VkDevice vkDevice,
+	bool bPipelineStatisticsEnabled,
+	u32 timestampValidBits,
+	PFN_vkCmdBeginDebugUtilsLabelEXT cmdBeginDebugUtilsLabel,
+	PFN_vkCmdEndDebugUtilsLabelEXT cmdEndDebugUtilsLabel,
+	u32 maxQueriesPerFrame)
 {
+	m_CmdBeginDebugUtilsLabel = cmdBeginDebugUtilsLabel;
+	m_CmdEndDebugUtilsLabel = cmdEndDebugUtilsLabel;
+	m_TimestampValidBits = timestampValidBits;
+	m_bEnabled = m_TimestampValidBits > 0;
+	if (!m_bEnabled)
+		return;
+
 	m_MaxQueries      = maxQueriesPerFrame;
 	m_MaxStatsQueries = maxQueriesPerFrame / 2; // stats queries are per-scope, not per-begin+end
 
@@ -39,7 +40,7 @@ void VkTimer::Init(VkDevice vkDevice, const VkPhysicalDeviceFeatures& deviceFeat
 	VK_CHECK(vkCreateQueryPool(vkDevice, &poolInfo, nullptr, &m_QueryPool));
 
 	// Pipeline statistics pool
-	m_bStatsSupported  = deviceFeatures.pipelineStatisticsQuery == VK_TRUE;
+	m_bStatsSupported = bPipelineStatisticsEnabled;
 
 	if (m_bStatsSupported)
 	{
@@ -49,10 +50,9 @@ void VkTimer::Init(VkDevice vkDevice, const VkPhysicalDeviceFeatures& deviceFeat
 			VK_QUERY_PIPELINE_STATISTIC_VERTEX_SHADER_INVOCATIONS_BIT |
 			VK_QUERY_PIPELINE_STATISTIC_CLIPPING_INVOCATIONS_BIT      |
 			VK_QUERY_PIPELINE_STATISTIC_CLIPPING_PRIMITIVES_BIT       |
-			VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT |
-			VK_QUERY_PIPELINE_STATISTIC_COMPUTE_SHADER_INVOCATIONS_BIT;
+			VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT;
 
-		m_NumStatFields = 6;
+		m_NumStatFields = 5;
 
 		VkQueryPoolCreateInfo statsPoolInfo = {
 			.sType              = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
@@ -63,7 +63,6 @@ void VkTimer::Init(VkDevice vkDevice, const VkPhysicalDeviceFeatures& deviceFeat
 		VK_CHECK(vkCreateQueryPool(vkDevice, &statsPoolInfo, nullptr, &m_StatsPool));
 	}
 
-	LoadDebugUtilsFunctions(vkDevice);
 
 	m_Building.reserve(64);
 	m_LastResults.reserve(64);
@@ -88,6 +87,9 @@ void VkTimer::Destroy(VkDevice vkDevice)
 
 void VkTimer::BeginFrame(VkCommandBuffer vkCmdBuffer, VkDevice vkDevice, const VkPhysicalDeviceProperties& deviceProps)
 {
+	if (!m_bEnabled)
+		return;
+
 	// 1) Read previous frame's results from the readback buffers.
 	if (m_bHasPreviousFrame && !m_Building.empty())
 	{
@@ -104,10 +106,11 @@ void VkTimer::BeginFrame(VkCommandBuffer vkCmdBuffer, VkDevice vkDevice, const V
 			VK_QUERY_RESULT_64_BIT);
 
 		const double tickToMs = double(deviceProps.limits.timestampPeriod) * 1e-6;
+		const u64 timestampMask = m_TimestampValidBits == 64 ? ~0ull : ((1ull << m_TimestampValidBits) - 1ull);
 		for (size_t i = 0; i < m_Building.size(); ++i)
 		{
 			const auto [startIdx, endIdx] = m_QueryIndices[i];
-			const u64  delta = ticks[endIdx] - ticks[startIdx];
+			const u64  delta = (ticks[endIdx] - ticks[startIdx]) & timestampMask;
 			m_Building[i].elapsedMs       = double(delta) * tickToMs;
 		}
 
@@ -137,7 +140,6 @@ void VkTimer::BeginFrame(VkCommandBuffer vkCmdBuffer, VkDevice vkDevice, const V
 				s.clippingInvocations = p[2];
 				s.clippingPrimitives  = p[3];
 				s.fsInvocations       = p[4];
-				s.csInvocations       = p[5];
 
 				m_Building[i].stats     = s;
 				m_Building[i].bHasStats = true;
@@ -168,17 +170,20 @@ void VkTimer::BeginFrame(VkCommandBuffer vkCmdBuffer, VkDevice vkDevice, const V
 
 void VkTimer::EndFrame(VkCommandBuffer vkCmdBuffer)
 {
+	if (!m_bEnabled)
+		return;
+
 	EndMarker(vkCmdBuffer); // close implicit "Frame"
-	assert(m_OpenStack.empty() && "Unbalanced BeginGpuMarker / EndGpuMarker");
+	BB_ASSERT(m_OpenStack.empty(), "Unbalanced BeginGpuMarker / EndGpuMarker.");
 }
 
 void VkTimer::BeginMarker(VkCommandBuffer vkCmdBuffer, const char* name, bool bStats)
 {
-	if (m_NextQueryIdx + 2 > m_MaxQueries)
-	{
-		assert(false && "GPU profiler query pool overflow — increase maxQueriesPerFrame");
+	if (!m_bEnabled)
 		return;
-	}
+
+	const u32 requiredQueries = m_NextQueryIdx + static_cast<u32>(m_OpenStack.size()) + 2u;
+	BB_ASSERT(requiredQueries <= m_MaxQueries, "GPU profiler query pool overflow; increase maxQueriesPerFrame.");
 
 	const u32 startIdx = m_NextQueryIdx++;
 
@@ -204,12 +209,12 @@ void VkTimer::BeginMarker(VkCommandBuffer vkCmdBuffer, const char* name, bool bS
 	m_OpenStack.push_back(entryIdx);
 
 	// RenderDoc label so the range visually encompasses the timestamp.
-	if (s_pfnCmdBeginDebugUtilsLabelEXT)
+	if (m_CmdBeginDebugUtilsLabel)
 	{
 		VkDebugUtilsLabelEXT label = { VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT };
 		label.pLabelName = name;
 		UnpackColor(render::GetGpuMarkerColor(name), label.color);
-		s_pfnCmdBeginDebugUtilsLabelEXT(vkCmdBuffer, &label);
+		m_CmdBeginDebugUtilsLabel(vkCmdBuffer, &label);
 	}
 
 	vkCmdWriteTimestamp(vkCmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, m_QueryPool, startIdx);
@@ -219,7 +224,10 @@ void VkTimer::BeginMarker(VkCommandBuffer vkCmdBuffer, const char* name, bool bS
 
 void VkTimer::EndMarker(VkCommandBuffer vkCmdBuffer)
 {
-	assert(!m_OpenStack.empty() && "EndGpuMarker without matching BeginGpuMarker");
+	if (!m_bEnabled)
+		return;
+
+	BB_ASSERT(!m_OpenStack.empty(), "EndGpuMarker without matching BeginGpuMarker.");
 	if (m_OpenStack.empty())
 		return;
 
@@ -237,8 +245,8 @@ void VkTimer::EndMarker(VkCommandBuffer vkCmdBuffer)
 		vkCmdEndQuery(vkCmdBuffer, m_StatsPool, statsIdx);
 
 	// End label after the timestamp so the range fully encloses it.
-	if (s_pfnCmdEndDebugUtilsLabelEXT)
-		s_pfnCmdEndDebugUtilsLabelEXT(vkCmdBuffer);
+	if (m_CmdEndDebugUtilsLabel)
+		m_CmdEndDebugUtilsLabel(vkCmdBuffer);
 
 	--m_CurrentDepth;
 }

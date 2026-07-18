@@ -141,6 +141,8 @@ public:
     virtual u64 SizeInBytes() const { return 0; }
 
     virtual void* MappedMemory() const { return nullptr; }
+    virtual void FlushMappedRange(u64 offsetInBytes, u64 sizeInBytes) const = 0;
+    virtual void InvalidateMappedRange(u64 offsetInBytes, u64 sizeInBytes) const = 0;
 
 public:
     CreationInfo m_CreationInfo = {};
@@ -771,8 +773,8 @@ public:
     virtual GraphicsPipeline& SetCullMode(eCullMode cullMode) = 0;
 
     virtual GraphicsPipeline& SetTopology(ePrimitiveTopology topology) = 0;
-    virtual GraphicsPipeline& SetDepthTestEnable(bool bEnable, render::eCompareOp compareOp = render::eCompareOp::LessEqual) = 0;
-    virtual GraphicsPipeline& SetDepthWriteEnable(bool bEnable, render::eCompareOp compareOp = render::eCompareOp::LessEqual) = 0;
+    virtual GraphicsPipeline& SetDepthTestEnable(bool bEnable, render::eCompareOp compareOp = render::eCompareOp::Greater) = 0;
+    virtual GraphicsPipeline& SetDepthWriteEnable(bool bEnable, render::eCompareOp compareOp = render::eCompareOp::Greater) = 0;
 
     virtual GraphicsPipeline& SetLogicOp(eLogicOp logicOp) = 0;
     virtual GraphicsPipeline& SetBlendEnable(u32 renderTargetIndex, bool bEnable) = 0;

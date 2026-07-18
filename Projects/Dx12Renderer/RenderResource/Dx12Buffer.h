@@ -36,6 +36,8 @@ public:
     inline bool IsMapped() const { return m_pSystemMemory != nullptr; }
     [[nodiscard]]
     virtual void* MappedMemory() const override { return m_pSystemMemory; }
+    virtual void FlushMappedRange(u64, u64) const override {}
+    virtual void InvalidateMappedRange(u64, u64) const override {}
 
     [[nodiscard]]
     D3D12_CPU_DESCRIPTOR_HANDLE GetShaderResourceViewCPU() const { return m_SRVAllocation.GetCPUHandle(); }

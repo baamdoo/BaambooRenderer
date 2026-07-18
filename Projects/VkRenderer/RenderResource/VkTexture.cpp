@@ -5,38 +5,40 @@
 #include "RenderDevice/VkCommandContext.h"
 
 #include "Utils/Math.hpp"
+#include <gli/format.hpp>
 
 namespace vk
 {
 
-inline u32 GetFormatElementSizeInBytes(VkFormat format)
+struct FormatBlockInfo
 {
-	u32 result = 0;
-	switch (format)
-	{
-	case VK_FORMAT_R16_UNORM:
-	case VK_FORMAT_R16_SFLOAT:
-		return 2;
-		break;
-	case VK_FORMAT_R8G8B8A8_UNORM:
-	case VK_FORMAT_B8G8R8A8_UNORM:
-	case VK_FORMAT_R8G8B8A8_SNORM:
-	case VK_FORMAT_R8G8B8A8_SRGB:
-	case VK_FORMAT_B8G8R8A8_SRGB:
-		result = 4;
-		break;
-	case VK_FORMAT_R16G16B16A16_UINT:
-	case VK_FORMAT_R16G16B16A16_SINT:
-	case VK_FORMAT_R16G16B16A16_SFLOAT:
-		result = 8;
-		break;
-	case VK_FORMAT_R32G32B32A32_SFLOAT:
-		result = 16;
-		break;
-	}
+	u32 width;
+	u32 height;
+	u32 depth;
+	u32 sizeInBytes;
+};
 
-	BB_ASSERT(result > 0, "Invalid format!");
-	return result;
+inline FormatBlockInfo GetFormatBlockInfo(VkFormat format)
+{
+	if (format == VK_FORMAT_A8_UNORM)
+		return { 1, 1, 1, 1 };
+
+	BB_ASSERT(format >= VK_FORMAT_R4G4_UNORM_PACK8 && format <= VK_FORMAT_ASTC_12x12_SRGB_BLOCK,
+		"Unsupported Vulkan texture format for byte-size calculation (%d).", static_cast<i32>(format));
+
+	const gli::format gliFormat = static_cast<gli::format>(format);
+	const auto blockExtent = gli::block_extent(gliFormat);
+	const auto blockSize = gli::block_size(gliFormat);
+	BB_ASSERT(blockExtent.x > 0 && blockExtent.y > 0 && blockExtent.z > 0 && blockSize > 0,
+		"Invalid Vulkan texture format block metadata (%d).", static_cast<i32>(format));
+
+	return
+	{
+		static_cast<u32>(blockExtent.x),
+		static_cast<u32>(blockExtent.y),
+		static_cast<u32>(blockExtent.z),
+		static_cast<u32>(blockSize)
+	};
 }
 
 inline VkSampleCountFlagBits GetSampleCount(u32 sampleCount)
@@ -252,7 +254,27 @@ VkClearValue VulkanTexture::ClearValue() const
 
 u64 VulkanTexture::SizeInBytes() const
 {
-	return m_Desc.extent.width * m_Desc.extent.height * m_Desc.extent.depth * GetFormatElementSizeInBytes(m_Desc.format);
+	const FormatBlockInfo block = GetFormatBlockInfo(m_Desc.format);
+	u32 width  = std::max(1u, m_Desc.extent.width);
+	u32 height = std::max(1u, m_Desc.extent.height);
+	u32 depth  = std::max(1u, m_Desc.extent.depth);
+	u64 totalSize = 0;
+
+	for (u32 mip = 0; mip < m_Desc.mipLevels; ++mip)
+	{
+		const u64 blocksX = (static_cast<u64>(width)  + block.width  - 1) / block.width;
+		const u64 blocksY = (static_cast<u64>(height) + block.height - 1) / block.height;
+		const u64 blocksZ = (static_cast<u64>(depth)  + block.depth  - 1) / block.depth;
+		totalSize += blocksX * blocksY * blocksZ * block.sizeInBytes;
+
+		width  = std::max(1u, width  / 2);
+		height = std::max(1u, height / 2);
+		depth  = std::max(1u, depth  / 2);
+	}
+
+	const u64 arrayLayers = std::max(1u, m_Desc.arrayLayers);
+	const u64 sampleCount = static_cast<u32>(m_Desc.samples);
+	return totalSize * arrayLayers * sampleCount;
 }
 
 VulkanTexture::VulkanTexture(VkRenderDevice& rd, const char* name)
@@ -272,11 +294,18 @@ VulkanTexture::VulkanTexture(VkRenderDevice& rd, const char* name, CreationInfo&
 
 VulkanTexture::~VulkanTexture()
 {
+	DestroyImageAndViews();
+}
+
+void VulkanTexture::DestroyImageAndViews()
+{
 	for (auto view : m_vkPerMipViews)
-		vkDestroyImageView(m_RenderDevice.vkDevice(), view, nullptr);
+		if (view)
+			vkDestroyImageView(m_RenderDevice.vkDevice(), view, nullptr);
 	m_vkPerMipViews.clear();
 
-	vkDestroyImageView(m_RenderDevice.vkDevice(), m_vkImageView, nullptr);
+	if (m_vkImageView)
+		vkDestroyImageView(m_RenderDevice.vkDevice(), m_vkImageView, nullptr);
 	if (m_vkImageSRV)
 		vkDestroyImageView(m_RenderDevice.vkDevice(), m_vkImageSRV, nullptr);
 	if (m_vkImageUAV)
@@ -284,6 +313,13 @@ VulkanTexture::~VulkanTexture()
 
 	if (m_vmaAllocation)
 		vmaDestroyImage(m_RenderDevice.vmaAllocator(), m_vkImage, m_vmaAllocation);
+
+	m_vkImage        = VK_NULL_HANDLE;
+	m_vkImageView    = VK_NULL_HANDLE;
+	m_vkImageSRV     = VK_NULL_HANDLE;
+	m_vkImageUAV     = VK_NULL_HANDLE;
+	m_vmaAllocation = VK_NULL_HANDLE;
+	m_AllocationInfo = {};
 }
 
 Arc< VulkanTexture > VulkanTexture::Create(VkRenderDevice& rd, const char* name, CreationInfo&& desc)
@@ -300,18 +336,15 @@ void VulkanTexture::Resize(u32 width, u32 height, u32 depth)
 {
 	assert(m_vkImage && m_vkImageView);
 
-	for (auto view : m_vkPerMipViews)
-		vkDestroyImageView(m_RenderDevice.vkDevice(), view, nullptr);
-	m_vkPerMipViews.clear();
+	if (m_Desc.extent.width == width && m_Desc.extent.height == height && m_Desc.extent.depth == depth)
+		return;
 
-	vkDestroyImageView(m_RenderDevice.vkDevice(), m_vkImageView, nullptr);
-	if (m_vmaAllocation)
-		vmaDestroyImage(m_RenderDevice.vmaAllocator(), m_vkImage, m_vmaAllocation);
-
+	DestroyImageAndViews();
 	m_CreationInfo.resolution = { width, height, depth };
 	CreateImageAndView(m_CreationInfo);
 	CreatePerMipViews();
 
+	SetDeviceObjectName((u64)m_vkImage, VK_OBJECT_TYPE_IMAGE);
 	SetState({ 0, 0, m_Desc.initialLayout });
 }
 

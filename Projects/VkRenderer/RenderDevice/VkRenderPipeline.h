@@ -98,7 +98,9 @@ private:
 		VkRenderPass renderPass = VK_NULL_HANDLE;
 
 		std::vector< VkPipelineColorBlendAttachmentState > blendStates;
-		VkLogicOp                                          blendLogicOp = VK_LOGIC_OP_CLEAR;
+		u32                                                colorAttachmentCount = 0;
+		VkBool32                                           bLogicOpEnabled = VK_FALSE;
+		VkLogicOp                                          blendLogicOp = VK_LOGIC_OP_NO_OP;
 
 		VkPipelineVertexInputStateCreateInfo	vertexInputInfo   = {};
 		VkPipelineInputAssemblyStateCreateInfo	inputAssemblyInfo = {};

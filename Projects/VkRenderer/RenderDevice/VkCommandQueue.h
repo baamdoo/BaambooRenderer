@@ -13,6 +13,9 @@ public:
 	
 	[[nodiscard]]
 	Arc< VkCommandContext > Allocate(VkCommandBufferUsageFlags flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, bool bTransient = false);
+	[[nodiscard]]
+	Arc< VkCommandContext > Reserve(bool bTransient = false);
+	void RecycleUnsubmitted(Arc< VkCommandContext >&& pContext);
 	void Flush();
 
 	void ExecuteCommandBuffer(Arc< VkCommandContext > context);

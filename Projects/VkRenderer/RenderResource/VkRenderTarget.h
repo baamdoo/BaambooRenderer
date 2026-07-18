@@ -32,6 +32,8 @@ private:
     [[nodiscard]]
     bool IsDepthOnly() const;
 
+    void DestroyNativeObjects();
+
 private:
     VkRenderDevice& m_RenderDevice;
 

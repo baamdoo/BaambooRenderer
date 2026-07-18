@@ -40,7 +40,7 @@ inline constexpr T AlignUp(T size, T alignment)
 
 inline u32 CalculateMipCount(u32 width, u32 height, u32 depth)
 {
-	return (u32)std::floor(std::log2(glm::min(glm::min(width, height), depth))) + 1;
+	return (u32)std::floor(std::log2(glm::max(glm::max(width, height), depth))) + 1;
 }
 
 template< typename T >

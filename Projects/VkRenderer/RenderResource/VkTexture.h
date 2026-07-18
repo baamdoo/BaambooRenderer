@@ -32,6 +32,7 @@ public:
 protected:
     void CreateImageAndView(const CreationInfo& info);
     void CreatePerMipViews();
+    void DestroyImageAndViews();
     VkImageViewCreateInfo GetViewDesc(const VkImageCreateInfo& imageDesc);
 
 private:

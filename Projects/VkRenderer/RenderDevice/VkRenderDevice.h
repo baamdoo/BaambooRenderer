@@ -12,6 +12,30 @@ class DescriptorPool;
 
 enum class eCommandType;
 
+struct DeviceCapabilities
+{
+	bool bValidation                = false;
+	bool bValidationFeatures        = false;
+	bool bDebugUtils                = false;
+	bool bSurfaceMaintenance        = false;
+	bool bMeshShader                = false;
+	bool bSwapchainMaintenance      = false;
+	bool bMemoryBudget              = false;
+	bool bPipelineStatistics        = false;
+	u32 graphicsTimestampValidBits  = 0;
+	u32 computeTimestampValidBits   = 0;
+};
+
+struct DeviceDispatch
+{
+	PFN_vkCmdPushDescriptorSetKHR             cmdPushDescriptorSet = nullptr;
+	PFN_vkCmdDrawMeshTasksIndirectEXT         cmdDrawMeshTasksIndirect = nullptr;
+	PFN_vkCmdDrawMeshTasksIndirectCountEXT    cmdDrawMeshTasksIndirectCount = nullptr;
+	PFN_vkSetDebugUtilsObjectNameEXT           setDebugUtilsObjectName = nullptr;
+	PFN_vkCmdBeginDebugUtilsLabelEXT           cmdBeginDebugUtilsLabel = nullptr;
+	PFN_vkCmdEndDebugUtilsLabelEXT             cmdEndDebugUtilsLabel = nullptr;
+};
+
 class VkRenderDevice : public render::RenderDevice
 {
 using Super = render::RenderDevice;
@@ -52,6 +76,9 @@ public:
 	inline const VkPhysicalDeviceProperties& DeviceProps() const { return m_PhysicalDeviceProperties; }
 	inline const VkPhysicalDeviceMaintenance3Properties& DeviceMaintenance3Props() const { return m_PhysicalDeviceMaintenance3Properties; }
 	inline const VkPhysicalDeviceFeatures& DeviceFeatures() const { return m_PhysicalDeviceFeatures; }
+	inline const DeviceCapabilities& Capabilities() const { return m_Capabilities; }
+	inline const DeviceDispatch& Dispatch() const { return m_Dispatch; }
+	u32 TimestampValidBits(eCommandType cmdType) const;
 
 	CommandQueue& GetQueue(eCommandType cmdType) const;
 	inline CommandQueue& GraphicsQueue() const { return *m_pGraphicsQueue; }
@@ -84,6 +111,8 @@ private:
 	VkPhysicalDeviceFeatures               m_PhysicalDeviceFeatures = {};
 
 	VkDevice m_vkDevice = VK_NULL_HANDLE;
+	DeviceCapabilities m_Capabilities;
+	DeviceDispatch m_Dispatch;
 
 	CommandQueue* m_pGraphicsQueue = nullptr;
 	CommandQueue* m_pComputeQueue  = nullptr;

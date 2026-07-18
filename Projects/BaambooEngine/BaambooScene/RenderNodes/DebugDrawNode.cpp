@@ -310,14 +310,8 @@ void DebugDrawNode::ApplyDebugLines(render::CommandContext& context, const Scene
 
 void DebugDrawNode::Resize(u32 width, u32 height, u32 depth)
 {
-	UNUSED(width); UNUSED(height); UNUSED(depth);
-	
-	m_pRenderTarget.reset();
-	m_pColorRef.reset();
-	m_pDebugLineBuffer.reset();
-	m_DebugLineVertexCapacity = 0u;
-	m_DebugLineVertexCount = 0u;
-	m_DebugLineVersion = ~0ull;
+	if (m_pRenderTarget)
+		m_pRenderTarget->Resize(width, height, depth);
 }
 
 void DebugDrawNode::DrawUI()

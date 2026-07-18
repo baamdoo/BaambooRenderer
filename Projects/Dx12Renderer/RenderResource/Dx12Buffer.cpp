@@ -92,8 +92,9 @@ Dx12Buffer::Dx12Buffer(Dx12RenderDevice& rd, const char* name, CreationInfo&& in
 {
 	if (m_CreationInfo.mapDirection > 0)
 	{
-		CD3DX12_RANGE writeRange(0, 0);
-		m_d3d12Resource->Map(0, &writeRange, reinterpret_cast<void**>(&m_pSystemMemory));
+		CD3DX12_RANGE noReadRange(0, 0);
+		const D3D12_RANGE* pReadRange = m_CreationInfo.mapDirection == 2 ? nullptr : &noReadRange;
+		ThrowIfFailed(m_d3d12Resource->Map(0, pReadRange, reinterpret_cast<void**>(&m_pSystemMemory)));
 	}
 
 	if (type == eBufferType::None)
@@ -106,7 +107,8 @@ Dx12Buffer::~Dx12Buffer()
 
 	if (m_pSystemMemory && m_d3d12Resource)
 	{
-		m_d3d12Resource->Unmap(0, nullptr);
+		CD3DX12_RANGE noWriteRange(0, 0);
+		m_d3d12Resource->Unmap(0, m_CreationInfo.mapDirection == 2 ? &noWriteRange : nullptr);
 		m_pSystemMemory = nullptr;
 	}
 }
@@ -118,7 +120,8 @@ void Dx12Buffer::Resize(u64 sizeInBytes, bool bReset)
 
 	if (m_pSystemMemory && m_d3d12Resource)
 	{
-		m_d3d12Resource->Unmap(0, nullptr);
+		CD3DX12_RANGE noWriteRange(0, 0);
+		m_d3d12Resource->Unmap(0, m_CreationInfo.mapDirection == 2 ? &noWriteRange : nullptr);
 		m_pSystemMemory = nullptr;
 	}
 	ReleaseViews();
@@ -155,8 +158,9 @@ void Dx12Buffer::Resize(u64 sizeInBytes, bool bReset)
 
 	if (m_CreationInfo.mapDirection > 0)
 	{
-		CD3DX12_RANGE writeRange(0, 0);
-		m_d3d12Resource->Map(0, &writeRange, reinterpret_cast<void**>(&m_pSystemMemory));
+		CD3DX12_RANGE noReadRange(0, 0);
+		const D3D12_RANGE* pReadRange = m_CreationInfo.mapDirection == 2 ? nullptr : &noReadRange;
+		ThrowIfFailed(m_d3d12Resource->Map(0, pReadRange, reinterpret_cast<void**>(&m_pSystemMemory)));
 	}
 	CreateViews();
 

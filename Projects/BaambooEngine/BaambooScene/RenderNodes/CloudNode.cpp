@@ -333,8 +333,20 @@ void CloudScatteringNode::Resize(u32 width, u32 height, u32 depth)
 {
     UNUSED(depth);
 
-    auto halfRes = HalfResolution(width, height);
-    m_pCloudScatteringLUT->Resize(halfRes.x, halfRes.y, 1);
+    uint3 scatteringResolution = { width, height, 1 };
+    switch (m_CurrentUprezRatio)
+    {
+    case eCloudUprezRatio::X1:
+        break;
+    case eCloudUprezRatio::X2:
+        scatteringResolution = HalfResolution(width, height);
+        break;
+    case eCloudUprezRatio::X4:
+        scatteringResolution = QuatResolution(width, height);
+        break;
+    }
+
+    m_pCloudScatteringLUT->Resize(scatteringResolution.x, scatteringResolution.y, scatteringResolution.z);
     m_pPrevUprezzedCloudScatteringLUT->Resize(width, height, 1);
     m_pUprezzedCloudScatteringLUT->Resize(width, height, 1);
     m_bHistoryValid = false;

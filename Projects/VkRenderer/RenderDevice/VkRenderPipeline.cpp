@@ -99,6 +99,21 @@ void WritePipelineCache(VkRenderDevice& renderDevice, VkPipelineCache pipelineCa
 		}
 	}
 }
+
+VkPipelineColorBlendAttachmentState MakeDefaultBlendState()
+{
+	VkPipelineColorBlendAttachmentState state = {};
+	state.blendEnable         = VK_FALSE;
+	state.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+	state.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+	state.colorBlendOp        = VK_BLEND_OP_ADD;
+	state.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+	state.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+	state.alphaBlendOp        = VK_BLEND_OP_ADD;
+	state.colorWriteMask      = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+		VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+	return state;
+}
 } // namespace
 
 #pragma region ConvertToVk
@@ -249,7 +264,7 @@ VulkanGraphicsPipeline::VulkanGraphicsPipeline(VkRenderDevice& rd, const char* n
 	m_PipelineDesc.depthStencilInfo.sType            = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
 	m_PipelineDesc.depthStencilInfo.depthTestEnable  = VK_TRUE;
 	m_PipelineDesc.depthStencilInfo.depthWriteEnable = VK_FALSE; // False as default. Since depth is mainly writable by depth pre-pass only.
-	m_PipelineDesc.depthStencilInfo.depthCompareOp   = VK_COMPARE_OP_LESS_OR_EQUAL;
+	m_PipelineDesc.depthStencilInfo.depthCompareOp   = VK_COMPARE_OP_GREATER;
 	m_PipelineDesc.depthStencilInfo.minDepthBounds   = 0.f;
 	m_PipelineDesc.depthStencilInfo.maxDepthBounds   = 1.f;
 
@@ -259,7 +274,7 @@ VulkanGraphicsPipeline::VulkanGraphicsPipeline(VkRenderDevice& rd, const char* n
 	m_PipelineDesc.multisamplingInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 	m_PipelineDesc.multisamplingInfo.minSampleShading     = 1.f;
 
-	m_PipelineDesc.blendStates.resize(8);
+	m_PipelineDesc.blendStates.assign(eAttachmentPoint::NumColorAttachments, MakeDefaultBlendState());
 }
 
 VulkanGraphicsPipeline::~VulkanGraphicsPipeline()
@@ -293,19 +308,31 @@ GraphicsPipeline& VulkanGraphicsPipeline::SetRenderTarget(Arc< render::RenderTar
 	assert(rhiRenderTarget);
 
 	m_PipelineDesc.renderPass = rhiRenderTarget->vkRenderPass();
-	m_PipelineDesc.blendStates.resize(rhiRenderTarget->GetNumColors());
-	for (auto& blendStates : m_PipelineDesc.blendStates)
+	m_PipelineDesc.colorAttachmentCount = rhiRenderTarget->GetNumColors();
+	BB_ASSERT(m_PipelineDesc.colorAttachmentCount <= m_PipelineDesc.blendStates.size(),
+		"Vulkan render target exposes too many color attachment slots (%u).",
+		m_PipelineDesc.colorAttachmentCount);
+
+	VkSampleCountFlagBits sampleCount = VK_SAMPLE_COUNT_1_BIT;
+	bool bHasAttachment = false;
+	for (const auto& attachment : rhiRenderTarget->GetAttachments())
 	{
-		// set default values
-		blendStates.blendEnable         = VK_FALSE;
-		blendStates.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
-		blendStates.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
-		blendStates.colorBlendOp        = VK_BLEND_OP_ADD;
-		blendStates.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-		blendStates.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-		blendStates.alphaBlendOp        = VK_BLEND_OP_ADD;
-		blendStates.colorWriteMask      = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+		auto texture = StaticCast<VulkanTexture>(attachment);
+		if (!texture)
+			continue;
+
+		if (!bHasAttachment)
+		{
+			sampleCount = texture->Desc().samples;
+			bHasAttachment = true;
+		}
+		else
+		{
+			BB_ASSERT(sampleCount == texture->Desc().samples,
+				"Vulkan render target attachments must use the same sample count.");
+		}
 	}
+	m_PipelineDesc.multisamplingInfo.rasterizationSamples = sampleCount;
 
 	return *this;
 }
@@ -371,7 +398,11 @@ GraphicsPipeline& VulkanGraphicsPipeline::SetAlphaBlending(u32 renderTargetIndex
 
 GraphicsPipeline& VulkanGraphicsPipeline::SetLogicOp(eLogicOp logicOp)
 {
-	m_PipelineDesc.blendLogicOp = VK_PIPELINE_LOGICOP(logicOp);
+	BB_ASSERT(logicOp == eLogicOp::None || m_RenderDevice.DeviceFeatures().logicOp,
+		"Vulkan logic operations are not supported by the selected physical device.");
+
+	m_PipelineDesc.bLogicOpEnabled = logicOp == eLogicOp::None ? VK_FALSE : VK_TRUE;
+	m_PipelineDesc.blendLogicOp    = VK_PIPELINE_LOGICOP(logicOp);
 	return *this;
 }
 
@@ -895,11 +926,21 @@ void VulkanGraphicsPipeline::Build()
 	VkPipelineColorBlendStateCreateInfo colorBlendingInfo = 
 	{
 		.sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+		.logicOpEnable   = m_PipelineDesc.bLogicOpEnabled,
 		.logicOp         = m_PipelineDesc.blendLogicOp,
-		.attachmentCount = static_cast<u32>(m_PipelineDesc.blendStates.size()),
+		.attachmentCount = m_PipelineDesc.colorAttachmentCount,
 		.pAttachments    = m_PipelineDesc.blendStates.data(),
 		.blendConstants  = { 0.f, 0.f, 0.f, 0.f }
 	};
+
+	if (m_PipelineDesc.bLogicOpEnabled)
+	{
+		for (u32 i = 0; i < m_PipelineDesc.colorAttachmentCount; ++i)
+		{
+			BB_ASSERT(!m_PipelineDesc.blendStates[i].blendEnable,
+				"Vulkan color attachment %u cannot enable blending and a logic operation simultaneously.", i);
+		}
+	}
 
 	// Pipeline
 	VkGraphicsPipelineCreateInfo pipelineInfo = {};

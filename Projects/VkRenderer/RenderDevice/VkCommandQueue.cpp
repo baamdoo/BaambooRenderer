@@ -41,6 +41,13 @@ CommandQueue::~CommandQueue()
 
 Arc< VkCommandContext > CommandQueue::Allocate(VkCommandBufferUsageFlags flags, bool bTransient)
 {
+	auto pContext = Reserve(bTransient);
+	pContext->Open(flags);
+	return pContext;
+}
+
+Arc< VkCommandContext > CommandQueue::Reserve(bool bTransient)
+{
 	Arc< VkCommandContext > pContext;
 	if (bTransient)
 	{
@@ -55,8 +62,10 @@ Arc< VkCommandContext > CommandQueue::Allocate(VkCommandBufferUsageFlags flags, 
 		}
 		else if (m_pContexts.size() == kMaxFramesInFlight) // limit the number of commands to avoid ImGui buffer recreate validation
 		{
+			BB_ASSERT(!m_pAvailableContexts.empty(), "No Vulkan command context is available for reuse.");
 			pContext = m_pAvailableContexts.front();
 			m_pAvailableContexts.pop();
+			pContext->Flush();
 		}
 		else
 		{
@@ -66,9 +75,15 @@ Arc< VkCommandContext > CommandQueue::Allocate(VkCommandBufferUsageFlags flags, 
 	}
 	assert(pContext);
 
-	pContext->Open(flags);
 	pContext->SetTransient(bTransient);
 	return pContext;
+}
+
+void CommandQueue::RecycleUnsubmitted(Arc< VkCommandContext >&& pContext)
+{
+	BB_ASSERT(pContext && !pContext->IsTransient(),
+		"Only a reserved non-transient Vulkan command context can be recycled without submission.");
+	m_pAvailableContexts.push(std::move(pContext));
 }
 
 void CommandQueue::Flush()
@@ -85,11 +100,12 @@ void CommandQueue::ExecuteCommandBuffer(Arc< VkCommandContext > context)
 	// **
 	if (!context->IsTransient())
 	{
-		VkPipelineStageFlags waitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		VkPipelineStageFlags waitStages = VK_PIPELINE_STAGE_TRANSFER_BIT;
 
 		auto vkWaitSemaphore   = context->vkPresentCompleteSemaphore();
 		auto vkCommandBuffer   = context->vkCommandBuffer();
 		auto vkSignalSemaphore = context->vkRenderCompleteSemaphore();
+		auto vkRenderCompleteFence = context->vkRenderCompleteFence();
 
 		VkSubmitInfo submitInfo = {};
 		submitInfo.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -100,19 +116,22 @@ void CommandQueue::ExecuteCommandBuffer(Arc< VkCommandContext > context)
 		submitInfo.pCommandBuffers      = &vkCommandBuffer;
 		submitInfo.signalSemaphoreCount = 1;
 		submitInfo.pSignalSemaphores    = &vkSignalSemaphore;
-		VK_CHECK(vkQueueSubmit(m_vkQueue, 1, &submitInfo, context->vkRenderCompleteFence()));
+		VK_CHECK(vkResetFences(m_RenderDevice.vkDevice(), 1, &vkRenderCompleteFence));
+		VK_CHECK(vkQueueSubmit(m_vkQueue, 1, &submitInfo, vkRenderCompleteFence));
 
 		m_pAvailableContexts.push(context);
 	}
 	else
 	{
 		auto vkCommandBuffer = context->vkCommandBuffer();
+		auto vkRenderCompleteFence = context->vkRenderCompleteFence();
 
 		VkSubmitInfo submitInfo = {};
 		submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submitInfo.commandBufferCount = 1;
 		submitInfo.pCommandBuffers    = &vkCommandBuffer;
-		VK_CHECK(vkQueueSubmit(m_vkQueue, 1, &submitInfo, context->vkRenderCompleteFence()));
+		VK_CHECK(vkResetFences(m_RenderDevice.vkDevice(), 1, &vkRenderCompleteFence));
+		VK_CHECK(vkQueueSubmit(m_vkQueue, 1, &submitInfo, vkRenderCompleteFence));
 		//context->WaitForFence(context->vkRenderCompleteFence());
 		VK_CHECK(vkQueueWaitIdle(m_vkQueue));
 

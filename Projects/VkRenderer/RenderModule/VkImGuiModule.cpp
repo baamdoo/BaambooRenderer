@@ -38,8 +38,11 @@ ImGuiModule::ImGuiModule(VkRenderDevice& rd, vk::SwapChain& swapChain, ImGuiCont
 	imguiInfo.Queue           = m_RenderDevice.GraphicsQueue().vkQueue();
 	imguiInfo.DescriptorPool  = m_vkImGuiPool;
 	//imguiInfo.RenderPass      = m_RenderDevice.vkMainRenderPass();
-	imguiInfo.MinImageCount   = g_minImageCount;
-	imguiInfo.ImageCount      = swapChain.Capabilities().maxImageCount; // set larger count to prevent validation error from CreateOrResizeBuffer(..) - line.523 in imgui_impl_vulkan.cpp
+	const u32 minImageCount = std::max(g_minImageCount, swapChain.Capabilities().minImageCount);
+	BB_ASSERT(swapChain.ImageCount() >= minImageCount,
+		"The Vulkan swapchain image count is below the ImGui backend minimum.");
+	imguiInfo.MinImageCount   = minImageCount;
+	imguiInfo.ImageCount      = swapChain.ImageCount();
 	imguiInfo.MSAASamples     = VK_SAMPLE_COUNT_1_BIT;
 	imguiInfo.CheckVkResultFn = ThrowIfFailed;
 

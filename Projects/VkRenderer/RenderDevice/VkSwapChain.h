@@ -17,7 +17,8 @@ public:
 	~SwapChain();
 
 	u32 AcquireNextImage(VkSemaphore vkPresentCompleteSemaphore);
-	void Present(VkSemaphore vkRenderCompleteSemaphore, VkFence vkSignalFence);
+	void Present(VkSemaphore vkRenderCompleteSemaphore);
+	VkSemaphore PresentWaitSemaphore(u32 imageIndex) const;
 
 	void ResizeViewport();
 
@@ -33,11 +34,15 @@ public:
 	[[nodiscard]]
 	inline u32 ImageCount() const { return m_ImageCount; }
 	[[nodiscard]]
-	inline bool IsRenderable() const { return m_vkSwapChain != VK_NULL_HANDLE; }
+	bool IsRenderable() const;
 
 private:
-	void Init();
-	void Release(VkSwapchainKHR vkSwapChain);
+	bool Init();
+	bool Release(VkSwapchainKHR vkSwapChain);
+	VkFence AcquirePresentFence();
+	void CollectPresentFences();
+	bool WaitForPresentFences();
+	void DestroyPresentFences();
 
 private:
 	VkRenderDevice&  m_RenderDevice;
@@ -48,17 +53,18 @@ private:
 	VkSwapchainKHR           m_vkSwapChain = VK_NULL_HANDLE;
 	VkSurfaceCapabilitiesKHR m_Capabilities;
 
-	u32 m_ImageCount;
-	u32 m_ImageIndex;
+	u32 m_ImageCount = 0;
+	u32 m_ImageIndex = kInvalidIndex;
 
 	std::vector< Arc< VulkanTexture > > m_BackBuffers;
+	std::vector< VkSemaphore > m_PresentWaitSemaphores;
+
+	std::vector< VkFence > m_AvailablePresentFences;
+	std::vector< VkFence > m_PendingPresentFences;
 
 	bool m_vSync    = true;
 	bool m_bResized = false;
 
-	bool m_bHasMaintenance   = false;
-	bool m_bHasPresentFence  = false;
-	bool m_bHasReleaseImages = false;
 };
 
 } // namespace vk

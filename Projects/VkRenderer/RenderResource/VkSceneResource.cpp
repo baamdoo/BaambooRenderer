@@ -278,6 +278,7 @@ void VkSceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneVie
 	frozen.viewport     = frozenVp;
 	frozen.zFar         = frozenCam.zFar;
 	memcpy(m_FrameData[m_ContextIndex].pFrozenCameraBuffer->MappedMemory(), &frozen, sizeof(frozen));
+	m_FrameData[m_ContextIndex].pFrozenCameraBuffer->FlushMappedRange(0, sizeof(frozen));
 
 	// 2) Observer camera (with TAA jitter)
 	CameraData camera = {};
@@ -295,6 +296,7 @@ void VkSceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneVie
 
 	m_CameraCache = std::move(camera);
 	memcpy(m_FrameData[m_ContextIndex].pCameraBuffer->MappedMemory(), &m_CameraCache, sizeof(CameraData));
+	m_FrameData[m_ContextIndex].pCameraBuffer->FlushMappedRange(0, sizeof(CameraData));
 
 	// 3) CullData — derive frustum planes from the FROZEN camera so mesh frustum cull is consistent with cluster grid and lighting decisions.
 	mat4 mViewProjectionT = glm::transpose(frozen.mViewProj);
@@ -314,6 +316,7 @@ void VkSceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneVie
 	m_CullData.hiZWidth       = sceneView.hiZWidth;
 	m_CullData.hiZHeight      = sceneView.hiZHeight;
 	memcpy(m_FrameData[m_ContextIndex].pCullBuffer->MappedMemory(), &m_CullData, sizeof(CullData));
+	m_FrameData[m_ContextIndex].pCullBuffer->FlushMappedRange(0, sizeof(CullData));
 
 	SceneEnvironmentData sceneEnvironmentData =
 	{
@@ -321,6 +324,7 @@ void VkSceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneVie
 		.cloud      = sceneView.cloud.data
 	};
 	memcpy(m_FrameData[m_ContextIndex].pSceneEnvironmentBuffer->MappedMemory(), &sceneEnvironmentData, sizeof(SceneEnvironmentData));
+	m_FrameData[m_ContextIndex].pSceneEnvironmentBuffer->FlushMappedRange(0, sizeof(SceneEnvironmentData));
 
 	// Re-stage descriptors (imageInfos retains last full-update's textures; per-frame allocators retain their data)
 	u32 variableDescCounts[] = { kMaxBindlessDescriptorResourceCount };
@@ -913,8 +917,9 @@ void VkSceneResource::UpdateFrameBuffer(VkCommandContext& context, const void* p
 		return;
 
 	auto allocation = targetBuffer.Allocate(count, elementSizeInBytes);
-	context.UploadData(allocation.pBuffer, pData, count, elementSizeInBytes, allocation.offset);
-	context.TransitionBufferToRead(allocation.pBuffer, dstStageMask, allocation.offset, true);
+	const u64 offsetInBytes = static_cast<u64>(allocation.offset) * elementSizeInBytes;
+	context.UploadData(allocation.pBuffer, pData, count, elementSizeInBytes, offsetInBytes);
+	context.TransitionBufferToRead(allocation.pBuffer, dstStageMask, offsetInBytes, true);
 }
 
 VkDescriptorSet VkSceneResource::GetSceneDescriptorSet() const

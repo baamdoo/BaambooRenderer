@@ -22,6 +22,8 @@ public:
     inline VkDeviceAddress DeviceAddress() const { return m_DeviceAddress; }
     [[nodiscard]]
     virtual void* MappedMemory() const override { return m_AllocationInfo.pMappedData; }
+    virtual void FlushMappedRange(u64 offsetInBytes, u64 sizeInBytes) const override;
+    virtual void InvalidateMappedRange(u64 offsetInBytes, u64 sizeInBytes) const override;
 
     [[nodiscard]]
     inline u64 SizeInBytes() const { return m_CreationInfo.count * m_CreationInfo.elementSizeInBytes; }

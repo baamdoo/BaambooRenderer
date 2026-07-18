@@ -287,13 +287,16 @@ void Dx12CommandContext::Impl::TransitionBarrier(Dx12Resource* pResource, const 
 	if (!pResource)
 		return;
 
+	const bool bRequiresSameStateTextureBarrier = pResource->IsTexture() &&
+		(stateAfter.Access & D3D12_BARRIER_ACCESS_UNORDERED_ACCESS) != 0;
+
 	if (pResource->IsTexture() &&
 		pResource->GetCurrentState().HasIndividualSubresources() &&
 		subresource == D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES)
 	{
 		for (const auto& [sub, subState] : pResource->GetCurrentState())
 		{
-			if (subState == stateAfter)
+			if (subState == stateAfter && !bRequiresSameStateTextureBarrier)
 				continue;
 
 			D3D12_TEXTURE_BARRIER texBarrier = {};
@@ -319,7 +322,7 @@ void Dx12CommandContext::Impl::TransitionBarrier(Dx12Resource* pResource, const 
 	}
 
 	const auto& stateBefore = pResource->GetCurrentState().GetSubresourceState(subresource);
-	if (stateBefore == stateAfter)
+	if (stateBefore == stateAfter && !bRequiresSameStateTextureBarrier)
 	{
 		if (bFlushImmediate)
 			FlushBarriers();
@@ -1312,6 +1315,52 @@ void Dx12CommandContext::TransitionBufferToWrite(const Arc< render::Buffer >& pB
 		rhiResource.get(),
 		barrier,
 		D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+		bFlushImmediate
+	);
+}
+
+void Dx12CommandContext::TransitionTextureToRead(const Arc< render::Texture >& pTexture, render::ePipelineStage dstStage, u32 subresource, bool bFlushImmediate)
+{
+	auto rhiTexture = StaticCast< Dx12Texture >(pTexture);
+	assert(rhiTexture);
+
+	BarrierState barrier
+	{
+		DX12_BARRIER_SYNC(dstStage),
+		D3D12_BARRIER_ACCESS_SHADER_RESOURCE,
+		D3D12_BARRIER_LAYOUT_SHADER_RESOURCE
+	};
+	const auto& currentState = rhiTexture->GetCurrentState();
+	if (!currentState.HasIndividualSubresources() || subresource != D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES)
+	{
+		const auto& stateBefore = currentState.GetSubresourceState(subresource);
+		if (stateBefore.Access == barrier.Access && stateBefore.Layout == barrier.Layout)
+			barrier.Sync |= stateBefore.Sync;
+	}
+
+	m_Impl->TransitionBarrier(
+		rhiTexture.get(),
+		barrier,
+		subresource,
+		bFlushImmediate
+	);
+}
+
+void Dx12CommandContext::TransitionTextureToWrite(const Arc< render::Texture >& pTexture, render::ePipelineStage dstStage, u32 subresource, bool bFlushImmediate)
+{
+	auto rhiTexture = StaticCast< Dx12Texture >(pTexture);
+	assert(rhiTexture);
+
+	const BarrierState barrier
+	{
+		DX12_BARRIER_SYNC(dstStage),
+		D3D12_BARRIER_ACCESS_UNORDERED_ACCESS,
+		D3D12_BARRIER_LAYOUT_UNORDERED_ACCESS
+	};
+	m_Impl->TransitionBarrier(
+		rhiTexture.get(),
+		barrier,
+		subresource,
 		bFlushImmediate
 	);
 }

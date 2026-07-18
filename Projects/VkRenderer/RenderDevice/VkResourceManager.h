@@ -24,7 +24,8 @@ public:
     virtual Arc< render::Texture > LoadTexture(const std::string& filepath, bool bGenerateMips = false, render::eTextureColorSpace colorSpace = render::eTextureColorSpace::Linear) override;
 
     void UploadData(Arc< VulkanBuffer > pBuffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes);
-    void UploadData(Arc< VulkanTexture > pTexture, const void* pData, u64 sizeInBytes, VkBufferImageCopy region, bool bGenerateMips = false);
+    void UploadData(Arc< VulkanTexture > pTexture, const void* pData, u64 sizeInBytes,
+        const std::vector< VkBufferImageCopy >& regions, bool bGenerateMips = false);
 
 private:
     Arc< render::Texture > CreateFlat2DTexture(const char* name, u32 color);

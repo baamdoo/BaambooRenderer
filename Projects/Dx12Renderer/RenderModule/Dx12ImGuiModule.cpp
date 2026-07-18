@@ -20,7 +20,7 @@ ImGuiModule::ImGuiModule(Dx12RenderDevice& rd, ImGuiContext* pImGuiContext)
 	desc.Type           = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	desc.NumDescriptors = 64;
 	desc.Flags          = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	DX_CHECK(m_RenderDevice.GetD3D12Device()->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&m_d3d12SrvDescHeap)) != S_OK);
+	DX_CHECK(m_RenderDevice.GetD3D12Device()->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&m_d3d12SrvDescHeap)));
 
 	ImGui_ImplDX12_InitInfo info      = {};
 	info.Device                       = m_RenderDevice.GetD3D12Device();

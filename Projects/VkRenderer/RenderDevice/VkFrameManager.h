@@ -9,7 +9,7 @@ class FrameManager
 {
 public:
     FrameManager(VkRenderDevice& rd, SwapChain& swapChain);
-    ~FrameManager();
+    ~FrameManager() = default;
 
     struct FrameContext
 	{
@@ -19,24 +19,11 @@ public:
     };
 
     FrameContext BeginFrame();
-
     void EndFrame(Arc< VkCommandContext >&& pContext);
-
-    void WaitIdle();
 
 private:
     VkRenderDevice& m_RenderDevice;
     SwapChain&      m_SwapChain;
-
-    // Per-frame resources
-    struct FrameData
-	{
-        VkFence vkAcquireFence = VK_NULL_HANDLE;
-        VkFence vkPresentFence = VK_NULL_HANDLE;
-
-        bool bProcessing = false;
-    };
-    std::array< FrameData, kMaxFramesInFlight > m_Frames;
 
     u32 m_ContextIndex = 0;
 };

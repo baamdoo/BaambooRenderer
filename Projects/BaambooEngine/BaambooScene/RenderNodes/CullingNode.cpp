@@ -155,7 +155,7 @@ void CullingNode::DispatchMeshCull(render::CommandContext& context, u32 numInsta
 	context.TransitionBufferToWrite(m_DrawCountBuffer, ePipelineStage::ComputeShader);
 	context.TransitionBufferToWrite(m_DrawIndexBuffer, ePipelineStage::ComputeShader);
 	context.TransitionBufferToWrite(m_VisibilityBuffer, ePipelineStage::ComputeShader);
-	context.TransitionBarrier(m_pHiZTexture, eTextureLayout::ShaderReadOnly);
+	context.TransitionTextureToRead(m_pHiZTexture, ePipelineStage::ComputeShader);
 
 	struct
 	{
@@ -240,8 +240,8 @@ void CullingNode::BuildHiZ(render::CommandContext& context)
 	context.ClearBuffer(m_pSPDCounterBuffer, 0);
 	context.TransitionBufferToWrite(m_pSPDCounterBuffer, ePipelineStage::ComputeShader, 0, true);
 
-	context.TransitionBarrier(pDepthAttachment, eTextureLayout::ShaderReadOnly);
-	context.TransitionBarrier(m_pHiZTexture, eTextureLayout::General);
+	context.TransitionTextureToRead(pDepthAttachment, ePipelineStage::ComputeShader);
+	context.TransitionTextureToWrite(m_pHiZTexture, ePipelineStage::ComputeShader);
 
 	struct SPDPushConstants
 	{
@@ -270,7 +270,7 @@ void CullingNode::BuildHiZ(render::CommandContext& context)
 
 	context.Dispatch(numGroupsX, numGroupsY, 1);
 
-	context.TransitionBarrier(m_pHiZTexture, eTextureLayout::ShaderReadOnly, ALL_SUBRESOURCES, true);
+	context.TransitionTextureToRead(m_pHiZTexture, ePipelineStage::ComputeShader | ePipelineStage::TaskShader, ALL_SUBRESOURCES, true);
 }
 
 // =========================================================================
@@ -294,12 +294,21 @@ void CullingNode::PublishReadbackStats()
 	if (m_ReadbackFrameCounter < kReadbackSlots)
 		return;
 
+	const u64 countOffset = m_ReadbackIdx * sizeof(u32);
+	m_Phase1CountReadback->InvalidateMappedRange(countOffset, sizeof(u32));
+	m_Phase2CountReadback->InvalidateMappedRange(countOffset, sizeof(u32));
+
 	if (auto* p1 = static_cast< u32* >(m_Phase1CountReadback->MappedMemory()))
 		g_FrameData.phase1InstanceDrawCount = p1[m_ReadbackIdx];
 	if (auto* p2 = static_cast< u32* >(m_Phase2CountReadback->MappedMemory()))
 		g_FrameData.phase2InstanceDrawCount = p2[m_ReadbackIdx];
 
 #if PROFILING_LEVEL >= 1
+	const u64 statsOffset = m_ReadbackIdx * kMeshletStatsFields * sizeof(u32);
+	const u64 statsSize   = kMeshletStatsFields * sizeof(u32);
+	m_Phase1MeshletStatsReadback->InvalidateMappedRange(statsOffset, statsSize);
+	m_Phase2MeshletStatsReadback->InvalidateMappedRange(statsOffset, statsSize);
+
 	if (auto* p1m = static_cast< u32* >(m_Phase1MeshletStatsReadback->MappedMemory()))
 	{
 		const u32 base = m_ReadbackIdx * kMeshletStatsFields;

@@ -11,42 +11,23 @@ FrameManager::FrameManager(VkRenderDevice& rd, SwapChain& swapChain)
     : m_RenderDevice(rd)
     , m_SwapChain(swapChain)
 {
-    VkFenceCreateInfo fenceInfo = {};
-    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
-    for (auto& frame : m_Frames) 
-    {
-        VK_CHECK(vkCreateFence(m_RenderDevice.vkDevice(), &fenceInfo, nullptr, &frame.vkAcquireFence));
-        VK_CHECK(vkCreateFence(m_RenderDevice.vkDevice(), &fenceInfo, nullptr, &frame.vkPresentFence));
-    }
-}
-
-FrameManager::~FrameManager()
-{
-    WaitIdle();
-
-    for (auto& frame : m_Frames) 
-    {
-        vkDestroyFence(m_RenderDevice.vkDevice(), frame.vkAcquireFence, nullptr);
-        vkDestroyFence(m_RenderDevice.vkDevice(), frame.vkPresentFence, nullptr);
-    }
 }
 
 FrameManager::FrameContext FrameManager::BeginFrame()
 {
-    auto& frame = m_Frames[m_ContextIndex];
-
-    /*VkFence vkFences[] = { frame.vkAcquireFence, frame.vkPresentFence };
-    VK_CHECK(vkWaitForFences(m_RenderDevice.vkDevice(), 2, vkFences, VK_TRUE, UINT64_MAX));
-    VK_CHECK(vkResetFences(m_RenderDevice.vkDevice(), 2, vkFences));*/
-
     FrameContext context = {};
-    context.rhiCommandContext = m_RenderDevice.BeginCommand(eCommandType::Graphics);
-    context.imageIndex        = m_SwapChain.AcquireNextImage(context.rhiCommandContext->vkPresentCompleteSemaphore());
-    context.contextIndex      = m_ContextIndex;
+    auto pContext = m_RenderDevice.GraphicsQueue().Reserve();
+    context.imageIndex = m_SwapChain.AcquireNextImage(pContext->vkPresentCompleteSemaphore());
+    if (context.imageIndex == kInvalidIndex)
+    {
+        m_RenderDevice.GraphicsQueue().RecycleUnsubmitted(std::move(pContext));
+        return context;
+    }
 
-    frame.bProcessing = true;
+    pContext->Open();
+    pContext->SetPresentWaitSemaphore(m_SwapChain.PresentWaitSemaphore(context.imageIndex));
+    context.rhiCommandContext = std::move(pContext);
+    context.contextIndex      = m_ContextIndex;
 
     return context;
 }
@@ -57,22 +38,9 @@ void FrameManager::EndFrame(Arc< VkCommandContext >&& pContext)
 
     // Transient command context is released right after execution
     if (pContext)
-    {
-        m_SwapChain.Present(pContext->vkRenderCompleteSemaphore(), pContext->vkPresentCompleteFence());
-    }
+        m_SwapChain.Present(pContext->vkRenderCompleteSemaphore());
 
-    m_Frames[m_ContextIndex].bProcessing = false;
     m_ContextIndex = (m_ContextIndex + 1) % kMaxFramesInFlight;
-}
-
-void FrameManager::WaitIdle()
-{
-    for (auto& frame : m_Frames)
-    {
-        VkFence vkFences[] = { frame.vkAcquireFence, frame.vkPresentFence };
-        VK_CHECK(vkWaitForFences(m_RenderDevice.vkDevice(), 2, vkFences, VK_TRUE, UINT64_MAX));
-        VK_CHECK(vkResetFences(m_RenderDevice.vkDevice(), 2, vkFences));
-    }
 }
 
 } // namespace vk

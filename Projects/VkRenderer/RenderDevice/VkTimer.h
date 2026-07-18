@@ -14,7 +14,13 @@ namespace vk
 class VkTimer
 {
 public:
-	void Init(VkDevice vkDevice, const VkPhysicalDeviceFeatures& deviceFeatures, u32 maxQueriesPerFrame = 128);
+	void Init(
+		VkDevice vkDevice,
+		bool bPipelineStatisticsEnabled,
+		u32 timestampValidBits,
+		PFN_vkCmdBeginDebugUtilsLabelEXT cmdBeginDebugUtilsLabel,
+		PFN_vkCmdEndDebugUtilsLabelEXT cmdEndDebugUtilsLabel,
+		u32 maxQueriesPerFrame = 128);
 	void Destroy(VkDevice vkDevice);
 
 	// Frame lifecycle
@@ -34,12 +40,17 @@ private:
 	VkQueryPool m_QueryPool    = VK_NULL_HANDLE;
 	u32         m_MaxQueries   = 0;
 	u32         m_NextQueryIdx = 0;
+	u32         m_TimestampValidBits = 0;
+	bool        m_bEnabled = false;
 
 	VkQueryPool m_StatsPool       = VK_NULL_HANDLE;
 	u32         m_MaxStatsQueries = 0;
 	u32         m_NextStatsIdx    = 0;
 	u32         m_NumStatFields   = 0;
 	bool        m_bStatsSupported = false;
+
+	PFN_vkCmdBeginDebugUtilsLabelEXT m_CmdBeginDebugUtilsLabel = nullptr;
+	PFN_vkCmdEndDebugUtilsLabelEXT   m_CmdEndDebugUtilsLabel = nullptr;
 
 	VkQueryPipelineStatisticFlags m_StatsFlags = 0;
 

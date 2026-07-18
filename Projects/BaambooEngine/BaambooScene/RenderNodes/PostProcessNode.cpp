@@ -93,6 +93,8 @@ void PostProcessNode::Resize(u32 width, u32 height, u32 depth)
 		m_TAA.pAntiAliasedTexture->Resize(width, height, depth);
 	if (m_TAA.pHistoryTexture)
 		m_TAA.pHistoryTexture->Resize(width, height, depth);
+	if (m_ToneMapping.pResolvedTexture)
+		m_ToneMapping.pResolvedTexture->Resize(width, height, depth);
 }
 
 void PostProcessNode::ApplyHeightFog(render::CommandContext& context, const SceneRenderView& renderView)

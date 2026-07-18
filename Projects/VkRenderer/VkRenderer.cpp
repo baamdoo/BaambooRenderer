@@ -53,6 +53,8 @@ Arc< render::CommandContext > VkRenderer::BeginFrame()
 	}
 
 	auto context = m_pFrameManager->BeginFrame();
+	if (!context.rhiCommandContext)
+		return nullptr;
 
 	auto& sr = static_cast<VkSceneResource&>(m_pRenderDevice->GetResourceManager().GetSceneResource());
 	sr.SetCurrentContextIndex(context.contextIndex);
@@ -100,10 +102,13 @@ void VkRenderer::Resize(i32 width, i32 height)
 	if (width == 0 || height == 0)
 		return;
 
-	if (m_pRenderDevice->WindowWidth() == static_cast<u32>(width) && m_pRenderDevice->WindowHeight() == static_cast<u32>(height))
+	if (m_pRenderDevice->WindowWidth() == static_cast<u32>(width) &&
+		m_pRenderDevice->WindowHeight() == static_cast<u32>(height))
+	{
+		VK_CHECK(vkDeviceWaitIdle(m_pRenderDevice->vkDevice()));
 		return;
+	}
 
-	VK_CHECK(vkDeviceWaitIdle(m_pRenderDevice->vkDevice()));
 	m_pRenderDevice->SetWindowWidth(width);
 	m_pRenderDevice->SetWindowHeight(height);
 

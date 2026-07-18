@@ -181,11 +181,25 @@ void Engine::Update(float dt)
 	if (m_bWindowResized && m_ResizeWidth >= 0 && m_ResizeHeight >= 0)
 	{
 		if (m_ResizeWidth == 0 || m_ResizeHeight == 0)
+		{
+			std::lock_guard< std::mutex > lock(m_ImGuiMutex);
+			m_RenderViewQueue.clear();
+			m_PendingResize = {};
+			m_bRenderSuspended = true;
 			return;
+		}
 
-		m_pWindow->OnWindowResized(m_ResizeWidth, m_ResizeHeight);
-		m_pScene->OnWindowResized(m_ResizeWidth, m_ResizeHeight);
-		m_pRendererBackend->Resize(m_ResizeWidth, m_ResizeHeight);
+		{
+			std::lock_guard< std::mutex > lock(m_ImGuiMutex);
+			m_pWindow->OnWindowResized(m_ResizeWidth, m_ResizeHeight);
+			m_pCamera->Resize(m_ResizeWidth, m_ResizeHeight);
+			m_RenderViewQueue.clear();
+			m_PendingResize.width = static_cast< u32 >(m_ResizeWidth);
+			m_PendingResize.height = static_cast< u32 >(m_ResizeHeight);
+			m_PendingResize.firstProducerSequence = m_ProducerSequence;
+			m_PendingResize.bPending = true;
+			m_bRenderSuspended = false;
+		}
 
 		m_bWindowResized = false;
 		m_ResizeWidth    = m_ResizeHeight = -1;
@@ -281,10 +295,54 @@ void Engine::RenderLoop()
 		if (!renderViewOptional.has_value())
 			break;
 
+		const auto& renderView = renderViewOptional.value();
+		bool bDiscardRenderView = false;
+		{
+			std::lock_guard< std::mutex > lock(m_ImGuiMutex);
+			if (m_bRenderSuspended)
+			{
+				bDiscardRenderView = true;
+			}
+			else if (m_PendingResize.bPending)
+			{
+				auto ToExtent = [](f32 value, u32& extent)
+				{
+					const double dimension = static_cast< double >(value);
+					if (!std::isfinite(dimension) || dimension <= 0.0
+						|| dimension > static_cast< double >(std::numeric_limits< i32 >::max())
+						|| std::trunc(dimension) != dimension)
+						return false;
+
+					extent = static_cast< u32 >(dimension);
+					return true;
+				};
+
+				u32 viewportWidth = 0;
+				u32 viewportHeight = 0;
+				const bool bMatchingViewport = ToExtent(renderView.viewport.x, viewportWidth)
+					&& ToExtent(renderView.viewport.y, viewportHeight)
+					&& viewportWidth == m_PendingResize.width
+					&& viewportHeight == m_PendingResize.height;
+
+				if (renderView.producerSequence < m_PendingResize.firstProducerSequence || !bMatchingViewport)
+				{
+					bDiscardRenderView = true;
+				}
+				else
+				{
+					m_pRendererBackend->Resize(static_cast< i32 >(m_PendingResize.width), static_cast< i32 >(m_PendingResize.height));
+					m_pScene->OnWindowResized(m_PendingResize.width, m_PendingResize.height);
+					m_PendingResize = {};
+				}
+			}
+		}
+
+		if (bDiscardRenderView)
+			continue;
+
 		render::CpuProfiler::Thread().BeginFrame();
 
 		// Render
-		const auto& renderView = renderViewOptional.value();
 		{
 			auto& rm = m_pRendererBackend->GetDevice()->GetResourceManager();
 

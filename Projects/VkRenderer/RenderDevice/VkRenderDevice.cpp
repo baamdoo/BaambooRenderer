@@ -25,36 +25,72 @@ VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
 VkRenderDevice::VkRenderDevice(const render::DeviceSettings& ds)
 	: Super(ds)
 {
-	InstanceBuilder instanceBuilder;
-	m_vkInstance = instanceBuilder.AddExtensionLayer(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME)
-	                              .SetValidationFeatureEnable({ VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT }).Build();
+	BB_ASSERT(ds.bMeshShader,
+		"The Vulkan backend currently requires the mesh-shader path; a complete vertex fallback is not available.");
 
-	DebugMessengerBuilder debugMessengerBuilder;
-	m_vkDebugMessenger = debugMessengerBuilder.SetDebugMessageCallback(DebugCallback).Build(m_vkInstance);
+	BB_ASSERT(!ds.bRaytracing,
+		"The Vulkan backend does not currently implement ray tracing. Select the D3D12 backend for ray-tracing applications.");
+
+	InstanceBuilder instanceBuilder;
+	m_vkInstance = instanceBuilder
+		.SetValidationFeatureEnable({ VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT })
+		.Build();
+
+	m_Capabilities.bValidation         = instanceBuilder.bValidationEnabled;
+	m_Capabilities.bValidationFeatures = instanceBuilder.bValidationFeaturesEnabled;
+	m_Capabilities.bDebugUtils         = instanceBuilder.bDebugUtilsEnabled;
+	m_Capabilities.bSurfaceMaintenance = instanceBuilder.bSurfaceMaintenanceEnabled;
+
+	if (m_Capabilities.bDebugUtils)
+	{
+		DebugMessengerBuilder debugMessengerBuilder;
+		m_vkDebugMessenger = debugMessengerBuilder.SetDebugMessageCallback(DebugCallback).Build(m_vkInstance);
+	}
 
 	DeviceBuilder deviceBuilder;
-	m_vkDevice = deviceBuilder.AddDeviceExtension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME)
-		                      .AddDeviceExtension(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME)
-		                      .AddDeviceExtension(VK_EXT_MESH_SHADER_EXTENSION_NAME)
-		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_IndirectRendering)
-		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_DescriptorIndexing)
-		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_DynamicIndexing)
-		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_DynamicRendering)
-		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_ShaderInt64)
-		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_DeviceAddress)
-		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_SamplerAnistropy)
-		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_IndexTypeUint8)
-		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_Sync2)
-		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_MeshShader)
-		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_StorageBuffer8BitAccess)
-		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_SwapChainMaintenance)
-		                      .AddPhysicalDeviceFeature(ePhysicalDeviceFeature_PipelineStatistics).Build(m_vkInstance);
-	m_vkPhysicalDevice         = deviceBuilder.physicalDevice;
+	m_vkDevice = deviceBuilder
+		.RequireMeshShader(true)
+		.EnableSwapchainMaintenance(m_Capabilities.bSurfaceMaintenance)
+		.Build(m_vkInstance);
+
+	m_vkPhysicalDevice = deviceBuilder.physicalDevice;
 	m_PhysicalDeviceProperties = deviceBuilder.physicalDeviceProperties;
 	m_PhysicalDeviceMaintenance3Properties = deviceBuilder.physicalDeviceMaintenance3Properties;
+	m_PhysicalDeviceFeatures = deviceBuilder.enabledPhysicalDeviceFeatures;
 
-	m_Settings.bMeshShader = deviceBuilder.bSupportMeshShader;
-	vkGetPhysicalDeviceFeatures(m_vkPhysicalDevice, &m_PhysicalDeviceFeatures);
+	m_Capabilities.bMeshShader           = deviceBuilder.bMeshShaderEnabled;
+	m_Capabilities.bSwapchainMaintenance = deviceBuilder.bSwapchainMaintenanceEnabled;
+	m_Capabilities.bMemoryBudget              = deviceBuilder.bMemoryBudgetEnabled;
+	m_Capabilities.bPipelineStatistics        = deviceBuilder.bPipelineStatisticsEnabled;
+	m_Capabilities.graphicsTimestampValidBits = deviceBuilder.queueFamilyIndices.graphicsTimestampValidBits;
+	m_Capabilities.computeTimestampValidBits  = deviceBuilder.queueFamilyIndices.computeTimestampValidBits;
+	m_Settings.bMeshShader = m_Capabilities.bMeshShader;
+
+	m_Dispatch.cmdPushDescriptorSet = reinterpret_cast< PFN_vkCmdPushDescriptorSetKHR >(
+		vkGetDeviceProcAddr(m_vkDevice, "vkCmdPushDescriptorSetKHR"));
+	BB_ASSERT(m_Dispatch.cmdPushDescriptorSet != nullptr,
+		"Required Vulkan push-descriptor command is unavailable after device creation.");
+
+	if (m_Capabilities.bMeshShader)
+	{
+		m_Dispatch.cmdDrawMeshTasksIndirect = reinterpret_cast< PFN_vkCmdDrawMeshTasksIndirectEXT >(
+			vkGetDeviceProcAddr(m_vkDevice, "vkCmdDrawMeshTasksIndirectEXT"));
+		m_Dispatch.cmdDrawMeshTasksIndirectCount = reinterpret_cast< PFN_vkCmdDrawMeshTasksIndirectCountEXT >(
+			vkGetDeviceProcAddr(m_vkDevice, "vkCmdDrawMeshTasksIndirectCountEXT"));
+		BB_ASSERT(m_Dispatch.cmdDrawMeshTasksIndirect != nullptr &&
+			m_Dispatch.cmdDrawMeshTasksIndirectCount != nullptr,
+			"Required Vulkan mesh-shader commands are unavailable after device creation.");
+	}
+
+	if (m_Capabilities.bDebugUtils)
+	{
+		m_Dispatch.setDebugUtilsObjectName = reinterpret_cast< PFN_vkSetDebugUtilsObjectNameEXT >(
+			vkGetDeviceProcAddr(m_vkDevice, "vkSetDebugUtilsObjectNameEXT"));
+		m_Dispatch.cmdBeginDebugUtilsLabel = reinterpret_cast< PFN_vkCmdBeginDebugUtilsLabelEXT >(
+			vkGetDeviceProcAddr(m_vkDevice, "vkCmdBeginDebugUtilsLabelEXT"));
+		m_Dispatch.cmdEndDebugUtilsLabel = reinterpret_cast< PFN_vkCmdEndDebugUtilsLabelEXT >(
+			vkGetDeviceProcAddr(m_vkDevice, "vkCmdEndDebugUtilsLabelEXT"));
+	}
 
 	m_pGraphicsQueue = new CommandQueue(*this, deviceBuilder.queueFamilyIndices.graphicsQueueIndex, eCommandType::Graphics);
 	m_pComputeQueue  = new CommandQueue(*this, deviceBuilder.queueFamilyIndices.computeQueueIndex, eCommandType::Compute);
@@ -66,13 +102,16 @@ VkRenderDevice::VkRenderDevice(const render::DeviceSettings& ds)
 	// Resource management
 	// **
 	VmaAllocatorCreateInfo allocatorInfo = {};
-	allocatorInfo.flags            = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT | VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+	allocatorInfo.flags            = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+	if (m_Capabilities.bMemoryBudget)
+		allocatorInfo.flags |= VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
 	allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_3;
 	allocatorInfo.physicalDevice   = m_vkPhysicalDevice;
 	allocatorInfo.device           = m_vkDevice;
 	allocatorInfo.instance         = m_vkInstance;
 	allocatorInfo.pVulkanFunctions = nullptr;
-	vmaCreateAllocator(&allocatorInfo, &m_vmaAllocator);
+	const VkResult allocatorResult = vmaCreateAllocator(&allocatorInfo, &m_vmaAllocator);
+	BB_ASSERT(allocatorResult == VK_SUCCESS, "Failed to create Vulkan memory allocator (%d).", static_cast<i32>(allocatorResult));
 
 	m_pResourceManager = new VkResourceManager(*this);
 
@@ -104,14 +143,17 @@ VkRenderDevice::~VkRenderDevice()
 	RELEASE(m_pResourceManager);
 	RELEASE(m_pGlobalDescriptorPool);
 	vkDestroyDescriptorSetLayout(m_vkDevice, m_vkEmptySetLayout, nullptr);
-	vmaDestroyAllocator(m_vmaAllocator);
+	if (m_vmaAllocator)
+		vmaDestroyAllocator(m_vmaAllocator);
 
 	vkDestroyDevice(m_vkDevice, nullptr);
 
 	if (m_vkDebugMessenger)
 	{
-		auto vkDestroyDebugUtilsMessengerEXT = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(m_vkInstance, "vkDestroyDebugUtilsMessengerEXT");
-		vkDestroyDebugUtilsMessengerEXT(m_vkInstance, m_vkDebugMessenger, nullptr);
+		const auto destroyDebugMessenger = reinterpret_cast< PFN_vkDestroyDebugUtilsMessengerEXT >(
+			vkGetInstanceProcAddr(m_vkInstance, "vkDestroyDebugUtilsMessengerEXT"));
+		if (destroyDebugMessenger)
+			destroyDebugMessenger(m_vkInstance, m_vkDebugMessenger, nullptr);
 	}
 
 	vkDestroyInstance(m_vkInstance, nullptr);
@@ -167,20 +209,23 @@ Arc< render::Shader > VkRenderDevice::CreateShader(const char* name, render::Sha
 
 Arc< render::ShaderBindingTable > VkRenderDevice::CreateSBT(const char* name)
 {
-	// TODO
-	return nullptr;
+	UNUSED(name);
+	BB_ASSERT(false, "Vulkan shader binding tables are unavailable because Vulkan ray tracing is unsupported.");
+	return {};
 }
 
 Arc< render::BottomLevelAccelerationStructure > VkRenderDevice::CreateBLAS(const char* name)
 {
-	// TODO
-	return nullptr;
+	UNUSED(name);
+	BB_ASSERT(false, "Vulkan BLAS creation is unavailable because Vulkan ray tracing is unsupported.");
+	return {};
 }
 
 Arc< render::TopLevelAccelerationStructure > VkRenderDevice::CreateTLAS(const char* name)
 {
-	// TODO
-	return nullptr;
+	UNUSED(name);
+	BB_ASSERT(false, "Vulkan TLAS creation is unavailable because Vulkan ray tracing is unsupported.");
+	return {};
 }
 
 Box< render::ComputePipeline > VkRenderDevice::CreateComputePipeline(const char* name)
@@ -195,8 +240,9 @@ Box< render::GraphicsPipeline > VkRenderDevice::CreateGraphicsPipeline(const cha
 
 Box< render::RaytracingPipeline > VkRenderDevice::CreateRaytracingPipeline(const char* name)
 {
-	// TODO
-	return nullptr;
+	UNUSED(name);
+	BB_ASSERT(false, "Vulkan ray-tracing pipelines are unsupported.");
+	return {};
 }
 
 Box< render::SceneResource > VkRenderDevice::CreateSceneResource()
@@ -208,6 +254,23 @@ VkDeviceSize VkRenderDevice::GetAlignedSize(VkDeviceSize size) const
 {
 	const VkDeviceSize alignment = m_PhysicalDeviceProperties.limits.minMemoryMapAlignment;
 	return (size + alignment - 1) & ~(alignment - 1);
+}
+
+
+u32 VkRenderDevice::TimestampValidBits(eCommandType cmdType) const
+{
+	switch (cmdType)
+	{
+	case eCommandType::Graphics:
+		return m_Capabilities.graphicsTimestampValidBits;
+	case eCommandType::Compute:
+		return m_Capabilities.computeTimestampValidBits;
+	case eCommandType::Transfer:
+		return 0;
+	default:
+		BB_ASSERT(false, "Invalid Vulkan command type.");
+		return 0;
+	}
 }
 
 CommandQueue& VkRenderDevice::GetQueue(eCommandType cmdType) const
@@ -287,8 +350,11 @@ void VkRenderDevice::SetVkObjectName(const std::string& name, u64 handle, VkObje
 	nameInfo.pObjectName  = name.data();
 
 #ifdef _DEBUG
-	static auto vkSetDebugUtilsObjectNameEXT = (PFN_vkSetDebugUtilsObjectNameEXT)vkGetInstanceProcAddr(m_vkInstance, "vkSetDebugUtilsObjectNameEXT");
-	VK_CHECK(vkSetDebugUtilsObjectNameEXT(m_vkDevice, &nameInfo));
+	if (m_Dispatch.setDebugUtilsObjectName)
+	{
+		const VkResult result = m_Dispatch.setDebugUtilsObjectName(m_vkDevice, &nameInfo);
+		BB_ASSERT(result == VK_SUCCESS, "Failed to set Vulkan object name (%d).", static_cast<i32>(result));
+	}
 #endif
 }
 

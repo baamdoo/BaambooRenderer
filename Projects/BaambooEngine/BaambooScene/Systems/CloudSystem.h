@@ -21,10 +21,19 @@ public:
     virtual void RemoveRenderData(u64 entityId) override;
 
 private:
+    void UpdateCameraDependentData(
+        const CloudComponent& component,
+        const AtmosphereRenderView& atmosphereView,
+        const float3& cameraPosition);
+
     AtmosphereSystem* m_pAtmosphereSystem = nullptr;
+    entt::entity m_ActiveEntity = entt::null;
 
     CloudRenderView m_RenderData = {};
 
+    float3 m_LastCameraPosition = {};
+
+    bool m_bHasLastCameraPosition = false;
     bool m_bHasData = false;
 };
 

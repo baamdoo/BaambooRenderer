@@ -313,6 +313,7 @@ void PathTracerNode::ResetEnvironmentDistribution()
     {
         auto* p = static_cast< f32* >(m_pEnvironmentDistribution->MappedMemory());
         p[0] = 0.0f;
+        m_pEnvironmentDistribution->FlushMappedRange(0, sizeof(f32));
     }
 }
 
@@ -362,6 +363,7 @@ bool PathTracerNode::LoadEnvironmentDistribution(const std::filesystem::path& en
         return false;
 
     std::memcpy(pDistribution->MappedMemory(), values.data(), values.size() * sizeof(f32));
+    pDistribution->FlushMappedRange(0, values.size() * sizeof(f32));
     m_pEnvironmentDistribution = pDistribution;
     m_EnvironmentDistributionWidth = header.width;
     m_EnvironmentDistributionHeight = header.height;

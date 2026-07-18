@@ -413,7 +413,8 @@ void Dx12Texture::Resize(u32 width, u32 height, u32 depthOrArraySize)
 {
     if (IsValid())
     {
-        if (m_ResourceDesc.Width == width && m_ResourceDesc.Height == height)
+        if (m_ResourceDesc.Width == width && m_ResourceDesc.Height == height &&
+            m_ResourceDesc.DepthOrArraySize == depthOrArraySize)
             return;
 
         CD3DX12_RESOURCE_DESC1 desc(m_ResourceDesc);

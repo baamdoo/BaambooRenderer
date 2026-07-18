@@ -175,8 +175,24 @@ Dx12GraphicsPipeline::~Dx12GraphicsPipeline()
 
 GraphicsPipeline& Dx12GraphicsPipeline::SetRenderTarget(Arc< render::RenderTarget > pRenderTarget)
 {
-    u32 numSampling    = 0;
     u32 numAttachments = 0;
+    DXGI_SAMPLE_DESC sampleDesc = { 1, 0 };
+    bool bHasSampleDesc = false;
+
+    const auto validateSampleDesc = [&](const Dx12Texture& attachment)
+    {
+        const DXGI_SAMPLE_DESC attachmentSampleDesc = attachment.Desc().SampleDesc;
+        if (!bHasSampleDesc)
+        {
+            sampleDesc = attachmentSampleDesc;
+            bHasSampleDesc = true;
+            return;
+        }
+
+        BB_ASSERT(sampleDesc.Count == attachmentSampleDesc.Count &&
+                  sampleDesc.Quality == attachmentSampleDesc.Quality,
+                  "Render target attachments must use the same sample count and quality");
+    };
 
     const auto& pAttachments = pRenderTarget->GetAttachments();
     for (u32 i = 0; i < eAttachmentPoint::DepthStencil; ++i)
@@ -185,18 +201,20 @@ GraphicsPipeline& Dx12GraphicsPipeline::SetRenderTarget(Arc< render::RenderTarge
         {
             m_PipelineDesc.RTVFormats[i] = rhiAttachment->GetFormat();
 
-            numSampling = std::max(numSampling, rhiAttachment->Desc().SampleDesc.Count);
+            validateSampleDesc(*rhiAttachment);
             numAttachments++;
         }
     }
     m_PipelineDesc.NumRenderTargets = numAttachments;
-    m_PipelineDesc.SampleDesc.Count = numSampling;
 
     if (auto rhiAttachment = StaticCast<Dx12Texture>(pAttachments[eAttachmentPoint::DepthStencil]))
     {
+        validateSampleDesc(*rhiAttachment);
         m_PipelineDesc.DepthStencilState.DepthEnable = TRUE;
         m_PipelineDesc.DSVFormat = rhiAttachment->GetFormat();
     }
+
+    m_PipelineDesc.SampleDesc = sampleDesc;
 
     return *this;
 }
@@ -257,9 +275,11 @@ GraphicsPipeline& Dx12GraphicsPipeline::SetDepthWriteEnable(bool bEnable, eCompa
 
 GraphicsPipeline& Dx12GraphicsPipeline::SetLogicOp(render::eLogicOp logicOp)
 {
-    for (u32 i = 0; i < m_PipelineDesc.NumRenderTargets; ++i)
+    const BOOL bEnable = logicOp != eLogicOp::None;
+    for (u32 i = 0; i < D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i)
     {
-        m_PipelineDesc.BlendState.RenderTarget[i].LogicOp = DX12_PIPELINE_LOGICOP(logicOp);
+        m_PipelineDesc.BlendState.RenderTarget[i].LogicOpEnable = bEnable;
+        m_PipelineDesc.BlendState.RenderTarget[i].LogicOp       = DX12_PIPELINE_LOGICOP(logicOp);
     }
 
     return *this;
@@ -291,6 +311,13 @@ GraphicsPipeline& Dx12GraphicsPipeline::SetAlphaBlending(u32 renderTargetIndex, 
 
 void Dx12GraphicsPipeline::Build()
 {
+    for (u32 i = 0; i < m_PipelineDesc.NumRenderTargets; ++i)
+    {
+        const auto& blendDesc = m_PipelineDesc.BlendState.RenderTarget[i];
+        BB_ASSERT(!(blendDesc.BlendEnable && blendDesc.LogicOpEnable),
+                  "Render target %u cannot enable blending and a logic operation simultaneously", i);
+    }
+
     if (m_bMeshShader)
     {
         auto d3d12MS = StaticCast<Dx12Shader>(m_pMS);

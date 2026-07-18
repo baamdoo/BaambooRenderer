@@ -30,6 +30,12 @@ public:
 	EditorCamera(const EditorCamera&) = default;
 	EditorCamera& operator=(const EditorCamera&) = default;
 
+	void Resize(u32 width, u32 height)
+	{
+		m_ViewportWidth  = width;
+		m_ViewportHeight = height;
+	}
+
 	[[nodiscard]]
 	mat4 GetView() const { return m_Controller.GetView(); }
 	[[nodiscard]]

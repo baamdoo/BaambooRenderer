@@ -63,8 +63,18 @@ protected:
 	render::DeviceSettings m_DeviceSettings;
 
 private:
+	struct PendingResizeRequest
+	{
+		u32 width = 0;
+		u32 height = 0;
+		u64 firstProducerSequence = 0;
+		bool bPending = false;
+	};
+
 	u64    m_ProducerSequence = 0;
 	double m_RunningTime = 0.0;
+	PendingResizeRequest m_PendingResize;
+	bool                 m_bRenderSuspended = false;
 
 	std::thread                    m_RenderThread;
 	ThreadQueue< SceneRenderView > m_RenderViewQueue;

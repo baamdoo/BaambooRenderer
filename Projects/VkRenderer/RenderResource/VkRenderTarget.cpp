@@ -13,10 +13,7 @@ VulkanRenderTarget::VulkanRenderTarget(VkRenderDevice& rd, const char* name)
 
 VulkanRenderTarget::~VulkanRenderTarget()
 {
-	if (m_vkFramebuffer) 
-		vkDestroyFramebuffer(m_RenderDevice.vkDevice(), m_vkFramebuffer, nullptr);
-	if (m_vkRenderPass) 
-		vkDestroyRenderPass(m_RenderDevice.vkDevice(), m_vkRenderPass, nullptr);
+	DestroyNativeObjects();
 }
 
 VulkanRenderTarget& VulkanRenderTarget::AttachTexture(render::eAttachmentPoint attachmentPoint, Arc< render::Texture > tex)
@@ -39,9 +36,27 @@ void VulkanRenderTarget::Build()
 	// Render pass
 	// **
 	u32 width = 0; u32 height = 0; u32 depth = 0;
+	VkSampleCountFlagBits sampleCount = VK_SAMPLE_COUNT_1_BIT;
+	bool bHasAttachment = false;
+	const auto validateSampleCount = [&](const VulkanTexture& texture)
+	{
+		if (!bHasAttachment)
+		{
+			sampleCount = texture.Desc().samples;
+			bHasAttachment = true;
+			return;
+		}
+
+		BB_ASSERT(sampleCount == texture.Desc().samples,
+			"Vulkan render target attachments must use the same sample count.");
+	};
+
 	std::vector< VkImageView > attachments; attachments.reserve(m_pAttachments.size());
-	std::vector< VkAttachmentReference > colorReferences; colorReferences.reserve(m_pAttachments.size());
+	std::vector< VkAttachmentReference > colorReferences(
+		eAttachmentPoint::NumColorAttachments,
+		{ VK_ATTACHMENT_UNUSED, VK_IMAGE_LAYOUT_UNDEFINED });
 	std::vector< VkAttachmentDescription > attachmentDescs; attachmentDescs.reserve(m_pAttachments.size());
+	u32 numColorSlots = 0;
 	for (u32 i = 0; i < eAttachmentPoint::NumColorAttachments; ++i)
 	{
 		auto tex = StaticCast<VulkanTexture>(m_pAttachments[i]);
@@ -49,6 +64,9 @@ void VulkanRenderTarget::Build()
 			continue;
 
 		bool bLoad = (m_bLoadAttachmentBits & (1 << i)) != 0;
+		validateSampleCount(*tex);
+		const u32 attachmentIndex = static_cast<u32>(attachmentDescs.size());
+		numColorSlots = i + 1;
 
 		VkAttachmentDescription attachmentDesc = {};
 		attachmentDesc.format         = tex->Desc().format;
@@ -62,11 +80,8 @@ void VulkanRenderTarget::Build()
 		attachmentDesc.initialLayout  = bLoad ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED;
 		attachmentDescs.push_back(attachmentDesc);
 
-		colorReferences.push_back(
-			{
-				.attachment = i,
-				.layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
-			});
+		colorReferences[i].attachment = attachmentIndex;
+		colorReferences[i].layout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
 		attachments.push_back(tex->vkView());
 
@@ -75,19 +90,21 @@ void VulkanRenderTarget::Build()
 		assert(height == 0 || height == tex->Desc().extent.height);  height = tex->Desc().extent.height;
 		assert(depth  == 0 || depth  == tex->Desc().extent.depth);    depth = tex->Desc().extent.depth;
 	}
-	m_NumColors = static_cast<u32>(attachments.size());
+	colorReferences.resize(numColorSlots);
+	m_NumColors = numColorSlots;
 
-	VkAttachmentReference depthReference;
+	VkAttachmentReference depthReference = { VK_ATTACHMENT_UNUSED, VK_IMAGE_LAYOUT_UNDEFINED };
 	if (bUseDepth)
 	{
 		auto pTex = StaticCast<VulkanTexture>(m_pAttachments[eAttachmentPoint::DepthStencil]);
 		if (pTex)
 		{
 			bool bLoadDepth = (m_bLoadAttachmentBits & (1 << eAttachmentPoint::DepthStencil)) != 0;
+			validateSampleCount(*pTex);
 
 			VkAttachmentDescription attachmentDesc = {};
 			attachmentDesc.format         = pTex->Desc().format;
-			attachmentDesc.samples        = VK_SAMPLE_COUNT_1_BIT;
+			attachmentDesc.samples        = pTex->Desc().samples;
 			attachmentDesc.loadOp         = bLoadDepth ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
 			attachmentDesc.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
 			attachmentDesc.stencilLoadOp  = bLoadDepth ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -165,9 +182,8 @@ void VulkanRenderTarget::Build()
 	// **
 	// Begin info
 	// **
-	auto pColor0       = m_pAttachments[eAttachmentPoint::Color0];
-	auto pDepthStencil = m_pAttachments[eAttachmentPoint::DepthStencil];
-	assert(pColor0 || pDepthStencil);
+	BB_ASSERT(!attachments.empty(),
+		"Vulkan render target requires at least one color or depth attachment.");
 
 	for (u32 i = 0; i < eAttachmentPoint::NumAttachmentPoints; ++i)
 	{
@@ -189,20 +205,31 @@ void VulkanRenderTarget::Build()
 	m_RenderDevice.SetVkObjectName(m_Name, (u64)m_vkFramebuffer, VK_OBJECT_TYPE_FRAMEBUFFER);
 }
 
-void VulkanRenderTarget::Resize(u32 width, u32 height, u32 depth)
+void VulkanRenderTarget::DestroyNativeObjects()
 {
-	for (auto attachment : m_pAttachments)
+	if (m_vkFramebuffer)
 	{
-		if (attachment)
-			attachment->Resize(width, height, depth);
+		vkDestroyFramebuffer(m_RenderDevice.vkDevice(), m_vkFramebuffer, nullptr);
+		m_vkFramebuffer = VK_NULL_HANDLE;
+	}
+	if (m_vkRenderPass)
+	{
+		vkDestroyRenderPass(m_RenderDevice.vkDevice(), m_vkRenderPass, nullptr);
+		m_vkRenderPass = VK_NULL_HANDLE;
 	}
 
-	u32 bLoadAttachmentBits = m_bLoadAttachmentBits;
-	std::vector< Arc< render::Texture > > pAttachments = m_pAttachments;
-	Reset();
+	m_BeginInfo = {};
+	m_ClearValues.clear();
+}
 
-	m_pAttachments        = pAttachments;
-	m_bLoadAttachmentBits = bLoadAttachmentBits;
+void VulkanRenderTarget::Resize(u32 width, u32 height, u32 depth)
+{
+	DestroyNativeObjects();
+
+	for (const auto& attachment : m_pAttachments)
+		if (attachment)
+			attachment->Resize(width, height, depth);
+
 	Build();
 }
 
@@ -210,12 +237,10 @@ void VulkanRenderTarget::Reset()
 {
 	using namespace render;
 
+	DestroyNativeObjects();
 	m_bLoadAttachmentBits = 0;
-
 	m_pAttachments.assign(eAttachmentPoint::NumAttachmentPoints, nullptr);
-
-	if (m_vkFramebuffer) vkDestroyFramebuffer(m_RenderDevice.vkDevice(), m_vkFramebuffer, nullptr);
-	if (m_vkRenderPass) vkDestroyRenderPass(m_RenderDevice.vkDevice(), m_vkRenderPass, nullptr);
+	m_NumColors = 0;
 }
 
 void VulkanRenderTarget::InvalidateImageLayout()
@@ -243,16 +268,10 @@ void VulkanRenderTarget::InvalidateImageLayout()
 
 VkViewport VulkanRenderTarget::GetViewport(float2 scale, float2 bias, f32 minDepth, f32 maxDepth) const
 {
-	using namespace render;
-
-	auto pColor0       = StaticCast<VulkanTexture>(m_pAttachments[eAttachmentPoint::Color0]);
-	auto pDepthStencil = StaticCast<VulkanTexture>(m_pAttachments[eAttachmentPoint::DepthStencil]);
-	assert(pColor0 || pDepthStencil);
-
-	u32 width = pColor0 ?
-		pColor0->Desc().extent.width : pDepthStencil->Desc().extent.width;
-	u32 height = pColor0 ?
-		pColor0->Desc().extent.height : pDepthStencil->Desc().extent.height;
+	const u32 width  = m_BeginInfo.renderArea.extent.width;
+	const u32 height = m_BeginInfo.renderArea.extent.height;
+	BB_ASSERT(width > 0 && height > 0,
+		"Vulkan render target must be built before querying its viewport.");
 
 	VkViewport viewport = {};
 	viewport.x        = static_cast<float>(width) * bias.x;
@@ -267,16 +286,10 @@ VkViewport VulkanRenderTarget::GetViewport(float2 scale, float2 bias, f32 minDep
 
 VkRect2D VulkanRenderTarget::GetScissorRect() const
 {
-	using namespace render;
-
-	auto pColor0 = StaticCast<VulkanTexture>(m_pAttachments[eAttachmentPoint::Color0]);
-	auto pDepthStencil = StaticCast<VulkanTexture>(m_pAttachments[eAttachmentPoint::DepthStencil]);
-	assert(pColor0 || pDepthStencil);
-
-	u32 width = pColor0 ?
-		pColor0->Desc().extent.width : pDepthStencil->Desc().extent.width;
-	u32 height = pColor0 ?
-		pColor0->Desc().extent.height : pDepthStencil->Desc().extent.height;
+	const u32 width  = m_BeginInfo.renderArea.extent.width;
+	const u32 height = m_BeginInfo.renderArea.extent.height;
+	BB_ASSERT(width > 0 && height > 0,
+		"Vulkan render target must be built before querying its scissor rectangle.");
 
 	VkRect2D scissor = {};
 	scissor.offset = { 0, 0 };

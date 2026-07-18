@@ -29,6 +29,8 @@ public:
 	// ---- Barrier ----
 	virtual void TransitionBufferToRead(const Arc< render::Buffer >& pBuffer, render::ePipelineStage dstStage, u64 offsetInBytes = 0, bool bFlushImmediate = false) override;
 	virtual void TransitionBufferToWrite(const Arc< render::Buffer >& pBuffer, render::ePipelineStage dstStage, u64 offsetInBytes = 0, bool bFlushImmediate = false) override;
+	virtual void TransitionTextureToRead(const Arc< render::Texture >& pTexture, render::ePipelineStage dstStage, u32 subresource = ALL_SUBRESOURCES, bool bFlushImmediate = false) override;
+	virtual void TransitionTextureToWrite(const Arc< render::Texture >& pTexture, render::ePipelineStage dstStage, u32 subresource = ALL_SUBRESOURCES, bool bFlushImmediate = false) override;
 	virtual void TransitionBarrier(const Arc< render::Texture >& pTexture, render::eTextureLayout newState, u32 subresource = ALL_SUBRESOURCES, bool bFlushImmediate = false) override;
 	virtual void UAVBarrier(const Arc< render::Buffer >& pBuffer, bool bFlushImmediate) override;
 	virtual void TransitionBufferToIndirectArgs(const Arc< render::Buffer >& pBuffer, u64 offsetInBytes = 0, bool bFlushImmediate = true) override;

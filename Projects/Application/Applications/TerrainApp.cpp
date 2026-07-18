@@ -70,7 +70,7 @@ bool TerrainApp::InitWindow()
 			ImGui_ImplGlfw_KeyCallback(window, key, scancode, action, mods);
 
 			ImGuiIO& io = ImGui::GetIO();
-			if (!io.WantCaptureKeyboard)
+			if (!io.WantCaptureKeyboard || action == GLFW_RELEASE)
 			{
 				auto app = reinterpret_cast<TerrainApp*>(glfwGetWindowUserPointer(window));
 				if (app)
@@ -97,7 +97,7 @@ bool TerrainApp::InitWindow()
 			ImGui_ImplGlfw_MouseButtonCallback(window, button, action, mods);
 
 			ImGuiIO& io = ImGui::GetIO();
-			if (!io.WantCaptureMouse)
+			if (!io.WantCaptureMouse || action == GLFW_RELEASE)
 			{
 				bool bPressed = action != GLFW_RELEASE;
 				Input::Inst()->UpdateMouse(button, bPressed);

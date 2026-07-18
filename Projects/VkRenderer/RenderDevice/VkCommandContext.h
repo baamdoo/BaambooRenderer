@@ -67,6 +67,8 @@ public:
 	void TransitionBufferToWrite(const Arc< render::Buffer >& pBuffer, VkPipelineStageFlags2 dstStage, u64 offsetInBytes = 0, bool bFlushImmediate = false);
 	virtual void TransitionBufferToRead(const Arc< render::Buffer >& pBuffer, render::ePipelineStage dstStage, u64 offsetInBytes = 0, bool bFlushImmediate = false) override;
 	virtual void TransitionBufferToWrite(const Arc< render::Buffer >& pBuffer, render::ePipelineStage dstStage, u64 offsetInBytes = 0, bool bFlushImmediate = false) override;
+	virtual void TransitionTextureToRead(const Arc< render::Texture >& pTexture, render::ePipelineStage dstStage, u32 subresource = ALL_SUBRESOURCES, bool bFlushImmediate = false) override;
+	virtual void TransitionTextureToWrite(const Arc< render::Texture >& pTexture, render::ePipelineStage dstStage, u32 subresource = ALL_SUBRESOURCES, bool bFlushImmediate = false) override;
 	virtual void TransitionBarrier(const Arc< render::Texture >& texture, render::eTextureLayout newState, u32 subresource = ALL_SUBRESOURCES, bool bFlushImmediate = false) override;
 	virtual void UAVBarrier(const Arc < render::Buffer >& pBuffer, bool bFlushImmediate) override;
 
@@ -150,9 +152,9 @@ public:
 
 	VkCommandBuffer vkCommandBuffer() const;
 
+	void SetPresentWaitSemaphore(VkSemaphore vkSemaphore);
 	VkFence vkRenderCompleteFence() const;
 	VkSemaphore vkRenderCompleteSemaphore() const;
-	VkFence vkPresentCompleteFence() const;
 	VkSemaphore vkPresentCompleteSemaphore() const;
 
 	VkPipelineLayout vkGraphicsPipelineLayout() const;

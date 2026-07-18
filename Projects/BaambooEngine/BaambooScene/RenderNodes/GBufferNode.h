@@ -41,7 +41,6 @@ private:
 
 	Arc< render::Texture > m_pErosionDetailFallback;
 
-	bool m_bErosionFallbackTransitioned = false;
 };
 
 

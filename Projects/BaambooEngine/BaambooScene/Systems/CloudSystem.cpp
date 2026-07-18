@@ -38,6 +38,56 @@ void CloudSystem::OnComponentDestroyed(entt::registry& registry, entt::entity en
     Super::OnComponentDestroyed(registry, entity);
 }
 
+void CloudSystem::UpdateCameraDependentData(
+	const CloudComponent& component,
+	const AtmosphereRenderView& atmosphereView,
+	const float3& cameraPosition)
+{
+	const float3 sunDirection = atmosphereView.data.light.direction;
+	const float sunElevationDeg = glm::degrees(glm::asin(glm::clamp(sunDirection.y, -1.0f, 1.0f)));
+	const float absSunElevation = glm::abs(sunElevationDeg);
+
+	const float hNorm = math::RemapClamped(cameraPosition.y, m_RenderData.data.bottomLayerKm * 1000.0f, m_RenderData.data.topLayerKm * 1000.0f, 0.0f, 1.0f);
+	const float coverage = math::RemapClamped(hNorm, 0.2f, 1.0f, 1.0f, 0.0f) * component.cloudsCoverage;
+
+	const float alphaDayToDusk = math::RemapClamped(abs(sunElevationDeg + 8.6f), 0.0f, 11.5f, 1.0f, 0.0f);
+	const float alphaNightToDay = math::RemapClamped(absSunElevation, 0.0f, 1.5f, 0.0f, 1.0f);
+	const float3 albedo = component.albedo *
+		glm::mix(component.albedo, float3(1.2f, 1.08076f, 0.8748f), alphaDayToDusk) *
+		glm::mix(float3(0.239258f, 0.28877f, 0.510417f), component.albedo, alphaNightToDay);
+	m_RenderData.data.cloudAlbedo =
+		albedo * math::RemapClamped(absSunElevation, 0.0f, 9.8f, math::RemapClamped(coverage, 1.1f, 1.5f, 1.3f, 1.0f), 1.0f) * component.albedoScale;
+
+	const float3 ray = -sunDirection;
+	const float sphereRadius = 15000.0f;
+
+	const float3 camPosAbovePlanet = cameraPosition + float3{ 0.0f, atmosphereView.data.planetRadiusKm, 0.0f } * 1000.0f;
+	const float2 t = math::RaySphereIntersection(camPosAbovePlanet, ray, float3(0.0f), (m_RenderData.data.topLayerKm + atmosphereView.data.planetRadiusKm) * 1000.0f);
+
+	const float3 sunLookAt = camPosAbovePlanet;
+	const float3 sunPosition = camPosAbovePlanet + (t.x > 0.0f ? t.x : t.y) * ray;
+
+	float3 upVec = float3(0, 1, 0);
+	float3 rightVec = glm::normalize(glm::cross(upVec, sunDirection));
+	if (glm::abs(glm::length(rightVec)) < 0.001f)
+		rightVec = glm::normalize(glm::cross(float3(0.0f, 0.0f, 1.0f), sunDirection));
+	upVec = glm::normalize(glm::cross(sunDirection, rightVec));
+
+	const auto mSunView = glm::lookAtLH(sunPosition, sunLookAt, upVec);
+
+	// Reverse-Z
+	const auto mSunProj = glm::orthoLH_ZO(
+		-sphereRadius, sphereRadius,
+		-sphereRadius, sphereRadius,
+		m_RenderData.data.topLayerKm * 1000.0f,
+		0.0f
+	);
+	m_RenderData.shadow.mSunView        = mSunView;
+	m_RenderData.shadow.mSunViewInv     = glm::inverse(mSunView);
+	m_RenderData.shadow.mSunViewProj    = mSunProj * mSunView;
+	m_RenderData.shadow.mSunViewProjInv = glm::inverse(m_RenderData.shadow.mSunViewProj);
+}
+
 std::vector< u64 > CloudSystem::UpdateRenderData(const EditorCamera& edCamera)
 {
 	for (auto entity : m_ExpiredEntities)
@@ -47,32 +97,48 @@ std::vector< u64 > CloudSystem::UpdateRenderData(const EditorCamera& edCamera)
 	m_ExpiredEntities.clear();
 
 	std::vector< u64 > markedEntities;
-    if (m_DirtyEntities.empty())
-        return markedEntities;
+	const bool bCloudDataChanged = !m_DirtyEntities.empty();
+	const float3 cameraPosition = edCamera.GetPosition();
+	const bool bCameraMoved = !m_bHasLastCameraPosition ||
+		glm::any(glm::notEqual(cameraPosition, m_LastCameraPosition));
+	if (!bCloudDataChanged)
+	{
+		if (bCameraMoved)
+		{
+			if (m_ActiveEntity != entt::null &&
+				m_Registry.valid(m_ActiveEntity) &&
+				m_Registry.all_of< CloudComponent >(m_ActiveEntity))
+			{
+				const auto& component = m_Registry.get< CloudComponent >(m_ActiveEntity);
+				const auto& atmosphereView = m_pAtmosphereSystem->GetRenderData();
+				UpdateCameraDependentData(component, atmosphereView, cameraPosition);
+			}
+
+			m_LastCameraPosition = cameraPosition;
+			m_bHasLastCameraPosition = true;
+		}
+		return markedEntities;
+	}
 
 	m_bHasData = false;
-    m_Registry.view< CloudComponent >().each([this, &edCamera, &markedEntities](auto entity, auto& component)
+	m_Registry.view< CloudComponent >().each([this, cameraPosition, &markedEntities](auto entity, auto& component)
         {
             if (m_bHasData)
                 return;
 
+			m_ActiveEntity = entity;
 			m_RenderData.id = entt::to_integral(entity);
 
 			const AtmosphereRenderView& atmosphereView = m_pAtmosphereSystem->GetRenderData();
 			float3 sunDirection = atmosphereView.data.light.direction;
-			float3 ray          = -sunDirection;
 
 			float sunElevationDeg = glm::degrees(glm::asin(glm::clamp(sunDirection.y, -1.0f, 1.0f)));
 			float absSunElevation = glm::abs(sunElevationDeg);
-
-			float3 camPos = edCamera.GetPosition();
 
 			// base settings
 			m_RenderData.data.topLayerKm    = component.bottomHeightKm + component.layerThicknessKm;
 			m_RenderData.data.bottomLayerKm = component.bottomHeightKm;
 
-			float hNorm    = math::RemapClamped(camPos.y, m_RenderData.data.bottomLayerKm * 1000.0f, m_RenderData.data.topLayerKm * 1000.0f, 0.0f, 1.0f);
-			float coverage = math::RemapClamped(hNorm, 0.2f, 1.0f, 1.0f, 0.0f) * component.cloudsCoverage;
 			float overcast = math::RemapClamped(component.cloudsCoverage, 1.2f, 2.1f, 0.0f, 1.0f);
 
 			m_RenderData.data.localOvercast       = overcast;
@@ -83,13 +149,6 @@ std::vector< u64 > CloudSystem::UpdateRenderData(const EditorCamera& edCamera)
 			float distanceFactor = glm::mix(glm::mix(1.0f, 0.25f, heightAlpha), glm::mix(3.0f, 0.35f, heightAlpha), coverageAlpha);
 			m_RenderData.data.shadowTracingDistanceKm = component.cloudsScale * component.shadowTracingDistanceMultiplier * distanceFactor;
 
-			float  alphaDayToDusk  = math::RemapClamped(abs(sunElevationDeg + 8.6f), 0.0f, 11.5f, 1.0f, 0.0f);
-			float  alphaNightToDay = math::RemapClamped(absSunElevation, 0.0f, 1.5f, 0.0f, 1.0f);
-			float3 albedo = component.albedo *
-				glm::mix(component.albedo, float3(1.2f, 1.08076f, 0.8748f), alphaDayToDusk) *
-				glm::mix(float3(0.239258f, 0.28877f, 0.510417f), component.albedo, alphaNightToDay);
-			m_RenderData.data.cloudAlbedo =
-				albedo * math::RemapClamped(absSunElevation, 0.0f, 9.8f, math::RemapClamped(coverage, 1.1f, 1.5f, 1.3f, 1.0f), 1.0f) * component.albedoScale;
 			m_RenderData.data.groundContributionStrength = component.groundContributionStrength;
 
 			// shape
@@ -138,39 +197,14 @@ std::vector< u64 > CloudSystem::UpdateRenderData(const EditorCamera& edCamera)
 			m_RenderData.weatherMap   = component.weatherMap;
 			m_RenderData.curlNoiseTex = component.curlNoiseTex;
 
-			// update cloud shadow
-			const float sphereRadius = 15000.0f;
-
-			float3 camPosAbovePlanet = camPos + float3{ 0.0f, atmosphereView.data.planetRadiusKm, 0.0f } * 1000.0f;
-			float2 t = math::RaySphereIntersection(camPosAbovePlanet, ray, float3(0.0f), (m_RenderData.data.topLayerKm + atmosphereView.data.planetRadiusKm) * 1000.0f);
-
-			float3 sunLookAt   = camPosAbovePlanet;
-			float3 sunPosition = camPosAbovePlanet + (t.x > 0.0f ? t.x : t.y) * ray;
-
-			float3 upVec    = float3(0, 1, 0);
-			float3 rightVec = glm::normalize(glm::cross(upVec, sunDirection));
-			if (glm::abs(glm::length(rightVec)) < 0.001f)
-				rightVec = glm::normalize(glm::cross(float3(0.0f, 0.0f, 1.0f), sunDirection));
-			upVec = glm::normalize(glm::cross(sunDirection, rightVec));
-
-			auto mSunView = glm::lookAtLH(sunPosition, sunLookAt, upVec);
-
-			// Reverse-Z
-			auto mSunProj = glm::orthoLH_ZO(
-				-sphereRadius, sphereRadius,
-				-sphereRadius, sphereRadius,
-				m_RenderData.data.topLayerKm * 1000.0f,
-				0.0f
-			);
-			m_RenderData.shadow.mSunView        = mSunView;
-			m_RenderData.shadow.mSunViewInv     = glm::inverse(mSunView);
-			m_RenderData.shadow.mSunViewProj    = mSunProj * mSunView;
-			m_RenderData.shadow.mSunViewProjInv = glm::inverse(m_RenderData.shadow.mSunViewProj);
+			UpdateCameraDependentData(component, atmosphereView, cameraPosition);
 
             m_bHasData = true;
 			markedEntities.emplace_back(m_RenderData.id);
         });
 
+	m_LastCameraPosition = cameraPosition;
+	m_bHasLastCameraPosition = true;
     ClearDirtyEntities();
 	return markedEntities;
 }
@@ -188,6 +222,7 @@ void CloudSystem::RemoveRenderData(u64 entityId)
 	if (m_RenderData.id == entityId)
 	{
 		m_bHasData = false;
+		m_ActiveEntity = entt::null;
 	}
 }
 

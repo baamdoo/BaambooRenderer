@@ -1,38 +1,9 @@
 #pragma once
-#include <any>
-#include <array>
+#include <functional>
+#include <vector>
 
 namespace vk
 {
-
-template< size_t NumElement >
-struct FeatureChain
-{
-	auto& bind(auto nextFeature)
-	{
-		BB_ASSERT(count < NumElement, "Chain is full");
-		data[count] = nextFeature;
-
-		auto& next = std::any_cast<decltype(nextFeature)&>(data[count]);
-		next.pNext = std::exchange(head, &next);
-		count++;
-
-		return next;
-	}
-
-	auto& tail()
-	{
-		if (count == 0)
-			std::any();
-
-		return data[count - 1];
-	}
-
-	std::array< std::any, NumElement > data;
-	u32 count;
-
-	void* head = nullptr;
-};
 
 //-------------------------------------------------------------------------
 // Instance
@@ -44,6 +15,7 @@ public:
 
 	InstanceBuilder& AddValidationLayer(const char* layerString);
 	InstanceBuilder& AddExtensionLayer(const char* layerString);
+	InstanceBuilder& AddOptionalExtensionLayer(const char* layerString);
 
 	InstanceBuilder& SetApiVersion(u32 version);
 
@@ -51,9 +23,18 @@ public:
 
 	VkInstance Build();
 
+	bool bValidationEnabled         = false;
+	bool bValidationFeaturesEnabled = false;
+	bool bDebugUtilsEnabled         = false;
+	bool bSurfaceMaintenanceEnabled = false;
+
 private:
-	std::vector< const char* > m_ValidationLayers;
-	std::vector< const char* > m_ExtensionLayers;
+	std::vector< const char* > m_RequestedValidationLayers;
+	std::vector< const char* > m_EnabledValidationLayers;
+	std::vector< const char* > m_RequiredExtensionLayers;
+	std::vector< const char* > m_OptionalExtensionLayers;
+	std::vector< const char* > m_EnabledExtensionLayers;
+	std::vector< VkValidationFeatureEnableEXT > m_ValidationFeatureEnables;
 
 	VkApplicationInfo       m_AppInfo = VkApplicationInfo();
 	VkValidationFeaturesEXT m_ValidationFeatures = VkValidationFeaturesEXT();
@@ -83,33 +64,6 @@ private:
 //-------------------------------------------------------------------------
 // Device
 //-------------------------------------------------------------------------
-enum : u8
-{
-	// **
-	// 0 ~ 7 : Core Features
-	// **
-	ePhysicalDeviceFeature_Core_1_X = 0,
-	ePhysicalDeviceFeature_AdditionalShader,
-	ePhysicalDeviceFeature_MultiViewport,
-	ePhysicalDeviceFeature_DynamicIndexing,
-	ePhysicalDeviceFeature_IndirectRendering,
-	ePhysicalDeviceFeature_DescriptorIndexing,
-	ePhysicalDeviceFeature_DeviceAddress,
-	ePhysicalDeviceFeature_SamplerAnistropy,
-	ePhysicalDeviceFeature_DynamicRendering,
-	ePhysicalDeviceFeature_ShaderInt64,
-	ePhysicalDeviceFeature_StorageBuffer8BitAccess,
-	ePhysicalDeviceFeature_MeshShader,
-
-	// **
-	// 32 ~ 63 : More Extension Features
-	// **
-	ePhysicalDeviceFeature_Extension = 32,
-	ePhysicalDeviceFeature_Sync2,
-	ePhysicalDeviceFeature_IndexTypeUint8,
-	ePhysicalDeviceFeature_SwapChainMaintenance,
-	ePhysicalDeviceFeature_PipelineStatistics,
-};
 class DeviceBuilder
 {
 public:
@@ -121,50 +75,58 @@ public:
 	//-------------------------------------------------------------------------
 	DeviceBuilder& SetMinimumApiVersion(u32 version);
 	DeviceBuilder& SetPhysicalDeviceType(VkPhysicalDeviceType type);
-	DeviceBuilder& AddPhysicalDeviceFeature(u8 featureBit);
+	DeviceBuilder& RequireMeshShader(bool bRequired);
+	DeviceBuilder& EnableSwapchainMaintenance(bool bInstanceSurfaceMaintenanceEnabled);
 
-	VkPhysicalDevice					     physicalDevice           = VK_NULL_HANDLE;
-	VkPhysicalDeviceFeatures			     physicalDeviceFeatures   = VkPhysicalDeviceFeatures();
-	VkPhysicalDeviceFeatures2			     physicalDeviceFeatures2  = VkPhysicalDeviceFeatures2();
-	VkPhysicalDeviceVulkan11Features	     physicalDevice11Features = VkPhysicalDeviceVulkan11Features();
-	VkPhysicalDeviceVulkan12Features	     physicalDevice12Features = VkPhysicalDeviceVulkan12Features();
-	VkPhysicalDeviceVulkan13Features	     physicalDevice13Features = VkPhysicalDeviceVulkan13Features();
-	VkPhysicalDeviceProperties			     physicalDeviceProperties = VkPhysicalDeviceProperties();
-	VkPhysicalDeviceMaintenance3Properties   physicalDeviceMaintenance3Properties = VkPhysicalDeviceMaintenance3Properties();
+	VkPhysicalDevice                       physicalDevice = VK_NULL_HANDLE;
+	VkPhysicalDeviceProperties             physicalDeviceProperties = {};
+	VkPhysicalDeviceMaintenance3Properties physicalDeviceMaintenance3Properties = {};
+	VkPhysicalDeviceFeatures               enabledPhysicalDeviceFeatures = {};
 
 public:
 	//-------------------------------------------------------------------------
 	// Logical Device
 	//-------------------------------------------------------------------------
-	DeviceBuilder& AddDeviceExtension(const char* extension);
 	VkDevice Build(VkInstance instance);
 
 	struct QueueFamilyIndex
 	{
-		u32	graphicsQueueIndex = UINT_MAX;
-		u32	computeQueueIndex = UINT_MAX;
-		u32	transferQueueIndex = UINT_MAX;
+		u32 graphicsQueueIndex = UINT_MAX;
+		u32 computeQueueIndex = UINT_MAX;
+		u32 transferQueueIndex = UINT_MAX;
+		u32 graphicsTimestampValidBits = 0;
+		u32 computeTimestampValidBits = 0;
 	} queueFamilyIndices;
 
 public:
 	//-------------------------------------------------------------------------
 	// Device Capabilities
 	//-------------------------------------------------------------------------
-	bool bSupportMeshShader = false;
+	bool bMeshShaderEnabled           = false;
+	bool bSwapchainMaintenanceEnabled = false;
+	bool bMemoryBudgetEnabled         = false;
+	bool bPipelineStatisticsEnabled   = false;
 
 private:
 	VkResult queryPhysicalDevice(VkInstance instance);
 	QueueFamilyIndex getQueueFamilyIndex() const;
+	bool supportsDeviceExtension(const char* extensionName) const;
 
 private:
-	struct
-	{
-		u32 apiVersion;
-		i64 featureBits;
-		VkPhysicalDeviceType deviceType;
-	} m_PhysicalRequirements;
+	u32 m_MinimumApiVersion = VK_API_VERSION_1_3;
+	VkPhysicalDeviceType m_PreferredDeviceType = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+	bool m_bRequireMeshShader = false;
+	bool m_bInstanceSurfaceMaintenanceEnabled = false;
 
-	std::vector< const char* > m_LogicalDeviceExtensions;
+	VkPhysicalDeviceVulkan11Features m_Supported11Features = {};
+	VkPhysicalDeviceVulkan12Features m_Supported12Features = {};
+	VkPhysicalDeviceVulkan13Features m_Supported13Features = {};
+	VkPhysicalDeviceMeshShaderFeaturesEXT m_SupportedMeshShaderFeatures = {};
+	VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT m_SupportedSwapchainMaintenanceFeatures = {};
+	VkPhysicalDeviceSubgroupProperties m_SubgroupProperties = {};
+	VkPhysicalDeviceDescriptorIndexingProperties m_DescriptorIndexingProperties = {};
+	VkPhysicalDevicePushDescriptorPropertiesKHR m_PushDescriptorProperties = {};
+	std::vector< VkExtensionProperties > m_SelectedDeviceExtensions;
 };
 
 
@@ -179,6 +141,8 @@ public:
 	SwapChainBuilder& SetDesiredImageCount(u32 count);
 	SwapChainBuilder& SetDesiredImageFormat(VkFormat format);
 	SwapChainBuilder& SetDesiredImageResolution(u32 width, u32 height);
+	[[nodiscard]]
+	inline VkExtent2D Extent() const { return m_Extent; }
 	SwapChainBuilder& AddImageUsage(VkImageUsageFlagBits usageBit);
 
 	SwapChainBuilder& SetVSync(bool vSync);
@@ -194,6 +158,7 @@ private:
 	VkPhysicalDevice m_vkPhysicalDevice = VK_NULL_HANDLE;
 
 	std::vector< VkSurfaceFormatKHR > m_SurfaceFormats;
+	std::vector< VkPresentModeKHR > m_PresentModes;
 
 	VkImageUsageFlags m_ImageUsageFlags;
 

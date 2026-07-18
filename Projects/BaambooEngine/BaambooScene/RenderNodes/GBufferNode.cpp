@@ -153,7 +153,7 @@ void GBufferNode::DrawGBufferImpl(render::CommandContext& context, Arc< render::
 	{
 		if (cullOutputs.phase == CullingNode::kPhase2Cull)
 		{
-			context.TransitionBarrier(cullOutputs.pHiZ, eTextureLayout::ShaderReadOnly);
+			context.TransitionTextureToRead(cullOutputs.pHiZ, ePipelineStage::TaskShader);
 		}
 		context.TransitionBufferToWrite(cullOutputs.pMeshletVisibility, ePipelineStage::TaskShader);
 
@@ -162,11 +162,7 @@ void GBufferNode::DrawGBufferImpl(render::CommandContext& context, Arc< render::
 		if (pVoxMv)       context.TransitionBufferToRead(pVoxMv,       ePipelineStage::TaskShader | ePipelineStage::MeshShader);
 		if (pVoxMt)       context.TransitionBufferToRead(pVoxMt,       ePipelineStage::TaskShader | ePipelineStage::MeshShader);
 
-		if (!pErosion && !m_bErosionFallbackTransitioned)
-		{
-			context.TransitionBarrier(m_pErosionDetailFallback, eTextureLayout::ShaderReadOnly);
-			m_bErosionFallbackTransitioned = true;
-		}
+		context.TransitionTextureToRead(pErosion ? pErosion : m_pErosionDetailFallback, ePipelineStage::MeshShader);
 
 #if PROFILING_LEVEL >= 1
 		if (cullOutputs.pMeshletStats)
