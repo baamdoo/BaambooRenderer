@@ -89,7 +89,7 @@ Iterative progressive path tracer (**NEE + power-heuristic MIS**, Russian roulet
 
 - Composite BSDF with one-sample lobe selection and a combined PDF for MIS; supports both glTF-style and Disney-principled materials
 - Environment maps importance-sampled via a precomputed 2D CDF; six analytic light types shared with the raster pipeline
-- 15-channel AOV dumps to EXR (headless CLI) compared against PBRT-v4 / Mitsuba 3 renders of identical generated scenes — tooling in [PathTracer_Reference](https://github.com/baamdoo/PathTracer_Reference)
+- Validate by dumping AOVs to EXR (headless CLI) compared against PBRT-v4 / Mitsuba 3 renders of identical generated scenes
 - Cached BLAS / on-demand TLAS management; progressive accumulation with automatic invalidation on camera or scene changes
 
 <details><summary>🚧 <b>In progress — n-layered substrate material</b></summary>
