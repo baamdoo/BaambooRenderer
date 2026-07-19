@@ -124,8 +124,6 @@ graph LR
 - **Backend synchronization abstraction** — D3D12 enhanced barriers are the primary path; Vulkan `synchronization2` support is experimental and undergoing barrier and lifetime hardening.
 - **Built-in profiling & debug tooling** — GPU draw/meshlet stats read back through a frames-in-flight ring, automatic frame-time anomaly capture, and debug overlays including a frozen-camera frustum mode for inspecting occlusion culling
 
-> D3D12 is the primary, portfolio-ready backend. Vulkan, the DXR path tracer, and voxel-terrain vertical slices are experimental or still being hardened; capability and feature coverage varies by sample. The DXR path tracer is Direct3D 12-only.
-
 ## Sample Applications
 
 | Sample | Focus |
