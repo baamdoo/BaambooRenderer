@@ -147,10 +147,10 @@ graph LR
 ```bat
 git clone --recursive https://github.com/baamdoo/BaambooRenderer.git
 cd BaambooRenderer
-premake\premake5.exe vs2022
+Run GenerateProject.bat
 ```
 
-Open `Baamboo.sln`, build, and run the `Application` project. The active sample is selected in `Projects/main.cpp`. NuGet packages (D3D12 Agility SDK, DXC, DirectXTK12, DirectXTex) are restored automatically on first build.
+Open `Baamboo.sln`, build, and run the `Application` project. The active sample is selected in `Projects/Applications/main.cpp`. NuGet packages (D3D12 Agility SDK, DXC, DirectXTK12, DirectXTex) are restored automatically on first build.
 
 ## Third-Party
 
