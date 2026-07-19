@@ -233,12 +233,8 @@ void main()
             }
         }
 
-        vec3 ambientColor = vec3(g_LightBuffer.lightingData.ambientColorR,
-                                 g_LightBuffer.lightingData.ambientColorG,
-                                 g_LightBuffer.lightingData.ambientColorB);
-        vec3 ambient      = ambientColor * g_LightBuffer.lightingData.ambientIntensity * albedo * ao;
-
-        color = ambient + Lo + emissive;
+        // TODO. sky IBL
+        color = Lo + emissive;
 
         // Aerial perspective
         {

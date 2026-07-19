@@ -99,7 +99,7 @@ CloudDensityResult VolumetricCloudsExtinction(vec3 pos, float hNorm, float distT
     float heightDensityMod = pow(profileTextureG, 3.0) * Cloud.extinctionScale;
 
     float highFreqNoise  = saturate(
-        mix(1.0 - pow(abs(abs(lowFreqNoise.g * 2.0 - 1.0) * 2.0 - 1.0), 4.0 * Cloud.hfErosionDistortion), 
+        mix(1.0 - pow(abs(abs(lowFreqNoise.g * 2.0 - 1.0) * 2.0 - 1.0), 4.0 * Cloud.hfErosionDistortion),
             pow(abs(abs(lowFreqNoise.b * 2.0 - 1.0) * 2.0 - 1.0), 2.0 * Cloud.hfErosionDistortion), noiseBlendAlpha));
     float noiseComposite = mix(highFreqNoise, lowFreqErosion, Cloud.hfErosionStrength);
 

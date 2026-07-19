@@ -1,0 +1,43 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+layout(set = 1, binding = 0) uniform sampler2D g_SrcLowTexture;  // previous upsample (smaller mip)
+layout(set = 1, binding = 1) uniform sampler2D g_SrcHighTexture; // downsample at target resolution
+
+layout(set = 1, binding = 2, rgba16f) uniform writeonly image2D g_OutputImage;
+
+layout(push_constant) uniform PushConstants
+{
+    float filterRadius; // in low-mip texels
+} g_Push;
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+
+void main()
+{
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 outSize    = imageSize(g_OutputImage);
+    if (any(greaterThanEqual(pixelCoord, outSize)))
+        return;
+
+    vec2 texel = g_Push.filterRadius / vec2(textureSize(g_SrcLowTexture, 0));
+    vec2 uv    = (vec2(pixelCoord) + 0.5) / vec2(outSize);
+
+
+    // Progressive 3x3 tent upsample
+    vec3 blur = vec3(0.0);
+    blur += texture(g_SrcLowTexture, uv + texel * vec2(-1.0, -1.0)).rgb * 1.0;
+    blur += texture(g_SrcLowTexture, uv + texel * vec2( 0.0, -1.0)).rgb * 2.0;
+    blur += texture(g_SrcLowTexture, uv + texel * vec2( 1.0, -1.0)).rgb * 1.0;
+    blur += texture(g_SrcLowTexture, uv + texel * vec2(-1.0,  0.0)).rgb * 2.0;
+    blur += texture(g_SrcLowTexture, uv).rgb * 4.0;
+    blur += texture(g_SrcLowTexture, uv + texel * vec2( 1.0,  0.0)).rgb * 2.0;
+    blur += texture(g_SrcLowTexture, uv + texel * vec2(-1.0,  1.0)).rgb * 1.0;
+    blur += texture(g_SrcLowTexture, uv + texel * vec2( 0.0,  1.0)).rgb * 2.0;
+    blur += texture(g_SrcLowTexture, uv + texel * vec2( 1.0,  1.0)).rgb * 1.0;
+    blur *= (1.0 / 16.0);
+
+    vec3 high = texture(g_SrcHighTexture, uv).rgb;
+    imageStore(g_OutputImage, pixelCoord, vec4((high + blur) * 0.5, 1.0));
+}

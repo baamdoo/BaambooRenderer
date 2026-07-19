@@ -64,15 +64,23 @@ vec2 GetUvFromSkyViewRayDirection(float longitude, float latitude, float viewHei
 
 vec3 GetSunLuminance(vec3 rayDir, vec3 L, bool bIntersectGround)
 {
-    if (dot(rayDir, L) > cos(0.5 * 0.505 * PI / 180.0))
+    AtmosphereData Atmosphere = GetAtmosphereData();
+
+    float halfAngle = max(Atmosphere.light.angularRadiusRad, 1e-4);
+    if (dot(rayDir, L) > cos(halfAngle))
 	{
         if (!bIntersectGround)
 		{
-			const vec3 SunLuminance = vec3(1000000.0);
-			return SunLuminance;
+			vec3 lightColor = vec3(Atmosphere.light.colorR, Atmosphere.light.colorG, Atmosphere.light.colorB);
+			if (Atmosphere.light.temperatureK > 0.0)
+				lightColor *= ColorTemperatureToRGB(Atmosphere.light.temperatureK);
+
+			// Disk luminance = illuminance / disk solid angle
+			float solidAngle = 2.0 * PI * (1.0 - cos(halfAngle));
+			return Atmosphere.light.illuminanceLux * lightColor / solidAngle;
 		}
 	}
-    
+
     return vec3(0.0);
 }
 
@@ -111,7 +119,14 @@ void main()
         skyUV = GetUnstretchedTextureUV(skyUV, texSize);
 
    vec4 skyColor = texture(g_SkyViewLUT, skyUV);
-   vec3 color    = skyColor.rgb + GetSunLuminance(rayDir, sunDirection, bIntersectGround) * skyColor.a;
+
+   // Hue-preserving cap: physical disk luminance far exceeds the RG11B10/fp16 storage budget
+   vec3  disk = GetSunLuminance(rayDir, sunDirection, bIntersectGround) * skyColor.a;
+   float peak = max(disk.r, max(disk.g, disk.b));
+   if (peak > 60000.0)
+       disk *= 60000.0 / peak;
+
+   vec3 color = skyColor.rgb + disk;
 
    imageStore(g_OutSkyboxLUT, pixCoords, vec4(color, 1.0));
 }

@@ -17,6 +17,20 @@ layout(push_constant) uniform PushConstants
 } g_Push;
 
 
+// Karis (2014): resolve in tonemapped space so one ultra-bright sample (physical sky is
+// ~1e3-1e4 cd/m2 against ~1e2 surfaces) cannot dominate edge averages and re-harden
+// silhouettes after display mapping. History stays linear; weight on fetch, invert on store.
+vec3 KarisTonemap(vec3 c)
+{
+    return c / (1.0 + dot(c, vec3(0.2126, 0.7152, 0.0722)));
+}
+
+vec3 KarisInverseTonemap(vec3 c)
+{
+    return c / max(1.0 - dot(c, vec3(0.2126, 0.7152, 0.0722)), 1e-6);
+}
+
+
 layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 void main() 
 {
@@ -31,11 +45,12 @@ void main()
     vec2 historyUV     = uv - velocity;
     bool bValidHistory = all(greaterThanEqual(historyUV, vec2(0.0))) && all(lessThanEqual(historyUV, vec2(1.0)));
 
-    vec3 currentColor = texture(g_SceneTexture, uv).rgb;
+    vec3 currentColor = KarisTonemap(texture(g_SceneTexture, uv).rgb);
     vec3 historyColor = vec3(0.0);
     if (bValidHistory && g_Push.bFirstFrame == 0)
     {
-        historyColor = TextureCatmullRom(g_HistoryTexture, historyUV, imgSize).rgb;
+        // max(0): Catmull-Rom negative lobes can undershoot on HDR history
+        historyColor = KarisTonemap(max(TextureCatmullRom(g_HistoryTexture, historyUV, imgSize).rgb, vec3(0.0)));
     }
     else
     {
@@ -56,7 +71,7 @@ void main()
         for (float y = -1.0; y <= 1.0; y += 1.0) 
         {
             vec2 sampleUV      = uv + vec2(x, y) / vec2(imgSize);
-            vec3 neighborColor = texture(g_SceneTexture, sampleUV).rgb;
+            vec3 neighborColor = KarisTonemap(texture(g_SceneTexture, sampleUV).rgb);
             vec3 neighborYCoCg = RGB2YCoCg(neighborColor);
 
             m1 += neighborYCoCg;
@@ -82,7 +97,7 @@ void main()
 
     float blendAlpha = bValidHistory ? g_Push.blendFactor * velocityWeight : 1.0;
 
-    vec3 finalColor = mix(clampedHistory, currentColor, blendAlpha);
+    vec3 finalColor = KarisInverseTonemap(mix(clampedHistory, currentColor, blendAlpha));
 
     imageStore(g_OutputImage, pixCoords, vec4(finalColor, 1.0));
 }

@@ -1,0 +1,73 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+layout(set = 1, binding = 0) uniform sampler2D g_SrcTexture;
+
+layout(set = 1, binding = 1, rgba16f) uniform writeonly image2D g_OutputImage;
+
+layout(push_constant) uniform PushConstants
+{
+    uint bFirstDownsample;
+} g_Push;
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+
+// Reference: Jimenez (SIGGRAPH 2014, CoD:AW)
+// https://advances.realtimerendering.com/s2014/index.html
+float KarisWeight(vec3 c)
+{
+    float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    return 1.0 / (1.0 + luma);
+}
+
+void main()
+{
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 outSize    = imageSize(g_OutputImage);
+    if (any(greaterThanEqual(pixelCoord, outSize)))
+        return;
+
+    vec2 texel = 1.0 / vec2(textureSize(g_SrcTexture, 0));
+    vec2 uv    = (vec2(pixelCoord) + 0.5) / vec2(outSize);
+
+    vec3 a = texture(g_SrcTexture, uv + texel * vec2(-2.0, -2.0)).rgb;
+    vec3 b = texture(g_SrcTexture, uv + texel * vec2( 0.0, -2.0)).rgb;
+    vec3 c = texture(g_SrcTexture, uv + texel * vec2( 2.0, -2.0)).rgb;
+    vec3 d = texture(g_SrcTexture, uv + texel * vec2(-2.0,  0.0)).rgb;
+    vec3 e = texture(g_SrcTexture, uv).rgb;
+    vec3 f = texture(g_SrcTexture, uv + texel * vec2( 2.0,  0.0)).rgb;
+    vec3 g = texture(g_SrcTexture, uv + texel * vec2(-2.0,  2.0)).rgb;
+    vec3 h = texture(g_SrcTexture, uv + texel * vec2( 0.0,  2.0)).rgb;
+    vec3 i = texture(g_SrcTexture, uv + texel * vec2( 2.0,  2.0)).rgb;
+    vec3 j = texture(g_SrcTexture, uv + texel * vec2(-1.0, -1.0)).rgb;
+    vec3 k = texture(g_SrcTexture, uv + texel * vec2( 1.0, -1.0)).rgb;
+    vec3 l = texture(g_SrcTexture, uv + texel * vec2(-1.0,  1.0)).rgb;
+    vec3 m = texture(g_SrcTexture, uv + texel * vec2( 1.0,  1.0)).rgb;
+
+    vec3 result;
+    if (g_Push.bFirstDownsample != 0u)
+    {
+        vec3 group0 = (a + b + d + e) * 0.25;
+        vec3 group1 = (b + c + e + f) * 0.25;
+        vec3 group2 = (d + e + g + h) * 0.25;
+        vec3 group3 = (e + f + h + i) * 0.25;
+        vec3 group4 = (j + k + l + m) * 0.25;
+
+        result = group0 * (0.125 * KarisWeight(group0))
+               + group1 * (0.125 * KarisWeight(group1))
+               + group2 * (0.125 * KarisWeight(group2))
+               + group3 * (0.125 * KarisWeight(group3))
+               + group4 * (0.5   * KarisWeight(group4));
+        result /= (0.125 * (KarisWeight(group0) + KarisWeight(group1) + KarisWeight(group2) + KarisWeight(group3)) + 0.5 * KarisWeight(group4));
+    }
+    else
+    {
+        result = e * 0.125
+               + (a + c + g + i) * 0.03125
+               + (b + d + f + h) * 0.0625
+               + (j + k + l + m) * 0.125;
+    }
+
+    imageStore(g_OutputImage, pixelCoord, vec4(result, 1.0));
+}

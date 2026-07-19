@@ -220,6 +220,7 @@ void Engine::Release()
 		m_RenderThread.join();
 	}
 	m_RenderViewQueue.clear();
+	ImGui::EntityDeletionQueue.clear(); // pending deletes hold Entity handles into the dying scene
 
 	m_pRendererBackend->WaitIdle();
 
@@ -1082,7 +1083,7 @@ void Engine::DrawUI()
 	ImGui::End();
 
 	// --- Camera Freeze ---
-	ImGui::Begin("Frustum Visualization");
+	ImGui::Begin("Debug Visualization");
 	{
 		if (m_pScene)
 		{
@@ -1717,8 +1718,6 @@ void Engine::DrawUI()
 							bMark |= ImGui::DragFloat("Cloud Thickness (km)", &component.layerThicknessKm, 0.1f, 0.1f, 20.0f, "%.1f");
 							bMark |= ImGui::DragFloat("Shadow Tracing Distance Multiplier", &component.shadowTracingDistanceMultiplier, 0.01f, 0.1f, 10.0f, "%.2f");
 
-							bMark |= ImGui::ColorEdit3("Cloud Albedo", glm::value_ptr(component.albedo));
-							bMark |= ImGui::DragFloat("Albedo Scale", &component.albedoScale, 0.01f, 0.1f, 3.0f, "%.2f");
 
 							bMark |= ImGui::DragFloat("Ground Contribution", &component.groundContributionStrength, 0.001f, 0.0f, 1.0f, "%.3f");
 
@@ -1735,7 +1734,6 @@ void Engine::DrawUI()
 							bMark |= ImGui::DragFloat("Cloud Floor Variation(Clear)", &component.floorVariationClear, 0.01f, 0.0f, 10.0f, "%.3f");
 							bMark |= ImGui::DragFloat("Cloud Floor Variation(Cloudy)", &component.floorVariationCloudy, 0.01f, 0.0f, 10.0f, "%.3f");
 
-							bMark |= ImGui::DragFloat("Cloud Scale", &component.cloudsScale, 0.01f, 0.1f, 10.0f, "%.2f");
 							if (ImGui::IsItemHovered())
 							{
 								ImGui::BeginTooltip();
@@ -1756,25 +1754,19 @@ void Engine::DrawUI()
 							bMark |= ImGui::DragFloat("Base Erosion Scale", &component.baseErosionScale, 0.001f, 0.01f, 10.0f, "%.3f");
 							bMark |= ImGui::DragFloat("Base Erosion Power", &component.baseErosionPower, 0.001f, 0.0f, 10.0f, "%.3f");
 							bMark |= ImGui::DragFloat("Base Erosion Strength", &component.baseErosionStrength, 0.01f, 0.0f, 10.0f, "%.2f");
+							bMark |= ImGui::DragFloat("High Frequency Erosion Distortion", &component.hfErosionDistortion, 0.001f, 0.0f, 5.0f, "%.2f");
 
 							bMark |= ImGui::DragFloat("High Frequency Erosion Strength", &component.hfErosionStrength, 0.001f, 0.0f, 1.0f, "%.2f");
-							bMark |= ImGui::DragFloat("High Frequency Erosion Distortion", &component.hfErosionDistortion, 0.001f, 0.0f, 5.0f, "%.2f");
 						}
 						if (ImGui::CollapsingHeader("Shade"))
 						{
-							bMark |= ImGui::ColorEdit3("Scattering Scale", glm::value_ptr(component.scatteringScale));
 							bMark |= ImGui::DragFloat("Extinction Scale", &component.extinctionScale, 0.01f, 1.0f, 20.0f, "%.3f");
 
 							bMark |= ImGui::DragFloat("MultiScattering Contribution", &component.msContribution, 0.001f, 0.0f, 1.0f, "%.3f");
 							bMark |= ImGui::DragFloat("MultiScattering Occlusion", &component.msOcclusion, 0.001f, 0.0f, 1.0f, "%.3f");
-							bMark |= ImGui::DragFloat("MultiScattering Eccentricity", &component.msEccentricity, 0.001f, 0.0f, 1.0f, "%.3f");
 
-							bMark |= ImGui::DragFloat("SilverLining Strength", &component.silverScatterG, 0.001f, 0.01f, 0.99f, "%.3f");
 
 							bMark |= ImGui::DragFloat("Ambient Intensity", &component.ambientIntensity, 0.001f, 0.0f, 10.0f, "%.3f");
-							bMark |= ImGui::DragFloat("Ambient Saturation", &component.ambientSaturation, 0.001f, 0.0f, 10.0f, "%.3f");
-							bMark |= ImGui::DragFloat("Top Ambient Scale", &component.topAmbientScale, 0.001f, 0.0f, 10.0f, "%.3f");
-							bMark |= ImGui::DragFloat("Bottom Ambient Scale", &component.bottomAmbientScale, 0.001f, 0.0f, 10.0f, "%.3f");
 						}
 						if (ImGui::CollapsingHeader("Performance"))
 						{
@@ -1840,7 +1832,7 @@ void Engine::DrawUI()
 							ImGui::DragFloat("ExponentialFactor", &component.heightFog.exponentialFactor, 0.1f, 0.0f, 20.0f, "%.1f");
 						}
 
-						if (ImGui::CollapsingHeader("Bloom(TODO)"))
+						if (ImGui::CollapsingHeader("Bloom"))
 						{
 							constexpr u64 effectBit = 1ULL << ePostProcess::Bloom;
 							bool bApply = (component.effectBits & effectBit) != 0;
@@ -1850,7 +1842,7 @@ void Engine::DrawUI()
 								bMark = true;
 							}
 
-							ImGui::DragInt("FilterSize", &component.bloom.filterSize, 1, 1, 16);
+							bMark |= ImGui::DragFloat("Intensity", &component.bloom.intensity, 0.005f, 0.0f, 0.5f, "%.3f");
 						}
 
 						if (ImGui::CollapsingHeader("AntiAliasing"))
@@ -1915,6 +1907,12 @@ void Engine::DrawUI()
 								if (ImGui::Selectable("Uncharted2", component.tonemap.op == eToneMappingOp::Uncharted2))
 								{
 									component.tonemap.op = eToneMappingOp::Uncharted2;
+
+									bMark = true;
+								}
+								if (ImGui::Selectable("Uchimura", component.tonemap.op == eToneMappingOp::Uchimura))
+								{
+									component.tonemap.op = eToneMappingOp::Uchimura;
 
 									bMark = true;
 								}

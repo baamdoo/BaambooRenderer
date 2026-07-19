@@ -121,11 +121,11 @@ float3 CalculateCloudAmbient(float3 baseAmbient, float hNorm, float alpha)
     const float3 deepBlueTint  = float3(0.3, 0.4, 0.65);
     const float3 muddyGreyTint = float3(0.25, 0.20, 0.20);
 
-    float topIntensity    = Cloud.topAmbientScale;
-    float bottomIntensity = lerp(0.25, 0.75, hNorm) * Cloud.bottomAmbientScale;
+    float topIntensity    = 1.0;
+    float bottomIntensity = lerp(0.25, 0.75, hNorm) * 2.55;
 
     float3 ambientOvercasted  = lerp(baseAmbient, baseAmbient * muddyGreyTint, Cloud.localOvercast);
-    float3 ambientDesaturated = Desaturate(ambientOvercasted, 1.0 - Cloud.ambientSaturation);
+    float3 ambientDesaturated = Desaturate(ambientOvercasted, 0.2);
 
     float3 ambientLit = ambientDesaturated * Cloud.ambientIntensity * lerp(topIntensity, bottomIntensity, alpha);
     return ambientLit;
@@ -282,23 +282,28 @@ CloudResult RaymarchCloud(float3 rayOrigin, float3 rayDirection, float maxDistan
     if (rayLength <= 0.0)
         return result;
 
+    float distanceFade = 1.0 - smoothstep(18000, 60000, rayStart);
+    if (distanceFade <= 0.0)
+        return result;
+
     float3 sunDirection = normalize(float3(-Atmosphere.light.dirX, -Atmosphere.light.dirY, -Atmosphere.light.dirZ));
     float3 lightColor   = float3(Atmosphere.light.colorR, Atmosphere.light.colorG, Atmosphere.light.colorB);
     if (Atmosphere.light.temperatureK > 0.0)
         lightColor *= ColorTemperatureToRGB(Atmosphere.light.temperatureK);
 
-    float3 E = Atmosphere.light.illuminanceLux * lightColor * Cloud.scatteringScale;
+    float3 E = Atmosphere.light.illuminanceLux * lightColor;
 
     float VoL = dot(rayDirection, sunDirection);
 
     // --- Phase function --- //
     //float phase = phase_DualLob(VoL, CLOUD_FORWARD_SCATTERING_G, CLOUD_BACKWARD_SCATTERING_G, CLOUD_PHASE_BLEND_ALPHA);
     float baseScatter   = phase_DraineHG(VoL, 0.9881, 0.5567, 21.9955, 0.4824);
-    float silverScatter = 0.5 * phase_HG(VoL, Cloud.silverScatterG);
+    float silverScatter = 0.5 * phase_HG(VoL, 0.99);
+    float backScatter   = 0.5 * phase_HG(VoL, -0.15);
 
-    float phase = max(baseScatter, silverScatter);
+    float phase = max(baseScatter, max(silverScatter, backScatter));
 
-    ParticipatingMediaPhaseContext PMPC = SetupParticipatingMediaPhaseContext(phase, Cloud.msEccentricity);
+    ParticipatingMediaPhaseContext PMPC = SetupParticipatingMediaPhaseContext(phase, 0.4);
     // ---------------------- //
 
     // --- Sampling setup --- //
@@ -351,7 +356,7 @@ CloudResult RaymarchCloud(float3 rayOrigin, float3 rayDirection, float maxDistan
             float msScatteringStrength = Cloud.msContribution;
             float msExtinctionStrength = Cloud.msOcclusion;
 
-            ParticipatingMediaExtinctionContext    PMEC = SetupParticipatingMediaExtinctionContext(Cloud.cloudAlbedo, stepExtinction, msScatteringStrength, msExtinctionStrength);
+            ParticipatingMediaExtinctionContext    PMEC = SetupParticipatingMediaExtinctionContext(float3(1.0, 1.0, 1.0), stepExtinction, msScatteringStrength, msExtinctionStrength);
             ParticipatingMediaTransmittanceContext PMTC = RaymarchLight(samplePos, sunDirection, VoL, msExtinctionStrength, jitter.g);
 
             float  ambientU   = inverseLerp(sampleHeight, planetRadiusMeter, atmosphereRadiusMeter);
@@ -427,8 +432,8 @@ CloudResult RaymarchCloud(float3 rayOrigin, float3 rayDirection, float maxDistan
         tSample += stepSize;
     }
 
-    result.L          = L;
-    result.throughput = throughput;
+    result.L          = L * distanceFade;
+    result.throughput = lerp(1.0, throughput, distanceFade);
     if (apScale > 0.0)
     {
         result.apDistance = apDistanceAcc / apScale;

@@ -2,13 +2,15 @@
 
 cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
-    uint  g_TonemapOperator; // 0: None, 1: Reinhard, 2: ACES, 3: Uncharted2
+    uint  g_TonemapOperator; // 0: None, 1: Reinhard, 2: ACES, 3: Uncharted2, 4: Uchimura
     float g_EV100;
     float g_Gamma;
+    float g_BloomStrength;   // 0: bloom off
 };
 
 ConstantBuffer< DescriptorHeapIndex > g_SceneTexture : register(b1, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_OutputImage  : register(b2, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_BloomTexture : register(b3, ROOT_CONSTANT_SPACE);
 
 
 float3 RRTAndODTFit(float3 v)
@@ -51,6 +53,34 @@ float3 Uncharted2Tonemap(float3 x)
     return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
 }
 
+// Uchimura 2017, "HDR theory and practice"
+// https://www.slideshare.net/nikuque/hdr-theory-and-practicce-jp
+float3 UchimuraTonemap(float3 x)
+{
+    const float P = 1.0;  // max display brightness
+    const float a = 1.0;  // contrast
+    const float m = 0.22; // linear section start
+    const float l = 0.4;  // linear section length
+    const float c = 1.33; // black tightness
+    const float b = 0.0;  // pedestal
+
+    float l0 = ((P - m) * l) / a;
+    float S0 = m + l0;
+    float S1 = m + a * l0;
+    float C2 = (a * P) / (P - S1);
+    float CP = -C2 / P;
+
+    float3 w0 = 1.0 - smoothstep(0.0, m, x);
+    float3 w2 = step(m + l0, x);
+    float3 w1 = 1.0 - w0 - w2;
+
+    float3 T = m * pow(x / m, c) + b;
+    float3 S = P - (P - S1) * exp(CP * (x - S0));
+    float3 L = m + a * (x - m);
+
+    return saturate(T * w0 + L * w1 + S * w2);
+}
+
 [numthreads(16, 16, 1)]
 void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 {
@@ -66,6 +96,14 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 
     float2 uv       = (float2(pixelCoord) + 0.5) / float2(imageSize);
     float3 hdrColor = SceneTexture.SampleLevel(g_LinearClampSampler, uv, 0).rgb;
+
+    // energy-conserving bloom mix, in HDR before exposure
+    if (g_BloomStrength > 0.0)
+    {
+        Texture2D< float4 > BloomTexture = GetResource(g_BloomTexture.index);
+        float3 bloom = BloomTexture.SampleLevel(g_LinearClampSampler, uv, 0).rgb;
+        hdrColor = lerp(hdrColor, bloom, g_BloomStrength);
+    }
 
     // exposure correction
     float ev100    = g_EV100;
@@ -96,6 +134,10 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
         toneMapped = curr * whiteScale;
         break;
     }
+
+    case 4: // Uchimura
+        toneMapped = UchimuraTonemap(hdrColor);
+        break;
 
     default:
         toneMapped = hdrColor;

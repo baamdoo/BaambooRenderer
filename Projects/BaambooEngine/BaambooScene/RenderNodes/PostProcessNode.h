@@ -21,6 +21,8 @@ private:
 	virtual void ApplyToneMapping(render::CommandContext& context, const SceneRenderView& renderView);
 
 private:
+	static constexpr u32 kBloomMipCount = 6;
+
 	struct
 	{
 		Arc< render::Texture > pHistoryTexture;
@@ -31,6 +33,15 @@ private:
 
 		u64 ApplyCounter;
 	} m_TAA;
+
+	struct
+	{
+		Arc< render::Texture > pDownChain[kBloomMipCount];
+		Arc< render::Texture > pUpChain[kBloomMipCount];
+
+		Box< render::ComputePipeline > pDownsamplePSO;
+		Box< render::ComputePipeline > pUpsamplePSO;
+	} m_Bloom;
 
 	struct
 	{

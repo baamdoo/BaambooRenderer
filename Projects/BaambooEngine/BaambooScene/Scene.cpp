@@ -37,6 +37,10 @@ Scene::Scene(const std::string& name)
 
 Scene::~Scene()
 {
+	// cached entities point into this scene's registry; a later scene (e.g. after a
+	// runtime renderer-API switch) must not resurrect them via the import cache
+	s_ModelCache.clear();
+
 	for (auto& [_, pLoader] : m_ModelLoaderCache)
 		RELEASE(pLoader);
 
@@ -414,10 +418,6 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport,
 	m_pStaticMeshSystem->CollectRenderData(view);
 	m_pSkyLightSystem->CollectRenderData(view);
 	m_pLocalLightSystem->CollectRenderData(view);
-	{
-		view.light.ambientColor     = float3(1.0f, 1.0f, 1.0f);
-		view.light.ambientIntensity = 0.02f;
-	}
 	m_pAtmosphereSystem->CollectRenderData(view);
 	m_pCloudSystem->CollectRenderData(view);
 	m_pPostProcessSystem->CollectRenderData(view);

@@ -57,14 +57,20 @@ float2 GetUvFromSkyViewRayDirection(float longitude, float latitude, float viewH
     return uv;
 }
 
-float3 GetSunLuminance(float3 rayDir, float3 L, bool bIntersectGround)
+float3 GetSunLuminance(AtmosphereData Atmosphere, float3 rayDir, float3 L, bool bIntersectGround)
 {
-    if (dot(rayDir, L) > cos(0.5 * 0.505 * PI / 180.0))
+    float halfAngle = max(Atmosphere.light.angularRadiusRad, 1e-4);
+    if (dot(rayDir, L) > cos(halfAngle))
     {
         if (!bIntersectGround)
         {
-            const float3 SunLuminance = 1000000.0;
-            return SunLuminance;
+            float3 lightColor = float3(Atmosphere.light.colorR, Atmosphere.light.colorG, Atmosphere.light.colorB);
+            if (Atmosphere.light.temperatureK > 0.0)
+                lightColor *= ColorTemperatureToRGB(Atmosphere.light.temperatureK);
+
+            // Disk luminance = illuminance / disk solid angle
+            float solidAngle = 2.0 * PI * (1.0 - cos(halfAngle));
+            return Atmosphere.light.illuminanceLux * lightColor / solidAngle;
         }
     }
     return 0.0;
@@ -109,7 +115,14 @@ void main(uint3 tID : SV_DispatchThreadID)
     float2 skyUV = GetUvFromSkyViewRayDirection(longitude, acosFast4(cosLatitude), viewHeight, Atmosphere.planetRadiusKm, bIntersectGround);
            skyUV = GetUnstretchedTextureUV(skyUV, texSize);
     float4 skyColor = SkyViewLUT.SampleLevel(g_LinearClampSampler, skyUV, 0);
-    float3 color    = skyColor.rgb + GetSunLuminance(rayDir, sunDirection, bIntersectGround) * skyColor.a;
+
+    // Hue-preserving cap: physical disk luminance far exceeds the RG11B10/fp16 storage budget
+    float3 disk = GetSunLuminance(Atmosphere, rayDir, sunDirection, bIntersectGround) * skyColor.a;
+    float  peak = max(disk.r, max(disk.g, disk.b));
+    if (peak > 60000.0)
+        disk *= 60000.0 / peak;
+
+    float3 color = skyColor.rgb + disk;
 
     OutSkyboxLUT[tID] = color;
 }

@@ -13,6 +13,20 @@ ConstantBuffer< DescriptorHeapIndex > g_HistoryTexture  : register(b3, ROOT_CONS
 ConstantBuffer< DescriptorHeapIndex > g_OutputImage     : register(b4, ROOT_CONSTANT_SPACE);
 
 
+// Karis (2014): resolve in tonemapped space so one ultra-bright sample (physical sky is
+// ~1e3-1e4 cd/m2 against ~1e2 surfaces) cannot dominate edge averages and re-harden
+// silhouettes after display mapping. History stays linear; weight on fetch, invert on store.
+float3 KarisTonemap(float3 c)
+{
+    return c / (1.0 + dot(c, float3(0.2126, 0.7152, 0.0722)));
+}
+
+float3 KarisInverseTonemap(float3 c)
+{
+    return c / max(1.0 - dot(c, float3(0.2126, 0.7152, 0.0722)), 1e-6);
+}
+
+
 [numthreads(16, 16, 1)]
 void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 {
@@ -35,11 +49,12 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     float2 historyUV     = uv - velocity;
     bool   bValidHistory = all(historyUV >= float2(0.0, 0.0)) && all(historyUV <= float2(1.0, 1.0));
 
-    float3 currentColor = SceneTexture.SampleLevel(g_LinearClampSampler, uv, 0).rgb;
+    float3 currentColor = KarisTonemap(SceneTexture.SampleLevel(g_LinearClampSampler, uv, 0).rgb);
     float3 historyColor = float3(0.0, 0.0, 0.0);
     if (bValidHistory && bFirstFrame == 0)
     {
-        historyColor = TextureCatmullRom(HistoryTexture, g_LinearClampSampler, historyUV, texSize).rgb;
+        // max(0): Catmull-Rom negative lobes can undershoot on HDR history
+        historyColor = KarisTonemap(max(TextureCatmullRom(HistoryTexture, g_LinearClampSampler, historyUV, texSize).rgb, 0.0));
     }
     else
     {
@@ -60,7 +75,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
         for (float y = -1.0; y <= 1.0; y += 1.0)
         {
             float2 sampleUV      = uv + float2(x, y) / texSize;
-            float3 neighborColor = SceneTexture.SampleLevel(g_LinearClampSampler, sampleUV, 0).rgb;
+            float3 neighborColor = KarisTonemap(SceneTexture.SampleLevel(g_LinearClampSampler, sampleUV, 0).rgb);
             float3 neighborYCoCg = RGB2YCoCg(neighborColor);
 
             m1 += neighborYCoCg;
@@ -86,7 +101,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 
     float blendAlpha = bValidHistory ? blendFactor * velocityWeight : 1.0;
 
-    float3 finalColor = lerp(clampedHistory, currentColor, blendAlpha);
+    float3 finalColor = KarisInverseTonemap(lerp(clampedHistory, currentColor, blendAlpha));
 
     OutputImage[pixelCoord] = float4(finalColor, 1.0);
 }

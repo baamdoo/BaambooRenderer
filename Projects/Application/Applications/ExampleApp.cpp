@@ -16,6 +16,7 @@
 #include "BaambooScene/RenderNodes/SurfaceResolveNode.h"
 #include "BaambooScene/RenderNodes/PostProcessNode.h"
 
+#include <cmath>
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui/backends/imgui_impl_glfw.h>
 
@@ -276,22 +277,42 @@ void ExampleApp::ConfigureSceneObjects()
 		descriptor.bWindingCW        = true;
 		descriptor.bGenerateMeshlets = true;
 
-		auto entity = m_pScene->ImportModel(MODEL_PATH.append("kitten.obj"), descriptor);
-		entity.AttachComponent< ScriptComponent >();
+		auto ground = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);
+		{
+			auto& tc = ground.GetComponent< TransformComponent >();
+			tc.transform.position = float3(0.0f, -1.5f, 480.0f);
+			tc.transform.scale    = float3(800.0f, 0.25f, 500.0f);
 
-		auto& entitytc = entity.GetComponent< TransformComponent >();
-		entitytc.transform.position = { 0.0f, 0.0f, 500.0f };
-		entitytc.transform.scale = { 100.0f, 100.0f, 100.0f };
+			auto& m = ground.GetComponent< MaterialComponent >();
+			m.tint      = float4(0.55f, 0.4f, 0.28f, 1.0f);
+			m.roughness = 0.8f;
+			m.metallic  = 0.0f;
+		}
 
-		auto dhEntity = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
-		auto& tc = dhEntity.GetComponent< TransformComponent >();
-		tc.transform.position = { -100.0f, 0.0f, 0.0f };
-		tc.transform.scale = { 100.0f, 100.0f, 100.0f };
+		constexpr i32 kSweepCols = 10; // metallic 0..1, left -> right
+		constexpr i32 kSweepRows = 5;  // roughness 0..1, bottom -> top
+		for (i32 row = 0; row < kSweepRows; ++row)
+		{
+			for (i32 col = 0; col < kSweepCols; ++col)
+			{
+				auto sphere = m_pScene->ImportModel(MODEL_PATH.append("_synthetic/icosphere_hq.ply"), descriptor);
 
-		auto dhEntity2 = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
-		auto& tc2 = dhEntity2.GetComponent< TransformComponent >();
-		tc2.transform.position = { 100.0f, 0.0f, 0.0f };
-		tc2.transform.scale = { 100.0f, 100.0f, 100.0f };
+				auto& tc = sphere.GetComponent< TransformComponent >();
+				tc.transform.position = float3(-7.6f + 3.2f * col, 3.0f * row, 16.0f);
+
+				auto& m = sphere.GetComponent< MaterialComponent >();
+				m.tint      = float4(0.9f, 0.9f, 0.9f, 1.0f);
+				m.roughness = float(row) / float(kSweepRows - 1);
+				m.metallic  = float(col) / float(kSweepCols - 1);
+			}
+		}
+
+		/*auto helmet = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
+		{
+			auto& tc = helmet.GetComponent< TransformComponent >();
+			tc.transform.position = float3(0.0f, 0.5f, 10.0f);
+			tc.transform.scale    = float3(2.0f);
+		}*/
 	}
 
 	// animated mesh
@@ -328,9 +349,9 @@ void ExampleApp::ConfigureSceneObjects()
 
 		auto& light = environment.GetComponent< LightComponent >();
 		light.type             = eLightType::Directional;
-		light.temperatureK     = 10000.0f;
-		light.color            = float3(1.0f, 0.95f, 0.8f);
-		light.illuminanceLux   = 5.0f; //120'000.0f;
+		light.temperatureK     = 5778.0f; // physical sun; low-sun warmth comes from atmosphere transmittance
+		light.color            = float3(1.0f, 1.0f, 1.0f);
+		light.illuminanceLux   = 120'000.0f; // physical direct-sun illuminance; pairs with EV100 ~14.6 (Sunny-16)
 		light.angularRadiusRad = 0.00465f;
 
 		auto& transformComponent = environment.GetComponent< TransformComponent >();
@@ -385,8 +406,10 @@ void ExampleApp::ConfigureSceneObjects()
 		auto  volume = m_pScene->CreateEntity("PostProcessVolume");
 		auto& pp = volume.AttachComponent< PostProcessComponent >();
 
-		pp.tonemap.op    = eToneMappingOp::ACES;
-		pp.tonemap.ev100 = 0.0f;
+		pp.effectBits   |= (1ull << ePostProcess::Bloom);
+		pp.effectBits   |= (1ull << ePostProcess::AntiAliasing); // TAA (+ jittered projection)
+		pp.tonemap.op    = eToneMappingOp::Uchimura;
+		pp.tonemap.ev100 = 14.6f; // Sunny-16 for the 120k lux sun
 		pp.tonemap.gamma = 2.2f;
 	}
 }

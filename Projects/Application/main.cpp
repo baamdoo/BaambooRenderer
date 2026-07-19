@@ -31,12 +31,12 @@ int main(int argc, char** argv)
 			pathTracerScene = std::string(arg.substr(std::string_view("--pt-scene=").size()));
 	}
 
-	//ExampleApp app = {};
+	ExampleApp app = {};
 	//BistroApp app = {};
 	//LightingApp app = {};
-	//RayTracingApp app = {};
-	//app.ConfigurePathTracerAutomation(bDumpAOV, bExitAfterDump, pathTracerScene);
-	TerrainApp app = {};
+	/*RayTracingApp app = {};
+	app.ConfigurePathTracerAutomation(bDumpAOV, bExitAfterDump, pathTracerScene);*/
+	//TerrainApp app = {};
 	try
 	{
 		app.Initialize(rendererAPI);

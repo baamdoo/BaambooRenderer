@@ -44,19 +44,6 @@ void CloudSystem::UpdateCameraDependentData(
 	const float3& cameraPosition)
 {
 	const float3 sunDirection = atmosphereView.data.light.direction;
-	const float sunElevationDeg = glm::degrees(glm::asin(glm::clamp(sunDirection.y, -1.0f, 1.0f)));
-	const float absSunElevation = glm::abs(sunElevationDeg);
-
-	const float hNorm = math::RemapClamped(cameraPosition.y, m_RenderData.data.bottomLayerKm * 1000.0f, m_RenderData.data.topLayerKm * 1000.0f, 0.0f, 1.0f);
-	const float coverage = math::RemapClamped(hNorm, 0.2f, 1.0f, 1.0f, 0.0f) * component.cloudsCoverage;
-
-	const float alphaDayToDusk = math::RemapClamped(abs(sunElevationDeg + 8.6f), 0.0f, 11.5f, 1.0f, 0.0f);
-	const float alphaNightToDay = math::RemapClamped(absSunElevation, 0.0f, 1.5f, 0.0f, 1.0f);
-	const float3 albedo = component.albedo *
-		glm::mix(component.albedo, float3(1.2f, 1.08076f, 0.8748f), alphaDayToDusk) *
-		glm::mix(float3(0.239258f, 0.28877f, 0.510417f), component.albedo, alphaNightToDay);
-	m_RenderData.data.cloudAlbedo =
-		albedo * math::RemapClamped(absSunElevation, 0.0f, 9.8f, math::RemapClamped(coverage, 1.1f, 1.5f, 1.3f, 1.0f), 1.0f) * component.albedoScale;
 
 	const float3 ray = -sunDirection;
 	const float sphereRadius = 15000.0f;
@@ -147,18 +134,18 @@ std::vector< u64 > CloudSystem::UpdateRenderData(const EditorCamera& edCamera)
 			float heightAlpha    = math::RemapClamped(glm::clamp(absSunElevation, 8.6f, 90.0f), 8.6f, 48.0f, 0.0f, 1.0f);
 			float coverageAlpha  = glm::pow(math::RemapClamped(component.cloudsCoverage, 1.3f, 2.0f, 0.0f, 1.0f), 2.0f);
 			float distanceFactor = glm::mix(glm::mix(1.0f, 0.25f, heightAlpha), glm::mix(3.0f, 0.35f, heightAlpha), coverageAlpha);
-			m_RenderData.data.shadowTracingDistanceKm = component.cloudsScale * component.shadowTracingDistanceMultiplier * distanceFactor;
+			m_RenderData.data.shadowTracingDistanceKm = component.shadowTracingDistanceMultiplier * distanceFactor;
 
 			m_RenderData.data.groundContributionStrength = component.groundContributionStrength;
 
 			// shape
-			m_RenderData.data.cloudsScale     = component.cloudsMacroUvScale * component.cloudsScale;
+			m_RenderData.data.cloudsScale     = component.cloudsMacroUvScale;
 			m_RenderData.data.clumpsVariation = component.clumpsVariation * math::RemapClamped(component.cloudsCoverage, 0.0f, 0.3f, 0.0f, 1.0f) * math::RemapClamped(component.cloudsCoverage, 1.75f, 1.95f, 1.0, 0.0f);
 
 			m_RenderData.data.floorVariationClear  = component.floorVariationClear;
 			m_RenderData.data.floorVariationCloudy = component.floorVariationCloudy;
 
-			float baseErosionScale = component.baseErosionScale * 1400.0f * component.cloudsScale;
+			float baseErosionScale = component.baseErosionScale * 1400.0f;
 			m_RenderData.data.baseDensity         = glm::clamp((component.cloudsCoverage - math::RemapClamped(component.cloudsCoverage, 0.0f, 0.2f, 0.2f, 0.0f)) * 1.15f, -0.2f, 3.0f);
 			m_RenderData.data.baseErosionScale    = float3(baseErosionScale, baseErosionScale * math::RemapClamped(component.layerThicknessKm * 0.01f, 0.0f, 0.3f, 0.6f, 0.01f), baseErosionScale);
 			m_RenderData.data.baseErosionPower    = component.baseErosionPower;
@@ -167,20 +154,13 @@ std::vector< u64 > CloudSystem::UpdateRenderData(const EditorCamera& edCamera)
 			m_RenderData.data.hfErosionDistortion = component.hfErosionDistortion;
 
 			// shade-direct
-			m_RenderData.data.scatteringScale = component.scatteringScale;
-			m_RenderData.data.extinctionScale = component.extinctionScale * (1.0f / component.cloudsScale);
+			m_RenderData.data.extinctionScale = component.extinctionScale;
 
 			m_RenderData.data.msContribution = component.msContribution;
 			m_RenderData.data.msOcclusion    = component.msOcclusion;
-			m_RenderData.data.msEccentricity = component.msEccentricity;
-
-			m_RenderData.data.silverScatterG = component.silverScatterG;
 
 			// shade-ambient
-			m_RenderData.data.ambientIntensity   = component.ambientIntensity;
-			m_RenderData.data.ambientSaturation  = component.ambientSaturation;
-			m_RenderData.data.topAmbientScale    = component.topAmbientScale;
-			m_RenderData.data.bottomAmbientScale = component.bottomAmbientScale * 3.0f;
+			m_RenderData.data.ambientIntensity = component.ambientIntensity;
 
 			// animation
 			m_RenderData.data.windDirection = component.windDirection;

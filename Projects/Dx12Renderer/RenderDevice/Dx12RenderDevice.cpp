@@ -305,12 +305,12 @@ bool Dx12RenderDevice::SaveTextureToEXR(const Arc< render::Texture >& pTexture, 
 	const u32 width  = pTex->GetWidth();
 	const u32 height = pTex->GetHeight();
 
-	// Part 1 only dumps RGBA32_FLOAT AOVs (albedo / normal / depth). Keep the readback path
-	// trivial (straight float copy, no half->float). Extend here if other formats are needed.
 	const DXGI_FORMAT format = pTex->GetFormat();
-	if (format != DXGI_FORMAT_R32G32B32A32_FLOAT)
+	if (format != DXGI_FORMAT_R32G32B32A32_FLOAT
+	 && format != DXGI_FORMAT_R16G16B16A16_FLOAT
+	 && format != DXGI_FORMAT_R8G8B8A8_UNORM)
 	{
-		printf("[SaveTextureToEXR] '%s': unsupported format %d (expected RGBA32_FLOAT)\n", path, static_cast< int >(format));
+		printf("[SaveTextureToEXR] '%s': unsupported format %d\n", path, static_cast< int >(format));
 		return false;
 	}
 
@@ -366,18 +366,84 @@ bool Dx12RenderDevice::SaveTextureToEXR(const Arc< render::Texture >& pTexture, 
 	if (!pMapped)
 		return false;
 
+	auto HalfToFloat = [](u16 h) -> float
+	{
+		const u32 sign = static_cast< u32 >(h & 0x8000u) << 16;
+		u32 exp = (h >> 10) & 0x1Fu;
+		u32 man = h & 0x3FFu;
+
+		u32 bits;
+		if (exp == 0)
+		{
+			if (man == 0)
+			{
+				bits = sign;
+			}
+			else
+			{
+				exp = 127 - 15 + 1;
+				while ((man & 0x400u) == 0) { man <<= 1; --exp; }
+				man &= 0x3FFu;
+				bits = sign | (exp << 23) | (man << 13);
+			}
+		}
+		else if (exp == 31)
+		{
+			bits = sign | 0x7F800000u | (man << 13);
+		}
+		else
+		{
+			bits = sign | ((exp - 15 + 127) << 23) | (man << 13);
+		}
+
+		float f;
+		std::memcpy(&f, &bits, sizeof(f));
+		return f;
+	};
+
 	const u32 rowPitch = footprint.Footprint.RowPitch;
 	std::vector< float > image(static_cast< size_t >(width) * height * 3u);
 	for (u32 y = 0; y < height; ++y)
 	{
-		const float* pRow = reinterpret_cast< const float* >(pMapped + static_cast< size_t >(y) * rowPitch);
-		for (u32 x = 0; x < width; ++x)
+		const u8* pRow    = pMapped + static_cast< size_t >(y) * rowPitch;
+		float*    pDstRow = image.data() + static_cast< size_t >(y) * width * 3u;
+		switch (format)
 		{
-			const float* pSrcPixel = pRow + x * 4u; // RGBA32F
-			float*       pDstPixel = image.data() + (static_cast< size_t >(y) * width + x) * 3u;
-			pDstPixel[0] = pSrcPixel[0];
-			pDstPixel[1] = pSrcPixel[1];
-			pDstPixel[2] = pSrcPixel[2];
+		case DXGI_FORMAT_R32G32B32A32_FLOAT:
+		{
+			const float* pSrc = reinterpret_cast< const float* >(pRow);
+			for (u32 x = 0; x < width; ++x)
+			{
+				pDstRow[x * 3u + 0] = pSrc[x * 4u + 0];
+				pDstRow[x * 3u + 1] = pSrc[x * 4u + 1];
+				pDstRow[x * 3u + 2] = pSrc[x * 4u + 2];
+			}
+			break;
+		}
+		case DXGI_FORMAT_R16G16B16A16_FLOAT:
+		{
+			const u16* pSrc = reinterpret_cast< const u16* >(pRow);
+			for (u32 x = 0; x < width; ++x)
+			{
+				pDstRow[x * 3u + 0] = HalfToFloat(pSrc[x * 4u + 0]);
+				pDstRow[x * 3u + 1] = HalfToFloat(pSrc[x * 4u + 1]);
+				pDstRow[x * 3u + 2] = HalfToFloat(pSrc[x * 4u + 2]);
+			}
+			break;
+		}
+		case DXGI_FORMAT_R8G8B8A8_UNORM:
+		{
+			const u8* pSrc = pRow;
+			for (u32 x = 0; x < width; ++x)
+			{
+				pDstRow[x * 3u + 0] = pSrc[x * 4u + 0] * (1.0f / 255.0f);
+				pDstRow[x * 3u + 1] = pSrc[x * 4u + 1] * (1.0f / 255.0f);
+				pDstRow[x * 3u + 2] = pSrc[x * 4u + 2] * (1.0f / 255.0f);
+			}
+			break;
+		}
+		default:
+			break;
 		}
 	}
 

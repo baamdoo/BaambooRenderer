@@ -62,6 +62,8 @@ std::vector< u64 > PostProcessSystem::UpdateRenderData(const EditorCamera& edCam
 			m_RenderData.aa.blendFactor = component.aa.blendFactor;
 			m_RenderData.aa.sharpness   = component.aa.sharpness;
 
+			m_RenderData.bloom.intensity = component.bloom.intensity;
+
 			m_RenderData.tonemap.op    = component.tonemap.op;
 			m_RenderData.tonemap.ev100 = component.tonemap.ev100;
 			m_RenderData.tonemap.gamma = component.tonemap.gamma;

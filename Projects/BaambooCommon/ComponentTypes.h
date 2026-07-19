@@ -27,6 +27,7 @@ enum class eToneMappingOp
 	Reinhard,
 	ACES,
 	Uncharted2,
+	Uchimura,
 };
 
 enum eDebugDraw

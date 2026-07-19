@@ -113,8 +113,7 @@ float3 ComputeMultiScattering(float viewHeight, float cosZenithAngle)
             float3 transmittanceToSun = SampleTransmittanceLUT(TransmittanceLUT, g_LinearClampSampler, sampleHeight, sampleTheta, Atmosphere.planetRadiusKm, Atmosphere.atmosphereRadiusKm);
 
             // L'(x,v) = T(x,p) * Lo(p,v), where Lo : diffuse response according to ground albedo
-	    	L += throughput * transmittanceToSun * NoL * float3(0.40981, 0.40981, 0.40981) / PI;
-	    	// L += transmittanceToSun * throughput * NoL * Atmosphere.groundAlbedo / PI;
+	    	L += throughput * transmittanceToSun * NoL * Atmosphere.groundAlbedo / PI;
 	    }
         
         // (5) L2ndOrder_i = L'(xs, -w) * pu * dw

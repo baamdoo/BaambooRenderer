@@ -385,16 +385,12 @@ struct CloudComponent
 
 	float shadowTracingDistanceMultiplier = 0.5f;
 
-	float3 albedo      = float3(1.0f);
-	float  albedoScale = 0.3f;
-
 	float groundContributionStrength = 0.3f;
 
 	// shape
 	float floorVariationClear  = 0.1f;
 	float floorVariationCloudy = 0.8f;
 
-	float cloudsScale        = 1.0f;
 	float cloudsMacroUvScale = 12000.0f;
 	float cloudsCoverage     = 1.28f;
 	float clumpsVariation    = 0.23f;
@@ -408,20 +404,13 @@ struct CloudComponent
 	float hfErosionDistortion = 1.0f;
 
 	// shade-direct
-	float3 scatteringScale = float3(2.695f, 2.963334f, 3.5f);
-	float  extinctionScale = 10.0f;
+	float extinctionScale = 10.0f;
 
-	float msContribution             = 0.85f;
-	float msOcclusion                = 0.5f;
-	float msEccentricity             = 0.4f;
-
-	float silverScatterG = 0.99f;
+	float msContribution = 0.85f;
+	float msOcclusion    = 0.5f;
 
 	// shade-ambient
-	float ambientIntensity   = 1.0f;
-	float ambientSaturation  = 0.45f;
-	float topAmbientScale    = 1.0f;
-	float bottomAmbientScale = 0.85f;
+	float ambientIntensity = 1.0f;
 
 	// Animation
 	float3 windDirection = float3(1.0f, 0.0f, 0.0f);
@@ -456,10 +445,10 @@ struct PostProcessComponent
 		float exponentialFactor;
 	} heightFog;
 
-	// bloom (TODO)
+	// bloom
 	struct
 	{
-		i32 filterSize;
+		float intensity = 0.4f;
 	} bloom;
 
 	// anti-aliasing
@@ -477,8 +466,8 @@ struct PostProcessComponent
 	{
 		eToneMappingOp op;
 
-		float ev100;
-		float gamma;
+		float ev100 = 0.0f;
+		float gamma = 2.2f;
 	} tonemap;
 };
 

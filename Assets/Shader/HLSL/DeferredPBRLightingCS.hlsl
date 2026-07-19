@@ -244,10 +244,8 @@ void main(uint3 tID : SV_DispatchThreadID)
             }
         }
 
-        float3 ambientColor = float3(g_Lights.ambientColorR, g_Lights.ambientColorG, g_Lights.ambientColorB);
-        float3 ambient = ambientColor * g_Lights.ambientIntensity * albedo * ao;
-
-        color = ambient + Lo + emissive;
+        // TODO. sky IBL
+        color = Lo + emissive;
 
         // Aerial perspective
         {

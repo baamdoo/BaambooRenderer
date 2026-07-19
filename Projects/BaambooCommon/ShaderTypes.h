@@ -285,9 +285,6 @@ struct LightData
     u32 numTubes;
     u32 padding0;
     u32 padding1;
-
-    float3 ambientColor;
-    float  ambientIntensity;
 };
 
 
@@ -321,9 +318,6 @@ struct CloudData
     float localOvercast;
     float shadowTracingDistanceKm;
 
-    float3 cloudAlbedo;
-    float  groundContributionStrength;
-
     float cloudsScale;
     float clumpsVariation;
     float floorVariationClear;
@@ -331,28 +325,26 @@ struct CloudData
 
     float3 baseErosionScale;
     float  baseDensity;
-    float  baseErosionStrength;
-    float  baseErosionPower;
-    float  hfErosionStrength;
-    float  hfErosionDistortion;
 
-    float3 scatteringScale;
-    float  extinctionScale;
+    float baseErosionStrength;
+    float baseErosionPower;
+    float hfErosionStrength;
+    float hfErosionDistortion;
 
+    float groundContributionStrength;
+    float extinctionScale;
     float msContribution;
     float msOcclusion;
-    float msEccentricity;
-    float silverScatterG;
-
-    float ambientIntensity;
-    float ambientSaturation;
-    float topAmbientScale;
-    float bottomAmbientScale;
 
     float3 windDirection;
     float  windSpeedMps;
 
+    float ambientIntensity;
+    float padding0;
+    float padding1;
+    float padding2;
 };
+static_assert(sizeof(CloudData) == 112, "CloudData layout must match Common.hlsli / DescriptorCommon.hg");
 struct SceneEnvironmentData
 {
     AtmosphereData atmosphere;

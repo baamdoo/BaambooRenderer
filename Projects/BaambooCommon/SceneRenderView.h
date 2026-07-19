@@ -170,10 +170,10 @@ struct PostProcessRenderView
 		float exponentialFactor;
 	} heightFog;
 
-	// bloom (TODO)
+	// bloom
 	struct
 	{
-		i32 filterSize;
+		float intensity;
 	} bloom;
 
 	// anti-aliasing

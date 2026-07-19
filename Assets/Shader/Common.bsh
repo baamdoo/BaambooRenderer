@@ -393,9 +393,6 @@ struct LightingData
 	uint  numTubes;
 	uint  padding0;
 	uint  padding1;
-
-	float ambientColorR, ambientColorG, ambientColorB;
-	float ambientIntensity;
 };
 
 #endif // _COMMON_HEADER
