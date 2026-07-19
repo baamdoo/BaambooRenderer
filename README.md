@@ -105,8 +105,8 @@ The single-layer composite BSDF is complete and reference-validated; extending i
 
 ### Post-Processing
 
-- Antialising with TAA with Halton jitter, Catmull-Rom history resampling, and YCoCg variance clipping.
-- Visual improvement with EV100 exposure with selectable ACES / Uncharted 2 / Reinhard / Uchimura tonemapping operations.
+- Antialising with TAA with Halton jitter, Catmull-Rom history resampling, and YCoCg variance clipping
+- Visual improvement with EV100 exposure with selectable ACES / Uncharted 2 / Reinhard / Uchimura tonemapping operations
 
 
 ## Architecture
