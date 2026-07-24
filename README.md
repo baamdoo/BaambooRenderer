@@ -89,7 +89,7 @@ Iterative progressive path tracer (**NEE + power-heuristic MIS**, Russian roulet
 
 - Composite BSDF with one-sample lobe selection and a combined PDF for MIS; supports both glTF-style and Disney-principled materials
 - Environment maps importance-sampled via a precomputed 2D CDF; six analytic light types shared with the raster pipeline
-- 15-channel AOV dumps to EXR (headless CLI) compared against PBRT-v4 / Mitsuba 3 renders of identical generated scenes — tooling in [PathTracer_Reference](https://github.com/baamdoo/PathTracer_Reference)
+- Validate by dumping AOVs to EXR (headless CLI) compared against PBRT-v4 / Mitsuba 3 renders of identical generated scenes
 - Cached BLAS / on-demand TLAS management; progressive accumulation with automatic invalidation on camera or scene changes
 
 <details><summary>🚧 <b>In progress — n-layered substrate material</b></summary>
@@ -105,7 +105,9 @@ The single-layer composite BSDF is complete and reference-validated; extending i
 
 ### Post-Processing
 
-Compute TAA with Halton jitter, Catmull-Rom history resampling, and YCoCg variance clipping; post-TAA sharpen; EV100 exposure with selectable ACES / Uncharted 2 / Reinhard tonemapping.
+- Antialising with TAA with Halton jitter, Catmull-Rom history resampling, and YCoCg variance clipping
+- Visual improvement with EV100 exposure with selectable ACES / Uncharted 2 / Reinhard / Uchimura tonemapping operations
+
 
 ## Architecture
 
@@ -145,10 +147,10 @@ graph LR
 ```bat
 git clone --recursive https://github.com/baamdoo/BaambooRenderer.git
 cd BaambooRenderer
-premake\premake5.exe vs2022
+Run GenerateProject.bat
 ```
 
-Open `Baamboo.sln`, build, and run the `Application` project. The active sample is selected in `Projects/Application/main.cpp`. NuGet packages (D3D12 Agility SDK, DXC, DirectXTK12, DirectXTex) are restored automatically on first build.
+Open `Baamboo.sln`, build, and run the `Application` project. The active sample is selected in `Projects/Applications/main.cpp`. NuGet packages (D3D12 Agility SDK, DXC, DirectXTK12, DirectXTex) are restored automatically on first build.
 
 ## Third-Party
 
