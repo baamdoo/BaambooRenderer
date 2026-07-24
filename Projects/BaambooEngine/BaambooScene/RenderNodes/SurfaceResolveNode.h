@@ -18,6 +18,7 @@ public:
 private:
 	Arc< render::Texture >         m_pCoreNormal;
 	Arc< render::Texture >         m_pCoreMaterial;
+	Arc< render::Texture >         m_pVelocity;
 	Box< render::ComputePipeline > m_pResolvePSO;
 
 	Arc< render::Buffer > m_pVoxelVertexFallback;

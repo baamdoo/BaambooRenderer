@@ -56,11 +56,12 @@ static StructuredBuffer< TransformData > Transforms = GetResource(g_Transforms.i
 struct AmplificationPayload
 {
     uint lodLevel;
-    uint diceMask;    // bit per payload slot: voxel meshlet inside the dicing radius (budget Lm > 0)
-    uint slotCount;   // accepted meshlets this wave (prefix-scan upper bound in the MS)
-    uint prefix[32];  // exclusive prefix of per-slot MS group counts (linear dispatch decode)
-    uint lmPacked[4]; // per-slot budget level Lm, 4 bits each, 8 slots per word
-    uint meshletIndices[32];
+    uint diceMask;
+    uint LmPacked[4];       // per-slot budget level Lm, 4 bits each, 8 slots per uint
+    uint triCountPacked[8]; // per-slot base-triangle count, 8 bits each, 4 slots per uint
+
+	uint tsLaneBits;    // bitmask of lanes that emitted meshlets (1 = emitted)
+	uint miBaseGroupID; // start index of global meshlet in this group
 };
 
 groupshared AmplificationPayload Payload;
@@ -209,34 +210,40 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
     }
 
     uint payloadIndex = WavePrefixCountBits(accept);
-    if (accept)
-        Payload.meshletIndices[payloadIndex] = mi;
 
     // Per-slot MS group budget
     uint numGroups = accept ? ((slotLm > 0u) ? DiceGroupsForMeshlet(slotLm, slotTriCount) : 1u) : 0u;
     uint diceMask  = WaveActiveBitOr((accept && slotLm > 0u) ? (1u << payloadIndex) : 0u);
 
-    uint groupPrefix = WavePrefixSum(numGroups);
-    if (accept)
-        Payload.prefix[payloadIndex] = groupPrefix;
-
-    // Per-slot budget levels, 4 bits each, 8 slots per word.
+    // Per-slot budget levels, 4 bits each, 8 slots per uint
     [unroll]
     for (uint w = 0; w < 4; ++w)
     {
         uint lmBits = WaveActiveBitOr((accept && (payloadIndex >> 3u) == w) ? (slotLm << ((payloadIndex & 7u) * 4u)) : 0u);
         if (GTid.x == 0)
-            Payload.lmPacked[w] = lmBits;
+            Payload.LmPacked[w] = lmBits;
     }
 
+    // Per-slot tri count, 8 bits each, 4 slots per uint
+    [unroll]
+    for (uint w = 0; w < 8; ++w)
+    {
+        uint bits = WaveActiveBitOr((accept && (payloadIndex >> 2u) == w) ? (slotTriCount << ((payloadIndex % 4u) * 8u)) : 0u);
+        if (GTid.x == 0)
+            Payload.triCountPacked[w] = bits;
+    }
+
+    uint laneMask    = WaveActiveBallot(accept).x;
     uint numMeshlets = WaveActiveCountBits(accept);
-    uint totalGroups = WaveActiveSum(numGroups); // == numMeshlets when nothing dices
+    uint totalGroups = WaveActiveSum(numGroups);    // == numMeshlets when nothing dices
 
     if (GTid.x == 0)
     {
-        Payload.lodLevel  = sh_Lod;
-        Payload.diceMask  = diceMask;
-        Payload.slotCount = numMeshlets;
+        Payload.lodLevel = sh_Lod;
+        Payload.diceMask = diceMask;
+
+        Payload.tsLaneBits    = laneMask;
+        Payload.miBaseGroupID = mi;
     }
 
 #if PROFILING_LEVEL >= 1

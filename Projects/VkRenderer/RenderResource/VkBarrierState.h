@@ -191,7 +191,7 @@ namespace BarrierStates
 	inline constexpr BarrierState Present
 	{
 		0,
-		VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
+		VK_PIPELINE_STAGE_2_TRANSFER_BIT, // // TRANSFER (= COPY|BLIT|RESOLVE|CLEAR) - CommandQueue waits presentComplete at TRANSFER
 		VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
 	};
 

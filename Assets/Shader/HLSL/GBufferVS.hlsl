@@ -20,8 +20,6 @@ struct VSInput
 struct VSOutput
 {
     float4 position     : SV_Position;
-    float4 posCurrCLIP  : POSITION0;
-    float4 posPrevCLIP  : POSITION1;
     float3 posWORLD     : POSITION2;
     float2 uv           : TEXCOORD0;
     float3 normalWORLD  : TEXCOORD1;
@@ -47,9 +45,5 @@ VSOutput main(VSInput IN)
     output.normalWORLD  = normalWORLD;
     output.tangentWORLD = tangentWORLD;
     output.position     = mul(g_Camera.mViewProj, posWORLD);
-
-    // TODO
-    output.posPrevCLIP = mul(g_Camera.mViewProjUnjitteredPrev, posWORLD);
-    output.posCurrCLIP = mul(g_Camera.mViewProjUnjittered, posWORLD);
     return output;
 }

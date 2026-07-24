@@ -29,6 +29,7 @@ enum SurfaceRequirementBits : u32
 	SURFACE_REQ_BASE_COLOR       = 1u << 1, // MaterialCache (baseColor + metalness) — future toggle
 	SURFACE_REQ_EMISSIVE         = 1u << 2, // EmissiveCache — future toggle
 	SURFACE_REQ_UV_GRAD          = 1u << 3, // DerivativeCache — future toggle
+	SURFACE_REQ_VELOCITY         = 1u << 4, // screen-space motion vector
 	SURFACE_REQ_ALL              = 0xFFFFFFFFu,
 };
 

@@ -73,9 +73,10 @@ struct CameraData
     mat4 mViewProjUnjitteredPrev;
 
     float3 position;
+    float  padding0;
+    float2 jitterUV;
     float  zNear;
     float  zFar;
-    float3 padding0;
 };
 static_assert(sizeof(CameraData) == 416);
 

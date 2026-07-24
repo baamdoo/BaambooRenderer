@@ -17,11 +17,10 @@ layout(set = DESCRIPTORSET_COMMON, binding = 0) uniform Camera
 	mat4 mViewProjUnjitteredPrev;
 
 	vec3  posWORLD;
+	float padding0;
+	vec2  jitterUV;
 	float zNear;
 	float zFar;
-	float padding0X;
-	float padding0Y;
-	float padding0Z;
 } g_Camera;
 #endif // _CAMERA
 

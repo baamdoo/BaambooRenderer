@@ -64,10 +64,11 @@ struct TaskPayload
 	uint drawID;
 	uint lodLevel;
 	uint diceMask;
-	uint slotCount;
-	uint prefix[32];
-	uint lmPacked[4];
-    uint meshletIndices[32];
+	uint LmPacked[4];       // per-slot budget level Lm, 4 bits each, 8 slots per uint
+	uint triCountPacked[8]; // per-slot base-triangle count, 8 bits each, 4 slots per uint
+
+	uint tsLaneBits;    // bitmask of lanes that emitted meshlets (1 = emitted)
+	uint miBaseGroupID; // start index of global meshlet in this group
 };
 taskPayloadSharedEXT TaskPayload Payload;
 
@@ -215,22 +216,24 @@ void main()
 
 	uint payloadIndex  = subgroupBallotExclusiveBitCount(ballot);
 
-	if (accept)
-		Payload.meshletIndices[payloadIndex] = mi;
-
 	// Per-slot MS group budget
 	uint numGroups = accept ? ((slotLm > 0u) ? DiceGroupsForMeshlet(slotLm, slotTriCount) : 1u) : 0u;
 	uint diceMask = subgroupOr((accept && slotLm > 0u) ? (1u << payloadIndex) : 0u);
 
-	uint groupPrefix = subgroupExclusiveAdd(numGroups);
-	if (accept)
-		Payload.prefix[payloadIndex] = groupPrefix;
-
+	// Per-slot budget levels, 4 bits each, 8 slots per uint
 	for (uint w = 0u; w < 4u; ++w)
 	{
 		uint lmBits = subgroupOr((accept && (payloadIndex >> 3u) == w) ? (slotLm << ((payloadIndex & 7u) * 4u)) : 0u);
 		if (ti == 0u)
-			Payload.lmPacked[w] = lmBits;
+			Payload.LmPacked[w] = lmBits;
+	}
+
+	// Per-slot tri count, 8 bits each, 4 slots per uint
+	for (uint w = 0u; w < 8u; ++w)
+	{
+		uint bits = subgroupOr((accept && (payloadIndex >> 2u) == w) ? (slotTriCount << ((payloadIndex % 4u) * 8u)) : 0u);
+		if (ti == 0u)
+			Payload.triCountPacked[w] = bits;
 	}
 
 	uint numMeshlets = subgroupBallotBitCount(ballot);
@@ -250,10 +253,11 @@ void main()
 
 	if (ti == 0)
 	{
-		Payload.drawID    = sh_DrawID;
-		Payload.lodLevel  = sh_Lod;
-		Payload.diceMask  = diceMask;
-		Payload.slotCount = numMeshlets;
+		Payload.drawID        = sh_DrawID;
+		Payload.lodLevel      = sh_Lod;
+		Payload.diceMask      = diceMask;
+		Payload.tsLaneBits    = ballot.x;
+		Payload.miBaseGroupID = mi;
 
 		EmitMeshTasksEXT(totalGroups, 1, 1);
 	}

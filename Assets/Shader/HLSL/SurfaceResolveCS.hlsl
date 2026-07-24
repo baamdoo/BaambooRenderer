@@ -26,6 +26,7 @@ ConstantBuffer< DescriptorHeapIndex > g_VoxelVertices         : register(b6, ROO
 ConstantBuffer< DescriptorHeapIndex > g_VoxelMeshlets         : register(b7, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_VoxelMeshletVertices  : register(b8, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_VoxelMeshletTriangles : register(b9, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_Velocity              : register(b10, ROOT_CONSTANT_SPACE);
 
 
 ResolvedSurface ResolveVoxelSurface(uint v0, uint v1, float2 pixelCenter, float2 viewport)
@@ -124,11 +125,12 @@ ResolvedSurface ResolveVoxelSurface(uint v0, uint v1, float2 pixelCenter, float2
 
     float baseNy = saturate(N.y);
 
+    float3 pWS = bary.x * posWS[0] + bary.y * posWS[1] + bary.z * posWS[2];
+
     // Detail normal (bake slope tier + geometry-locked micro band)
     {
         Texture2D< float4 > ErosionMap = GetResource(g_ErosionDetailMap.index);
 
-        float3 pWS   = bary.x * posWS[0] + bary.y * posWS[1] + bary.z * posWS[2];
         float2 eroUV = (pWS.xz - float2(chunk.originX, chunk.originZ)) / max(chunk.chunkSizeMeter, 1e-3);
         float4 ero   = ErosionMap.SampleLevel(g_LinearClampSampler, eroUV, 0.0);
 
@@ -173,6 +175,7 @@ ResolvedSurface ResolveVoxelSurface(uint v0, uint v1, float2 pixelCenter, float2
     rs.roughness = baseNy; // terrain reuses the R channel as base Ng.y (cliff-blend input)
     rs.baseColor = float3(0.5, 0.5, 0.5);
     rs.metallic  = 0.0;
+    rs.posWS     = pWS;
     return rs;
 }
 
@@ -186,6 +189,7 @@ void main(uint3 tID : SV_DispatchThreadID)
 
     RWTexture2D< float2 > CoreNormal   = GetResource(g_CoreNormal.index);
     RWTexture2D< float4 > CoreMaterial = GetResource(g_CoreMaterial.index);
+    RWTexture2D< float2 > Velocity     = GetResource(g_Velocity.index);
     Texture2D< uint >     VBuf0        = GetResource(g_VBuf0.index);
     Texture2D< uint >     VBuf1        = GetResource(g_VBuf1.index);
 
@@ -195,6 +199,7 @@ void main(uint3 tID : SV_DispatchThreadID)
     {
         CoreNormal[px]   = float2(0.0, 0.0);
         CoreMaterial[px] = float4(0.0, 0.0, 0.0, 0.0);
+        Velocity[px]     = float2(0.0, 0.0);
         return;
     }
 
@@ -209,4 +214,9 @@ void main(uint3 tID : SV_DispatchThreadID)
 
     CoreNormal[px]   = OctEncode(s.N);
     CoreMaterial[px] = float4(s.roughness, (float)s.matClass / 255.0, s_DebugDiceLevel, s_MicroCavity); // .b = Lt/5 (dice debug) | .a = micro cavity
+
+    float2 currUV = float2(pixelCenter.x / g_Viewport.x, 1.0 - pixelCenter.y / g_Viewport.y) - g_Camera.jitterUV;
+    float4 prevCS = mul(g_Camera.mViewProjUnjitteredPrev, float4(s.posWS, 1.0));
+    float2 prevUV = (prevCS.xy / prevCS.w) * 0.5 + 0.5;
+    Velocity[px]  = currUV - prevUV;
 }

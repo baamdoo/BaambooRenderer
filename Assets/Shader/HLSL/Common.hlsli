@@ -29,10 +29,11 @@ struct CameraData
     float4x4 mViewProjUnjittered;
 	float4x4 mViewProjUnjitteredPrev;
 
-    float3   posWORLD;
-    float    zNear;
-    float    zFar;
-    float3   padding0;
+    float3 posWORLD;
+    float  padding0;
+    float2 jitterUV;
+    float  zNear;
+    float  zFar;
 }; ConstantBuffer< CameraData > g_Camera : register(b0, space0);
 #endif // _CAMERA
 

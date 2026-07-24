@@ -294,6 +294,12 @@ void VkSceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneVie
 	camera.zNear    = sceneView.camera.zNear;
 	camera.zFar     = sceneView.camera.zFar;
 
+	// uv-space jitter delta of the final proj vs unjittered proj
+	const mat4 projUnjittered = ApplyRhiNDC(sceneView.camera.mProj, eRendererAPI::Vulkan);
+	const glm::vec4 cj = camera.mProj * glm::vec4(0.0f, 0.0f, -1.0f, 1.0f);
+	const glm::vec4 cu = projUnjittered * glm::vec4(0.0f, 0.0f, -1.0f, 1.0f);
+	camera.jitterUV = 0.5f * (float2(cj.x / cj.w, cj.y / cj.w) - float2(cu.x / cu.w, cu.y / cu.w));
+
 	m_CameraCache = std::move(camera);
 	memcpy(m_FrameData[m_ContextIndex].pCameraBuffer->MappedMemory(), &m_CameraCache, sizeof(CameraData));
 	m_FrameData[m_ContextIndex].pCameraBuffer->FlushMappedRange(0, sizeof(CameraData));

@@ -1,6 +1,9 @@
 #version 460
 #extension GL_EXT_mesh_shader : require
 #extension GL_GOOGLE_include_directive: require
+#extension GL_KHR_shader_subgroup_ballot : require
+#extension GL_KHR_shader_subgroup_arithmetic : require
+#extension GL_KHR_shader_subgroup_shuffle : require
 
 #define _CAMERA
 #define _FROZENCAMERA
@@ -46,15 +49,13 @@ struct TaskPayload
 	uint drawID;
 	uint lodLevel;
 	uint diceMask;
-	uint slotCount;
-	uint prefix[32];
-	uint lmPacked[4];
-    uint meshletIndices[32];
+	uint LmPacked[4];       // per-slot budget level Lm, 4 bits each, 8 slots per uint
+	uint triCountPacked[8]; // per-slot base-triangle count, 8 bits each, 4 slots per uint
+
+	uint tsLaneBits;    // bitmask of lanes that emitted meshlets (1 = emitted)
+	uint miBaseGroupID; // start index of global meshlet in this group
 };
 taskPayloadSharedEXT TaskPayload Payload;
-
-layout(location = 0)      out vec4 outPosCLIP_curr[];
-layout(location = 1)      out vec4 outPosCLIP_prev[];
 
 layout(location = 6) perprimitiveEXT out uint outVisID0[];
 layout(location = 7) perprimitiveEXT out uint outVisID1[];
@@ -131,22 +132,30 @@ layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 layout(triangles, max_vertices = 64, max_primitives = 124) out;
 void main()
 {
-	// Compacted dispatch: recover (slot, localGroup) from the payload prefix
-	uint slot       = gl_WorkGroupID.x;
-	uint localGroup = 0u;
-	if (Payload.diceMask != 0u)
-	{
-		slot = 0u;
-		for (uint s = 1u; s < Payload.slotCount; ++s)
-			if (Payload.prefix[s] <= gl_WorkGroupID.x)
-				slot = s;
-		localGroup = gl_WorkGroupID.x - Payload.prefix[slot];
-	}
+	uint laneBits  = Payload.tsLaneBits;
+	uint slotCount = bitCount(laneBits);
 
-	uint mi = Payload.meshletIndices[slot]; // mesh.mOffset is already baked into the meshlet indices by TaskShader
+	// Compacted dispatch: recover (slot, localGroup) wave-cooperatively — lane t owns
+	// slot t, a subgroup prefix sum over per-slot group counts replaces the serial scan.
+	uint t          = gl_LocalInvocationID.x;
+	uint tLm        = (Payload.LmPacked[t >> 3u] >> ((t % 8u) * 4u)) & 0xFu;
+	uint tTriCount  = (Payload.triCountPacked[t >> 2u] >> ((t % 4u) * 8u)) & 0xFFu;
+	uint tNumGroups = (t < slotCount) ? ((tLm > 0u) ? DiceGroupsForMeshlet(tLm, tTriCount) : 1u) : 0u;
+	uint tPrefix    = subgroupExclusiveAdd(tNumGroups);
+
+	bool slotMatch  = (tNumGroups != 0u) && (gl_WorkGroupID.x >= tPrefix) && (gl_WorkGroupID.x < tPrefix + tNumGroups);
+	uint slot       = findLSB(subgroupBallot(slotMatch).x);
+	uint localGroup = gl_WorkGroupID.x - subgroupShuffle(tPrefix, slot);
+
+	// k-th set bit of laneBits: the set lane whose compact index among set lanes equals slot
+	bool tSet        = ((laneBits >> t) & 1u) != 0u;
+	bool laneMatch   = tSet && (subgroupBallotExclusiveBitCount(subgroupBallot(tSet)) == slot);
+	uint tsLaneIndex = findLSB(subgroupBallot(laneMatch).x);
+
+	uint mi = Payload.miBaseGroupID + tsLaneIndex;
 	uint ti = gl_LocalInvocationID.x;
 
-	uint slotLm = (Payload.lmPacked[slot >> 3u] >> ((slot & 7u) * 4u)) & 0xFu;
+	uint slotLm = (Payload.LmPacked[slot >> 3u] >> ((slot & 7u) * 4u)) & 0xFu;
 	bool diced  = (Payload.diceMask & (1u << slot)) != 0u;
 
 	if (ti == 0)
@@ -287,8 +296,6 @@ void main()
 				                          g_VoxelChunkDesc.d, g_ErosionDetailMap);
 
 				gl_MeshVerticesEXT[v].gl_Position = g_Camera.mViewProj * vec4(posWS, 1.0);
-				outPosCLIP_curr[v]                = g_Camera.mViewProjUnjittered     * vec4(posWS, 1.0);
-				outPosCLIP_prev[v]                = g_Camera.mViewProjUnjitteredPrev * vec4(posWS, 1.0);
 			}
 
 			for (uint p = ti; p < 64u; p += gl_WorkGroupSize.x)
@@ -338,8 +345,6 @@ void main()
 				posWS = DisplaceVoxelDice(posWS, normal.y, g_FrozenCamera.posWORLD, g_VoxelChunkDesc.d, g_ErosionDetailMap);
 
 			gl_MeshVerticesEXT[v].gl_Position = g_Camera.mViewProj * vec4(posWS, 1.0);
-			outPosCLIP_curr[v]                = g_Camera.mViewProjUnjittered     * vec4(posWS, 1.0);
-			outPosCLIP_prev[v]                = g_Camera.mViewProjUnjitteredPrev * vec4(posWS, 1.0);
 		}
 
 		for (uint p = ti; p < outPrims; p += gl_WorkGroupSize.x)
@@ -386,8 +391,6 @@ void main()
 		vec4  posWORLD  = sh_LocalToWorld * vec4(position, 1.0);
 
 		gl_MeshVerticesEXT[i].gl_Position = g_Camera.mViewProj * posWORLD;
-		outPosCLIP_curr[i]                = g_Camera.mViewProjUnjittered     * posWORLD;
-		outPosCLIP_prev[i]                = g_Camera.mViewProjUnjitteredPrev * posWORLD;
 	}
 
 	// Per-vertex outputs(gl_MeshVerticesEXT[i].gl_Position) are written by different invocations.

@@ -93,9 +93,9 @@ u32 SwapChain::AcquireNextImage(VkSemaphore vkPresentCompleteSemaphore)
 
 	BB_ASSERT(m_ImageIndex < m_BackBuffers.size(), "Vulkan acquired an invalid swapchain image index.");
 
-	// Reset tracked state for the acquired image. Layout is set to UNDEFINED
-	// since we discard the previous frame's contents on the next transition.
-	m_BackBuffers[m_ImageIndex]->SetState(BarrierState(0, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_IMAGE_LAYOUT_UNDEFINED));
+	// Reset tracked state for the acquired image. Layout is set to UNDEFINED since we discard the previous frame's contents on the next transition.
+	// TRANSFER matches the queue's acquire-semaphore wait stage — the first transition's srcStageMask must chain with it.
+	m_BackBuffers[m_ImageIndex]->SetState(BarrierState(0, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_IMAGE_LAYOUT_UNDEFINED));
 
 	return m_ImageIndex;
 }

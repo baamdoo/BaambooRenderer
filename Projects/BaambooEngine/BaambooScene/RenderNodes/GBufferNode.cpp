@@ -30,13 +30,6 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 				.format     = eFormat::R32_UINT,
 				.imageUsage = eTextureUsage_ColorAttachment | eTextureUsage_Sample
 			});
-	auto pAttachmentVelocity =
-		Texture::Create(rd, "GBufferPass::Velocity",
-			{
-				.resolution = { rd.WindowWidth(), rd.WindowHeight(), 1 },
-				.format     = eFormat::RG16_FLOAT,
-				.imageUsage = eTextureUsage_ColorAttachment | eTextureUsage_Sample
-			});
 	auto pAttachmentDepth =
 		Texture::Create(rd, "GBufferPass::AttachmentDepth",
 			{
@@ -50,18 +43,15 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 	m_pRenderTargetPhase1 = RenderTarget::CreateEmpty(rd, "GBufferPass::RenderPass");
 	m_pRenderTargetPhase1->AttachTexture(eAttachmentPoint::Color0, pAttachmentVBuf0)
 		                  .AttachTexture(eAttachmentPoint::Color1, pAttachmentVBuf1)
-		                  .AttachTexture(eAttachmentPoint::Color2, pAttachmentVelocity)
 		                  .AttachTexture(eAttachmentPoint::DepthStencil, pAttachmentDepth).Build();
 
 	// Phase 2 render target (LOAD all attachments - same textures, different load ops)
 	m_pRenderTargetPhase2 = RenderTarget::CreateEmpty(rd, "GBufferPass::RenderPassPhase2");
 	m_pRenderTargetPhase2->AttachTexture(eAttachmentPoint::Color0, pAttachmentVBuf0)
 		                  .AttachTexture(eAttachmentPoint::Color1, pAttachmentVBuf1)
-		                  .AttachTexture(eAttachmentPoint::Color2, pAttachmentVelocity)
 		                  .AttachTexture(eAttachmentPoint::DepthStencil, pAttachmentDepth)
 		                  .SetLoadAttachment(eAttachmentPoint::Color0)
 		                  .SetLoadAttachment(eAttachmentPoint::Color1)
-		                  .SetLoadAttachment(eAttachmentPoint::Color2)
 		                  .SetLoadAttachment(eAttachmentPoint::DepthStencil).Build();
 
 	// --- GBuffer PSO ---
@@ -132,7 +122,6 @@ void GBufferNode::DrawGBufferPhase2(render::CommandContext& context, const MeshC
 
 	g_FrameData.pVBuf0    = m_pRenderTargetPhase2->Attachment(eAttachmentPoint::Color0);
 	g_FrameData.pVBuf1    = m_pRenderTargetPhase2->Attachment(eAttachmentPoint::Color1);
-	g_FrameData.pVelocity = m_pRenderTargetPhase2->Attachment(eAttachmentPoint::Color2);
 	g_FrameData.pDepth    = m_pRenderTargetPhase2->Attachment(eAttachmentPoint::DepthStencil);
 }
 

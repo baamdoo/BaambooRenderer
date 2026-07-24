@@ -123,16 +123,19 @@ struct ResolvedSurface
     uint  matClass;
     vec3  baseColor;
     float metallic;
+    vec3  posWS;     // perspective-correct interpolated world position (velocity resolve)
 };
 
 ResolvedSurface ResolveMeshSurface(uint v0, uint v1, vec2 pixelCenter, vec2 viewport)
 {
     VisTriangle t = FetchVisTriangle(v0, v1);
 
+    vec3 wpos[3];
     vec4 c[3];
     for (uint k = 0u; k < 3u; ++k)
     {
         vec4 wp = t.mLocalToWorld * vec4(t.positionLS[k], 1.0);
+        wpos[k] = wp.xyz;
         c[k] = g_Camera.mViewProj * wp;
     }
 
@@ -158,6 +161,7 @@ ResolvedSurface ResolveMeshSurface(uint v0, uint v1, vec2 pixelCenter, vec2 view
     s.roughness = 1.0;
     s.baseColor = vec3(1.0);
     s.metallic  = 0.0;
+    s.posWS     = bary.x * wpos[0] + bary.y * wpos[1] + bary.z * wpos[2];
 
     if (t.materialID != INVALID_INDEX)
     {

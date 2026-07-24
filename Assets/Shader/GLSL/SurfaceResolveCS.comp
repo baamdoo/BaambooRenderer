@@ -21,6 +21,7 @@ layout(set = 1, binding = 1) uniform usampler2D g_VBuf0;
 layout(set = 1, binding = 2) uniform usampler2D g_VBuf1;
 layout(set = 1, binding = 3, rg16_snorm) writeonly uniform image2D g_CoreNormal;
 layout(set = 1, binding = 4, rgba8) writeonly uniform image2D g_CoreMaterial;
+layout(set = 1, binding = 10, rg16f) writeonly uniform image2D g_Velocity;
 
 layout(set = 1, binding = 0, std140) uniform VoxelChunkDescUBO { VoxelChunkDesc d; } g_VoxelChunkDesc;
 layout(set = 1, binding = 5) uniform sampler2D g_ErosionDetailMap;
@@ -119,9 +120,10 @@ ResolvedSurface ResolveVoxelSurface(uint v0, uint v1, vec2 pixelCenter, vec2 vie
 
     float baseNy = clamp(N.y, 0.0, 1.0);
 
+    vec3 pWS = bary.x * posWS[0] + bary.y * posWS[1] + bary.z * posWS[2];
+
     // Detail normal (bake slope tier + geometry-locked micro band)
     {
-        vec3 pWS   = bary.x * posWS[0] + bary.y * posWS[1] + bary.z * posWS[2];
         vec2 eroUV = (pWS.xz - vec2(chunk.originX, chunk.originZ)) / max(chunk.chunkSizeMeter, 1e-3);
         vec4 ero   = textureLod(g_ErosionDetailMap, eroUV, 0.0);
 
@@ -164,6 +166,7 @@ ResolvedSurface ResolveVoxelSurface(uint v0, uint v1, vec2 pixelCenter, vec2 vie
     s.roughness = baseNy; // terrain reuses the R channel as base Ng.y (cliff-blend input)
     s.baseColor = vec3(0.5);
     s.metallic  = 0.0;
+    s.posWS     = pWS;
     return s;
 }
 
@@ -181,6 +184,7 @@ void main()
     {
         imageStore(g_CoreNormal, px, vec4(0.0));
         imageStore(g_CoreMaterial, px, vec4(0.0));
+        imageStore(g_Velocity, px, vec4(0.0));
 
         return;
     }
@@ -196,4 +200,9 @@ void main()
 
     imageStore(g_CoreNormal,   px, vec4(OctEncode(s.N), 0.0, 0.0));
     imageStore(g_CoreMaterial, px, vec4(s.roughness, float(s.matClass) / 255.0, g_DebugDiceLevel, g_MicroCavity)); // .b = Lt/5 (dice debug) | .a = micro cavity
+
+    vec2 currUV = pixelCenter / g_Push.viewport - g_Camera.jitterUV;
+    vec4 prevCS = g_Camera.mViewProjUnjitteredPrev * vec4(s.posWS, 1.0);
+    vec2 prevUV = (prevCS.xy / prevCS.w) * 0.5 + 0.5;
+    imageStore(g_Velocity, px, vec4(currUV - prevUV, 0.0, 0.0));
 }

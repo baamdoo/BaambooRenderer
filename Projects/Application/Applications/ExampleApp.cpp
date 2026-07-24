@@ -295,7 +295,7 @@ void ExampleApp::ConfigureSceneObjects()
 		{
 			for (i32 col = 0; col < kSweepCols; ++col)
 			{
-				auto sphere = m_pScene->ImportModel(MODEL_PATH.append("_synthetic/icosphere_hq.ply"), descriptor);
+				auto sphere = m_pScene->ImportModel(MODEL_PATH.append("sphere.obj"), descriptor);
 
 				auto& tc = sphere.GetComponent< TransformComponent >();
 				tc.transform.position = float3(-7.6f + 3.2f * col, 3.0f * row, 16.0f);

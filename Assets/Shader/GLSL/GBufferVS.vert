@@ -11,8 +11,6 @@ layout(location = 1) out vec2 outUv;
 layout(location = 2) out vec3 outNormalWORLD;
 layout(location = 3) out vec3 outTangentWORLD;
 layout(location = 4) out flat uint outMaterialID;
-layout(location = 5) out vec4 outPosCLIP_prev;
-layout(location = 6) out vec4 outPosCLIP_curr;
 
 void main() 
 {
@@ -31,8 +29,5 @@ void main()
     outTangentWORLD = normalize(tangentWORLD.xyz);
     outMaterialID   = instance.materialID;
     
-    outPosCLIP_prev = g_Camera.mViewProjUnjitteredPrev * posWORLD;
-    outPosCLIP_curr = g_Camera.mViewProjUnjittered * posWORLD;
-
     gl_Position  = g_Camera.mViewProj * posWORLD;
 }

@@ -45,12 +45,13 @@ uint hash(uint a)
 
 struct AmplificationPayload
 {
-    uint lod;
-    uint diceMask;    // bit per payload slot: voxel meshlet inside the dicing radius (budget Lm > 0)
-    uint slotCount;   // accepted meshlets this wave (prefix-scan upper bound)
-    uint prefix[32];  // exclusive prefix of per-slot group counts (linear dispatch decode)
-    uint lmPacked[4]; // per-slot budget level Lm, 4 bits each, 8 slots per word
-    uint meshletIndices[32];
+    uint lodLevel;
+    uint diceMask;
+    uint LmPacked[4];       // per-slot budget level Lm, 4 bits each, 4 slots per word
+	uint triCountPacked[8]; // per-slot base-triangle count, 8 bits each, 2 slots per word
+
+    uint tsLaneBits;
+    uint miBaseGroupID;
 };
 
 #if TEST_MODE == 1
@@ -62,9 +63,7 @@ struct MSOutput
 #else
 struct MSOutput
 {
-    float4 position  : SV_Position;
-    float4 posCurrCS : POSITION0;
-    float4 posPrevCS : POSITION1;
+    float4 position : SV_Position;
 };
 #endif
 
@@ -159,25 +158,30 @@ void main(
     out indices    uint3       triangles[126],
     out primitives MSPrimitive primAttrs[126])
 {
-    // Compacted dispatch: recover (slot, localGroup) from the payload prefix
-	// slot : the meshlet slot index (0..31) for this group
-	// localGroup : which piece of the slot's meshlet this workgroup handles
-    uint slot       = Gid.x;
-    uint localGroup = 0u;
-    if (Payload.diceMask != 0u)
-    {
-        slot = 0u;
-        for (uint s = 1u; s < Payload.slotCount; ++s)
-            if (Payload.prefix[s] <= Gid.x)
-                slot = s;
+    uint laneBits  = Payload.tsLaneBits;
+    uint slotCount = countbits(laneBits);
 
-        localGroup = Gid.x - Payload.prefix[slot];
-    }
+    // COMPACTED dispatch: recover (slot, localGroup) wave-cooperatively — lane t owns slot,
+    // a wave prefix sum over per-slot group counts replaces the serial scan.
+    uint t          = GTid.x;
+    uint tLm        = (Payload.LmPacked[t >> 3u] >> ((t % 8u) * 4u)) & 0xFu;
+    uint tTriCount  = (Payload.triCountPacked[t >> 2u] >> ((t % 4u) * 8u)) & 0xFFu;
+    uint tNumGroups = (t < slotCount) ? ((tLm > 0u) ? DiceGroupsForMeshlet(tLm, tTriCount) : 1u) : 0u;
+    uint tPrefix    = WavePrefixSum(tNumGroups);
 
-	uint mi = Payload.meshletIndices[slot]; // mesh.mOffset is already baked into the meshlet indices by TaskShader
+    bool slotMatch  = (tNumGroups != 0u) && (Gid.x >= tPrefix) && (Gid.x < tPrefix + tNumGroups);
+    uint slot       = firstbitlow(WaveActiveBallot(slotMatch).x);
+    uint localGroup = Gid.x - WaveActiveSum(slotMatch ? tPrefix : 0u); // exactly one matching lane -> its prefix
+
+    // k-th set bit of laneBits: the set lane whose compact index among set lanes equals slot
+    bool tSet        = ((laneBits >> t) & 1u) != 0u;
+    bool laneMatch   = tSet && (WavePrefixCountBits(tSet) == slot);
+    uint tsLaneIndex = firstbitlow(WaveActiveBallot(laneMatch).x);
+
+	uint mi = Payload.miBaseGroupID + tsLaneIndex; // mesh.mOffset is already baked into the meshlet indices by TaskShader
     uint ti = GTid.x;
 
-    uint slotLm = (Payload.lmPacked[slot >> 3u] >> ((slot & 7u) * 4u)) & 0xFu;
+    uint slotLm = (Payload.LmPacked[slot >> 3u] >> ((slot & 7u) * 4u)) & 0xFu;
     bool diced  = (Payload.diceMask & (1u << slot)) != 0u;
 
     if (ti == 0)
@@ -194,15 +198,15 @@ void main(
 
         sh_LocalToWorld   = transform.mLocalToWorld;
         sh_VOffset        = mesh.vOffset;
-        sh_MvOffset       = mesh.lods[Payload.lod].mvOffset;
-        sh_MtOffset       = mesh.lods[Payload.lod].mtOffset;
+        sh_MvOffset       = mesh.lods[Payload.lodLevel].mvOffset;
+        sh_MtOffset       = mesh.lods[Payload.lodLevel].mtOffset;
         sh_VertexCount    = meshlet.vertexCount;
         sh_TriangleCount  = meshlet.triangleCount;
         sh_VertexOffset   = meshlet.vertexOffset;
         sh_TriangleOffset = meshlet.triangleOffset;
 		sh_MaterialID     = instance.materialID;
         sh_IsVoxel        = instance.isVoxel;
-        sh_Lod            = Payload.lod;
+        sh_Lod            = Payload.lodLevel;
         sh_VtxHeapIdx     = instance.isVoxel ? g_VoxelVertices.index         : g_MeshStreams.vertices;
         sh_MvHeapIdx      = instance.isVoxel ? g_VoxelMeshletVertices.index  : g_MeshStreams.meshletVertices;
         sh_MtHeapIdx      = instance.isVoxel ? g_VoxelMeshletTriangles.index : g_MeshStreams.meshletTriangles;
@@ -320,22 +324,19 @@ void main(
             {
                 uint3 coord = DiceHierCoord(cc0, cc1, cc2, DiceSubVertexCoordInt(v, 3u));
 
-                float3 posL, nrmL;
+                float3 pos, normal;
                 DiceSubVertex(coord, Lt, le,
                               sh_CornerPos[0], sh_CornerPos[1], sh_CornerPos[2],
                               sh_CornerNrm[0], sh_CornerNrm[1], sh_CornerNrm[2],
-                              posL, nrmL);
-
-                float3 posWS = mul(sh_LocalToWorld, float4(posL, 1.0)).xyz;
-                posWS = DisplaceVoxelDice(posWS, nrmL.y, g_FrozenCamera.posWORLD,
+                              pos, normal);
+                float3 posWS = mul(sh_LocalToWorld, float4(pos, 1.0)).xyz;
+                posWS = DisplaceVoxelDice(posWS, normal.y, g_FrozenCamera.posWORLD,
                                           g_VoxelChunkDesc, ErosionMap, g_LinearClampSampler);
 
                 vertices[v].position = mul(g_Camera.mViewProj, float4(posWS, 1.0));
 #if TEST_MODE == 1
-                vertices[v].color    = float4(normalize(nrmL) * 0.5 + 0.5, 1.0);
+                vertices[v].color    = float4(normalize(normal) * 0.5 + 0.5, 1.0);
 #else
-                vertices[v].posCurrCS = mul(g_Camera.mViewProjUnjittered,     float4(posWS, 1.0));
-                vertices[v].posPrevCS = mul(g_Camera.mViewProjUnjitteredPrev, float4(posWS, 1.0));
 #endif
             }
 
@@ -390,8 +391,6 @@ void main(
 #if TEST_MODE == 1
             vertices[v].color    = float4(normalize(normal) * 0.5 + 0.5, 1.0);
 #else
-            vertices[v].posCurrCS = mul(g_Camera.mViewProjUnjittered,     float4(posWS, 1.0));
-            vertices[v].posPrevCS = mul(g_Camera.mViewProjUnjitteredPrev, float4(posWS, 1.0));
 #endif
         }
 
@@ -449,8 +448,6 @@ void main(
 #if TEST_MODE == 1
         vertices[i].color    = float4(float3(vertex.normalX, vertex.normalY, vertex.normalZ) * 0.5 + 0.5, 1.0);
 #else
-        vertices[i].posCurrCS = mul(g_Camera.mViewProjUnjittered, posWS);
-        vertices[i].posPrevCS = mul(g_Camera.mViewProjUnjitteredPrev, posWS);
 #endif
     }
 
