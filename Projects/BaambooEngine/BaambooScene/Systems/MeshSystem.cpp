@@ -4,6 +4,70 @@
 namespace baamboo
 {
 
+namespace
+{
+
+MaterialRenderView MakeMaterialRenderView(
+    const MaterialData& material,
+    u64                 id,
+    bool                bFaceNormals)
+{
+    MaterialRenderView view = {};
+    view.id            = id;
+    view.tint          = float3(material.tint);
+    view.roughness     = material.roughness;
+    view.metallic      = material.metallic;
+    view.ior           = material.ior;
+    view.emissionColor = material.emissionColor;
+    view.emissivePower = material.emissivePower;
+
+    view.alphaCutoff        = material.alphaCutoff;
+    view.clearcoat          = material.clearcoat;
+    view.clearcoatRoughness = material.clearcoatRoughness;
+    view.anisotropy         = material.anisotropy;
+    view.anisotropyRotation = material.anisotropyRotation;
+    view.specularColor      = material.specularColor;
+    view.specularStrength   = material.specularStrength;
+    view.sheenColor         = material.sheenColor;
+    view.sheenRoughness     = material.sheenRoughness;
+    view.subsurface         = material.subsurface;
+    view.transmission       = material.transmission;
+    view.materialType       = material.materialType;
+    view.materialFlags      = bFaceNormals ? MATERIAL_FLAG_FACE_NORMALS : 0u;
+
+    view.albedoTex       = material.albedoTex;
+    view.normalTex       = material.normalTex;
+    view.aoTex           = material.aoTex;
+    view.roughnessTex    = material.roughnessTex;
+    view.metallicTex     = material.metallicTex;
+    view.emissionTex     = material.emissionTex;
+    view.clearcoatTex    = material.clearcoatTex;
+    view.sheenTex        = material.sheenTex;
+    view.anisotropyTex   = material.anisotropyTex;
+    view.subsurfaceTex   = material.subsurfaceTex;
+    view.transmissionTex = material.transmissionTex;
+    return view;
+}
+
+MaterialSlabData MakeMaterialSlabData(const MaterialLayer& layer)
+{
+    MaterialSlabData data = {};
+    data.materialID = kInvalidIndex;
+    data.thickness  = std::max(layer.thickness, 0.0f);
+    data.phaseG     = std::clamp(layer.phaseG, -0.999f, 0.999f);
+    data.sigmaA     = float3(
+        std::max(layer.sigmaA.x, 0.0f),
+        std::max(layer.sigmaA.y, 0.0f),
+        std::max(layer.sigmaA.z, 0.0f));
+    data.sigmaS = float3(
+        std::max(layer.sigmaS.x, 0.0f),
+        std::max(layer.sigmaS.y, 0.0f),
+        std::max(layer.sigmaS.z, 0.0f));
+    return data;
+}
+
+} // namespace
+
 StaticMeshSystem::StaticMeshSystem(entt::registry& registry)
 	: Super(registry)
 {
@@ -88,43 +152,22 @@ std::vector< u64 > StaticMeshSystem::UpdateRenderData(const EditorCamera& edCame
         entry.mesh.sphere = meshComponent.sphere;
 
         entry.bHasMaterial = m_Registry.all_of< MaterialComponent >(entity);
+        entry.materials.clear();
+        entry.materialSlabs.clear();
         if (entry.bHasMaterial)
         {
-            auto& materialComponent = m_Registry.get< MaterialComponent >(entity);
-            entry.material.id            = id;
-            entry.material.tint          = materialComponent.tint;
-            entry.material.shininess     = materialComponent.shininess;
-            entry.material.roughness     = materialComponent.roughness;
-            entry.material.metallic      = materialComponent.metallic;
-            entry.material.ior           = materialComponent.ior;
-            entry.material.emissionColor = materialComponent.emissionColor;
-            entry.material.emissivePower = materialComponent.emissivePower;
+            const auto& materialComponent = m_Registry.get< MaterialComponent >(entity);
+            BB_ASSERT(!materialComponent.layers.empty(), "MaterialComponent must contain at least one MaterialLayer");
 
-            entry.material.alphaCutoff        = materialComponent.alphaCutoff;
-            entry.material.clearcoat          = materialComponent.clearcoat;
-            entry.material.clearcoatRoughness = materialComponent.clearcoatRoughness;
-            entry.material.anisotropy         = materialComponent.anisotropy;
-            entry.material.anisotropyRotation = materialComponent.anisotropyRotation;
-            entry.material.specularColor      = materialComponent.specularColor;
-            entry.material.specularStrength   = materialComponent.specularStrength;
-            entry.material.sheenColor         = materialComponent.sheenColor;
-            entry.material.sheenRoughness     = materialComponent.sheenRoughness;
-            entry.material.subsurface         = materialComponent.subsurface;
-            entry.material.transmission       = materialComponent.transmission;
-            entry.material.materialType       = materialComponent.materialType;
-            entry.material.materialFlags      = materialComponent.bFaceNormals ? MATERIAL_FLAG_FACE_NORMALS : 0u;
-
-            entry.material.albedoTex       = materialComponent.albedoTex;
-            entry.material.normalTex       = materialComponent.normalTex;
-            entry.material.aoTex           = materialComponent.aoTex;
-            entry.material.roughnessTex    = materialComponent.roughnessTex;
-            entry.material.metallicTex     = materialComponent.metallicTex;
-            entry.material.emissionTex     = materialComponent.emissionTex;
-            entry.material.clearcoatTex    = materialComponent.clearcoatTex;
-            entry.material.sheenTex        = materialComponent.sheenTex;
-            entry.material.anisotropyTex   = materialComponent.anisotropyTex;
-            entry.material.subsurfaceTex   = materialComponent.subsurfaceTex;
-            entry.material.transmissionTex = materialComponent.transmissionTex;
+            entry.bHasMaterial = !materialComponent.layers.empty();
+            entry.materials.reserve(materialComponent.layers.size());
+            entry.materialSlabs.reserve(materialComponent.layers.size());
+            for (const auto& layer : materialComponent.layers)
+            {
+                entry.materials.push_back(
+                    MakeMaterialRenderView(layer.material, id, materialComponent.bFaceNormals));
+                entry.materialSlabs.push_back(MakeMaterialSlabData(layer));
+            }
         }
 
         markedEntities.emplace_back(id);
@@ -137,7 +180,15 @@ std::vector< u64 > StaticMeshSystem::UpdateRenderData(const EditorCamera& edCame
 void StaticMeshSystem::CollectRenderData(SceneRenderView& outView) const
 {
     outView.meshes.reserve(m_RenderData.size());
-    outView.materials.reserve(m_RenderData.size());
+
+    size_t materialRecordCount = 0;
+    for (const auto& [id, entry] : m_RenderData)
+    {
+        UNUSED(id);
+        materialRecordCount += entry.materials.size();
+    }
+    outView.materials.reserve(outView.materials.size() + materialRecordCount);
+    outView.materialSlabs.reserve(outView.materialSlabs.size() + materialRecordCount);
 
     std::unordered_map< std::string_view, u32 > meshIndexMap;
     std::unordered_map< u64, u32 >              materialIndexMap;
@@ -161,13 +212,29 @@ void StaticMeshSystem::CollectRenderData(SceneRenderView& outView) const
         u32 materialIndex = kInvalidIndex;
         if (entry.bHasMaterial)
         {
-            auto matIt = materialIndexMap.find(entry.material.id);
+            BB_ASSERT(!entry.materials.empty(), "Material render stack must contain at least one closure");
+            BB_ASSERT(entry.materials.size() == entry.materialSlabs.size(), "Material closure/slab counts must match");
+
+            auto matIt = materialIndexMap.find(id);
             if (matIt == materialIndexMap.end())
             {
                 materialIndex = static_cast<u32>(outView.materials.size());
+                const u32 layerOffset = static_cast<u32>(outView.materialSlabs.size());
+                const u32 layerCount  = static_cast<u32>(entry.materials.size());
 
-                outView.materials.push_back(entry.material);
-                materialIndexMap.emplace(entry.material.id, materialIndex);
+                for (u32 layerIndex = 0; layerIndex < layerCount; ++layerIndex)
+                {
+                    MaterialRenderView material = entry.materials[layerIndex];
+                    material.layerOffset = layerIndex == 0u ? layerOffset : kInvalidIndex;
+                    material.layerCount  = layerIndex == 0u ? layerCount : 0u;
+
+                    MaterialSlabData slab = entry.materialSlabs[layerIndex];
+                    slab.materialID = static_cast<u32>(outView.materials.size());
+
+                    outView.materials.push_back(std::move(material));
+                    outView.materialSlabs.push_back(slab);
+                }
+                materialIndexMap.emplace(id, materialIndex);
             }
             else
             {

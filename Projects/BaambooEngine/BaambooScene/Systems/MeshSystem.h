@@ -22,7 +22,8 @@ private:
 	struct MeshRenderDataEntry
 	{
 		StaticMeshRenderView mesh;
-		MaterialRenderView   material;
+		std::vector< MaterialRenderView > materials;
+        std::vector< MaterialSlabData > materialSlabs;
 
 		bool bHasMaterial = false;
 	};

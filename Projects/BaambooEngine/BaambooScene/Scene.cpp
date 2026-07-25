@@ -191,26 +191,12 @@ Entity Scene::ImportModel(Entity parentEntity, const fs::path& filepath, MeshDes
 				}
 
 				// Material
-				auto& material = meshEntity.AttachComponent< MaterialComponent >();
+				auto& materialComponent = meshEntity.AttachComponent< MaterialComponent >();
+				auto& material = materialComponent.layers.front().material;
 				if (meshData.materialIndex < pLoader->GetMaterials().size())
 				{
 					const MaterialData& matData = pLoader->GetMaterials()[meshData.materialIndex];
-
-					material.name = matData.name;
-
-					material.tint               = float4(matData.diffuse, 1.0f);
-					material.metallic           = matData.metallic;
-					material.roughness          = matData.roughness;
-					material.ior                = matData.ior;
-					material.clearcoat          = matData.clearcoat;
-					material.clearcoatRoughness = matData.clearcoatRoughness;
-					material.anisotropy         = matData.anisotropy;
-					material.anisotropyRotation = matData.anisotropyRotation;
-					material.specularColor      = matData.specularColor;
-					material.specularStrength   = matData.specularStrength;
-					material.sheenColor         = matData.sheenColor;
-					material.sheenRoughness     = matData.sheenRoughness;
-					material.transmission       = matData.transmission;
+					material = matData;
 
 					auto resolveTexPath = [&](const std::string& path) -> std::string
 					{
@@ -218,16 +204,16 @@ Entity Scene::ImportModel(Entity parentEntity, const fs::path& filepath, MeshDes
 						return parentPath + path;
 					};
 
-					material.albedoTex       = resolveTexPath(matData.albedoPath);
-					material.normalTex       = resolveTexPath(matData.normalPath);
-					material.metallicTex     = resolveTexPath(matData.metallicPath);
-					material.roughnessTex    = resolveTexPath(matData.roughnessPath);
-					material.aoTex           = resolveTexPath(matData.aoPath);
-					material.emissionTex     = resolveTexPath(matData.emissivePath);
-					material.clearcoatTex    = resolveTexPath(matData.clearcoatPath);
-					material.sheenTex        = resolveTexPath(matData.sheenPath);
-					material.anisotropyTex   = resolveTexPath(matData.anisotropyPath);
-					material.transmissionTex = resolveTexPath(matData.transmissionPath);
+					material.albedoTex       = resolveTexPath(matData.albedoTex);
+					material.normalTex       = resolveTexPath(matData.normalTex);
+					material.metallicTex     = resolveTexPath(matData.metallicTex);
+					material.roughnessTex    = resolveTexPath(matData.roughnessTex);
+					material.aoTex           = resolveTexPath(matData.aoTex);
+					material.emissionTex     = resolveTexPath(matData.emissionTex);
+					material.clearcoatTex    = resolveTexPath(matData.clearcoatTex);
+					material.sheenTex        = resolveTexPath(matData.sheenTex);
+					material.anisotropyTex   = resolveTexPath(matData.anisotropyTex);
+					material.transmissionTex = resolveTexPath(matData.transmissionTex);
 				}
 			}
 

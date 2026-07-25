@@ -421,10 +421,12 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 		material.sheenColor       = materialView.sheenColor;
 		material.sheenRoughness   = materialView.sheenRoughness;
 
-		material.subsurface   = materialView.subsurface;
-		material.transmission = materialView.transmission;
-		material.materialType = materialView.materialType;
-		material.materialFlags      = materialView.materialFlags;
+		material.subsurface    = materialView.subsurface;
+		material.transmission  = materialView.transmission;
+		material.materialType  = materialView.materialType;
+		material.materialFlags = materialView.materialFlags;
+        material.layerOffset   = materialView.layerOffset;
+        material.layerCount    = materialView.layerCount;
 
 		material.albedoID = kInvalidIndex;
 		if (!materialView.albedoTex.empty())

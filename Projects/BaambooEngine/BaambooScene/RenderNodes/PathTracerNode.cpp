@@ -136,6 +136,7 @@ PathTracerNode::PathTracerNode(render::RenderDevice& rd)
             .bufferUsage        = eBufferUsage_Storage,
         });
     ResetEnvironmentDistribution();
+    RebuildMaterialSlabBuffer({});
 
     m_pPSO = RaytracingPipeline::Create(m_RenderDevice, "PathTracerPSO");
     m_pPSO->SetShaderLibrary(
@@ -158,7 +159,7 @@ PathTracerNode::PathTracerNode(render::RenderDevice& rd)
                   .hitGroupName       = "ShadowHitGroup",
                   .anyHitShaderExport = "AnyHit_ShadowAlpha",
               })
-          .SetMaxPayloadSize(sizeof(float) * 40) // SurfacePayload: 160 bytes; ShadowPayload is smaller.
+          .SetMaxPayloadSize(sizeof(float) * 16) // SurfacePayload: 64 bytes; ShadowPayload is smaller.
           .SetMaxAttributeSize(sizeof(float) * 2)
           .SetMaxRecursionDepth(1)
           .Build();
@@ -192,6 +193,12 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
         !BytesEqual(m_LastViewport, renderView.viewport);
     const u64 sceneDirtyMask = GatherPathTracerDirtyMask(renderView, m_LastComponentRevisions);
     const bool bSceneChanged = sceneDirtyMask != 0;
+    const u64 materialSlabRevision = renderView.componentRevisions[eComponentType::CMaterial];
+    if (materialSlabRevision != m_MaterialSlabRevision &&
+        RebuildMaterialSlabBuffer(renderView.materialSlabs))
+    {
+        m_MaterialSlabRevision = materialSlabRevision;
+    }
 
     if (bCameraChanged || bSceneChanged)
     {
@@ -228,11 +235,11 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
 
     context.SetRenderPipeline(m_pPSO.get());
 
-    context.TransitionBarrier(m_pAccumulation, eTextureLayout::General);
-    context.TransitionBarrier(m_pRadiance, eTextureLayout::General);
+    context.TransitionTextureToWrite(m_pAccumulation, ePipelineStage::RayTracingShader);
+    context.TransitionTextureToWrite(m_pRadiance, ePipelineStage::RayTracingShader);
 #if PT_VALIDATION
     for (const auto& pAOV : m_ValidationAOVs)
-        context.TransitionBarrier(pAOV, eTextureLayout::General);
+        context.TransitionTextureToWrite(pAOV, ePipelineStage::RayTracingShader);
 #endif // PT_VALIDATION
 
     struct PathTracerPushConstants
@@ -272,6 +279,7 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
     context.StageDescriptor("g_EnvironmentMap", m_pEnvironmentMap ? m_pEnvironmentMap : rm.GetFlatBlackTexture(), g_FrameData.pLinearClamp);
     context.StageDescriptor("g_EnvironmentDistribution", m_pEnvironmentDistribution);
 
+    context.StageDescriptor("g_MaterialSlabs", m_pMaterialSlabs);
     context.DispatchRays(*m_pSBT, m_pRadiance->Width(), m_pRadiance->Height());
 
     m_AccumulatedSampleCount += m_SamplesPerFrame;
@@ -302,6 +310,40 @@ void PathTracerNode::ConfigureReferenceScene(const std::string& sceneName, const
     m_LastResetDirtyMask      = 0;
     m_bHasRendered            = false;
     m_bDumpCompleted.store(false, std::memory_order_release);
+}
+
+bool PathTracerNode::RebuildMaterialSlabBuffer(const std::vector< MaterialSlabData >& slabs)
+{
+    using namespace render;
+
+    const u32 slabCount = std::max(static_cast<u32>(slabs.size()), 1u);
+    auto pSlabs = Buffer::Create(
+        m_RenderDevice,
+        slabs.empty() ? "PathTracer::MaterialSlabsFallback" : "PathTracer::MaterialSlabs",
+        {
+            .count              = slabCount,
+            .elementSizeInBytes = sizeof(MaterialSlabData),
+            .mapDirection       = 1,
+            .bufferUsage        = eBufferUsage_Storage,
+        });
+    if (!pSlabs || !pSlabs->MappedMemory())
+        return false;
+
+    const size_t dataSize = static_cast<size_t>(slabCount) * sizeof(MaterialSlabData);
+    if (slabs.empty())
+    {
+        MaterialSlabData fallback = {};
+        fallback.materialID = kInvalidIndex;
+        std::memcpy(pSlabs->MappedMemory(), &fallback, sizeof(fallback));
+    }
+    else
+    {
+        std::memcpy(pSlabs->MappedMemory(), slabs.data(), dataSize);
+    }
+
+    pSlabs->FlushMappedRange(0, dataSize);
+    m_pMaterialSlabs = pSlabs;
+    return true;
 }
 
 void PathTracerNode::ResetEnvironmentDistribution()
@@ -444,6 +486,7 @@ void PathTracerNode::DumpRenderViewDebug(const SceneRenderView& renderView) cons
     out << "draws " << renderView.draws.size() << '\n';
     out << "directionalLights " << renderView.light.numDirectionals << '\n';
     out << "spotLights " << renderView.light.numSpots << '\n';
+    out << "materialSlabs " << renderView.materialSlabs.size() << '\n';
     out << "areaLights " << renderView.light.numAreas << '\n';
     out << "diskLights " << renderView.light.numDisks << '\n';
     out << "tubeLights " << renderView.light.numTubes << '\n';
@@ -472,6 +515,21 @@ void PathTracerNode::DumpRenderViewDebug(const SceneRenderView& renderView) cons
             << " specularStrength=" << material.specularStrength
             << " emission=" << material.emissionColor.x << ',' << material.emissionColor.y << ',' << material.emissionColor.z
             << " emissivePower=" << material.emissivePower
+            << " layerOffset=" << material.layerOffset
+            << " layerCount=" << material.layerCount
+            << '\n';
+    }
+
+    out << '\n';
+    for (u32 i = 0; i < renderView.materialSlabs.size(); ++i)
+    {
+        const auto& slab = renderView.materialSlabs[i];
+        out << "materialSlab[" << i << "]"
+            << " materialID=" << slab.materialID
+            << " sigmaA=" << slab.sigmaA.x << ',' << slab.sigmaA.y << ',' << slab.sigmaA.z
+            << " sigmaS=" << slab.sigmaS.x << ',' << slab.sigmaS.y << ',' << slab.sigmaS.z
+            << " thickness=" << slab.thickness
+            << " phaseG=" << slab.phaseG
             << '\n';
     }
 

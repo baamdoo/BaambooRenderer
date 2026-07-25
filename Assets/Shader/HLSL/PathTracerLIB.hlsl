@@ -43,15 +43,16 @@ ConstantBuffer< DescriptorHeapIndex > g_PrimaryId              : register(b17, R
 #endif // PT_VALIDATION
 ConstantBuffer< DescriptorHeapIndex > g_EnvironmentMap          : register(b18, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_EnvironmentDistribution : register(b19, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_MaterialSlabs           : register(b20, ROOT_CONSTANT_SPACE);
 
 #include "PathSurface.hlsli"
 #include "PathComposite.hlsli"
-#include "PathValidation.hlsli"
 #include "PathSampling.hlsli"
+#include "PathValidation.hlsli"
 
-void OrientOpaqueSurfaceNormalForPath(inout SurfacePayload hp, float3 woWS)
+void OrientOpaqueSurfaceNormalForPath(inout SurfacePayload hp, SurfaceMaterial material, float3 woWS)
 {
-    if (hp.transmission > PT_LOBE_EPS)
+    if (HasTransmissionLobe(material) || HasCoatingLayers(material))
         return;
 
     if (dot(hp.normal, woWS) < 0.0)
@@ -73,15 +74,16 @@ float3 TracePath(RayDesc primaryRay, uint2 pixel, uint sampleIndex
     float3 L    = float3(0.0, 0.0, 0.0); // radiance carried back along this path
     float3 beta = float3(1.0, 1.0, 1.0); // β — path throughput: running product of f·cosθ/pdf
 
+    float  rrEtaScale = 1.0;
 #if PT_VALIDATION
     primaryHit        = (SurfacePayload)0;
     contribution      = ZeroPathContribution();
     primaryBSDFSample = (PathBSDFSample)0;
 #endif
 
-    uint  prevBSDFFlags = 0u;
-    float prevPdfBSDF   = 0.0;
-    uint  wasDelta      = 0u;
+    uint  prevBSDFFlags   = 0u;
+    float prevMarginalPDF = 0.0;
+    uint  wasDelta        = 0u;
 
     uint maxDepth = clamp(g_MaxDepth, 1u, PT_MAX_DEPTH_LIMIT);
     [loop]
@@ -90,8 +92,12 @@ float3 TracePath(RayDesc primaryRay, uint2 pixel, uint sampleIndex
         SurfacePayload hp = (SurfacePayload)0;
 
         TraceRay(g_Scene, RAY_FLAG_NONE, 0xFF, 0, 0, 0, ray, hp);
+        SurfaceMaterial material = (SurfaceMaterial)0;
         if (hp.hitKind != 0u)
-            OrientOpaqueSurfaceNormalForPath(hp, -ray.Direction);
+        {
+            material = LoadSurfaceMaterial(hp.materialID, hp.uv);
+            OrientOpaqueSurfaceNormalForPath(hp, material, -ray.Direction);
+        }
 #if PT_VALIDATION
         if (depth == 0u)
             primaryHit = hp;
@@ -100,7 +106,7 @@ float3 TracePath(RayDesc primaryRay, uint2 pixel, uint sampleIndex
         if (hp.hitKind == 0u)
         {
             float misWeight = (depth > 0u)
-                ? CalculateMISWeight(prevPdfBSDF, EnvironmentPDF(ray.Direction), wasDelta)
+                ? CalculateMISWeight(prevMarginalPDF, EnvironmentPDF(ray.Direction), wasDelta)
                 : 1.0; // depth 0: camera ray looked straight at the sky
 
             float3 environmentContribution = beta * EvaluateEnvironmentRadiance(ray.Direction) * misWeight;
@@ -114,10 +120,12 @@ float3 TracePath(RayDesc primaryRay, uint2 pixel, uint sampleIndex
             break;
         }
 
+
+        const float3 surfacePosition = ray.Origin + ray.Direction * hp.dist;
         // ── Case A: the random walk hit an emitter ─────────────────────
-        if (any(hp.emission > 0.0))
+        if (any(material.emission > 0.0))
         {
-            float3 emittedContribution = beta * hp.emission;
+            float3 emittedContribution = beta * material.emission;
             if (depth == 0u)
             {
                 if (IsPathFinite3(emittedContribution))
@@ -125,8 +133,8 @@ float3 TracePath(RayDesc primaryRay, uint2 pixel, uint sampleIndex
             }
             else
             {
-                float pdfLight  = AreaLightPDFAtHit(ray.Origin, hp.position, ray.Direction);
-                float misWeight = CalculateMISWeight(prevPdfBSDF, pdfLight, wasDelta);
+                float pdfLight  = AreaLightPDFAtHit(ray.Origin, surfacePosition, ray.Direction);
+                float misWeight = CalculateMISWeight(prevMarginalPDF, pdfLight, wasDelta);
                 emittedContribution *= misWeight;
 
                 if (IsPathFinite3(emittedContribution))
@@ -142,18 +150,65 @@ float3 TracePath(RayDesc primaryRay, uint2 pixel, uint sampleIndex
 
         // ── Case C: surface hit — NEE, then extend the walk ────────────
         BxDF::Frame frame = MakeSurfaceFrame(hp);
-
-        SurfaceMaterial material = MakeSurfaceMaterial(hp);
         float3 woWS = -ray.Direction;
+
+        const float etaExterior = 1.0; // replace with path medium state when it exists
+        // Fixed-endpoint queries must not consume or depend on the transport RNG counter.
+        uint directionalQuerySeed = PCGHash(
+            rng.seed ^
+            PCGHash(depth + 0x9E3779B9u) ^
+            PCGHash(hp.materialID + 0x85EBCA6Bu));
 #if PT_VALIDATION
         PathContribution directContribution;
-        float3 directLighting = EstimateDirectLighting(hp.position, hp.normal, frame, woWS, material, rng, directContribution);
+        float3 directLighting = EstimateDirectLighting(
+            surfacePosition,
+            hp.normal,
+            frame,
+            woWS,
+            material,
+            hp.uv,
+            etaExterior,
+            directionalQuerySeed,
+            (depth + 1u) < maxDepth,
+            rng,
+            directContribution);
 
         PathContribution environmentDirectContribution;
-        float3 environmentDirectLighting = EstimateEnvironmentDirectLighting(hp.position, hp.normal, frame, woWS, material, (depth + 1u) < maxDepth, rng, environmentDirectContribution);
+        float3 environmentDirectLighting = EstimateEnvironmentDirectLighting(
+            surfacePosition,
+            hp.normal,
+            frame,
+            woWS,
+            material,
+            hp.uv,
+            etaExterior,
+            directionalQuerySeed,
+            (depth + 1u) < maxDepth,
+            rng,
+            environmentDirectContribution);
 #else
-        float3 directLighting = EstimateDirectLighting(hp.position, hp.normal, frame, woWS, material, rng);
-        float3 environmentDirectLighting = EstimateEnvironmentDirectLighting(hp.position, hp.normal, frame, woWS, material, (depth + 1u) < maxDepth, rng);
+        float3 directLighting = EstimateDirectLighting(
+            surfacePosition,
+            hp.normal,
+            frame,
+            woWS,
+            material,
+            hp.uv,
+            etaExterior,
+            directionalQuerySeed,
+            (depth + 1u) < maxDepth,
+            rng);
+        float3 environmentDirectLighting = EstimateEnvironmentDirectLighting(
+            surfacePosition,
+            hp.normal,
+            frame,
+            woWS,
+            material,
+            hp.uv,
+            etaExterior,
+            directionalQuerySeed,
+            (depth + 1u) < maxDepth,
+            rng);
 #endif
         float3 directContributionSum = beta * (directLighting + environmentDirectLighting);
         if (IsPathFinite3(directContributionSum))
@@ -165,44 +220,67 @@ float3 TracePath(RayDesc primaryRay, uint2 pixel, uint sampleIndex
 #endif
 
         float3 wo = BxDF::ToLocal(frame, woWS);
-        PathBSDFSample bsdfSample = BxDF::Composite::SampleRay(material, wo, rng);
+        // History-space continuation query: weight is already C_H / q_H.
+        PathBSDFSample s = BxDF::LayerComposite::SampleRay(
+            material,
+            hp.uv,
+            wo,
+            etaExterior,
+            3u,  // internal layer-event depth, independent of outer path depth
+            rng);
+
+        float marginalPDF = 0.0;
+        if (s.valid != 0u && s.isDelta == 0u)
+        {
+            // Direction-space query used only by outer MIS
+            marginalPDF = BxDF::DirectionalComposite::MarginalPDF(
+                material,
+                hp.uv,
+                wo,
+                s.wi,
+                etaExterior,
+                directionalQuerySeed);
+        }
 #if PT_VALIDATION
         if (depth == 0u)
-            primaryBSDFSample = bsdfSample;
+            primaryBSDFSample = s;
 #endif
-        if (bsdfSample.valid == 0u)
+        if (s.valid == 0u)
             break;
 
-        if (!IsPathFinite3(bsdfSample.wi) || !IsPathFinite3(bsdfSample.weight) || !IsPathFinite(bsdfSample.pdf))
+        if (!IsPathFinite3(s.wi) || !IsPathFinite3(s.weight) || !IsPathFinite(marginalPDF))
             break;
-        if (bsdfSample.isDelta == 0u && bsdfSample.pdf <= 0.0)
+
+        if (s.isDelta == 0u && marginalPDF <= 0.0)
             break;
 
         // ===== β update ===============================
-        beta *= bsdfSample.weight;
+        beta *= s.weight;
         if (!IsPathFinite3(beta))
             break;
+        rrEtaScale *= s.rrEtaScale;
 
-        prevBSDFFlags = bsdfSample.flags;
-        prevPdfBSDF   = bsdfSample.pdf;
-        wasDelta      = bsdfSample.isDelta;
+        prevBSDFFlags   = s.flags;
+        prevMarginalPDF = marginalPDF;
+        wasDelta        = s.isDelta;
 
         // ===== Russian Roulette ========================================
         const float rrThreshold = 0.05;
         if (depth >= 3)
         {
-            float qSurvive = clamp(max(beta.r, max(beta.g, beta.b)), rrThreshold, 1.0 - rrThreshold);
+            float3 rrBeta  = beta * rrEtaScale;
+            float qSurvive = clamp(max(rrBeta.r, max(rrBeta.g, rrBeta.b)), rrThreshold, 1.0 - rrThreshold);
             if (NextFloat(rng) >= qSurvive)
                 break;
 
             beta /= qSurvive;
         }
 
-        float3 wiWS = normalize(BxDF::ToWorld(frame, bsdfSample.wi));
+        float3 wiWS = normalize(BxDF::ToWorld(frame, s.wi));
         if (!IsPathFinite3(wiWS))
             break;
 
-        ray.Origin    = OffsetRay(hp.position, hp.geometricNormal, wiWS);
+        ray.Origin    = OffsetRay(surfacePosition, hp.geometricNormal, wiWS);
         ray.Direction = wiWS;
         ray.TMin      = PT_RAY_EPS;
         ray.TMax      = g_Camera.zFar;
@@ -277,7 +355,7 @@ void RayGen()
         AccumulateValidationContribution(validationSums, pathContribution);
 
         if (primaryHit.hitKind != 0u)
-            validationSums.sampledLobeFrequency += BxDF::Composite::SampledLobeVector(primaryBSDFSample);
+            validationSums.sampledLobeFrequency += BxDF::LayerComposite::SampledLobeVector(primaryBSDFSample);
 #else
         float3 sampleRadiance = TracePath(ray, rayIndex, sampleIndex);
         if (IsPathFinite3(sampleRadiance))
@@ -365,7 +443,7 @@ void RayGen()
     SurfaceLobeMaskAOV[rayIndex]      = float4(primaryValidation.surfaceLobeMask, 1.0);
     SurfaceLobeWeightAOV[rayIndex]    = float4(primaryValidation.surfaceLobeWeight, 1.0);
     SampledLobeFrequencyAOV[rayIndex] = float4(accumulatedValidation.sampledLobeFrequency * invAccumulatedSamples, 1.0);
-    PrimaryIdAOV[rayIndex]             = float4(primaryValidation.primaryId, 1.0);
+    PrimaryIdAOV[rayIndex]            = float4(primaryValidation.primaryId, 1.0);
 #endif
 }
 
@@ -472,12 +550,28 @@ void ClosestHit_Primary(inout SurfacePayload hp, in BuiltInTriangleIntersectionA
     float3 p1OS = float3(v1.posX, v1.posY, v1.posZ);
     float3 p2OS = float3(v2.posX, v2.posY, v2.posZ);
 
-    float3 geometricNOS = cross(p1OS - p0OS, p2OS - p0OS);
-    float3 geometricNWorld = mul(transpose((float3x3)WorldToObject3x4()), geometricNOS);
-    float  geomLen2        = dot(geometricNWorld, geometricNWorld);
-    geometricNWorld        = (geomLen2 > EPSILON_MIN)
-        ? geometricNWorld * rsqrt(geomLen2)
-        : float3(0.0, 1.0, 0.0);
+    float3 edge10       = p1OS - p0OS;
+    float3 edge20       = p2OS - p0OS;
+    float3 geometricNOS = cross(edge10, edge20);
+
+    // Test degeneracy relative to the edge lengths
+    float geometricNOSLen2  = dot(geometricNOS, geometricNOS);
+    float edgeLengthProduct = dot(edge10, edge10) * dot(edge20, edge20);
+    bool bValidGeometricNOS =
+        IsPathFinite(geometricNOSLen2) &&
+        IsPathFinite(edgeLengthProduct) &&
+        edgeLengthProduct > 0.0 &&
+        geometricNOSLen2 > edgeLengthProduct * sq(EPSILON_MIN);
+
+    float3 geometricNWorld = float3(0.0, 1.0, 0.0);
+    if (bValidGeometricNOS)
+    {
+        geometricNOS *= rsqrt(geometricNOSLen2);
+        float3 transformedN = mul(transpose((float3x3)WorldToObject3x4()), geometricNOS);
+        float transformedLen2 = dot(transformedN, transformedN);
+        if (IsPathFinite3(transformedN) && transformedLen2 > 0.0)
+            geometricNWorld = transformedN * rsqrt(transformedLen2);
+    }
 
     float3 normalOS =
         float3(v0.normalX, v0.normalY, v0.normalZ) * bary.x +
@@ -520,7 +614,7 @@ void ClosestHit_Primary(inout SurfacePayload hp, in BuiltInTriangleIntersectionA
         faceShadingNWorld = -faceShadingNWorld;
 
     const float materialTransmission = bHasMaterial ? ReadTransmission(mat, uv) : 0.0;
-    bool bUseOutwardNormal = materialTransmission > PT_LOBE_EPS;
+    bool bUseOutwardNormal = materialTransmission > PT_LOBE_EPS || (bHasMaterial && mat.layerCount > 1u);
     float3 surfaceNWorld   = bUseOutwardNormal ? outwardShadingNWorld : faceShadingNWorld;
 
     float3 tangentWorld = mul((float3x3)ObjectToWorld3x4(), tangentOS);
@@ -538,35 +632,12 @@ void ClosestHit_Primary(inout SurfacePayload hp, in BuiltInTriangleIntersectionA
 
     hp.hitKind = 1u;
 
-    hp.albedo = bHasMaterial ? ReadBaseColor(mat, uv) : float3(1.0, 0.0, 1.0);
-    hp.normal = surfaceNWorld;
-    hp.dist   = RayTCurrent();
-
-    hp.position        = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
-    hp.roughness       = bHasMaterial ? ReadRoughness(mat, uv) : 1.0;
+    hp.normal          = surfaceNWorld;
+    hp.dist            = RayTCurrent();
     hp.tangent         = tangentWorld;
     hp.geometricNormal = geometricNWorld;
-
-    hp.anisotropy         = bHasMaterial ? ReadAnisotropy(mat, uv) : 0.0;
-    hp.anisotropyRotation = bHasMaterial ? mat.anisotropyRotation : 0.0;
-    hp.emission           = bHasMaterial ? ReadEmission(mat, uv) : float3(0.0, 0.0, 0.0);
-    hp.metallic           = bHasMaterial ? ReadMetallic(mat, uv) : 0.0;
-    hp.specularColor      = bHasMaterial ? float3(mat.specularColorR, mat.specularColorG, mat.specularColorB) : float3(0.04, 0.04, 0.04);
-    hp.ior                = bHasMaterial ? mat.ior : 1.0;
-    hp.transmission       = materialTransmission;
-    hp.clearcoat          = bHasMaterial ? mat.clearcoat : 0.0;
-    hp.clearcoatRoughness = bHasMaterial ? mat.clearcoatRoughness : 0.0;
-    hp.sheenColor         = bHasMaterial ? float3(mat.sheenColorR, mat.sheenColorG, mat.sheenColorB) : float3(0.0, 0.0, 0.0);
-    hp.sheenRoughness     = bHasMaterial ? mat.sheenRoughness : 0.0;
-    hp.specularStrength   = bHasMaterial ? mat.specularStrength : 1.0;
-
-    hp.bPrincipled = (bHasMaterial && mat.materialType == PT_BSDF_PRINCIPLED) ? 1u : 0u;
-
-    hp.materialID  = bHasMaterial ? instance.materialID : INVALID_INDEX;
-    hp.instanceID  = InstanceID();
-    hp.primitiveID = primIdx;
+    hp.uv              = uv;
+    hp.materialID      = bHasMaterial ? instance.materialID : INVALID_INDEX;
+    hp.instanceID      = InstanceID();
+    hp.primitiveID     = primIdx;
 }
-
-
-
-

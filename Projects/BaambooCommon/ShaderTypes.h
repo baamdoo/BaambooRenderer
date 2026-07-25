@@ -155,9 +155,25 @@ struct MaterialData
 
     u32 subsurfaceID;
     u32 transmissionID;
-    u32 padding2;
-    u32 padding3;
+    u32 layerOffset;
+    u32 layerCount;
 };
+static_assert(sizeof(MaterialData) == 160);
+
+struct MaterialSlabData
+{
+    u32   materialID;
+    float thickness;
+    float phaseG;
+    u32   padding0;
+
+    float3 sigmaA;
+    float  padding1;
+
+    float3 sigmaS;
+    float  padding2;
+};
+static_assert(sizeof(MaterialSlabData) == 48);
 
 static constexpr u32 MATERIAL_FLAG_FACE_NORMALS = 1u << 0u;
 

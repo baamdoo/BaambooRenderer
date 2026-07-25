@@ -1318,90 +1318,91 @@ void Engine::DrawUI()
 					if (ImGui::CollapsingHeader("Material"))
 					{
 						auto& component = ImGui::SelectedEntity.GetComponent< MaterialComponent >();
+						auto& material  = component.layers.front().material;
 
 						ImGui::Indent();
 						{
 							if (ImGui::CollapsingHeader("Basic"))
 							{
 								ImGui::Text("Tint");
-								bMark |= ImGui::DragFloat3("##Tint", glm::value_ptr(component.tint), 0.01f, 0.0f, 1.0f, "%.2f");
+								bMark |= ImGui::DragFloat3("##Tint", glm::value_ptr(material.tint), 0.01f, 0.0f, 1.0f, "%.2f");
 
 								if (ImGui::Button("AlbedoTex")) ImGui::ContentBrowserSetup = eContentButton_Albedo;
-								ImGui::SameLine(); ImGui::Text(component.albedoTex.c_str());
+								ImGui::SameLine(); ImGui::Text(material.albedoTex.c_str());
 								if (ImGui::Button("NormalTex")) ImGui::ContentBrowserSetup = eContentButton_Normal;
-								ImGui::SameLine(); ImGui::Text(component.normalTex.c_str());
+								ImGui::SameLine(); ImGui::Text(material.normalTex.c_str());
 							}
 
 							if (ImGui::CollapsingHeader("ORM"))
 							{
 								ImGui::Text("Roughness");
-								bMark |= ImGui::DragFloat("##Roughness", &component.roughness, 0.01f, 0.0f, 1.0f, "%.2f");
+								bMark |= ImGui::DragFloat("##Roughness", &material.roughness, 0.01f, 0.0f, 1.0f, "%.2f");
 								ImGui::Text("Metallic");
-								bMark |= ImGui::DragFloat("##Metallic", &component.metallic, 0.01f, 0.0f, 1.0f, "%.2f");
+								bMark |= ImGui::DragFloat("##Metallic", &material.metallic, 0.01f, 0.0f, 1.0f, "%.2f");
 
 								if (ImGui::Button("AoTex")) ImGui::ContentBrowserSetup = eContentButton_Ao;
-								ImGui::SameLine(); ImGui::Text(component.aoTex.c_str());
+								ImGui::SameLine(); ImGui::Text(material.aoTex.c_str());
 								if (ImGui::Button("RoughnessTex")) ImGui::ContentBrowserSetup = eContentButton_Roughness;
-								ImGui::SameLine(); ImGui::Text(component.roughnessTex.c_str());
+								ImGui::SameLine(); ImGui::Text(material.roughnessTex.c_str());
 								if (ImGui::Button("MetallicTex")) ImGui::ContentBrowserSetup = eContentButton_Metallic;
-								ImGui::SameLine(); ImGui::Text(component.metallicTex.c_str());
+								ImGui::SameLine(); ImGui::Text(material.metallicTex.c_str());
 							}
 
 							if (ImGui::CollapsingHeader("Emission"))
 							{
 								ImGui::Text("EmissivePower");
-								bMark |= ImGui::DragFloat("##EmissivePower", &component.emissivePower, 0.01f, 0.0f, 100.0f, "%.2f");
+								bMark |= ImGui::DragFloat("##EmissivePower", &material.emissivePower, 0.01f, 0.0f, 100.0f, "%.2f");
 
 								if (ImGui::Button("EmissionTex")) ImGui::ContentBrowserSetup = eContentButton_Emission;
-								ImGui::SameLine(); ImGui::Text(component.emissionTex.c_str());
+								ImGui::SameLine(); ImGui::Text(material.emissionTex.c_str());
 							}
 
 							if (ImGui::CollapsingHeader("Clearcoat"))
 							{
-								bMark |= ImGui::DragFloat("Factor##CC", &component.clearcoat, 0.01f, 0.0f, 1.0f);
-								bMark |= ImGui::DragFloat("Roughness##CC", &component.clearcoatRoughness, 0.01f, 0.0f, 1.0f);
+								bMark |= ImGui::DragFloat("Factor##CC", &material.clearcoat, 0.01f, 0.0f, 1.0f);
+								bMark |= ImGui::DragFloat("Roughness##CC", &material.clearcoatRoughness, 0.01f, 0.0f, 1.0f);
 
 								if (ImGui::Button("ClearcoatTex")) ImGui::ContentBrowserSetup = eContentButton_Clearcoat;
-								ImGui::SameLine(); ImGui::Text(component.clearcoatTex.c_str());
+								ImGui::SameLine(); ImGui::Text(material.clearcoatTex.c_str());
 							}
 
 							if (ImGui::CollapsingHeader("Anisotropy"))
 							{
-								bMark |= ImGui::DragFloat("Strength##Aniso", &component.anisotropy, 0.01f, 0.0f, 1.0f);
-								bMark |= ImGui::DragFloat("Rotation##Aniso", &component.anisotropyRotation, 0.01f, 0.0f, 6.283f);
+								bMark |= ImGui::DragFloat("Strength##Aniso", &material.anisotropy, 0.01f, 0.0f, 1.0f);
+								bMark |= ImGui::DragFloat("Rotation##Aniso", &material.anisotropyRotation, 0.01f, 0.0f, 6.283f);
 
 								if (ImGui::Button("AnisotropyTex")) ImGui::ContentBrowserSetup = eContentButton_Anisotropy;
-								ImGui::SameLine(); ImGui::Text(component.anisotropyTex.c_str());
+								ImGui::SameLine(); ImGui::Text(material.anisotropyTex.c_str());
 							}
 
 							if (ImGui::CollapsingHeader("Sheen"))
 							{
-								bMark |= ImGui::ColorEdit3("Color##Sheen", glm::value_ptr(component.sheenColor));
-								bMark |= ImGui::DragFloat("Roughness##Sheen", &component.sheenRoughness, 0.01f, 0.0f, 1.0f);
+								bMark |= ImGui::ColorEdit3("Color##Sheen", glm::value_ptr(material.sheenColor));
+								bMark |= ImGui::DragFloat("Roughness##Sheen", &material.sheenRoughness, 0.01f, 0.0f, 1.0f);
 
 								if (ImGui::Button("SheenTex")) ImGui::ContentBrowserSetup = eContentButton_Sheen;
-								ImGui::SameLine(); ImGui::Text(component.sheenTex.c_str());
+								ImGui::SameLine(); ImGui::Text(material.sheenTex.c_str());
 							}
 
 							if (ImGui::CollapsingHeader("Subsurface"))
 							{
-								bMark |= ImGui::DragFloat("Factor##SS", &component.subsurface, 0.01f, 0.0f, 1.0f);
+								bMark |= ImGui::DragFloat("Factor##SS", &material.subsurface, 0.01f, 0.0f, 1.0f);
 							}
 
 							if (ImGui::CollapsingHeader("Transmission"))
 							{
-								bMark |= ImGui::DragFloat("Factor##Trans", &component.transmission, 0.01f, 0.0f, 1.0f);
+								bMark |= ImGui::DragFloat("Factor##Trans", &material.transmission, 0.01f, 0.0f, 1.0f);
 							}
 
 							ImGui::Separator();
 							ImGui::Text("Alpha Cutoff");
-							bMark |= ImGui::DragFloat("##AlphaCutoff", &component.alphaCutoff, 0.01f, 0.0f, 1.0f);
+							bMark |= ImGui::DragFloat("##AlphaCutoff", &material.alphaCutoff, 0.01f, 0.0f, 1.0f);
 							ImGui::Text("SpecularStrength");
-							bMark |= ImGui::DragFloat("##Specular", &component.specularStrength, 0.01f, 0.0f, 1.0f);
+							bMark |= ImGui::DragFloat("##Specular", &material.specularStrength, 0.01f, 0.0f, 1.0f);
 							ImGui::Text("SpecularColor");
-							bMark |= ImGui::ColorEdit3("##SpecColor", glm::value_ptr(component.specularColor));
+							bMark |= ImGui::ColorEdit3("##SpecColor", glm::value_ptr(material.specularColor));
 							ImGui::Text("IOR");
-							bMark |= ImGui::DragFloat("##IOR", &component.ior, 0.01f, 1.0f, 10.0f, "%.2f");
+							bMark |= ImGui::DragFloat("##IOR", &material.ior, 0.01f, 1.0f, 10.0f, "%.2f");
 						}
 					}
 
@@ -2070,47 +2071,48 @@ void Engine::DrawUI()
 								if (ImGui::SelectedEntity.HasAll< StaticMeshComponent, MaterialComponent >())
 								{
 									auto& component = ImGui::SelectedEntity.GetComponent< MaterialComponent >();
+									auto& material  = component.layers.front().material;
 									switch(ImGui::ContentBrowserSetup)
 									{
 									case eContentButton_Albedo:
-										if (component.albedoTex != path.string())
+										if (material.albedoTex != path.string())
 										{
-											component.albedoTex = path.string();
+											material.albedoTex = path.string();
 											bMark = true;
 										}
 										break;
 									case eContentButton_Normal:
-										if (component.normalTex != path.string())
+										if (material.normalTex != path.string())
 										{
-											component.normalTex = path.string();
+											material.normalTex = path.string();
 											bMark = true;
 										}
 										break;
 									case eContentButton_Ao:
-										if (component.aoTex != path.string())
+										if (material.aoTex != path.string())
 										{
-											component.aoTex = path.string();
+											material.aoTex = path.string();
 											bMark = true;
 										}
 										break;
 									case eContentButton_Metallic:
-										if (component.metallicTex != path.string())
+										if (material.metallicTex != path.string())
 										{
-											component.metallicTex = path.string();
+											material.metallicTex = path.string();
 											bMark = true;
 										}
 										break;
 									case eContentButton_Roughness:
-										if (component.roughnessTex != path.string())
+										if (material.roughnessTex != path.string())
 										{
-											component.roughnessTex = path.string();
+											material.roughnessTex = path.string();
 											bMark = true;
 										}
 										break;
 									case eContentButton_Emission:
-										if (component.emissionTex != path.string())
+										if (material.emissionTex != path.string())
 										{
-											component.emissionTex = path.string();
+											material.emissionTex = path.string();
 											bMark = true;
 										}
 										break;

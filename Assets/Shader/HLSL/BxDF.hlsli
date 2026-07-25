@@ -4,6 +4,9 @@
 #include "Common.hlsli"
 #include "HelperFunctions.hlsli"
 
+static const uint PT_TRANSPORT_RADIANCE   = 0u;
+static const uint PT_TRANSPORT_IMPORTANCE = 1u;
+
 namespace BxDF
 {
 
@@ -63,6 +66,19 @@ float Sin2Theta   (float3 w) { return max(0.0, 1.0 - Cos2Theta(w)); }
 
 bool SameHemisphere(float3 wo, float3 wi) { return wo.z * wi.z > 0.0; }
 
+float3 RotateXY(float3 w, float rotation)
+{
+    float s, c;
+    sincos(rotation, s, c);
+
+    // rotate xy-plane against z-axis
+    return float3(
+        w.x * c - w.y * s,
+        w.x * s + w.y * c,
+        w.z
+    );
+}
+
 // ── World ↔ Local conversion helpers ─────────────────────────────────────────────
 float3 ToLocal(Frame f, float3 vW)
 {
@@ -72,6 +88,12 @@ float3 ToLocal(Frame f, float3 vW)
 float3 ToWorld(Frame f, float3 vL)
 {
     return f.T * vL.x + f.B * vL.y + f.N * vL.z;
+}
+
+// ── Helpers ─────────────────────────────
+float GetTransmissionScale(float etaP, uint mode)
+{
+    return mode == PT_TRANSPORT_RADIANCE ? rcp(etaP * etaP) : 1.0;
 }
 
 
@@ -295,8 +317,11 @@ namespace Clearcoat
 
 float D_GTR1(float NoH, float alpha)
 {
-    float a2 = alpha * alpha;
-    float c  = (a2 - 1.0) / (PI * log(a2));
+    float a2 = sq(clamp(alpha, 1.0e-3, 1.0));
+    if (abs(a2 - 1.0) <= 1.0e-6)
+        return 1.0 / PI;
+
+    float c = (a2 - 1.0) / (PI * log(a2));
             
     return c / (1.0 + (a2 - 1.0) * NoH * NoH);
 }
@@ -306,10 +331,15 @@ float EvaluatePDF(float3 wo, float3 wi, float alpha)
     if (!SameHemisphere(wo, wi))
         return 0.0;
 
-    float3 H = normalize(wo + wi);
+    float3 H = wo + wi;
+    float hLenSq = dot(H, H);
+    if (hLenSq <= EPSILON_MIN)
+        return 0.0;
+    H *= rsqrt(hLenSq);
 
     float cosTheta = AbsCosTheta(H);
-    return D_GTR1(cosTheta, alpha) * cosTheta / (4.0 * abs(dot(wo, H)));
+    float denominator = 4.0 * abs(dot(wo, H));
+    return denominator > EPSILON_MIN ? D_GTR1(cosTheta, alpha) * cosTheta / denominator : 0.0;
 }
       
 float3 EvaluateBRDF(float3 wo, float3 wi, float alpha)
@@ -317,7 +347,11 @@ float3 EvaluateBRDF(float3 wo, float3 wi, float alpha)
     if (!SameHemisphere(wo, wi))
         return 0.0;
             
-    float3 H = normalize(wo + wi);
+    float3 H = wo + wi;
+    float hLenSq = dot(H, H);
+    if (hLenSq <= EPSILON_MIN)
+        return 0.0;
+    H *= rsqrt(hLenSq);
     
     float  D = D_GTR1(AbsCosTheta(H), alpha);
     float  G = GGX::G2(wo, wi, 0.25, 0.25);
@@ -327,10 +361,13 @@ float3 EvaluateBRDF(float3 wo, float3 wi, float alpha)
 
 float3 SampleRay(float3 wo, float alpha, float2 u)
 {
-    float a2 = alpha * alpha;
+    float a2 = sq(clamp(alpha, 1.0e-3, 1.0));
     
     float phi       = 2.0 * PI * u.y;
-    float cos2Theta = (1.0 - pow(a2, 1.0 - u.x)) / (1.0 - a2);
+    float cos2Theta = abs(a2 - 1.0) <= 1.0e-6
+        ? 1.0 - u.x
+        : (1.0 - pow(a2, 1.0 - u.x)) / (1.0 - a2);
+    cos2Theta = saturate(cos2Theta);
             
     float cosTheta = safeSqrt(cos2Theta);
     float sinTheta = safeSqrt(1.0 - cos2Theta);
@@ -476,29 +513,29 @@ float3 EvaluateBRDF(float3 wo, float3 wi, float aT, float aB, float eta)
     return float3(F, F, F) * D * G / denom;
 }
 
-float3 EvaluateBTDF(float3 wo, float3 wi, float aT, float aB, float eta)
+float3 EvaluateBTDF(float3 wo, float3 wi, float aT, float aB, float eta, uint mode)
 {
     if (IsSmooth(aT, aB))
         return 0.0;
 
-    float  eta_p;
+    float  etaP;
     float3 wh;
-    if (!IsTransmittable(wo, wi, eta, wh, eta_p))
+    if (!IsTransmittable(wo, wi, eta, wh, etaP))
         return 0.0;
 
     float D = GGX::D(wh, aT, aB);
     float G = GGX::G2(wo, wi, aT, aB);
     float F = Fresnel::Dielectric(dot(wo, wh), 1.0, eta);
-    float J = Jacobian(wo, wi, wh, eta_p);
-    return D * G * (1.0 - F) * J * abs(dot(wo, wh)) / (abs(CosTheta(wo) * CosTheta(wi)) * sq(eta_p));
+    float J = Jacobian(wo, wi, wh, etaP);
+    return D * G * (1.0 - F) * J * abs(dot(wo, wh)) * GetTransmissionScale(etaP, mode) / (abs(CosTheta(wo) * CosTheta(wi)));
 }
 
-float3 EvaluateBSDF(float3 wo, float3 wi, float aT, float aB, float eta)
+float3 EvaluateBSDF(float3 wo, float3 wi, float aT, float aB, float eta, uint mode)
 {
-    return SameHemisphere(wo, wi) ? EvaluateBRDF(wo, wi, aT, aB, eta) : EvaluateBTDF(wo, wi, aT, aB, eta);
+    return SameHemisphere(wo, wi) ? EvaluateBRDF(wo, wi, aT, aB, eta) : EvaluateBTDF(wo, wi, aT, aB, eta, mode);
 }
 
-BSDFSample SampleRay(float3 wo, float aT, float aB, float eta, float uc, float2 u)
+BSDFSample SampleRay(float3 wo, float aT, float aB, float eta, uint mode, float uc, float2 u)
 {
     BSDFSample bs;
     bs.wi      = float3(0.0, 0.0, 0.0);
@@ -533,7 +570,7 @@ BSDFSample SampleRay(float3 wo, float aT, float aB, float eta, float uc, float2 
             if (!Refract(wo, float3(0.0, 0.0, 1.0), eta, wi, eta_p))
                 return bs;
 
-            float f = T / (AbsCosTheta(wi) * eta_p * eta_p);
+            float f = T * GetTransmissionScale(eta_p, mode) / (AbsCosTheta(wi));
 
             bs.wi      = wi;
             bs.pdf     = T / (R + T);
@@ -587,7 +624,7 @@ BSDFSample SampleRay(float3 wo, float aT, float aB, float eta, float uc, float2 
         float G1 = GGX::G1(wo, aT, aB);
         float J  = Jacobian(wo, wi, wh, eta_p);
 
-        float3 f = D * G2 * T * abs(dot(wo, wh)) * J / (abs(CosTheta(wo) * CosTheta(wi)) * sq(eta_p));
+        float3 f = D * G2 * T * abs(dot(wo, wh)) * J * GetTransmissionScale(eta_p, mode) / (abs(CosTheta(wo) * CosTheta(wi)));
 
         bs.wi     = wi;
         bs.pdf    = D * G1 * abs(dot(wo, wh)) * J / AbsCosTheta(wo) * (T / (R + T));

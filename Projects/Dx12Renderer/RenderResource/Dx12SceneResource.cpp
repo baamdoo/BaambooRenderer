@@ -298,6 +298,8 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
         material.transmission       = materialView.transmission;
         material.materialType       = materialView.materialType;
         material.materialFlags      = materialView.materialFlags;
+        material.layerOffset        = materialView.layerOffset;
+        material.layerCount         = materialView.layerCount;
 
         material.albedoID = kInvalidIndex;
         if (!materialView.albedoTex.empty())

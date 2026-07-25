@@ -1,12 +1,13 @@
 #ifndef _HLSL_PATHCOMPOSITE_HEADER
 #define _HLSL_PATHCOMPOSITE_HEADER
 
-#include "PathUtils.hlsli"
+#include "PathLayered.hlsli"
 #include "Sampling.hlsli"
 
 namespace BxDF
 {
-namespace Composite
+
+namespace LayerComposite
 {
 
 static const uint LOBE_SLOT_DIFFUSE      = 0u;
@@ -22,14 +23,13 @@ bool IsSmoothConductor(SurfaceMaterial material)
            !HasClearcoatLobe(material) &&
            !HasSheenLobe(material) &&
            saturate(material.metallic) > 1.0 - PT_LOBE_EPS &&
-           material.roughness <= PT_SMOOTH_ROUGHNESS;
+           material.isSmooth != 0u;
 }
 
 struct LobeMixture
 {
     // diffuse, specular reflection, clearcoat, transmission
-    float4 pmf;    // sampling probability
-    float4 weight; // BSDF mixture scale
+    float4 pmf; // sampling probability
 };
 
 float4 NormalizeLobePMF(float4 weights)
@@ -62,22 +62,21 @@ float NonPrincipledConductorWeight(SurfaceMaterial material)
     return (1.0 - transmission) * saturate(material.metallic);
 }
 
-float DielectricSpecularF0(SurfaceMaterial material)
+float DielectricSpecularF0(SurfaceMaterial material, float eta)
 {
-    if (!HasDielectricSpecularLobe(material))
+    if (!HasDielectricSpecularLobe(material, eta))
         return 0.0;
 
-    float eta = max(material.ior, 1.0);
-    float f0  = (eta - 1.0) / (eta + 1.0);
+    eta = max(eta, 1.0e-4);
+    float f0 = (eta - 1.0) / (eta + 1.0);
     f0 *= f0;
     return saturate(material.specularStrength) * MaxComponent(saturate(material.specularColor)) * f0;
 }
 
-LobeMixture ResolveLobeMixture(SurfaceMaterial material)
+LobeMixture ResolveLobeMixture(SurfaceMaterial material, float eta)
 {
     LobeMixture ls;
-    ls.pmf    = float4(0.0, 0.0, 0.0, 0.0);
-    ls.weight = float4(0.0, 0.0, 0.0, 0.0);
+    ls.pmf = float4(0.0, 0.0, 0.0, 0.0);
 
     float metallic     = saturate(material.metallic);
     float transmission = saturate(material.transmission);
@@ -87,76 +86,40 @@ LobeMixture ResolveLobeMixture(SurfaceMaterial material)
     float diffuseSamplingWeight = opaqueDiffuseWeight;
     float sheenWeight           = SheenSamplingWeight(material);
     float diffuseWeight         = max(diffuseSamplingWeight, sheenWeight);
-    float specularWeight 
-            = IsPrincipledMaterial(material)
-            ? 1.0
-            : NonPrincipledConductorWeight(material) + NonPrincipledOpaqueWeight(material) * DielectricSpecularF0(material);
+    float specularWeight        = IsPrincipledMaterial(material) ? 1.0 : NonPrincipledConductorWeight(material) + NonPrincipledOpaqueWeight(material) * DielectricSpecularF0(material, eta);
     float clearcoatWeight       = IsPrincipledMaterial(material) ? saturate(material.clearcoat) * 0.25 : saturate(material.clearcoat);
     float transmissionWeight    = IsPrincipledMaterial(material) ? 0.0 : transmission;
 
     if (IsSmoothConductor(material))
     {
-        ls.weight.y = 1.0;
-        ls.pmf.y    = 1.0;
+        ls.pmf.y = 1.0;
         return ls;
     }
-
-    ls.weight = IsPrincipledMaterial(material)
-        ? float4(1.0, 1.0, 1.0, 0.0)
-        : float4(diffuseSamplingWeight, specularWeight, clearcoatWeight, transmissionWeight);
 
     ls.pmf = NormalizeLobePMF(float4(diffuseWeight, specularWeight, clearcoatWeight, transmissionWeight));
     return ls;
 }
-struct DielectricFrame
+float DielectricViewFresnel(float3 wo, float eta)
 {
-    uint   bFlipped;
-    float  eta;
-    float3 wo;
-};
-
-DielectricFrame MakeDielectricFrame(SurfaceMaterial material, float3 wo)
-{
-    DielectricFrame frame;
-    frame.bFlipped = wo.z < 0.0 ? 1u : 0u;
-            
-    float eta = max(material.ior, 1.0001);
-    frame.eta = frame.bFlipped != 0u ? rcp(max(eta, 1.0e-4)) : eta;
-    frame.wo  = frame.bFlipped != 0u ? -wo : wo;
-            
-    return frame;
+    return saturate(BxDF::Fresnel::Dielectric(BxDF::CosTheta(wo), 1.0, eta));
 }
 
-float DielectricViewFresnel(SurfaceMaterial material, float3 wo)
+float3 EvaluateDielectricReflection(SurfaceMaterial material, float3 wo, float3 wi, float eta)
 {
-    DielectricFrame frame = MakeDielectricFrame(material, wo);
-    return saturate(BxDF::Fresnel::Dielectric(BxDF::CosTheta(frame.wo), 1.0, frame.eta));
-}
-
-float3 EvaluateDielectricReflection(SurfaceMaterial material, float3 wo, float3 wi)
-{
-    DielectricFrame frame = MakeDielectricFrame(material, wo);
-    wo = frame.wo;
-    wi = frame.bFlipped != 0u ? -wi : wi;
-
     float2 alpha = GetAlpha2(material);
-    return BxDF::Dielectric::EvaluateBRDF(wo, wi, alpha.x, alpha.y, frame.eta);
+    return BxDF::Dielectric::EvaluateBRDF(wo, wi, alpha.x, alpha.y, eta);
 }
-float3 EvaluateDielectricTransmission(SurfaceMaterial material, float3 wo, float3 wi)
-{
-    DielectricFrame frame = MakeDielectricFrame(material, wo);
-    wo = frame.wo;
-    wi = frame.bFlipped != 0u ? -wi : wi;
 
+float3 EvaluateDielectricTransmission(SurfaceMaterial material, float3 wo, float3 wi, float eta)
+{
     float2 alpha = GetAlpha2(material);
-    return BxDF::Dielectric::EvaluateBTDF(wo, wi, alpha.x, alpha.y, frame.eta);
+    return BxDF::Dielectric::EvaluateBTDF(wo, wi, alpha.x, alpha.y, eta, PT_TRANSPORT_RADIANCE);
 }
 
-float DielectricReflectionPDF(SurfaceMaterial material, float3 wo, float3 wi)
+float DielectricReflectionPDF(SurfaceMaterial material, float3 wo, float3 wi, float eta)
 {
-    DielectricFrame frame = MakeDielectricFrame(material, wo);
-    wo = frame.wo;
-    wi = frame.bFlipped != 0u ? -wi : wi;
+    if (material.isSmooth != 0u)
+        return 0.0;
 
     if (!BxDF::SameHemisphere(wo, wi))
         return 0.0;
@@ -169,28 +132,27 @@ float DielectricReflectionPDF(SurfaceMaterial material, float3 wo, float3 wi)
         wh = -wh;
 
     float2 alpha = GetAlpha2(material);
-    float R     = BxDF::Fresnel::Dielectric(dot(wo, wh), 1.0, frame.eta);
+    float R     = BxDF::Fresnel::Dielectric(dot(wo, wh), 1.0, eta);
     float T     = 1.0 - R;
     float denom = max(R + T, EPSILON_MIN);
     return BxDF::GGX::EvaluatePDF(wo, wi, alpha.x, alpha.y) * (R / denom);
 }
 
-float DielectricTransmissionPDF(SurfaceMaterial material, float3 wo, float3 wi)
+float DielectricTransmissionPDF(SurfaceMaterial material, float3 wo, float3 wi, float eta)
 {
-    DielectricFrame frame = MakeDielectricFrame(material, wo);
-    wo = frame.wo;
-    wi = frame.bFlipped != 0u ? -wi : wi;
+    if (material.isSmooth != 0u)
+        return 0.0;
 
     float2 alpha = GetAlpha2(material);
     float etaP;
     float3 wh;
-    if (!BxDF::Dielectric::IsTransmittable(wo, wi, frame.eta, wh, etaP))
+    if (!BxDF::Dielectric::IsTransmittable(wo, wi, eta, wh, etaP))
         return 0.0;
 
-    float R     = BxDF::Fresnel::Dielectric(dot(wo, wh), 1.0, frame.eta);
+    float R     = BxDF::Fresnel::Dielectric(dot(wo, wh), 1.0, eta);
     float T     = 1.0 - R;
     float denom = max(R + T, EPSILON_MIN);
-    return BxDF::Dielectric::EvaluatePDF(wo, wi, alpha.x, alpha.y, frame.eta) * (T / denom);
+    return BxDF::Dielectric::EvaluatePDF(wo, wi, alpha.x, alpha.y, eta) * (T / denom);
 }
         
 
@@ -199,9 +161,17 @@ float3 EvaluateDiffuseBRDF(SurfaceMaterial material, float3 wo, float3 wi)
     if (!BxDF::SameHemisphere(wo, wi))
         return float3(0.0, 0.0, 0.0);
 
-    return IsPrincipledMaterial(material)
+    float3 f = IsPrincipledMaterial(material)
         ? BxDF::Diffuse::EvaluateBRDF(material.albedo, material.roughness, wo, wi)
         : BxDF::Diffuse::Lambert(material.albedo);
+
+    if (!IsPrincipledMaterial(material))
+    {
+        float diffuseScale = (1.0 - saturate(material.transmission)) * (1.0 - saturate(material.metallic));
+        f *= diffuseScale;
+    }
+
+    return f;
 }
 
 float3 EvaluateSheenBRDF(SurfaceMaterial material, float3 wo, float3 wi)
@@ -222,16 +192,45 @@ float3 EvaluateSheenBRDF(SurfaceMaterial material, float3 wo, float3 wi)
     return material.sheenColor * sheenWeight;
 }
 
-float3 EvaluateSpecularBRDF(SurfaceMaterial material, float3 wo, float3 wi)
+float3 EvaluateSmoothSpecularWeight(SurfaceMaterial material, float3 wo, float eta)
 {
-    if (!BxDF::SameHemisphere(wo, wi))
+    float cosTheta = saturate(BxDF::AbsCosTheta(wo));
+    if (!IsPrincipledMaterial(material))
+    {
+        float3 weight = float3(0.0, 0.0, 0.0);
+
+        float conductorWeight = NonPrincipledConductorWeight(material);
+        if (conductorWeight > PT_LOBE_EPS)
+            weight += conductorWeight * BxDF::Fresnel::Schlick(material.specularColor, cosTheta);
+
+        float opaqueDielectricWeight = NonPrincipledOpaqueWeight(material);
+        if (opaqueDielectricWeight > PT_LOBE_EPS && HasDielectricSpecularLobe(material, eta))
+        {
+            float  dielectricF = BxDF::Fresnel::Dielectric(cosTheta, 1.0, eta);
+            float3 specularScale = saturate(material.specularColor) * saturate(material.specularStrength);
+            weight += opaqueDielectricWeight * specularScale * dielectricF;
+        }
+
+        return weight;
+    }
+
+    float f0Eta = (eta - 1.0) / (eta + 1.0);
+    f0Eta *= f0Eta;
+
+    float  dielectricF = BxDF::Fresnel::Dielectric(cosTheta, 1.0, eta);
+    float3 dielectricTint = (f0Eta > 1.0e-6) ? max(material.specularColor / f0Eta, float3(0.0, 0.0, 0.0)) : float3(1.0, 1.0, 1.0);
+    float3 dielectricFresnel = (1.0 - saturate(material.metallic)) * dielectricF * dielectricTint;
+    float3 metallicFresnel = saturate(material.metallic) * BxDF::Fresnel::Schlick(material.albedo, cosTheta);
+    return (dielectricFresnel + metallicFresnel) * material.specularStrength;
+}
+
+float3 EvaluateSpecularBRDF(SurfaceMaterial material, float3 wo, float3 wi, float eta)
+{
+    if (!BxDF::SameHemisphere(wo, wi) || material.isSmooth != 0u)
         return float3(0.0, 0.0, 0.0);
 
     if (!IsPrincipledMaterial(material))
     {
-        if (IsSmoothConductor(material))
-            return float3(0.0, 0.0, 0.0);
-
         float2 alpha = GetAlpha2(material);
         float3 f = float3(0.0, 0.0, 0.0);
 
@@ -240,10 +239,10 @@ float3 EvaluateSpecularBRDF(SurfaceMaterial material, float3 wo, float3 wi)
             f += conductorWeight * BxDF::GGX::EvaluateBRDF(wo, wi, material.specularColor, alpha.x, alpha.y);
 
         float opaqueDielectricWeight = NonPrincipledOpaqueWeight(material);
-        if (opaqueDielectricWeight > PT_LOBE_EPS && HasDielectricSpecularLobe(material))
+        if (opaqueDielectricWeight > PT_LOBE_EPS && HasDielectricSpecularLobe(material, eta))
         {
             float3 specularScale = saturate(material.specularColor) * saturate(material.specularStrength);
-            f += opaqueDielectricWeight * specularScale * EvaluateDielectricReflection(material, wo, wi);
+            f += opaqueDielectricWeight * specularScale * EvaluateDielectricReflection(material, wo, wi, eta);
         }
 
         return f;
@@ -264,7 +263,6 @@ float3 EvaluateSpecularBRDF(SurfaceMaterial material, float3 wo, float3 wi)
     float  D = BxDF::GGX::D(h, alpha.x, alpha.y);
     float  G = BxDF::GGX::G2(wo, wi, alpha.x, alpha.y);
     
-    float eta = max(material.ior, 1.0e-4);
     float f0Eta = (eta - 1.0) / (eta + 1.0);
     f0Eta *= f0Eta;
 
@@ -283,7 +281,7 @@ float3 EvaluateClearcoatBRDF(SurfaceMaterial material, float3 wo, float3 wi)
     if (!HasClearcoatLobe(material) || !BxDF::SameHemisphere(wo, wi))
         return float3(0.0, 0.0, 0.0);
 
-    float3 clearcoatBRDF = BxDF::Clearcoat::EvaluateBRDF(wo, wi, max(material.clearcoatRoughness, 1.0e-3));
+    float3 clearcoatBRDF = BxDF::Clearcoat::EvaluateBRDF(wo, wi, clamp(material.clearcoatRoughness, 1.0e-3, 1.0));
     if (!IsPrincipledMaterial(material))
         return saturate(material.clearcoat) * clearcoatBRDF;
 
@@ -294,156 +292,62 @@ float3 EvaluateClearcoatBRDF(SurfaceMaterial material, float3 wo, float3 wi)
     float disneyClearcoatScale = 4.0 * noV * noL;
     return (material.clearcoat * 0.25) * disneyClearcoatScale * clearcoatBRDF;
 }
-        
 
-PathContribution EvaluateLobeSlot(SurfaceMaterial material, float3 wo, float3 wi, uint slot, LobeMixture ls)
+
+PathContribution EvaluateBoundaryLobes(SurfaceMaterial material, float3 wo, float3 wi, float etaAbove, float etaBelow)
 {
+    Layered::DielectricFrame frame = Layered::MakeDielectricFrame(wo, etaAbove, etaBelow);
+
+    float3 woLayer    = BxDF::RotateXY(frame.wo, -material.anisotropyRotation);
+    float3 wiIncident = frame.bFlipped != 0u ? -wi : wi;
+    float3 wiLayer    = BxDF::RotateXY(wiIncident, -material.anisotropyRotation);
+
     PathContribution lobes = ZeroPathContribution();
-    if (slot == LOBE_SLOT_DIFFUSE)
-    {
-        lobes.diffuse = EvaluateDiffuseBRDF(material, wo, wi);
-        if (!IsPrincipledMaterial(material))
-            lobes.diffuse *= ls.weight.x;
-        lobes.diffuse += EvaluateSheenBRDF(material, wo, wi);
-        return lobes;
-    }
+    lobes.diffuse  = EvaluateDiffuseBRDF(material, woLayer, wiLayer) + EvaluateSheenBRDF(material, woLayer, wiLayer);
+    lobes.specular = EvaluateSpecularBRDF(material, woLayer, wiLayer, frame.eta);
+    lobes.specular += EvaluateClearcoatBRDF(material, woLayer, wiLayer);
 
-    if (slot == LOBE_SLOT_SPECULAR)
+    float transmissionWeight = IsPrincipledMaterial(material) ? 0.0 : saturate(material.transmission);
+    if (transmissionWeight > PT_LOBE_EPS)
     {
-        lobes.specular = EvaluateSpecularBRDF(material, wo, wi);
-        return lobes;
-    }
-
-    if (slot == LOBE_SLOT_CLEARCOAT)
-    {
-        lobes.specular = EvaluateClearcoatBRDF(material, wo, wi);
-        return lobes;
-    }
-
-    if (slot == LOBE_SLOT_TRANSMISSION)
-    {
-        float transmissionWeight = ls.weight.w;
-        // A transmissive dielectric component still carries its Fresnel reflection.
-        if (BxDF::SameHemisphere(wo, wi))
-            lobes.specular = transmissionWeight * EvaluateDielectricReflection(material, wo, wi);
+        if (BxDF::SameHemisphere(woLayer, wiLayer))
+            lobes.specular += transmissionWeight * EvaluateDielectricReflection(material, woLayer, wiLayer, frame.eta);
         else
-            lobes.transmission = transmissionWeight * EvaluateDielectricTransmission(material, wo, wi);
+            lobes.transmission = transmissionWeight * EvaluateDielectricTransmission(material, woLayer, wiLayer, frame.eta);
     }
-            
+
     return lobes;
 }
 
-float PDFLobeSlot(SurfaceMaterial material, float3 wo, float3 wi, uint slot)
+float BoundaryMarginalPDF(SurfaceMaterial material, float3 wo, float3 wi, float etaAbove, float etaBelow)
 {
-    if (slot == LOBE_SLOT_DIFFUSE)
-        return BxDF::Diffuse::EvaluatePDF(wo, wi);
+    Layered::DielectricFrame frame = Layered::MakeDielectricFrame(wo, etaAbove, etaBelow);
 
-    if (slot == LOBE_SLOT_SPECULAR)
+    float3 woLayer    = BxDF::RotateXY(frame.wo, -material.anisotropyRotation);
+    float3 wiIncident = frame.bFlipped != 0u ? -wi : wi;
+    float3 wiLayer    = BxDF::RotateXY(wiIncident, -material.anisotropyRotation);
+
+    LobeMixture ls = ResolveLobeMixture(material, frame.eta);
+    float pdf = ls.pmf.x * BxDF::Diffuse::EvaluatePDF(woLayer, wiLayer);
+
+    if (ls.pmf.y > PT_LOBE_EPS && material.isSmooth == 0u)
     {
-        if (IsSmoothConductor(material))
-            return 0.0;
-
         float2 alpha = GetAlpha2(material);
-        return BxDF::GGX::EvaluatePDF(wo, wi, alpha.x, alpha.y);
+        pdf += ls.pmf.y * BxDF::GGX::EvaluatePDF(woLayer, wiLayer, alpha.x, alpha.y);
     }
 
-    if (slot == LOBE_SLOT_CLEARCOAT)
-        return BxDF::Clearcoat::EvaluatePDF(wo, wi, max(material.clearcoatRoughness, 1.0e-3));
+    if (ls.pmf.z > PT_LOBE_EPS)
+        pdf += ls.pmf.z * BxDF::Clearcoat::EvaluatePDF(woLayer, wiLayer, clamp(material.clearcoatRoughness, 1.0e-3, 1.0));
 
-    if (slot == LOBE_SLOT_TRANSMISSION)
+    if (ls.pmf.w > PT_LOBE_EPS)
     {
-        float dielectricPdf = BxDF::SameHemisphere(wo, wi)
-            ? DielectricReflectionPDF(material, wo, wi)
-            : DielectricTransmissionPDF(material, wo, wi);
-        return dielectricPdf;
+        float dielectricPdf = BxDF::SameHemisphere(woLayer, wiLayer)
+            ? DielectricReflectionPDF(material, woLayer, wiLayer, frame.eta)
+            : DielectricTransmissionPDF(material, woLayer, wiLayer, frame.eta);
+        pdf += ls.pmf.w * dielectricPdf;
     }
 
-    return 0.0;
-}
-
-PathContribution AddPathContribution(PathContribution a, PathContribution b)
-{
-    a.diffuse      += b.diffuse;
-    a.specular     += b.specular;
-    a.transmission += b.transmission;
-    return a;
-}
-
-PathContribution EvaluateLobes(SurfaceMaterial material, float3 wo, float3 wi)
-{
-    LobeMixture ls = ResolveLobeMixture(material);
-            
-    PathContribution lobes = ZeroPathContribution();
-    lobes = AddPathContribution(lobes, EvaluateLobeSlot(material, wo, wi, LOBE_SLOT_DIFFUSE, ls));
-    lobes = AddPathContribution(lobes, EvaluateLobeSlot(material, wo, wi, LOBE_SLOT_SPECULAR, ls));
-    lobes = AddPathContribution(lobes, EvaluateLobeSlot(material, wo, wi, LOBE_SLOT_CLEARCOAT, ls));
-    lobes = AddPathContribution(lobes, EvaluateLobeSlot(material, wo, wi, LOBE_SLOT_TRANSMISSION, ls));
-    return lobes;
-}
-
-float3 Evaluate(SurfaceMaterial material, float3 wo, float3 wi, out uint flags)
-{
-    flags = 0u;
-    PathContribution lobes = EvaluateLobes(material, wo, wi);
-            
-    if (any(lobes.diffuse > 0.0))
-        flags |= PT_BSDF_FLAG_DIFFUSE;
-    if (any(lobes.specular > 0.0))
-        flags |= PT_BSDF_FLAG_GLOSSY;
-    if (any(lobes.transmission > 0.0))
-        flags |= PT_BSDF_FLAG_TRANSMISSION;
-            
-    return lobes.diffuse + lobes.specular + lobes.transmission;
-}
-
-float PDF(SurfaceMaterial material, float3 wo, float3 wi)
-{
-    LobeMixture ls = ResolveLobeMixture(material);
-    return PDFLobeSlot(material, wo, wi, LOBE_SLOT_DIFFUSE) * ls.pmf.x +
-           PDFLobeSlot(material, wo, wi, LOBE_SLOT_SPECULAR) * ls.pmf.y +
-           PDFLobeSlot(material, wo, wi, LOBE_SLOT_CLEARCOAT) * ls.pmf.z +
-           PDFLobeSlot(material, wo, wi, LOBE_SLOT_TRANSMISSION) * ls.pmf.w;
-}
-        
-PathBSDFSample InitializeSample()
-{
-    PathBSDFSample sample;
-    sample.wi        = float3(0.0, 0.0, 0.0);
-    sample.pdf       = 0.0;
-    sample.f         = float3(0.0, 0.0, 0.0);
-    sample.flags     = 0u;
-    sample.weight    = float3(0.0, 0.0, 0.0);
-    sample.valid     = 0u;
-    sample.lobe      = BxDF::LOBE_DIFFUSE;
-    sample.isDelta   = 0u;
-    sample.attempted = 0u;
-    return sample;
-}
-
-
-PathBSDFSample FinalizeLobeSample(SurfaceMaterial material, float3 wo, PathBSDFSample sample)
-{
-    sample.pdf = PDF(material, wo, sample.wi);
-    if (sample.pdf <= 0.0)
-        return sample;
-
-    uint evaluatedFlags;
-    sample.f      = Evaluate(material, wo, sample.wi, evaluatedFlags);
-    sample.flags  = evaluatedFlags;
-    sample.weight = sample.f * BxDF::AbsCosTheta(sample.wi) / sample.pdf;
-    sample.valid  = any(sample.weight > 0.0) ? 1u : 0u;
-    return sample;
-}
-
-float LobeSlotProbability(LobeMixture ls, uint slot)
-{
-    if (slot == LOBE_SLOT_DIFFUSE)
-        return ls.pmf.x;
-    if (slot == LOBE_SLOT_SPECULAR)
-        return ls.pmf.y;
-    if (slot == LOBE_SLOT_CLEARCOAT)
-        return ls.pmf.z;
-    return ls.pmf.w;
+    return pdf;
 }
 
 uint ChooseLobeSlot(LobeMixture ls, float uc, out float lobeUc)
@@ -484,152 +388,273 @@ uint ChooseLobeSlot(LobeMixture ls, float uc, out float lobeUc)
     return LOBE_SLOT_DIFFUSE;
 }
 
-PathBSDFSample SampleDiffuseLobe(SurfaceMaterial material, float3 wo, float2 u)
+Layered::LayerEvent SampleLayerEvent(SurfaceMaterial sm, float3 wo, float etaAbove, float etaBelow, uint transportMode, inout RngState rng)
 {
-    PathBSDFSample sample = InitializeSample();
-    if (wo.z <= 0.0)
-        return sample;
+    Layered::LayerEvent event = Layered::InitializeLayerEvent();
+    Layered::DielectricFrame frame = Layered::MakeDielectricFrame(wo, etaAbove, etaBelow);
+    float3 woLayer = BxDF::RotateXY(frame.wo, -sm.anisotropyRotation);
 
-    sample.wi        = BxDF::Diffuse::SampleRay(wo, u);
-    sample.lobe      = BxDF::LOBE_DIFFUSE;
-    sample.flags     = PT_BSDF_FLAG_DIFFUSE;
-    sample.isDelta   = 0u;
-    sample.attempted = 1u;
-    if (sample.wi.z <= 0.0)
-        return sample;
-
-    return FinalizeLobeSample(material, wo, sample);
-}
-
-PathBSDFSample SampleSpecularLobe(SurfaceMaterial material, float3 wo, float2 u)
-{
-    PathBSDFSample sample = InitializeSample();
-    if (wo.z <= 0.0)
-        return sample;
-            
-    if (IsSmoothConductor(material))
-    {
-        sample.wi        = float3(-wo.x, -wo.y, wo.z);
-        sample.pdf       = 0.0;
-        sample.weight    = BxDF::Fresnel::Schlick(material.specularColor, saturate(BxDF::AbsCosTheta(wo)));
-        sample.flags     = PT_BSDF_FLAG_GLOSSY;
-        sample.valid     = any(sample.weight > 0.0) ? 1u : 0u;
-        sample.lobe      = BxDF::LOBE_SPECULAR;
-        sample.isDelta   = 1u;
-        sample.attempted = 1u;
-        return sample;
-    }
-
-    float2 alpha = GetAlpha2(material);
-    
-    float3 wh = BxDF::GGX::SampleRay(wo, alpha.x, alpha.y, u);
-    sample.wi        = reflect(-wo, wh);
-    sample.lobe      = BxDF::LOBE_SPECULAR;
-    sample.flags     = PT_BSDF_FLAG_GLOSSY;
-    sample.isDelta   = 0u;
-    sample.attempted = 1u;
-    if (sample.wi.z <= 0.0)
-        return sample;
-
-    return FinalizeLobeSample(material, wo, sample);
-}
-
-PathBSDFSample SampleClearcoatLobe(SurfaceMaterial material, float3 wo, float2 u)
-{
-    PathBSDFSample sample = InitializeSample();
-    if (wo.z <= 0.0)
-        return sample;
-
-    sample.wi        = BxDF::Clearcoat::SampleRay(wo, max(material.clearcoatRoughness, 1.0e-3), u);
-    sample.lobe      = BxDF::LOBE_CLEARCOAT;
-    sample.flags     = PT_BSDF_FLAG_GLOSSY;
-    sample.isDelta   = 0u;
-    sample.attempted = 1u;
-    if (sample.wi.z <= 0.0)
-        return sample;
-
-    return FinalizeLobeSample(material, wo, sample);
-}
-
-PathBSDFSample SampleTransmissionLobe(SurfaceMaterial material, float3 wo, float lobeUc, float2 u, LobeMixture ls)
-{
-    PathBSDFSample sample = InitializeSample();
-
-    DielectricFrame frame = MakeDielectricFrame(material, wo);
-    float2 alpha = GetAlpha2(material);
-            
-    BxDF::BSDFSample bs = BxDF::Dielectric::SampleRay(frame.wo, alpha.x, alpha.y, frame.eta, lobeUc, u);
-    if (bs.pdf <= 0.0 && bs.isDelta == 0u)
-        return sample;
-
-    sample.wi        = frame.bFlipped != 0u ? -bs.wi : bs.wi;
-    sample.lobe      = bs.lobe;
-    sample.flags     = (bs.lobe == BxDF::LOBE_TRANSMISSION) ? PT_BSDF_FLAG_TRANSMISSION : PT_BSDF_FLAG_GLOSSY;
-    sample.isDelta   = bs.isDelta;
-    sample.attempted = 1u;
-
-    if (bs.isDelta != 0u)
-    {
-        sample.pdf    = (ls.pmf.w >= 1.0 - PT_LOBE_EPS) ? bs.pdf : 0.0;
-        sample.weight = bs.weight;
-        sample.f      = Evaluate(material, wo, sample.wi, sample.flags);
-        sample.valid  = any(sample.weight > 0.0) ? 1u : 0u;
-        return sample;
-    }
-
-    if (ls.weight.w >= 1.0 - PT_LOBE_EPS)
-    {
-        sample.pdf    = bs.pdf;
-        sample.weight = bs.weight;
-        sample.f      = Evaluate(material, wo, sample.wi, sample.flags);
-        sample.valid  = any(sample.weight > 0.0) ? 1u : 0u;
-        return sample;
-    }
-
-    return FinalizeLobeSample(material, wo, sample);
-}
-PathBSDFSample SampleLobe(SurfaceMaterial material, float3 wo, uint slot, float lobeUc, float2 u, LobeMixture ls)
-{
-    if (LobeSlotProbability(ls, slot) <= PT_LOBE_EPS)
-        return InitializeSample();
-
-    if (slot == LOBE_SLOT_DIFFUSE)
-        return SampleDiffuseLobe(material, wo, u);
-    if (slot == LOBE_SLOT_SPECULAR)
-        return SampleSpecularLobe(material, wo, u);
-    if (slot == LOBE_SLOT_CLEARCOAT)
-        return SampleClearcoatLobe(material, wo, u);
-    if (slot == LOBE_SLOT_TRANSMISSION)
-        return SampleTransmissionLobe(material, wo, lobeUc, u, ls);
-            
-    return InitializeSample();
-}
-
-PathBSDFSample SampleRay(SurfaceMaterial material, float3 wo, inout RngState rng)
-{
-    LobeMixture ls = ResolveLobeMixture(material);
+    LobeMixture ls = ResolveLobeMixture(sm, frame.eta);
 
     float lobeUc;
-    uint  slot = ChooseLobeSlot(ls, NextFloat(rng), lobeUc);
-            
-    return SampleLobe(material, wo, slot, lobeUc, NextFloat2(rng), ls);
+    uint slot = ChooseLobeSlot(ls, NextFloat(rng), lobeUc);
+
+    float slotPmf = ls.pmf[slot];
+    if (slotPmf <= PT_LOBE_EPS)
+        return event;
+
+    float2 u = NextFloat2(rng);
+
+    BxDF::BSDFSample bs = (BxDF::BSDFSample)0;
+    switch (slot)
+    {
+        case LOBE_SLOT_DIFFUSE:
+        {
+            bs.wi  = BxDF::Diffuse::SampleRay(woLayer, u);
+            bs.pdf = BxDF::Diffuse::EvaluatePDF(woLayer, bs.wi);
+
+            if (!IsPathFinite(bs.pdf) || bs.pdf <= 0.0)
+                return event;
+
+            float3 f = EvaluateDiffuseBRDF(sm, woLayer, bs.wi) + EvaluateSheenBRDF(sm, woLayer, bs.wi);
+            bs.weight = f * BxDF::AbsCosTheta(bs.wi) / bs.pdf;
+
+            bs.isDelta = 0u;
+            bs.lobe    = BxDF::LOBE_DIFFUSE;
+        }
+        break;
+
+        case LOBE_SLOT_SPECULAR:
+        {
+            if (sm.isSmooth != 0u)
+            {
+                bs.wi      = float3(-woLayer.x, -woLayer.y, woLayer.z);
+                bs.pdf     = 1.0; // deterministic
+                bs.weight  = EvaluateSmoothSpecularWeight(sm, woLayer, frame.eta);
+                bs.lobe    = BxDF::LOBE_SPECULAR;
+                bs.isDelta = 1u;
+            }
+            else
+            {
+                float2 alpha = GetAlpha2(sm);
+
+                float3 wh = BxDF::GGX::SampleRay(woLayer, alpha.x, alpha.y, u);
+                bs.wi  = reflect(-woLayer, wh);
+                bs.pdf = BxDF::GGX::EvaluatePDF(woLayer, bs.wi, alpha.x, alpha.y);
+
+                if (!IsPathFinite(bs.pdf) || bs.pdf <= 0.0)
+                    return event;
+
+                bs.weight = EvaluateSpecularBRDF(sm, woLayer, bs.wi, frame.eta) * BxDF::AbsCosTheta(bs.wi) / bs.pdf;
+
+                bs.isDelta = 0u;
+                bs.lobe    = BxDF::LOBE_SPECULAR;
+            }
+        }
+        break;
+
+        case LOBE_SLOT_CLEARCOAT:
+        {
+            float alpha = clamp(sm.clearcoatRoughness, 1.0e-3, 1.0);
+            bs.wi  = BxDF::Clearcoat::SampleRay(woLayer, alpha, u);
+            bs.pdf = BxDF::Clearcoat::EvaluatePDF(woLayer, bs.wi, alpha);
+
+            if (!IsPathFinite(bs.pdf) || bs.pdf <= 0.0)
+                return event;
+
+            bs.weight = EvaluateClearcoatBRDF(sm, woLayer, bs.wi) * BxDF::AbsCosTheta(bs.wi) / bs.pdf;
+
+            bs.isDelta = 0u;
+            bs.lobe    = BxDF::LOBE_CLEARCOAT;
+        }
+        break;
+
+        case LOBE_SLOT_TRANSMISSION:
+        {
+            float2 alpha = GetAlpha2(sm);
+
+            bs = BxDF::Dielectric::SampleRay(
+                woLayer,
+                alpha.x,
+                alpha.y,
+                frame.eta,
+                transportMode,
+                lobeUc,
+                u);
+
+            bs.weight *= saturate(sm.transmission);
+        }
+        break;
+
+        default:
+            return event;
+    }
+
+    if (!IsPathFinite(bs.pdf) || bs.pdf <= 0.0 ||
+        !IsPathFinite3(bs.wi) || dot(bs.wi, bs.wi) <= EPSILON_MIN ||
+        !IsPathFinite3(bs.weight) || any(bs.weight < 0.0))
+    {
+        return event;
+    }
+
+    // layer frame -> incident(or transmitted)-side frame
+    float3 wiIncident = BxDF::RotateXY(bs.wi, sm.anisotropyRotation);
+    event.wi     = frame.bFlipped != 0u ? -wiIncident : wiIncident;
+    event.pdf    = slotPmf * bs.pdf;
+    event.weight = bs.weight / slotPmf;
+
+    event.isDelta        = bs.isDelta;
+    event.isTransmission = bs.lobe == BxDF::LOBE_TRANSMISSION ? 1u : 0u;
+    event.eta            = event.isTransmission != 0u ? frame.eta : 1.0;
+
+    event.lobe  = bs.lobe;
+    event.flags = bs.lobe == BxDF::LOBE_DIFFUSE ? PT_BSDF_FLAG_DIFFUSE : event.isTransmission != 0u ? PT_BSDF_FLAG_TRANSMISSION : PT_BSDF_FLAG_GLOSSY;
+    event.valid = 1u;
+    return event;
+}
+
+PathBSDFSample SampleRay(SurfaceMaterial rootMaterial, float2 uv, float3 wo, float etaExterior, uint rrStartDepth, inout RngState rng)
+{
+    PathBSDFSample s = (PathBSDFSample)0;
+    s.attempted  = 1u;
+    s.rrEtaScale = 1.0;
+
+    if (!IsPathFinite3(wo) ||
+        abs(wo.z) <= EPSILON_MIN ||
+        !IsPathFinite(etaExterior) ||
+        etaExterior <= 0.0)
+        return s;
+
+    StructuredBuffer<MaterialSlabData> Slabs = GetResource(g_MaterialSlabs.index);
+    StructuredBuffer<MaterialData> Materials = GetResource(g_Materials.index);
+
+    int  count    = int(max(rootMaterial.layerCount, 1u));
+    uint offset   = rootMaterial.layerOffset;
+    int  boundary = wo.z > 0.0 ? 0 : count - 1;
+
+    if (count > 1 && offset == INVALID_INDEX)
+        return s;
+
+    float3 w = -wo;
+
+    float3 beta       = float3(1.0, 1.0, 1.0);
+    float  qH         = 1.0;
+    float  rrEtaScale = 1.0;
+
+    bool allDelta      = true;
+    uint depth         = 0u;
+    uint historyFlags  = 0u;
+
+    for (;;)
+    {
+        SurfaceMaterial sm = rootMaterial;
+        if (boundary > 0)
+        {
+            MaterialSlabData slab = Slabs[offset + boundary];
+            if (slab.materialID == INVALID_INDEX)
+                return s;
+
+            sm = LoadSurfaceMaterial(slab.materialID, uv);
+        }
+
+        float etaAbove = etaExterior;
+        if (boundary > 0)
+        {
+            MaterialSlabData aboveSlab = Slabs[offset + boundary - 1];
+            if (aboveSlab.materialID == INVALID_INDEX)
+                return s;
+
+            etaAbove = max(Materials[aboveSlab.materialID].ior, 1.0e-4);
+        }
+        float etaBelow = max(sm.ior, 1.0e-4);
+
+        Layered::LayerEvent event = SampleLayerEvent(sm, -w, etaAbove, etaBelow, PT_TRANSPORT_RADIANCE, rng);
+
+        if (!Layered::IsLayerEventValid(event))
+            return s;
+
+        bool crossedBoundary = w.z * event.wi.z > 0.0;
+        if (crossedBoundary != (event.isTransmission != 0u))
+            return s;
+
+        w     = event.wi;
+        qH   *= event.pdf;
+        beta *= event.weight;
+
+        allDelta     = allDelta && event.isDelta != 0u;
+        historyFlags |= event.flags;
+
+        if (event.isTransmission != 0u)
+            rrEtaScale *= sq(event.eta);
+
+        if (!IsPathFinite3(beta) || abs(w.z) <= EPSILON_MIN)
+            return s;
+
+        int nextBoundary = boundary + (w.z < 0.0 ? 1 : -1);
+        if (nextBoundary < 0 || nextBoundary >= count)
+        {
+            s.wi     = w;
+            s.weight = beta;
+
+            s.flags      = historyFlags;
+            s.lobe       = event.lobe;
+            s.isDelta    = allDelta ? 1u : 0u;
+            s.rrEtaScale = rrEtaScale;
+
+            s.valid = any(beta > 0.0) &&
+                      IsPathFinite3(s.wi) &&
+                      IsPathFinite3(beta) &&
+                      IsPathFinite(rrEtaScale);
+            return s;
+        }
+
+        int slabIndex = min(boundary, nextBoundary);
+        MaterialSlabData medium = Slabs[offset + slabIndex];
+        float distance = medium.thickness / max(abs(w.z), EPSILON_MIN);
+        // volume extinction
+        float3 sigmaA = float3(medium.sigmaA_r, medium.sigmaA_g, medium.sigmaA_b);
+        beta *= exp(-sigmaA * distance);
+        if (!IsPathFinite3(beta) || !any(beta > 0.0))
+            return s;
+
+        boundary = nextBoundary;
+        ++depth;
+
+        const float rrThreshold = 0.05;
+        if (depth >= rrStartDepth)
+        {
+            float3 rrBeta  = beta * rrEtaScale;
+            float qSurvive = clamp(max3(rrBeta), rrThreshold, 1.0 - rrThreshold);
+            if (NextFloat(rng) >= qSurvive)
+                return s;
+
+            beta /= qSurvive;
+            qH   *= qSurvive;
+        }
+    }
+
+    return s;
 }
 
 #if PT_VALIDATION
-float3 SurfaceLobeMask(SurfaceMaterial material)
+float3 SurfaceLobeMask(SurfaceMaterial material, float etaAbove, float etaBelow)
 {
-    LobeMixture ls = ResolveLobeMixture(material);
+    float eta = max(etaBelow, 1.0e-4) / max(etaAbove, 1.0e-4);
+    LobeMixture ls = ResolveLobeMixture(material, eta);
     return float3(
         ls.pmf.x > PT_LOBE_EPS ? 1.0 : 0.0,
         (ls.pmf.y > PT_LOBE_EPS || ls.pmf.z > PT_LOBE_EPS || ls.pmf.w > PT_LOBE_EPS) ? 1.0 : 0.0,
         ls.pmf.w > PT_LOBE_EPS ? 1.0 : 0.0);
 }
 
-float3 SurfaceLobeWeight(SurfaceMaterial material, float3 wo)
+float3 SurfaceLobeWeight(SurfaceMaterial material, float3 wo, float etaAbove, float etaBelow)
 {
-    LobeMixture ls = ResolveLobeMixture(material);
+    Layered::DielectricFrame frame = Layered::MakeDielectricFrame(wo, etaAbove, etaBelow);
+    LobeMixture ls = ResolveLobeMixture(material, frame.eta);
 
-    float transmissionFresnel = (ls.pmf.w > PT_LOBE_EPS) ? DielectricViewFresnel(material, wo) : 0.0;
+    float transmissionFresnel = (ls.pmf.w > PT_LOBE_EPS)
+        ? DielectricViewFresnel(frame.wo, frame.eta)
+        : 0.0;
     return float3(
         ls.pmf.x,
         ls.pmf.y + ls.pmf.z + ls.pmf.w * transmissionFresnel,
@@ -649,7 +674,1081 @@ float3 SampledLobeVector(PathBSDFSample sample)
 
 #endif // PT_VALIDATION
 
-} // namespace Composite
+} // namespace LayerComposite
+
+
+namespace DirectionalComposite
+{
+
+static const uint  EVALUATE_QUERY_SALT        = 0x243F6A88u;
+static const uint  PDF_QUERY_SALT             = 0x85A308D3u;
+static const uint  DIRECTIONAL_RR_START_DEPTH = 8u;
+static const float DIRECTIONAL_RR_SURVIVAL    = 0.95;
+
+float ExtendPowerStrategyRatioSum(float ratioSum, float numerator, float denominator)
+{
+    // (ratioSum + 1) * (numerator / denominator)^2, evaluated in log2 space
+    // so a very narrow rough interface cannot overflow the MIS denominator.
+    float log2Value = log2(max(ratioSum + 1.0, 1.0e-30)) +
+                      2.0 * (log2(numerator) - log2(denominator));
+    return exp2(clamp(log2Value, -100.0, 100.0));
+}
+
+RngState InitDirectionalQueryRng(
+    uint querySeed,
+    float3 wo,
+    float3 wi,
+    uint layerOffset,
+    uint layerCount,
+    uint salt,
+    uint streamIndex)
+{
+    uint3 woBits = asuint(wo);
+    uint3 wiBits = asuint(wi);
+
+    uint seed = PCGHash(querySeed ^ salt);
+    seed = PCGHash(seed ^ woBits.x);
+    seed = PCGHash(seed ^ woBits.y);
+    seed = PCGHash(seed ^ woBits.z);
+    seed = PCGHash(seed ^ wiBits.x);
+    seed = PCGHash(seed ^ wiBits.y);
+    seed = PCGHash(seed ^ wiBits.z);
+    seed = PCGHash(seed ^ layerOffset);
+    seed = PCGHash(seed ^ layerCount);
+    seed = PCGHash(seed ^ PCGHash(streamIndex + 0x9E3779B9u));
+
+    RngState rng;
+    rng.seed    = seed;
+    rng.counter = 0u;
+    return rng;
+}
+
+bool LoadBoundaryData(
+    SurfaceMaterial rootMaterial,
+    float2 uv,
+    float etaExterior,
+    int boundary,
+    uint layerOffset,
+    out SurfaceMaterial material,
+    out float etaAbove,
+    out float etaBelow)
+{
+    material = rootMaterial;
+    etaAbove = max(etaExterior, 1.0e-4);
+    etaBelow = max(rootMaterial.ior, 1.0e-4);
+
+    if (boundary < 0)
+        return false;
+    if (boundary == 0)
+        return true;
+    if (layerOffset == INVALID_INDEX)
+        return false;
+
+    StructuredBuffer< MaterialSlabData > Slabs = GetResource(g_MaterialSlabs.index);
+    StructuredBuffer< MaterialData > Materials = GetResource(g_Materials.index);
+
+    MaterialSlabData belowSlab = Slabs[layerOffset + boundary];
+    MaterialSlabData aboveSlab = Slabs[layerOffset + boundary - 1];
+    if (belowSlab.materialID == INVALID_INDEX || aboveSlab.materialID == INVALID_INDEX)
+        return false;
+
+    material = LoadSurfaceMaterial(belowSlab.materialID, uv);
+    etaAbove = max(Materials[aboveSlab.materialID].ior, 1.0e-4);
+    etaBelow = max(material.ior, 1.0e-4);
+    return true;
+}
+
+float3 Evaluate(SurfaceMaterial rootMaterial, float2 uv, float3 wo, float3 wi, float etaExterior, uint querySeed)
+{
+    const float3 zero = float3(0.0, 0.0, 0.0);
+    if (!IsPathFinite3(wo) || !IsPathFinite3(wi) ||
+        abs(wo.z) <= EPSILON_MIN || abs(wi.z) <= EPSILON_MIN ||
+        !IsPathFinite(etaExterior) || etaExterior <= 0.0)
+    {
+        return zero;
+    }
+
+    StructuredBuffer< MaterialSlabData > Slabs = GetResource(g_MaterialSlabs.index);
+
+    int  count  = int(max(rootMaterial.layerCount, 1u));
+    uint offset = rootMaterial.layerOffset;
+    if (count > 1 && offset == INVALID_INDEX)
+        return zero;
+
+    int entryBoundary = wo.z > 0.0 ? 0 : count - 1;
+    int exitBoundary  = wi.z > 0.0 ? 0 : count - 1;
+
+    float3 result = zero;
+    if (entryBoundary == exitBoundary)
+    {
+        SurfaceMaterial directMaterial;
+        float etaAbove;
+        float etaBelow;
+        if (!LoadBoundaryData(rootMaterial, uv, etaExterior, entryBoundary, offset, directMaterial, etaAbove, etaBelow))
+            return zero;
+
+        PathContribution directLobes = LayerComposite::EvaluateBoundaryLobes(
+            directMaterial,
+            wo,
+            wi,
+            etaAbove,
+            etaBelow);
+        result += directLobes.diffuse + directLobes.specular + directLobes.transmission;
+    }
+
+    RngState forwardRng = InitDirectionalQueryRng(
+        querySeed,
+        wo,
+        wi,
+        offset,
+        uint(count),
+        EVALUATE_QUERY_SALT,
+        0u);
+
+    int    forwardBoundary            = entryBoundary;
+    float3 forwardW                   = -wo;
+    float3 forwardBeta                = float3(1.0, 1.0, 1.0);
+    bool   bForwardMISCompatible      = true;
+    bool   bForwardHasContinuousEvent = false;
+    float  forwardLeftRatioBase       = 0.0;
+    float  forwardPreviousPDF         = 0.0;
+    uint   forwardDepth               = 0u;
+
+    [loop]
+    for (;;)
+    {
+        // Continuous histories are sampled once from every connection split.
+        // The power weights form a pointwise partition over those techniques.
+        if (bForwardMISCompatible)
+        {
+            RngState reverseRng = InitDirectionalQueryRng(
+                querySeed,
+                wo,
+                wi,
+                offset,
+                uint(count),
+                EVALUATE_QUERY_SALT,
+                0x10000000u + forwardDepth);
+
+            int    reverseBoundary            = exitBoundary;
+            float3 reverseW                   = -wi;
+            float3 reverseBeta                = float3(1.0, 1.0, 1.0);
+            bool   bReverseHasContinuousEvent = false;
+            float  reverseRightRatioBase      = 0.0;
+            float  reversePreviousPDF         = 0.0;
+            uint   reverseDepth               = 0u;
+
+            [loop]
+            for (;;)
+            {
+                SurfaceMaterial reverseMaterial;
+                float reverseEtaAbove;
+                float reverseEtaBelow;
+                if (!LoadBoundaryData(
+                        rootMaterial,
+                        uv,
+                        etaExterior,
+                        reverseBoundary,
+                        offset,
+                        reverseMaterial,
+                        reverseEtaAbove,
+                        reverseEtaBelow))
+                {
+                    return zero;
+                }
+
+                // The analytic boundary term owns only the literal zero-event path.
+                if (reverseBoundary == forwardBoundary &&
+                    (forwardDepth != 0u || reverseDepth != 0u))
+                {
+                    float3 connectionWo = -forwardW;
+                    float3 connectionWi = -reverseW;
+
+                    PathContribution connectionLobes = LayerComposite::EvaluateBoundaryLobes(
+                        reverseMaterial,
+                        connectionWo,
+                        connectionWi,
+                        reverseEtaAbove,
+                        reverseEtaBelow);
+                    float3 connection =
+                        connectionLobes.diffuse +
+                        connectionLobes.specular +
+                        connectionLobes.transmission;
+
+                    float connectionForwardPDF = LayerComposite::BoundaryMarginalPDF(
+                        reverseMaterial,
+                        connectionWo,
+                        connectionWi,
+                        reverseEtaAbove,
+                        reverseEtaBelow);
+                    float connectionReversePDF = LayerComposite::BoundaryMarginalPDF(
+                        reverseMaterial,
+                        connectionWi,
+                        connectionWo,
+                        reverseEtaAbove,
+                        reverseEtaBelow);
+
+                    bool bConnectionSupported =
+                        IsPathFinite3(connection) &&
+                        any(connection > 0.0) &&
+                        IsPathFinite(connectionForwardPDF) &&
+                        IsPathFinite(connectionReversePDF) &&
+                        connectionForwardPDF > 0.0 &&
+                        connectionReversePDF > 0.0;
+
+                    if (bConnectionSupported)
+                    {
+                        float leftRatioSum = bForwardHasContinuousEvent
+                            ? ExtendPowerStrategyRatioSum(
+                                forwardLeftRatioBase,
+                                connectionReversePDF,
+                                forwardPreviousPDF)
+                            : 0.0;
+                        float rightRatioSum = bReverseHasContinuousEvent
+                            ? ExtendPowerStrategyRatioSum(
+                                reverseRightRatioBase,
+                                connectionForwardPDF,
+                                reversePreviousPDF)
+                            : 0.0;
+                        float splitMISWeight = rcp(1.0 + leftRatioSum + rightRatioSum);
+
+                        result += forwardBeta * connection * reverseBeta * splitMISWeight;
+                    }
+                }
+
+                float3 reverseWo = -reverseW;
+                Layered::LayerEvent reverseEvent = LayerComposite::SampleLayerEvent(
+                    reverseMaterial,
+                    reverseWo,
+                    reverseEtaAbove,
+                    reverseEtaBelow,
+                    PT_TRANSPORT_IMPORTANCE,
+                    reverseRng);
+                if (!Layered::IsLayerEventValid(reverseEvent) || reverseEvent.isDelta != 0u)
+                    break;
+
+                float reverseEventPDF = LayerComposite::BoundaryMarginalPDF(
+                    reverseMaterial,
+                    reverseWo,
+                    reverseEvent.wi,
+                    reverseEtaAbove,
+                    reverseEtaBelow);
+                float forwardEventPDF = LayerComposite::BoundaryMarginalPDF(
+                    reverseMaterial,
+                    reverseEvent.wi,
+                    reverseWo,
+                    reverseEtaAbove,
+                    reverseEtaBelow);
+                if (!IsPathFinite(reverseEventPDF) ||
+                    !IsPathFinite(forwardEventPDF) ||
+                    reverseEventPDF <= 0.0 ||
+                    forwardEventPDF <= 0.0)
+                {
+                    break;
+                }
+
+                if (bReverseHasContinuousEvent)
+                {
+                    reverseRightRatioBase = ExtendPowerStrategyRatioSum(
+                        reverseRightRatioBase,
+                        forwardEventPDF,
+                        reversePreviousPDF);
+                }
+                else
+                {
+                    bReverseHasContinuousEvent = true;
+                }
+                reversePreviousPDF = reverseEventPDF;
+
+                bool crossedBoundary = reverseW.z * reverseEvent.wi.z > 0.0;
+                if (crossedBoundary != (reverseEvent.isTransmission != 0u))
+                    return zero;
+
+                reverseW     = reverseEvent.wi;
+                reverseBeta *= reverseEvent.weight;
+                if (!IsPathFinite3(reverseBeta) ||
+                    !any(reverseBeta > 0.0) ||
+                    abs(reverseW.z) <= EPSILON_MIN)
+                {
+                    break;
+                }
+
+                int nextBoundary = reverseBoundary + (reverseW.z < 0.0 ? 1 : -1);
+                if (nextBoundary < 0 || nextBoundary >= count)
+                    break;
+
+                int slabIndex = min(reverseBoundary, nextBoundary);
+                MaterialSlabData medium = Slabs[offset + slabIndex];
+                float distance = medium.thickness / max(abs(reverseW.z), EPSILON_MIN);
+                float3 sigmaA = float3(medium.sigmaA_r, medium.sigmaA_g, medium.sigmaA_b);
+                reverseBeta *= exp(-sigmaA * distance);
+                if (!IsPathFinite3(reverseBeta) || !any(reverseBeta > 0.0))
+                    break;
+
+                reverseBoundary = nextBoundary;
+                ++reverseDepth;
+                if (reverseDepth >= DIRECTIONAL_RR_START_DEPTH)
+                {
+                    if (NextFloat(reverseRng) >= DIRECTIONAL_RR_SURVIVAL)
+                        break;
+                    reverseBeta /= DIRECTIONAL_RR_SURVIVAL;
+                }
+            }
+        }
+
+        // A path containing any delta event has no ordinary connection at that
+        // vertex.  Its unique estimator samples the delta-only suffix from wi
+        // and connects at the first continuous boundary.
+        {
+            RngState deltaRng = InitDirectionalQueryRng(
+                querySeed,
+                wo,
+                wi,
+                offset,
+                uint(count),
+                EVALUATE_QUERY_SALT,
+                0x20000000u + forwardDepth);
+
+            int    reverseBoundary = exitBoundary;
+            float3 reverseW        = -wi;
+            float3 reverseBeta     = float3(1.0, 1.0, 1.0);
+            bool   bHasReverseDelta = false;
+            uint   reverseDepth     = 0u;
+
+            [loop]
+            for (;;)
+            {
+                SurfaceMaterial reverseMaterial;
+                float reverseEtaAbove;
+                float reverseEtaBelow;
+                if (!LoadBoundaryData(
+                        rootMaterial,
+                        uv,
+                        etaExterior,
+                        reverseBoundary,
+                        offset,
+                        reverseMaterial,
+                        reverseEtaAbove,
+                        reverseEtaBelow))
+                {
+                    return zero;
+                }
+
+                if (reverseBoundary == forwardBoundary &&
+                    (forwardDepth != 0u || reverseDepth != 0u))
+                {
+                    float3 connectionWo = -forwardW;
+                    float3 connectionWi = -reverseW;
+
+                    PathContribution connectionLobes = LayerComposite::EvaluateBoundaryLobes(
+                        reverseMaterial,
+                        connectionWo,
+                        connectionWi,
+                        reverseEtaAbove,
+                        reverseEtaBelow);
+                    float3 connection =
+                        connectionLobes.diffuse +
+                        connectionLobes.specular +
+                        connectionLobes.transmission;
+
+                    float connectionForwardPDF = LayerComposite::BoundaryMarginalPDF(
+                        reverseMaterial,
+                        connectionWo,
+                        connectionWi,
+                        reverseEtaAbove,
+                        reverseEtaBelow);
+                    float connectionReversePDF = LayerComposite::BoundaryMarginalPDF(
+                        reverseMaterial,
+                        connectionWi,
+                        connectionWo,
+                        reverseEtaAbove,
+                        reverseEtaBelow);
+
+                    bool bContinuousMISOwns =
+                        bForwardMISCompatible &&
+                        !bHasReverseDelta &&
+                        IsPathFinite3(connection) &&
+                        any(connection > 0.0) &&
+                        IsPathFinite(connectionForwardPDF) &&
+                        IsPathFinite(connectionReversePDF) &&
+                        connectionForwardPDF > 0.0 &&
+                        connectionReversePDF > 0.0;
+
+                    if (!bContinuousMISOwns)
+                        result += forwardBeta * connection * reverseBeta;
+                }
+
+                Layered::LayerEvent reverseEvent = LayerComposite::SampleLayerEvent(
+                    reverseMaterial,
+                    -reverseW,
+                    reverseEtaAbove,
+                    reverseEtaBelow,
+                    PT_TRANSPORT_IMPORTANCE,
+                    deltaRng);
+                if (!Layered::IsLayerEventValid(reverseEvent) || reverseEvent.isDelta == 0u)
+                    break;
+
+                bHasReverseDelta = true;
+
+                bool crossedBoundary = reverseW.z * reverseEvent.wi.z > 0.0;
+                if (crossedBoundary != (reverseEvent.isTransmission != 0u))
+                    return zero;
+
+                reverseW     = reverseEvent.wi;
+                reverseBeta *= reverseEvent.weight;
+                if (!IsPathFinite3(reverseBeta) ||
+                    !any(reverseBeta > 0.0) ||
+                    abs(reverseW.z) <= EPSILON_MIN)
+                {
+                    break;
+                }
+
+                int nextBoundary = reverseBoundary + (reverseW.z < 0.0 ? 1 : -1);
+                if (nextBoundary < 0 || nextBoundary >= count)
+                    break;
+
+                int slabIndex = min(reverseBoundary, nextBoundary);
+                MaterialSlabData medium = Slabs[offset + slabIndex];
+                float distance = medium.thickness / max(abs(reverseW.z), EPSILON_MIN);
+                float3 sigmaA = float3(medium.sigmaA_r, medium.sigmaA_g, medium.sigmaA_b);
+                reverseBeta *= exp(-sigmaA * distance);
+                if (!IsPathFinite3(reverseBeta) || !any(reverseBeta > 0.0))
+                    break;
+
+                reverseBoundary = nextBoundary;
+                ++reverseDepth;
+                if (reverseDepth >= DIRECTIONAL_RR_START_DEPTH)
+                {
+                    if (NextFloat(deltaRng) >= DIRECTIONAL_RR_SURVIVAL)
+                        break;
+                    reverseBeta /= DIRECTIONAL_RR_SURVIVAL;
+                }
+            }
+        }
+
+        SurfaceMaterial forwardMaterial;
+        float forwardEtaAbove;
+        float forwardEtaBelow;
+        if (!LoadBoundaryData(
+                rootMaterial,
+                uv,
+                etaExterior,
+                forwardBoundary,
+                offset,
+                forwardMaterial,
+                forwardEtaAbove,
+                forwardEtaBelow))
+        {
+            return zero;
+        }
+
+        float3 forwardWo = -forwardW;
+        Layered::LayerEvent forwardEvent = LayerComposite::SampleLayerEvent(
+            forwardMaterial,
+            forwardWo,
+            forwardEtaAbove,
+            forwardEtaBelow,
+            PT_TRANSPORT_RADIANCE,
+            forwardRng);
+        if (!Layered::IsLayerEventValid(forwardEvent))
+            break;
+
+        if (bForwardMISCompatible)
+        {
+            if (forwardEvent.isDelta != 0u)
+            {
+                bForwardMISCompatible = false;
+            }
+            else
+            {
+                float forwardEventPDF = LayerComposite::BoundaryMarginalPDF(
+                    forwardMaterial,
+                    forwardWo,
+                    forwardEvent.wi,
+                    forwardEtaAbove,
+                    forwardEtaBelow);
+                float reverseEventPDF = LayerComposite::BoundaryMarginalPDF(
+                    forwardMaterial,
+                    forwardEvent.wi,
+                    forwardWo,
+                    forwardEtaAbove,
+                    forwardEtaBelow);
+
+                if (!IsPathFinite(forwardEventPDF) ||
+                    !IsPathFinite(reverseEventPDF) ||
+                    forwardEventPDF <= 0.0 ||
+                    reverseEventPDF <= 0.0)
+                {
+                    bForwardMISCompatible = false;
+                }
+                else
+                {
+                    if (bForwardHasContinuousEvent)
+                    {
+                        forwardLeftRatioBase = ExtendPowerStrategyRatioSum(
+                            forwardLeftRatioBase,
+                            reverseEventPDF,
+                            forwardPreviousPDF);
+                    }
+                    else
+                    {
+                        bForwardHasContinuousEvent = true;
+                    }
+                    forwardPreviousPDF = forwardEventPDF;
+                }
+            }
+        }
+
+        bool crossedBoundary = forwardW.z * forwardEvent.wi.z > 0.0;
+        if (crossedBoundary != (forwardEvent.isTransmission != 0u))
+            return zero;
+
+        forwardW     = forwardEvent.wi;
+        forwardBeta *= forwardEvent.weight;
+        if (!IsPathFinite3(forwardBeta) ||
+            !any(forwardBeta > 0.0) ||
+            abs(forwardW.z) <= EPSILON_MIN)
+        {
+            break;
+        }
+
+        int nextBoundary = forwardBoundary + (forwardW.z < 0.0 ? 1 : -1);
+        if (nextBoundary < 0 || nextBoundary >= count)
+            break;
+
+        int slabIndex = min(forwardBoundary, nextBoundary);
+        MaterialSlabData medium = Slabs[offset + slabIndex];
+        float distance = medium.thickness / max(abs(forwardW.z), EPSILON_MIN);
+        float3 sigmaA = float3(medium.sigmaA_r, medium.sigmaA_g, medium.sigmaA_b);
+        forwardBeta *= exp(-sigmaA * distance);
+        if (!IsPathFinite3(forwardBeta) || !any(forwardBeta > 0.0))
+            break;
+
+        forwardBoundary = nextBoundary;
+        ++forwardDepth;
+        if (forwardDepth >= DIRECTIONAL_RR_START_DEPTH)
+        {
+            if (NextFloat(forwardRng) >= DIRECTIONAL_RR_SURVIVAL)
+                break;
+            forwardBeta /= DIRECTIONAL_RR_SURVIVAL;
+        }
+    }
+
+    return IsPathFinite3(result) && all(result >= 0.0) ? result : zero;
+}
+float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float3 wo, float3 wi, float etaExterior, uint querySeed)
+{
+    if (!IsPathFinite3(wo) || !IsPathFinite3(wi) ||
+        abs(wo.z) <= EPSILON_MIN || abs(wi.z) <= EPSILON_MIN ||
+        !IsPathFinite(etaExterior) || etaExterior <= 0.0)
+    {
+        return 0.0;
+    }
+
+    int  count  = int(max(rootMaterial.layerCount, 1u));
+    uint offset = rootMaterial.layerOffset;
+    if (count > 1 && offset == INVALID_INDEX)
+        return 0.0;
+
+    int entryBoundary = wo.z > 0.0 ? 0 : count - 1;
+    int exitBoundary  = wi.z > 0.0 ? 0 : count - 1;
+
+    bool   hasContinuousProposal = false;
+    int    probeBoundary         = entryBoundary;
+    float3 probeW                = -wo;
+
+    [loop]
+    for (;;)
+    {
+        SurfaceMaterial probeMaterial;
+        float probeEtaAbove;
+        float probeEtaBelow;
+        if (!LoadBoundaryData(
+                rootMaterial,
+                uv,
+                etaExterior,
+                probeBoundary,
+                offset,
+                probeMaterial,
+                probeEtaAbove,
+                probeEtaBelow))
+        {
+            return 0.0;
+        }
+
+        Layered::DielectricFrame frame = Layered::MakeDielectricFrame(-probeW, probeEtaAbove, probeEtaBelow);
+        LayerComposite::LobeMixture mixture = LayerComposite::ResolveLobeMixture(probeMaterial, frame.eta);
+
+        bool hasRoughReflection = probeMaterial.isSmooth == 0u &&
+                                  mixture.pmf.y > PT_LOBE_EPS;
+        bool hasRoughTransmission = probeMaterial.isSmooth == 0u &&
+                                    abs(frame.eta - 1.0) > PT_LOBE_EPS &&
+                                    mixture.pmf.w > PT_LOBE_EPS;
+        bool hasClearcoat = mixture.pmf.z > PT_LOBE_EPS;
+        hasContinuousProposal = mixture.pmf.x > PT_LOBE_EPS ||
+                                hasRoughReflection ||
+                                hasRoughTransmission ||
+                                hasClearcoat;
+        if (hasContinuousProposal)
+            break;
+
+        bool hasDeltaTransmission = mixture.pmf.w > PT_LOBE_EPS &&
+                                    (probeMaterial.isSmooth != 0u ||
+                                     abs(frame.eta - 1.0) <= PT_LOBE_EPS);
+        if (!hasDeltaTransmission)
+            break;
+
+        float3 woLayer = BxDF::RotateXY(frame.wo, -probeMaterial.anisotropyRotation);
+        float3 wiLayer;
+        float etaP;
+        if (!BxDF::Dielectric::Refract(
+                woLayer,
+                float3(0.0, 0.0, 1.0),
+                frame.eta,
+                wiLayer,
+                etaP))
+        {
+            break;
+        }
+
+        float3 wiIncident = BxDF::RotateXY(wiLayer, probeMaterial.anisotropyRotation);
+        probeW = frame.bFlipped != 0u ? -wiIncident : wiIncident;
+
+        int nextBoundary = probeBoundary + (probeW.z < 0.0 ? 1 : -1);
+        if (nextBoundary < 0 || nextBoundary >= count)
+            break;
+        probeBoundary = nextBoundary;
+    }
+
+    // Atomic direction mass is not an ordinary sr^-1 density.
+    if (!hasContinuousProposal)
+        return 0.0;
+
+    float result = 0.0;
+    if (entryBoundary == exitBoundary)
+    {
+        SurfaceMaterial directMaterial;
+        float etaAbove;
+        float etaBelow;
+        if (!LoadBoundaryData(rootMaterial, uv, etaExterior, entryBoundary, offset, directMaterial, etaAbove, etaBelow))
+            return 0.0;
+
+        result += LayerComposite::BoundaryMarginalPDF(
+            directMaterial,
+            wo,
+            wi,
+            etaAbove,
+            etaBelow);
+    }
+
+    RngState forwardRng = InitDirectionalQueryRng(
+        querySeed,
+        wo,
+        wi,
+        offset,
+        uint(count),
+        PDF_QUERY_SALT,
+        0u);
+
+    int    forwardBoundary            = entryBoundary;
+    float3 forwardW                   = -wo;
+    float  forwardRRWeight            = 1.0;
+    bool   bForwardMISCompatible      = true;
+    bool   bForwardHasContinuousEvent = false;
+    float  forwardLeftRatioBase       = 0.0;
+    float  forwardPreviousPDF         = 0.0;
+    uint   forwardDepth               = 0u;
+
+    [loop]
+    for (;;)
+    {
+        // This estimates the RR-free direction-density proxy. Query roulette
+        // is only an integration device and is divided out on both subpaths.
+        if (bForwardMISCompatible)
+        {
+            RngState reverseRng = InitDirectionalQueryRng(
+                querySeed,
+                wo,
+                wi,
+                offset,
+                uint(count),
+                PDF_QUERY_SALT,
+                0x10000000u + forwardDepth);
+
+            int    reverseBoundary             = exitBoundary;
+            float3 reverseW                    = -wi;
+            float  reverseRRWeight             = 1.0;
+            float  reverseLog2DensityScale     = 0.0;
+            bool   bReverseHasContinuousEvent  = false;
+            float  reverseRightRatioBase       = 0.0;
+            float  reversePreviousPDF          = 0.0;
+            uint   reverseDepth                = 0u;
+
+            [loop]
+            for (;;)
+            {
+                SurfaceMaterial reverseMaterial;
+                float reverseEtaAbove;
+                float reverseEtaBelow;
+                if (!LoadBoundaryData(
+                        rootMaterial,
+                        uv,
+                        etaExterior,
+                        reverseBoundary,
+                        offset,
+                        reverseMaterial,
+                        reverseEtaAbove,
+                        reverseEtaBelow))
+                {
+                    return 0.0;
+                }
+
+                if (reverseBoundary == forwardBoundary &&
+                    (forwardDepth != 0u || reverseDepth != 0u))
+                {
+                    float3 connectionWo = -forwardW;
+                    float3 connectionWi = -reverseW;
+
+                    float connectionForwardPDF = LayerComposite::BoundaryMarginalPDF(
+                        reverseMaterial,
+                        connectionWo,
+                        connectionWi,
+                        reverseEtaAbove,
+                        reverseEtaBelow);
+                    float connectionReversePDF = LayerComposite::BoundaryMarginalPDF(
+                        reverseMaterial,
+                        connectionWi,
+                        connectionWo,
+                        reverseEtaAbove,
+                        reverseEtaBelow);
+
+                    bool bConnectionSupported =
+                        IsPathFinite(connectionForwardPDF) &&
+                        IsPathFinite(connectionReversePDF) &&
+                        connectionForwardPDF > 0.0 &&
+                        connectionReversePDF > 0.0;
+
+                    if (bConnectionSupported)
+                    {
+                        float leftRatioSum = bForwardHasContinuousEvent
+                            ? ExtendPowerStrategyRatioSum(
+                                forwardLeftRatioBase,
+                                connectionReversePDF,
+                                forwardPreviousPDF)
+                            : 0.0;
+                        float rightRatioSum = bReverseHasContinuousEvent
+                            ? ExtendPowerStrategyRatioSum(
+                                reverseRightRatioBase,
+                                connectionForwardPDF,
+                                reversePreviousPDF)
+                            : 0.0;
+                        float splitMISWeight = rcp(1.0 + leftRatioSum + rightRatioSum);
+
+                        float log2Contribution =
+                            log2(max(forwardRRWeight, 1.0e-30)) +
+                            log2(connectionForwardPDF) +
+                            log2(max(reverseRRWeight, 1.0e-30)) +
+                            reverseLog2DensityScale +
+                            log2(splitMISWeight);
+                        result += exp2(clamp(log2Contribution, -100.0, 100.0));
+                    }
+                }
+
+                float3 reverseWo = -reverseW;
+                Layered::LayerEvent reverseEvent = LayerComposite::SampleLayerEvent(
+                    reverseMaterial,
+                    reverseWo,
+                    reverseEtaAbove,
+                    reverseEtaBelow,
+                    PT_TRANSPORT_IMPORTANCE,
+                    reverseRng);
+                if (!Layered::IsLayerEventValid(reverseEvent) || reverseEvent.isDelta != 0u)
+                    break;
+
+                float reverseEventPDF = LayerComposite::BoundaryMarginalPDF(
+                    reverseMaterial,
+                    reverseWo,
+                    reverseEvent.wi,
+                    reverseEtaAbove,
+                    reverseEtaBelow);
+                float forwardEventPDF = LayerComposite::BoundaryMarginalPDF(
+                    reverseMaterial,
+                    reverseEvent.wi,
+                    reverseWo,
+                    reverseEtaAbove,
+                    reverseEtaBelow);
+                if (!IsPathFinite(reverseEventPDF) ||
+                    !IsPathFinite(forwardEventPDF) ||
+                    reverseEventPDF <= 0.0 ||
+                    forwardEventPDF <= 0.0)
+                {
+                    break;
+                }
+
+                reverseLog2DensityScale +=
+                    log2(forwardEventPDF) -
+                    log2(reverseEventPDF);
+
+                if (bReverseHasContinuousEvent)
+                {
+                    reverseRightRatioBase = ExtendPowerStrategyRatioSum(
+                        reverseRightRatioBase,
+                        forwardEventPDF,
+                        reversePreviousPDF);
+                }
+                else
+                {
+                    bReverseHasContinuousEvent = true;
+                }
+                reversePreviousPDF = reverseEventPDF;
+
+                bool crossedBoundary = reverseW.z * reverseEvent.wi.z > 0.0;
+                if (crossedBoundary != (reverseEvent.isTransmission != 0u))
+                    return 0.0;
+
+                reverseW = reverseEvent.wi;
+                if (!IsPathFinite3(reverseW) || abs(reverseW.z) <= EPSILON_MIN)
+                    break;
+
+                int nextBoundary = reverseBoundary + (reverseW.z < 0.0 ? 1 : -1);
+                if (nextBoundary < 0 || nextBoundary >= count)
+                    break;
+
+                reverseBoundary = nextBoundary;
+                ++reverseDepth;
+                if (reverseDepth >= DIRECTIONAL_RR_START_DEPTH)
+                {
+                    if (NextFloat(reverseRng) >= DIRECTIONAL_RR_SURVIVAL)
+                        break;
+                    reverseRRWeight /= DIRECTIONAL_RR_SURVIVAL;
+                }
+            }
+        }
+
+        {
+            RngState deltaRng = InitDirectionalQueryRng(
+                querySeed,
+                wo,
+                wi,
+                offset,
+                uint(count),
+                PDF_QUERY_SALT,
+                0x20000000u + forwardDepth);
+
+            int    reverseBoundary         = exitBoundary;
+            float3 reverseW                = -wi;
+            float  reverseRRWeight         = 1.0;
+            float  reverseLog2DensityScale = 0.0;
+            bool   bHasReverseDelta        = false;
+            uint   reverseDepth            = 0u;
+
+            [loop]
+            for (;;)
+            {
+                SurfaceMaterial reverseMaterial;
+                float reverseEtaAbove;
+                float reverseEtaBelow;
+                if (!LoadBoundaryData(
+                        rootMaterial,
+                        uv,
+                        etaExterior,
+                        reverseBoundary,
+                        offset,
+                        reverseMaterial,
+                        reverseEtaAbove,
+                        reverseEtaBelow))
+                {
+                    return 0.0;
+                }
+
+                if (reverseBoundary == forwardBoundary &&
+                    (forwardDepth != 0u || reverseDepth != 0u))
+                {
+                    float3 connectionWo = -forwardW;
+                    float3 connectionWi = -reverseW;
+
+                    float connectionForwardPDF = LayerComposite::BoundaryMarginalPDF(
+                        reverseMaterial,
+                        connectionWo,
+                        connectionWi,
+                        reverseEtaAbove,
+                        reverseEtaBelow);
+                    float connectionReversePDF = LayerComposite::BoundaryMarginalPDF(
+                        reverseMaterial,
+                        connectionWi,
+                        connectionWo,
+                        reverseEtaAbove,
+                        reverseEtaBelow);
+
+                    bool bContinuousMISOwns =
+                        bForwardMISCompatible &&
+                        !bHasReverseDelta &&
+                        IsPathFinite(connectionForwardPDF) &&
+                        IsPathFinite(connectionReversePDF) &&
+                        connectionForwardPDF > 0.0 &&
+                        connectionReversePDF > 0.0;
+
+                    if (!bContinuousMISOwns &&
+                        IsPathFinite(connectionForwardPDF) &&
+                        connectionForwardPDF > 0.0)
+                    {
+                        float log2Contribution =
+                            log2(max(forwardRRWeight, 1.0e-30)) +
+                            log2(connectionForwardPDF) +
+                            log2(max(reverseRRWeight, 1.0e-30)) +
+                            reverseLog2DensityScale;
+                        result += exp2(clamp(log2Contribution, -100.0, 100.0));
+                    }
+                }
+
+                float3 reverseWo = -reverseW;
+                Layered::LayerEvent reverseEvent = LayerComposite::SampleLayerEvent(
+                    reverseMaterial,
+                    reverseWo,
+                    reverseEtaAbove,
+                    reverseEtaBelow,
+                    PT_TRANSPORT_IMPORTANCE,
+                    deltaRng);
+                if (!Layered::IsLayerEventValid(reverseEvent) || reverseEvent.isDelta == 0u)
+                    break;
+
+                bHasReverseDelta = true;
+
+                bool crossedBoundary = reverseW.z * reverseEvent.wi.z > 0.0;
+                if (crossedBoundary != (reverseEvent.isTransmission != 0u))
+                    return 0.0;
+
+                if (reverseEvent.isTransmission != 0u)
+                {
+                    // Current closures have symmetric delta masses. Refraction
+                    // still changes the directional measure by this Jacobian.
+                    float jacobian = BxDF::AbsCosTheta(reverseWo) /
+                        max(sq(reverseEvent.eta) * BxDF::AbsCosTheta(reverseEvent.wi), EPSILON_MIN);
+                    if (!IsPathFinite(jacobian) || jacobian <= 0.0)
+                        break;
+                    reverseLog2DensityScale += log2(jacobian);
+                }
+
+                reverseW = reverseEvent.wi;
+                if (!IsPathFinite3(reverseW) || abs(reverseW.z) <= EPSILON_MIN)
+                    break;
+
+                int nextBoundary = reverseBoundary + (reverseW.z < 0.0 ? 1 : -1);
+                if (nextBoundary < 0 || nextBoundary >= count)
+                    break;
+
+                reverseBoundary = nextBoundary;
+                ++reverseDepth;
+                if (reverseDepth >= DIRECTIONAL_RR_START_DEPTH)
+                {
+                    if (NextFloat(deltaRng) >= DIRECTIONAL_RR_SURVIVAL)
+                        break;
+                    reverseRRWeight /= DIRECTIONAL_RR_SURVIVAL;
+                }
+            }
+        }
+
+        SurfaceMaterial forwardMaterial;
+        float forwardEtaAbove;
+        float forwardEtaBelow;
+        if (!LoadBoundaryData(
+                rootMaterial,
+                uv,
+                etaExterior,
+                forwardBoundary,
+                offset,
+                forwardMaterial,
+                forwardEtaAbove,
+                forwardEtaBelow))
+        {
+            return 0.0;
+        }
+
+        float3 forwardWo = -forwardW;
+        Layered::LayerEvent forwardEvent = LayerComposite::SampleLayerEvent(
+            forwardMaterial,
+            forwardWo,
+            forwardEtaAbove,
+            forwardEtaBelow,
+            PT_TRANSPORT_RADIANCE,
+            forwardRng);
+        if (!Layered::IsLayerEventValid(forwardEvent))
+            break;
+
+        if (bForwardMISCompatible)
+        {
+            if (forwardEvent.isDelta != 0u)
+            {
+                bForwardMISCompatible = false;
+            }
+            else
+            {
+                float forwardEventPDF = LayerComposite::BoundaryMarginalPDF(
+                    forwardMaterial,
+                    forwardWo,
+                    forwardEvent.wi,
+                    forwardEtaAbove,
+                    forwardEtaBelow);
+                float reverseEventPDF = LayerComposite::BoundaryMarginalPDF(
+                    forwardMaterial,
+                    forwardEvent.wi,
+                    forwardWo,
+                    forwardEtaAbove,
+                    forwardEtaBelow);
+
+                if (!IsPathFinite(forwardEventPDF) ||
+                    !IsPathFinite(reverseEventPDF) ||
+                    forwardEventPDF <= 0.0 ||
+                    reverseEventPDF <= 0.0)
+                {
+                    bForwardMISCompatible = false;
+                }
+                else
+                {
+                    if (bForwardHasContinuousEvent)
+                    {
+                        forwardLeftRatioBase = ExtendPowerStrategyRatioSum(
+                            forwardLeftRatioBase,
+                            reverseEventPDF,
+                            forwardPreviousPDF);
+                    }
+                    else
+                    {
+                        bForwardHasContinuousEvent = true;
+                    }
+                    forwardPreviousPDF = forwardEventPDF;
+                }
+            }
+        }
+
+        bool crossedBoundary = forwardW.z * forwardEvent.wi.z > 0.0;
+        if (crossedBoundary != (forwardEvent.isTransmission != 0u))
+            return 0.0;
+
+        forwardW = forwardEvent.wi;
+        if (!IsPathFinite3(forwardW) || abs(forwardW.z) <= EPSILON_MIN)
+            break;
+
+        int nextBoundary = forwardBoundary + (forwardW.z < 0.0 ? 1 : -1);
+        if (nextBoundary < 0 || nextBoundary >= count)
+            break;
+
+        forwardBoundary = nextBoundary;
+        ++forwardDepth;
+        if (forwardDepth >= DIRECTIONAL_RR_START_DEPTH)
+        {
+            if (NextFloat(forwardRng) >= DIRECTIONAL_RR_SURVIVAL)
+                break;
+            forwardRRWeight /= DIRECTIONAL_RR_SURVIVAL;
+        }
+    }
+
+    if (!IsPathFinite(result) || result < 0.0)
+        return 0.0;
+
+    return result;
+}
+} // namespace DirectionalComposite
 
 } // namespace BxDF
 

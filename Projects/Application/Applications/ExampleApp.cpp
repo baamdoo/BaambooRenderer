@@ -283,7 +283,7 @@ void ExampleApp::ConfigureSceneObjects()
 			tc.transform.position = float3(0.0f, -1.5f, 480.0f);
 			tc.transform.scale    = float3(800.0f, 0.25f, 500.0f);
 
-			auto& m = ground.GetComponent< MaterialComponent >();
+			auto& m = ground.GetComponent< MaterialComponent >().layers.front().material;
 			m.tint      = float4(0.55f, 0.4f, 0.28f, 1.0f);
 			m.roughness = 0.8f;
 			m.metallic  = 0.0f;
@@ -295,12 +295,12 @@ void ExampleApp::ConfigureSceneObjects()
 		{
 			for (i32 col = 0; col < kSweepCols; ++col)
 			{
-				auto sphere = m_pScene->ImportModel(MODEL_PATH.append("sphere.obj"), descriptor);
+				auto sphere = m_pScene->ImportModel(MODEL_PATH.append("icosphere_hq.ply"), descriptor);
 
 				auto& tc = sphere.GetComponent< TransformComponent >();
 				tc.transform.position = float3(-7.6f + 3.2f * col, 3.0f * row, 16.0f);
 
-				auto& m = sphere.GetComponent< MaterialComponent >();
+				auto& m = sphere.GetComponent< MaterialComponent >().layers.front().material;
 				m.tint      = float4(0.9f, 0.9f, 0.9f, 1.0f);
 				m.roughness = float(row) / float(kSweepRows - 1);
 				m.metallic  = float(col) / float(kSweepCols - 1);

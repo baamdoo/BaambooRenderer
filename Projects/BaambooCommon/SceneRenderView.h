@@ -78,7 +78,6 @@ struct MaterialRenderView
 	u64 id;
 
 	float3 tint;
-	float  shininess;
 	float  metallic;
 	float  roughness;
 	float  ior;
@@ -101,6 +100,9 @@ struct MaterialRenderView
 	float  transmission;
 	u32    materialType = 0u;
 	u32    materialFlags = 0u;
+
+    u32 layerOffset = kInvalidIndex;
+    u32 layerCount  = 0u;
 
 	std::string albedoTex;
 	std::string normalTex;
@@ -258,7 +260,8 @@ struct SceneRenderView
 
 	std::vector< TransformRenderView >  transforms;
 	std::vector< StaticMeshRenderView > meshes; 
-	std::vector< MaterialRenderView >   materials;
+	std::vector< MaterialRenderView > materials;
+    std::vector< MaterialSlabData > materialSlabs;
 
 	std::unordered_map< u32, DrawRenderView > draws;
 

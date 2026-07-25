@@ -2,6 +2,7 @@
 #define _HLSL_PATHSAMPLING_HEADER
 
 #include "Sampling.hlsli"
+#include "PathComposite.hlsli"
 
 float2 EnvironmentUVFromDirection(float3 directionWS)
 {
@@ -384,15 +385,32 @@ LightSample SampleOneLight(float3 p, float selectionPdf, inout RngState rng)
     return ls;
 }
 
-float3 EstimateDirectLighting(float3 p, float3 visibilityNormal, BxDF::Frame frame, float3 woWS, SurfaceMaterial material, inout RngState rng PT_LIGHTING_CONTRIBUTION_PARAM)
+float3 EstimateDirectLighting(
+    float3 p,
+    float3 visibilityNormal,
+    BxDF::Frame frame,
+    float3 woWS,
+    SurfaceMaterial material,
+    float2 materialUV,
+    float etaExterior,
+    uint directionalQuerySeed,
+    bool bUseMIS,
+    inout RngState rng
+#if PT_VALIDATION
+    , out PathContribution contribution
+#endif
+)
 {
-    PT_LIGHTING_INIT_CONTRIBUTION();
+#if PT_VALIDATION
+    contribution = ZeroPathContribution();
+#endif
+
     float3 wo = BxDF::ToLocal(frame, woWS);
 
     bool bHasTransmission = HasTransmissionLobe(material);
     if ((!bHasTransmission && wo.z <= 0.0) || (bHasTransmission && wo.z == 0.0))
         return float3(0.0, 0.0, 0.0);
-    if (BxDF::Composite::IsSmoothConductor(material))
+    if (BxDF::LayerComposite::IsSmoothConductor(material))
         return float3(0.0, 0.0, 0.0);
 
     float3 direct = float3(0.0, 0.0, 0.0);
@@ -420,9 +438,28 @@ float3 EstimateDirectLighting(float3 p, float3 visibilityNormal, BxDF::Frame fra
     if (!bVisible)
         return direct;
 
-    PT_EVALUATE_LIGHTING_LOBES(material, wo, wi, f);
+    float3 f = BxDF::DirectionalComposite::Evaluate(
+        material,
+        materialUV,
+        wo,
+        wi,
+        etaExterior,
+        directionalQuerySeed);
     if (!any(f > 0.0))
         return direct;
+#if PT_VALIDATION
+    PathContribution bsdfLobes = ZeroPathContribution();
+    if (material.layerCount <= 1u)
+    {
+        bsdfLobes = BxDF::LayerComposite::EvaluateBoundaryLobes(
+            material,
+            wo,
+            wi,
+            etaExterior,
+            material.ior);
+    }
+    // TODO: classify generic N-layer DirectionalComposite histories.
+#endif
 
     float3 lightScale;
     if (ls.isDelta != 0u)
@@ -432,18 +469,49 @@ float3 EstimateDirectLighting(float3 p, float3 visibilityNormal, BxDF::Frame fra
     }
     else
     {
-        float pdfBSDF   = BxDF::Composite::PDF(material, wo, wi);
-        float misWeight = PowerHeuristic(ls.pdfW, pdfBSDF);
+        float misWeight = 1.0;
+        if (bUseMIS)
+        {
+            float materialMarginalPDF = BxDF::DirectionalComposite::MarginalPDF(
+                material,
+                materialUV,
+                wo,
+                wi,
+                etaExterior,
+                directionalQuerySeed);
+            misWeight = PowerHeuristic(ls.pdfW, materialMarginalPDF);
+        }
         lightScale = misWeight * ls.Le * cosSurface / ls.pdfW;
     }
     direct += f * lightScale;
-    PT_ACCUMULATE_LIGHTING_CONTRIBUTION(lightScale);
+#if PT_VALIDATION
+    contribution.diffuse      += bsdfLobes.diffuse * lightScale;
+    contribution.specular     += bsdfLobes.specular * lightScale;
+    contribution.transmission += bsdfLobes.transmission * lightScale;
+#endif
     return direct;
 }
 
-float3 EstimateEnvironmentDirectLighting(float3 p, float3 visibilityNormal, BxDF::Frame frame, float3 woWS, SurfaceMaterial material, bool bUseMIS, inout RngState rng PT_LIGHTING_CONTRIBUTION_PARAM)
+float3 EstimateEnvironmentDirectLighting(
+    float3 p,
+    float3 visibilityNormal,
+    BxDF::Frame frame,
+    float3 woWS,
+    SurfaceMaterial material,
+    float2 materialUV,
+    float etaExterior,
+    uint directionalQuerySeed,
+    bool bUseMIS,
+    inout RngState rng
+#if PT_VALIDATION
+    , out PathContribution contribution
+#endif
+)
 {
-    PT_LIGHTING_INIT_CONTRIBUTION();
+#if PT_VALIDATION
+    contribution = ZeroPathContribution();
+#endif
+
     if (!HasEnvironmentDistribution())
         return float3(0.0, 0.0, 0.0);
     float3 wo = BxDF::ToLocal(frame, woWS);
@@ -451,7 +519,7 @@ float3 EstimateEnvironmentDirectLighting(float3 p, float3 visibilityNormal, BxDF
     bool bHasTransmission = HasTransmissionLobe(material);
     if ((!bHasTransmission && wo.z <= 0.0) || (bHasTransmission && wo.z == 0.0))
         return float3(0.0, 0.0, 0.0);
-    if (BxDF::Composite::IsSmoothConductor(material))
+    if (BxDF::LayerComposite::IsSmoothConductor(material))
         return float3(0.0, 0.0, 0.0);
 
     float3 wiWS;
@@ -468,18 +536,47 @@ float3 EstimateEnvironmentDirectLighting(float3 p, float3 visibilityNormal, BxDF
     if (!IsDirectionVisible(p, visibilityNormal, wiWS))
         return float3(0.0, 0.0, 0.0);
 
-    PT_EVALUATE_LIGHTING_LOBES(material, wo, wi, f);
+    float3 f = BxDF::DirectionalComposite::Evaluate(
+        material,
+        materialUV,
+        wo,
+        wi,
+        etaExterior,
+        directionalQuerySeed);
     if (!any(f > 0.0))
         return float3(0.0, 0.0, 0.0);
+#if PT_VALIDATION
+    PathContribution bsdfLobes = ZeroPathContribution();
+    if (material.layerCount <= 1u)
+    {
+        bsdfLobes = BxDF::LayerComposite::EvaluateBoundaryLobes(
+            material,
+            wo,
+            wi,
+            etaExterior,
+            material.ior);
+    }
+    // TODO: classify generic N-layer DirectionalComposite histories.
+#endif
 
     float misWeight = 1.0;
     if (bUseMIS)
     {
-        float pdfBSDF = BxDF::Composite::PDF(material, wo, wi);
-        misWeight = PowerHeuristic(pdfLightW, pdfBSDF);
+        float materialMarginalPDF = BxDF::DirectionalComposite::MarginalPDF(
+            material,
+            materialUV,
+            wo,
+            wi,
+            etaExterior,
+            directionalQuerySeed);
+        misWeight = PowerHeuristic(pdfLightW, materialMarginalPDF);
     }
     float3 lightScale = misWeight * Le * cosSurface / pdfLightW;
-    PT_ACCUMULATE_LIGHTING_CONTRIBUTION(lightScale);
+#if PT_VALIDATION
+    contribution.diffuse      += bsdfLobes.diffuse * lightScale;
+    contribution.specular     += bsdfLobes.specular * lightScale;
+    contribution.transmission += bsdfLobes.transmission * lightScale;
+#endif
     return f * lightScale;
 }
 

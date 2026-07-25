@@ -260,8 +260,22 @@ struct MaterialData
 
 	uint subsurfaceID;
     uint transmissionID;
-    uint padding2;
-    uint padding3;
+    uint layerOffset;
+    uint layerCount;
+};
+
+struct MaterialSlabData
+{
+    uint  materialID;
+    float thickness;
+    float phaseG;
+    uint  padding0;
+
+    float sigmaA_r, sigmaA_g, sigmaA_b;
+    float padding1;
+
+    float sigmaS_r, sigmaS_g, sigmaS_b;
+    float padding2;
 };
 
 

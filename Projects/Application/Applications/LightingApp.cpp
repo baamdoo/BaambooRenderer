@@ -378,7 +378,7 @@ void LightingApp::ConfigureSceneObjects()
 		backWall.GetComponent< TransformComponent >().transform.position = float3(0.0f, 0.0f, 10.0f);
 		backWall.GetComponent< TransformComponent >().transform.scale = scaleEnd;
 
-		auto& m = backWall.GetComponent< MaterialComponent >();
+		auto& m = backWall.GetComponent< MaterialComponent >().layers.front().material;
 		m.roughness = 1.0f;
 
 		/*auto frontWall = m_pScene->ImportModel(MODEL_PATH.append("cube.obj"), descriptor);

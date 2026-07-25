@@ -6,7 +6,6 @@
 #define PT_MAX_DEPTH_LIMIT 64u
 
 #define PT_RAY_EPS          1.0e-4
-#define PT_SMOOTH_ROUGHNESS 1.0e-4
 
 #define PT_BSDF_PRINCIPLED 5u
 
@@ -16,33 +15,23 @@
 
 #define PT_LOBE_EPS 1.0e-4
 
+#define PT_MIN_ROUGHNESS_ALPHA    1.0e-3
+#define PT_SMOOTH_ALPHA_THRESHOLD 1.0e-4
+
 struct SurfacePayload
 {
-    float3 albedo;
-    uint   hitKind;
     float3 normal;
     float  dist;
-    float3 position;
-    float  roughness;
+
     float3 geometricNormal;
-    float  anisotropy;
+    uint   hitKind;
+
     float3 tangent;
-    float  anisotropyRotation;
-    float3 emission;
-    float  metallic;
-    float3 specularColor;
-    float  ior;
-    float  transmission;
-    float  clearcoat;
-    float  clearcoatRoughness;
-    float3 sheenColor;
-    float  sheenRoughness;
-    float  specularStrength;
-    
-    uint bPrincipled;
-    uint materialID;
-    uint instanceID;
-    uint primitiveID;
+    uint   materialID;
+
+    float2 uv;
+    uint   instanceID;
+    uint   primitiveID;
 };
 
 struct ShadowPayload
@@ -70,14 +59,13 @@ PathContribution ZeroPathContribution()
 struct PathBSDFSample
 {
     float3 wi;
-    float  pdf;
-    float3 f;
     uint   flags;
-    float3 weight;
+    float3 weight;      // Sampled-history continuation estimator C_H / q_H.
     uint   valid;
     uint   lobe;
     uint   isDelta;
     uint   attempted;
+    float  rrEtaScale;
 };
 
 
@@ -96,25 +84,29 @@ float PowerHeuristic(float pdfA, float pdfB)
 {
     pdfA = (IsPathFinite(pdfA) && pdfA > 0.0) ? pdfA : 0.0;
     pdfB = (IsPathFinite(pdfB) && pdfB > 0.0) ? pdfB : 0.0;
-    float a2 = pdfA * pdfA;
-    float b2 = pdfB * pdfB;
-    float denom = a2 + b2;
-    return denom > EPSILON_MIN ? a2 / denom : 0.0;
+    float maxPDF = max(pdfA, pdfB);
+    if (maxPDF <= 0.0)
+        return 0.0;
+
+    float a = pdfA / maxPDF;
+    float b = pdfB / maxPDF;
+    float a2 = a * a;
+    float b2 = b * b;
+    return a2 / (a2 + b2);
 }
 
-float CalculateMISWeight(float prevPdfBSDF, float pdfLight, uint wasDelta)
+float CalculateMISWeight(float prevMarginalPDF, float pdfLight, uint wasDelta)
 {
     if (wasDelta != 0)
-    {
         return 1.0;
-    }
-    
-    if (prevPdfBSDF <= 0.0 || pdfLight <= 0.0)
-    {
+
+    if (!IsPathFinite(pdfLight) || pdfLight <= 0.0)
         return 1.0;
-    }
-    
-    return PowerHeuristic(prevPdfBSDF, pdfLight);
+
+    if (!IsPathFinite(prevMarginalPDF) || prevMarginalPDF <= 0.0)
+        return 0.0;
+
+    return PowerHeuristic(prevMarginalPDF, pdfLight);
 }
 
 float3 ReadBaseColor(MaterialData mat, float2 uv)
@@ -172,6 +164,18 @@ float ReadTransmission(MaterialData mat, float2 uv)
     }
 
     return saturate(transmission);
+}
+
+float ReadClearcoat(MaterialData mat, float2 uv)
+{
+    float clearcoat = mat.clearcoat;
+    if (mat.clearcoatID != INVALID_INDEX)
+    {
+        Texture2D clearcoatTex = GetResource(mat.clearcoatID);
+        clearcoat *= clearcoatTex.SampleLevel(g_TrilinearWrapSampler, uv, 0).r;
+    }
+
+    return saturate(clearcoat);
 }
 
 float ReadAnisotropy(MaterialData mat, float2 uv)

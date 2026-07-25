@@ -57,6 +57,14 @@ Generated/
 Model/
 External/
 
+# README/path-tracing reference geometry (CC BY 4.0; attribution is stored beside it).
+!/Assets/Model/
+/Assets/Model/*
+!/Assets/Model/USDShaderBallForGltf/
+!/Assets/Model/USDShaderBallForGltf/USDShaderBallForGltf.glb
+!/Assets/Model/USDShaderBallForGltf/LICENSE.md
+!/Assets/Model/USDShaderBallForGltf/README.md
+
 # Agents
 Docs/
 shrimp_data/

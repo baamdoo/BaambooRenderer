@@ -19,17 +19,25 @@ struct SurfaceMaterial
     float3 sheenColor;
     float  sheenRoughness;
     float  specularStrength;
-    uint   bPrincipled;
+    uint   isPrincipled;
+    uint   isSmooth;
+    uint   layerOffset;
+    uint   layerCount;
 };
 
 bool IsPrincipledMaterial(SurfaceMaterial material)
 {
-    return material.bPrincipled != 0u;
+    return material.isPrincipled != 0u;
 }
 
 bool HasTransmissionLobe(SurfaceMaterial material)
 {
     return saturate(material.transmission) > PT_LOBE_EPS;
+}
+
+bool HasCoatingLayers(SurfaceMaterial material)
+{
+    return material.layerCount > 1u;
 }
 
 bool HasClearcoatLobe(SurfaceMaterial material)
@@ -48,33 +56,52 @@ float SheenSamplingWeight(SurfaceMaterial material)
 }
 
 // Opaque non-metal materials may still have a dielectric specular interface (plastic, ceramic, lacquered wood).
-bool HasDielectricSpecularLobe(SurfaceMaterial material)
+bool HasDielectricSpecularLobe(SurfaceMaterial material, float eta)
 {
+    eta = max(eta, 1.0e-4);
+
+    float etaContrast = abs(eta - 1.0) / max(eta + 1.0, 1.0e-4);
+    float specularColorMax = max(material.specularColor.x, max(material.specularColor.y, material.specularColor.z));
+
     return !IsPrincipledMaterial(material) &&
            !HasTransmissionLobe(material) &&
            saturate(material.metallic) < 1.0 - PT_LOBE_EPS &&
            saturate(material.specularStrength) > PT_LOBE_EPS &&
-           max(material.ior, 1.0) > 1.0 + PT_LOBE_EPS;
+           specularColorMax > PT_LOBE_EPS &&
+           etaContrast > PT_LOBE_EPS;
 }
 
-SurfaceMaterial MakeSurfaceMaterial(SurfacePayload hp)
+SurfaceMaterial LoadSurfaceMaterial(uint materialID, float2 uv)
 {
+    StructuredBuffer< MaterialData > Materials = GetResource(g_Materials.index);
+    const bool bHasMaterial = materialID != INVALID_INDEX;
+    MaterialData mat = (MaterialData)0;
+    if (bHasMaterial)
+        mat = Materials[materialID];
+
     SurfaceMaterial material;
-    material.albedo             = hp.albedo;
-    material.roughness          = hp.roughness;
-    material.emission           = hp.emission;
-    material.metallic           = hp.metallic;
-    material.specularColor      = hp.specularColor;
-    material.anisotropy         = hp.anisotropy;
-    material.anisotropyRotation = hp.anisotropyRotation;
-    material.ior                = hp.ior;
-    material.transmission       = hp.transmission;
-    material.clearcoat          = hp.clearcoat;
-    material.clearcoatRoughness = hp.clearcoatRoughness;
-    material.sheenColor         = hp.sheenColor;
-    material.sheenRoughness     = hp.sheenRoughness;
-    material.specularStrength   = hp.specularStrength;
-    material.bPrincipled        = hp.bPrincipled;
+    material.albedo             = bHasMaterial ? ReadBaseColor(mat, uv) : float3(1.0, 0.0, 1.0);
+    material.roughness          = bHasMaterial ? ReadRoughness(mat, uv) : 1.0;
+    material.emission           = bHasMaterial ? ReadEmission(mat, uv) : float3(0.0, 0.0, 0.0);
+    material.metallic           = bHasMaterial ? ReadMetallic(mat, uv) : 0.0;
+    material.specularColor      = bHasMaterial ? float3(mat.specularColorR, mat.specularColorG, mat.specularColorB) : float3(0.04, 0.04, 0.04);
+    material.anisotropy         = bHasMaterial ? ReadAnisotropy(mat, uv) : 0.0;
+    material.anisotropyRotation = bHasMaterial ? mat.anisotropyRotation : 0.0;
+    material.ior                = bHasMaterial ? max(mat.ior, 1.0e-4) : 1.0;
+    material.transmission       = bHasMaterial ? ReadTransmission(mat, uv) : 0.0;
+    material.clearcoat          = bHasMaterial ? ReadClearcoat(mat, uv) : 0.0;
+    material.clearcoatRoughness = bHasMaterial ? mat.clearcoatRoughness : 0.0;
+    material.sheenColor         = bHasMaterial ? float3(mat.sheenColorR, mat.sheenColorG, mat.sheenColorB) : float3(0.0, 0.0, 0.0);
+    material.sheenRoughness     = bHasMaterial ? mat.sheenRoughness : 0.0;
+    material.specularStrength   = bHasMaterial ? mat.specularStrength : 1.0;
+    material.isPrincipled       = (bHasMaterial && mat.materialType == PT_BSDF_PRINCIPLED) ? 1u : 0u;
+
+    const float alphaRaw = material.isPrincipled != 0u
+        ? material.roughness * material.roughness
+        : material.roughness;
+    material.isSmooth    = alphaRaw <= PT_SMOOTH_ALPHA_THRESHOLD ? 1u : 0u;
+    material.layerOffset = bHasMaterial ? mat.layerOffset : INVALID_INDEX;
+    material.layerCount  = bHasMaterial ? max(mat.layerCount, 1u) : 1u;
     return material;
 }
 
@@ -106,30 +133,25 @@ BxDF::Frame MakeSurfaceFrame(SurfacePayload hp)
         frame.B = cross(frame.N, frame.T);
     }
 
-    float rotation = hp.anisotropyRotation;
-    if (abs(rotation) > PT_LOBE_EPS)
-    {
-        float s = sin(rotation);
-        float c = cos(rotation);
-        float3 rotatedT = c * frame.T + s * frame.B;
-        float3 rotatedB = -s * frame.T + c * frame.B;
-        frame.T = rotatedT;
-        frame.B = rotatedB;
-    }
-
     return frame;
 }
 
 float GetAlpha(SurfaceMaterial material)
 {
-    float roughness = max(material.roughness, 1.0e-3);
-    return IsPrincipledMaterial(material) ? max(roughness * roughness, 1.0e-3) : roughness;
+    if (material.isSmooth)
+        return 0.0;
+
+    float alphaRaw = IsPrincipledMaterial(material) ? material.roughness * material.roughness : material.roughness;
+    return max(alphaRaw, PT_MIN_ROUGHNESS_ALPHA);
 }
 
 // Stretch alpha into tangent/bitangent roughness for anisotropic highlights
 float2 GetAlpha2(SurfaceMaterial material)
 {
-    float alpha = GetAlpha(material);
+    if (material.isSmooth)
+        return 0.0;
+
+    float alpha      = GetAlpha(material);
     float anisotropy = saturate(material.anisotropy);
     if (anisotropy <= PT_LOBE_EPS)
         return float2(alpha, alpha);

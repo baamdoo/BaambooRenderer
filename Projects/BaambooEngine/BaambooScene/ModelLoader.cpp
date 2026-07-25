@@ -229,15 +229,11 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
 
             aiColor3D color;
             if (aiMat->Get(AI_MATKEY_COLOR_DIFFUSE, color) == AI_SUCCESS)
-                material.diffuse = float3(color.r, color.g, color.b);
+                material.tint = float4(color.r, color.g, color.b, 1.0f);
             if (aiMat->Get(AI_MATKEY_COLOR_SPECULAR, color) == AI_SUCCESS)
                 material.specularColor = float3(color.r, color.g, color.b);
             if (aiMat->Get(AI_MATKEY_SHEEN_COLOR_FACTOR, color) == AI_SUCCESS)
                 material.sheenColor = float3(color.r, color.g, color.b);
-
-            float shininess = 32.0f;
-            if (aiMat->Get(AI_MATKEY_SHININESS, shininess) == AI_SUCCESS)
-                material.shininess = shininess;
 
             float metallic = 0.0f;
             if (aiMat->Get(AI_MATKEY_METALLIC_FACTOR, metallic) == AI_SUCCESS)
@@ -275,25 +271,25 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
             if (aiMat->Get(AI_MATKEY_SHEEN_ROUGHNESS_FACTOR, sheenRoughness) == AI_SUCCESS)
                 material.sheenRoughness = sheenRoughness;
 
-            material.albedoPath     = GetTextureFilename(aiMat, aiTextureType_DIFFUSE);
-            if (material.albedoPath.empty())
-                material.albedoPath = GetTextureFilename(aiMat, aiTextureType_DIFFUSE);
+            material.albedoTex     = GetTextureFilename(aiMat, aiTextureType_DIFFUSE);
+            if (material.albedoTex.empty())
+                material.albedoTex = GetTextureFilename(aiMat, aiTextureType_DIFFUSE);
 
-            material.normalPath     = GetTextureFilename(aiMat, aiTextureType_NORMALS);
-            if (material.normalPath.empty())
-                material.normalPath = GetTextureFilename(aiMat, aiTextureType_HEIGHT);
+            material.normalTex     = GetTextureFilename(aiMat, aiTextureType_NORMALS);
+            if (material.normalTex.empty())
+                material.normalTex = GetTextureFilename(aiMat, aiTextureType_HEIGHT);
 
-            material.metallicPath   = GetTextureFilename(aiMat, aiTextureType_METALNESS);
-            material.roughnessPath  = GetTextureFilename(aiMat, aiTextureType_DIFFUSE_ROUGHNESS);
-            material.aoPath         = GetTextureFilename(aiMat, aiTextureType_AMBIENT_OCCLUSION);
-            if (material.aoPath.empty())
-                material.aoPath     = GetTextureFilename(aiMat, aiTextureType_LIGHTMAP);
+            material.metallicTex   = GetTextureFilename(aiMat, aiTextureType_METALNESS);
+            material.roughnessTex  = GetTextureFilename(aiMat, aiTextureType_DIFFUSE_ROUGHNESS);
+            material.aoTex         = GetTextureFilename(aiMat, aiTextureType_AMBIENT_OCCLUSION);
+            if (material.aoTex.empty())
+                material.aoTex     = GetTextureFilename(aiMat, aiTextureType_LIGHTMAP);
 
-            material.emissivePath     = GetTextureFilename(aiMat, aiTextureType_EMISSIVE);
-            material.clearcoatPath    = GetTextureFilename(aiMat, aiTextureType_CLEARCOAT);
-            material.sheenPath        = GetTextureFilename(aiMat, aiTextureType_SHEEN);
-            material.anisotropyPath   = GetTextureFilename(aiMat, aiTextureType_ANISOTROPY);
-            material.transmissionPath = GetTextureFilename(aiMat, aiTextureType_TRANSMISSION);
+            material.emissionTex     = GetTextureFilename(aiMat, aiTextureType_EMISSIVE);
+            material.clearcoatTex    = GetTextureFilename(aiMat, aiTextureType_CLEARCOAT);
+            material.sheenTex        = GetTextureFilename(aiMat, aiTextureType_SHEEN);
+            material.anisotropyTex   = GetTextureFilename(aiMat, aiTextureType_ANISOTROPY);
+            material.transmissionTex = GetTextureFilename(aiMat, aiTextureType_TRANSMISSION);
 
             m_Materials.push_back(material);
         }

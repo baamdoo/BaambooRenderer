@@ -1,11 +1,42 @@
 #ifndef _HLSL_PATHVALIDATION_HEADER
 #define _HLSL_PATHVALIDATION_HEADER
 
-#ifndef PT_VALIDATION
-#define PT_VALIDATION 1
-#endif
-
 #if PT_VALIDATION
+static const uint PT_VALIDATION_BSDF_DIFFUSE           = 1u;
+static const uint PT_VALIDATION_BSDF_CONDUCTOR         = 2u;
+static const uint PT_VALIDATION_BSDF_DIELECTRIC        = 3u;
+static const uint PT_VALIDATION_BSDF_MIXED             = 4u;
+static const uint PT_VALIDATION_BSDF_PRINCIPLED        = 5u;
+static const uint PT_VALIDATION_BSDF_MIXED_DIELECTRIC  = 6u;
+static const uint PT_VALIDATION_BSDF_OPAQUE_DIELECTRIC = 7u;
+
+uint ClassifyValidationBSDF(SurfaceMaterial material)
+{
+    if (IsPrincipledMaterial(material))
+        return PT_VALIDATION_BSDF_PRINCIPLED;
+
+    float transmission = saturate(material.transmission);
+    float opaque       = 1.0 - transmission;
+    float metallic     = saturate(material.metallic);
+
+    bool hasTransmission       = transmission > PT_LOBE_EPS;
+    bool hasDiffuse            = opaque * (1.0 - metallic) > PT_LOBE_EPS;
+    bool hasMetallicSpecular   = opaque * metallic > PT_LOBE_EPS;
+    bool hasDielectricSpecular = HasDielectricSpecularLobe(material, max(material.ior, 1.0e-4));
+
+    if (hasTransmission && (hasDiffuse || hasMetallicSpecular))
+        return PT_VALIDATION_BSDF_MIXED_DIELECTRIC;
+    if (hasTransmission)
+        return PT_VALIDATION_BSDF_DIELECTRIC;
+    if (hasDiffuse && hasMetallicSpecular)
+        return PT_VALIDATION_BSDF_MIXED;
+    if (hasMetallicSpecular)
+        return PT_VALIDATION_BSDF_CONDUCTOR;
+    if (hasDiffuse && hasDielectricSpecular)
+        return PT_VALIDATION_BSDF_OPAQUE_DIELECTRIC;
+    return PT_VALIDATION_BSDF_DIFFUSE;
+}
+
 
 struct PathValidationSums
 {
@@ -47,11 +78,6 @@ PathValidationSums ZeroPathValidationSums()
     return sums;
 }
 
-float3 SumLobes(PathContribution lobes)
-{
-    return lobes.diffuse + lobes.specular + lobes.transmission;
-}
-
 void AccumulatePathContribution(inout PathContribution contribution, uint flags, float3 value)
 {
     if ((flags & PT_BSDF_FLAG_DIFFUSE) != 0u)
@@ -88,21 +114,21 @@ void PathValidationBuildONB(float3 n, out float3 t, out float3 b)
 }
 void AccumulatePrimaryHitValidation(inout PathValidationSums sums, SurfacePayload primaryHit, RayDesc primaryRay, PathBSDFSample primaryBSDFSample)
 {
-    SurfaceMaterial primaryMaterial = MakeSurfaceMaterial(primaryHit);
+    SurfaceMaterial primaryMaterial = LoadSurfaceMaterial(primaryHit.materialID, primaryHit.uv);
     BxDF::Frame primaryFrame = MakeSurfaceFrame(primaryHit);
     float3 primaryWo = BxDF::ToLocal(primaryFrame, -primaryRay.Direction);
 
-    sums.surfaceLobeMask        += BxDF::Composite::SurfaceLobeMask(primaryMaterial);
-    sums.surfaceLobeWeight      += BxDF::Composite::SurfaceLobeWeight(primaryMaterial, primaryWo);
-    sums.sampledLobeFrequency   += BxDF::Composite::SampledLobeVector(primaryBSDFSample);
-    sums.albedo                 += primaryHit.albedo;
+    sums.surfaceLobeMask        += BxDF::LayerComposite::SurfaceLobeMask(primaryMaterial, 1.0, primaryMaterial.ior);
+    sums.surfaceLobeWeight      += BxDF::LayerComposite::SurfaceLobeWeight(primaryMaterial, primaryWo, 1.0, primaryMaterial.ior);
+    sums.sampledLobeFrequency   += BxDF::LayerComposite::SampledLobeVector(primaryBSDFSample);
+    sums.albedo                 += primaryMaterial.albedo;
     sums.normal                 += primaryHit.normal * 0.5 + 0.5;
     sums.geometricNormal        += primaryHit.geometricNormal * 0.5 + 0.5;
     sums.depth                  += float3(primaryHit.dist, primaryHit.dist, primaryHit.dist);
-    sums.materialParams         += float3(primaryHit.roughness, primaryHit.metallic, primaryHit.transmission);
-    sums.materialExtra          += float3(primaryHit.ior, IsPrincipledMaterial(primaryMaterial) ? 1.0 : 0.0, primaryHit.anisotropy);
-    sums.materialSpecularColor  += primaryHit.specularColor;
-    sums.emission               += primaryHit.emission;
+    sums.materialParams         += float3(primaryMaterial.roughness, primaryMaterial.metallic, primaryMaterial.transmission);
+    sums.materialExtra          += float3(primaryMaterial.ior, float(ClassifyValidationBSDF(primaryMaterial)), primaryMaterial.anisotropy);
+    sums.materialSpecularColor  += primaryMaterial.specularColor;
+    sums.emission               += primaryMaterial.emission;
     sums.primaryId              += float3(
         primaryHit.materialID == INVALID_INDEX ? 0.0 : float(primaryHit.materialID + 1u),
         float(primaryHit.instanceID + 1u),
@@ -113,25 +139,6 @@ float3 AccumulatedValidationAverage(bool bReset, float3 previousAverage, float p
 {
     return (bReset ? float3(0.0, 0.0, 0.0) : previousAverage * previousSamples) + sampleSum;
 }
-
-#define PT_LIGHTING_CONTRIBUTION_PARAM , out PathContribution contribution
-#define PT_LIGHTING_INIT_CONTRIBUTION() contribution = ZeroPathContribution()
-#define PT_EVALUATE_LIGHTING_LOBES(material, wo, wi, fName) \
-    PathContribution bsdfLobes = BxDF::Composite::EvaluateLobes(material, wo, wi); \
-    float3 fName = SumLobes(bsdfLobes)
-#define PT_ACCUMULATE_LIGHTING_CONTRIBUTION(scale) \
-    contribution.diffuse += bsdfLobes.diffuse * (scale); \
-    contribution.specular += bsdfLobes.specular * (scale); \
-    contribution.transmission += bsdfLobes.transmission * (scale)
-
-#else // PT_VALIDATION
-
-#define PT_LIGHTING_CONTRIBUTION_PARAM
-#define PT_LIGHTING_INIT_CONTRIBUTION()
-#define PT_EVALUATE_LIGHTING_LOBES(material, wo, wi, fName) \
-    uint ptUnusedEvalFlags = 0u; \
-    float3 fName = BxDF::Composite::Evaluate(material, wo, wi, ptUnusedEvalFlags)
-#define PT_ACCUMULATE_LIGHTING_CONTRIBUTION(scale)
 
 #endif // PT_VALIDATION
 

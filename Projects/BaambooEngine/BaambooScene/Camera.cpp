@@ -31,7 +31,12 @@ void CameraController_FirstPerson::Update(f32 dt)
 		m_RotationVelocity = glm::zero< float3 >();
 	}
 
-	m_Transform.Rotate(m_RotationVelocity.x * dt, m_RotationVelocity.y * dt, 0);
+	// Keep the camera transform bitwise stable once inertial rotation has stopped.
+	// Path-tracing accumulation intentionally resets on an exact camera-matrix
+	// change, so repeatedly normalizing the quaternion through Rotate(0, 0, 0)
+	// would otherwise manufacture motion while the camera is idle.
+	if (m_RotationVelocity != float3(0.0f))
+		m_Transform.Rotate(m_RotationVelocity.x * dt, m_RotationVelocity.y * dt, 0.0f);
 
 
 	// **

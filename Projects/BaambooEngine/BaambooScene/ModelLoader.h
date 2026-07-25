@@ -1,6 +1,7 @@
 #pragma once
 #include "Boundings.h"
 #include "AnimationTypes.h"
+#include "MaterialTypes.h"
 #include "Utils/FileIO.hpp"
 
 struct aiScene;
@@ -61,42 +62,6 @@ struct MeshData
 	{
 		return GetVertexSize(vertexFormat);
 	}
-};
-
-struct MaterialData
-{
-	std::string name;
-
-	float3 diffuse          = float3(1.0f);
-	float3 specularColor    = float3(1.0f);
-	float  specularStrength = 1.0f;
-
-	float shininess = 32.0f;
-	float metallic  = 0.0f;
-	float roughness = 0.5f;
-
-	float ior                = 1.0f;
-	float clearcoat          = 0.0f;
-	float clearcoatRoughness = 0.0f;
-	float alphaCutoff        = 0.0f;
-
-	float anisotropy         = 0.0f;
-	float anisotropyRotation = 0.0f;
-	float transmission       = 0.0f;
-
-	float3 sheenColor     = float3(0.0f);
-	float  sheenRoughness = 0.0f;
-
-	std::string albedoPath;
-	std::string normalPath;
-	std::string metallicPath;
-	std::string roughnessPath;
-	std::string aoPath;
-	std::string emissivePath;
-	std::string clearcoatPath;
-	std::string sheenPath;
-	std::string anisotropyPath;
-	std::string transmissionPath;
 };
 
 struct MeshDescriptor

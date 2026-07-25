@@ -36,6 +36,7 @@ private:
 	void DumpRenderViewDebug(const SceneRenderView& renderView) const;
 	void ResetEnvironmentDistribution();
 	bool LoadEnvironmentDistribution(const std::filesystem::path& environmentMapPath);
+	bool RebuildMaterialSlabBuffer(const std::vector< MaterialSlabData >& slabs);
 
 private:
 	Arc< render::Texture > m_pAccumulation;
@@ -46,6 +47,7 @@ private:
 #endif // PT_VALIDATION
 	Arc< render::Texture > m_pEnvironmentMap;
 	Arc< render::Buffer >  m_pEnvironmentDistribution;
+	Arc< render::Buffer >  m_pMaterialSlabs;
 
 	Arc< render::ShaderBindingTable > m_pSBT;
 	Box< render::RaytracingPipeline > m_pPSO;
@@ -66,6 +68,7 @@ private:
 	u32    m_EnvironmentDistributionHeight = 0;
 	std::string m_EnvironmentMapPath;
 	std::string m_ReferenceSceneName = "cornell_box";
+	u64 m_MaterialSlabRevision = ~u64(0);
 	bool   m_bHasCameraState        = false;
 	std::array< u64, NumComponents > m_LastComponentRevisions = {};
 	mat4   m_LastView               = mat4(1.0f);
