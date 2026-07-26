@@ -432,9 +432,10 @@ float3 EstimateDirectLighting(
     if (cosSurface <= 0.0)
         return direct;
 
+    uint alphaSeed = NextUint(rng);
     bool bVisible = (ls.isDirectional != 0u)
-        ? IsDirectionVisible(p, visibilityNormal, ls.wiWS)
-        : IsVisible(p, visibilityNormal, ls.shadowTarget);
+        ? IsDirectionVisible(p, visibilityNormal, ls.wiWS, alphaSeed)
+        : IsVisible(p, visibilityNormal, ls.shadowTarget, alphaSeed);
     if (!bVisible)
         return direct;
 
@@ -533,7 +534,8 @@ float3 EstimateEnvironmentDirectLighting(
     if (cosSurface <= 0.0)
         return float3(0.0, 0.0, 0.0);
 
-    if (!IsDirectionVisible(p, visibilityNormal, wiWS))
+    uint alphaSeed = NextUint(rng);
+    if (!IsDirectionVisible(p, visibilityNormal, wiWS, alphaSeed))
         return float3(0.0, 0.0, 0.0);
 
     float3 f = BxDF::DirectionalComposite::Evaluate(

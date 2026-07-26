@@ -161,6 +161,7 @@ Dx12Shader::Dx12Shader(Dx12RenderDevice& rd, const char* name, CreationInfo&& in
 
 Dx12Shader::~Dx12Shader()
 {
+    COM_RELEASE(m_d3d12LibraryReflection);
     COM_RELEASE(m_d3d12ShaderReflection);
     COM_RELEASE(m_d3dShaderBlob);
 

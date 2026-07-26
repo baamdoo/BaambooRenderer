@@ -286,6 +286,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
         material.emissivePower = materialView.emissivePower;
 
         material.alphaCutoff        = materialView.alphaCutoff;
+        material.opacity            = materialView.opacity;
         material.clearcoat          = materialView.clearcoat;
         material.clearcoatRoughness = materialView.clearcoatRoughness;
         material.anisotropy         = materialView.anisotropy;

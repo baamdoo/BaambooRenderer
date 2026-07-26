@@ -29,7 +29,7 @@
 
 // Keep this in sync with PT_VALIDATION in Assets/Shader/Common.bsh.
 #ifndef PT_VALIDATION
-#define PT_VALIDATION 1
+#define PT_VALIDATION 0
 #endif
 
 #define _KB(x) (x * 1024)

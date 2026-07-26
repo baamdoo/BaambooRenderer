@@ -122,7 +122,7 @@ struct MaterialData
     float roughness;
     float ior;
     float alphaCutoff;
-    float padding0;
+    float opacity;
 
     float clearcoat;
     float clearcoatRoughness;
@@ -176,6 +176,9 @@ struct MaterialSlabData
 static_assert(sizeof(MaterialSlabData) == 48);
 
 static constexpr u32 MATERIAL_FLAG_FACE_NORMALS = 1u << 0u;
+static constexpr u32 MATERIAL_FLAG_ALPHA_MASK   = 1u << 1u;
+static constexpr u32 MATERIAL_FLAG_ALPHA_BLEND  = 1u << 2u;
+static constexpr u32 MATERIAL_FLAG_DOUBLE_SIDED = 1u << 3u;
 
 struct DirectionalLight
 {

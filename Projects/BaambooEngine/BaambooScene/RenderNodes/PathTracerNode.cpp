@@ -499,8 +499,10 @@ void PathTracerNode::DumpRenderViewDebug(const SceneRenderView& renderView) cons
         out << "material[" << materialIndex++ << "]"
             << " id=" << material.id
             << " tint=" << material.tint.x << ',' << material.tint.y << ',' << material.tint.z
+            << " opacity=" << material.opacity
             << " metallic=" << material.metallic
             << " roughness=" << material.roughness
+            << " alphaCutoff=" << material.alphaCutoff
             << " ior=" << material.ior
             << " transmission=" << material.transmission
             << " materialType=" << material.materialType

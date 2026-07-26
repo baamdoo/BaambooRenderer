@@ -35,6 +35,8 @@ public:
 
 protected:
 	virtual void Release();
+	void RestartRuntime(eRendererAPI api);
+	bool ReloadScene();
 
 	virtual void Update(float dt);
 	virtual void GameLoop(float dt);

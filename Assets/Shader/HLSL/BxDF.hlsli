@@ -96,9 +96,6 @@ float GetTransmissionScale(float etaP, uint mode)
     return mode == PT_TRANSPORT_RADIANCE ? rcp(etaP * etaP) : 1.0;
 }
 
-
-// ── Lobes ─────────────────────────────
-    
 // Reference: https://seblagarde.wordpress.com/2013/04/29/memo-on-fresnel-equations/
 namespace Fresnel
 {
@@ -141,8 +138,65 @@ float Dielectric(float cosThetaI, float iorI, float iorT)
 }
 
 } // namespace Fresnel
+    
+namespace GGX
+{
+
+bool IsSmooth(float aT, float aB)
+{
+    return max(aT, aB) < 1.0e-3;
+}
+        
+float Lambda(float3 w, float aT, float aB)
+{
+    float a2Inv = (sq(aT * w.x) + sq(aB * w.y));
+    return (sqrt(1.0 + a2Inv / sq(w.z)) - 1.0) * 0.5;
+}
+        
+float D(float3 h, float aT, float aB)
+{
+    float d = sq(h.x / aT) + sq(h.y / aB) + sq(h.z);
+    return 1.0 / (PI * aT * aB * sq(d));
+}
+
+float G1(float3 w, float aT, float aB)
+{
+    return 1.0 / (1.0 + Lambda(w, aT, aB));
+}
+        
+float G2(float3 wo, float3 wi, float aT, float aB)
+{
+    return 1.0 / (1.0 + Lambda(wo, aT, aB) + Lambda(wi, aT, aB));
+}
+
+// Reference: https://jcgt.org/published/0007/04/01/paper.pdf
+float3 SampleVisibleNormal(float3 wo, float aT, float aB, float2 u)
+{
+    float3 Vh = normalize(float3(aT * wo.x, aB * wo.y, wo.z));
+    
+    float  len2 = Vh.x * Vh.x + Vh.y * Vh.y;
+    float3 T1 = len2 > 0.0 ? 
+            float3(-Vh.y, Vh.x, 0.0) * (1.0 / safeSqrt(len2)) : float3(1.0, 0.0, 0.0); // cross-product
+    float3 T2 = cross(Vh, T1);
+            
+    float r   = safeSqrt(u.x);
+    float phi = 2.0 * PI * u.y;
+    float t1 = r * cos(phi);
+    float t2 = r * sin(phi);
+    
+    float s = 0.5 * (1.0 + Vh.z); // shrink-scale
+    t2 = (1.0 - s) * safeSqrt(1.0 - t1 * t1) + s * t2;
+            
+    float3 Nh = t1 * T1 + t2 * T2 + safeSqrt(1.0 - t1 * t1 - t2 * t2) * Vh; // eq.hemisphere
+    float3 Ne = normalize(float3(aT * Nh.x, aB * Nh.y, max(0.0, Nh.z)));
+    return Ne;
+}
+
+} // namespace GGX
 
 
+// ── Lobes ─────────────────────────────
+    
 // Reference: https://blog.selfshadow.com/publications/s2012-shading-course/burley/s2012_pbs_disney_brdf_notes_v3.pdf    
 namespace Diffuse
 {
@@ -186,95 +240,8 @@ float3 SampleRay(float3 wo, float2 u)
     return (wo.z < 0.0) ? float3(wi.x, wi.y, -wi.z) : wi;
 }
 
-} // namespace Diffuse
-
-
-namespace GGX
-{
-
-// Reference: https://schuttejoe.github.io/post/disneybsdf/
-float2 ComputeAnisotropicAlpha(float roughness, float anisotropy)
-{
-    float a = roughness * roughness;
-    float s = sqrt(max(0.0, 1.0 - 0.9 * anisotropy));
-    return float2(a / max(s, 1e-4), a * s);   // (αT, αB)
-}
-
-float D(float3 h, float aT, float aB)
-{
-    float d = sq(h.x / aT) + sq(h.y / aB) + sq(h.z);
-    return 1.0 / (PI * aT * aB * sq(d));
-}
-
-float Lambda(float3 w, float aT, float aB)
-{
-    float a2Inv = (sq(aT * w.x) + sq(aB * w.y));
-    return (sqrt(1.0 + a2Inv / sq(w.z)) - 1.0) * 0.5;
-}
-
-float G1(float3 w, float aT, float aB)
-{
-    return 1.0 / (1.0 + Lambda(w, aT, aB));
-}
-        
-float G2(float3 wo, float3 wi, float aT, float aB)
-{
-    return 1.0 / (1.0 + Lambda(wo, aT, aB) + Lambda(wi, aT, aB));
-}
-
-float EvaluatePDF(float3 wo, float3 wi, float aT, float aB)
-{
-    if (!SameHemisphere(wo, wi))
-        return 0.0;
+} // namespace Diffuse    
     
-    float3 wh = normalize(wi + wo);
-            
-    float D_ = D(wh, aT, aB);
-    float G  = G1(wo, aT, aB);
-    
-    return D_ * G / (4.0 * AbsCosTheta(wo));
-}
-
-float3 EvaluateBRDF(float3 wo, float3 wi, float3 F0, float aT, float aB)
-{
-    if (!SameHemisphere(wo, wi))
-        return float3(0.0, 0.0, 0.0);
-    
-    float3 H = normalize(wi + wo);
-    
-    float  D_ = D(H, aT, aB);
-    float  G  = G2(wo, wi, aT, aB);
-    float3 F  = Fresnel::Schlick(F0, saturate(dot(wo, H)));
-            
-    return F * D_ * G / (4.0 * CosTheta(wo) * CosTheta(wi));
-}
-
-// Reference: https://jcgt.org/published/0007/04/01/paper.pdf
-float3 SampleRay(float3 wo, float aT, float aB, float2 u)
-{
-    float3 Vh = normalize(float3(aT * wo.x, aB * wo.y, wo.z));
-    
-    float  len2 = Vh.x * Vh.x + Vh.y * Vh.y;
-    float3 T1 = len2 > 0.0 ? 
-            float3(-Vh.y, Vh.x, 0.0) * (1.0 / safeSqrt(len2)) : float3(1.0, 0.0, 0.0); // cross-product
-    float3 T2 = cross(Vh, T1);
-            
-    float r   = safeSqrt(u.x);
-    float phi = 2.0 * PI * u.y;
-    float t1 = r * cos(phi);
-    float t2 = r * sin(phi);
-    
-    float s = 0.5 * (1.0 + Vh.z); // shrink-scale
-    t2 = (1.0 - s) * safeSqrt(1.0 - t1 * t1) + s * t2;
-            
-    float3 Nh = t1 * T1 + t2 * T2 + safeSqrt(1.0 - t1 * t1 - t2 * t2) * Vh; // eq.hemisphere
-    float3 Ne = normalize(float3(aT * Nh.x, aB * Nh.y, max(0.0, Nh.z)));
-    return Ne;
-}
-
-} // namespace GGX
-
-
 // Reference: https://blog.selfshadow.com/publications/s2017-shading-course/imageworks/s2017_pbs_imageworks_slides_v2.pdf
 namespace Sheen
 {
@@ -310,7 +277,65 @@ float3 EvaluateBRDF(float3 sheenColor, float sheenRoughness, float3 wo, float3 w
 
 } // namespace Sheen
 
+namespace Reflection
+{
+    
+float EvaluatePDF(float3 wo, float3 wi, float aT, float aB)
+{
+    if (GGX::IsSmooth(aT, aB))
+        return 0.0;
 
+    if (!SameHemisphere(wo, wi))
+        return 0.0;
+    
+    float3 wh = normalize(wi + wo);
+    if (dot(wo, wh) <= 0)
+        return 0;
+            
+    float D = GGX::D(wh, aT, aB);
+    float G = GGX::G1(wo, aT, aB);
+    
+    return D * G / (4.0 * AbsCosTheta(wo));
+}
+
+float3 EvaluateBRDF(float3 wo, float3 wi, float3 F, float aT, float aB)
+{
+    if (GGX::IsSmooth(aT, aB))
+        return 0.0;
+            
+    if (!SameHemisphere(wo, wi))
+        return float3(0.0, 0.0, 0.0);
+    
+    float3 wh = normalize(wi + wo);
+    if (CosTheta(wh) < 0.0)
+        wh = -wh;
+    
+    float denominator = 4.0 * AbsCosTheta(wo) * AbsCosTheta(wi);
+    if (denominator <= 1.0e-6)
+        return 0.0;
+            
+    float  D = GGX::D(wh, aT, aB);
+    float  G = GGX::G2(wo, wi, aT, aB);
+    return F * D * G / denominator;
+}
+        
+float3 SampleRay(float3 wo, float aT, float aB, float2 u)
+{
+    if (GGX::IsSmooth(aT, aB))
+        return 0.0;
+    
+    float3 wh = GGX::SampleVisibleNormal(wo, aT, aB, u);
+    float3 wi = reflect(-wo, wh);
+            
+    if (!SameHemisphere(wo, wi))
+        return 0.0;
+            
+    return wi;      
+}
+               
+} // namespace Reflection
+    
+    
 // Reference: https://blog.selfshadow.com/publications/s2017-shading-course/imageworks/s2017_pbs_imageworks_slides_v2.pdf
 namespace Clearcoat
 {
@@ -337,9 +362,12 @@ float EvaluatePDF(float3 wo, float3 wi, float alpha)
         return 0.0;
     H *= rsqrt(hLenSq);
 
-    float cosTheta = AbsCosTheta(H);
     float denominator = 4.0 * abs(dot(wo, H));
-    return denominator > EPSILON_MIN ? D_GTR1(cosTheta, alpha) * cosTheta / denominator : 0.0;
+    if (denominator <= 1.0e-6)
+        return 0.0;
+            
+    float cosTheta = AbsCosTheta(H);
+    return D_GTR1(cosTheta, alpha) * cosTheta / denominator;
 }
       
 float3 EvaluateBRDF(float3 wo, float3 wi, float alpha)
@@ -381,16 +409,10 @@ float3 SampleRay(float3 wo, float alpha, float2 u)
 }
 
 } // namespace Clearcoat
-
-
+    
 // Reference: https://www.graphics.cornell.edu/~bjw/microfacetbsdf.pdf    
-namespace Dielectric
+namespace Transmission
 {
-
-bool IsSmooth(float aT, float aB)
-{
-    return max(aT, aB) < 1.0e-3;
-}
 
 bool Refract(float3 wi, float3 n, float eta, out float3 wt, out float eta_p)
 {
@@ -473,7 +495,7 @@ bool IsTransmittable(float3 wo, float3 wi, float eta, out float3 wh, out float e
 
 float EvaluatePDF(float3 wo, float3 wi, float aT, float aB, float eta)
 {
-    if (IsSmooth(aT, aB))
+    if (GGX::IsSmooth(aT, aB))
         return 0.0;
 
     float eta_p;
@@ -484,38 +506,12 @@ float EvaluatePDF(float3 wo, float3 wi, float aT, float aB, float eta)
     float D = GGX::D(wh, aT, aB);
     float G = GGX::G1(wo, aT, aB);
     float J = Jacobian(wo, wi, wh, eta_p);
-    return D * G * abs(dot(wo, wh)) * J / abs(CosTheta(wo));
-}
-        
-float3 EvaluateBRDF(float3 wo, float3 wi, float aT, float aB, float eta)
-{
-    if (IsSmooth(aT, aB))
-        return 0.0;
-
-    if (!SameHemisphere(wo, wi))
-        return 0.0;
-
-    float3 wh = wo + wi;
-    if (dot(wh, wh) == 0.0)
-        return 0.0;
-
-    wh = normalize(wh);
-    if (wh.z < 0.0)
-        wh = -wh;
-
-    float D = GGX::D(wh, aT, aB);
-    float G = GGX::G2(wo, wi, aT, aB);
-    float F = Fresnel::Dielectric(dot(wo, wh), 1.0, eta);
-    float denom = 4.0 * AbsCosTheta(wo) * AbsCosTheta(wi);
-    if (denom <= 0.0)
-        return 0.0;
-
-    return float3(F, F, F) * D * G / denom;
+    return D * G * abs(dot(wo, wh)) * J / AbsCosTheta(wo);
 }
 
-float3 EvaluateBTDF(float3 wo, float3 wi, float aT, float aB, float eta, uint mode)
+float3 EvaluateBTDF(float3 wo, float3 wi, float3 oneMinusF, float aT, float aB, float eta, uint mode)
 {
-    if (IsSmooth(aT, aB))
+    if (GGX::IsSmooth(aT, aB))
         return 0.0;
 
     float  etaP;
@@ -523,120 +519,137 @@ float3 EvaluateBTDF(float3 wo, float3 wi, float aT, float aB, float eta, uint mo
     if (!IsTransmittable(wo, wi, eta, wh, etaP))
         return 0.0;
 
+    float denominator = AbsCosTheta(wo) * AbsCosTheta(wi);
+    if (denominator <= 1.0e-6)
+        return 0.0;
+    
     float D = GGX::D(wh, aT, aB);
     float G = GGX::G2(wo, wi, aT, aB);
-    float F = Fresnel::Dielectric(dot(wo, wh), 1.0, eta);
     float J = Jacobian(wo, wi, wh, etaP);
-    return D * G * (1.0 - F) * J * abs(dot(wo, wh)) * GetTransmissionScale(etaP, mode) / (abs(CosTheta(wo) * CosTheta(wi)));
+    return D * G * oneMinusF * J * abs(dot(wo, wh)) * GetTransmissionScale(etaP, mode) / denominator;
 }
 
-float3 EvaluateBSDF(float3 wo, float3 wi, float aT, float aB, float eta, uint mode)
+float3 SampleRay(float3 wo, float aT, float aB, float eta, float2 u)
 {
-    return SameHemisphere(wo, wi) ? EvaluateBRDF(wo, wi, aT, aB, eta) : EvaluateBTDF(wo, wi, aT, aB, eta, mode);
-}
-
-BSDFSample SampleRay(float3 wo, float aT, float aB, float eta, uint mode, float uc, float2 u)
-{
-    BSDFSample bs;
-    bs.wi      = float3(0.0, 0.0, 0.0);
-    bs.pdf     = 0.0;                 // default == INVALID
-    bs.weight  = float3(0.0, 0.0, 0.0);
-    bs.lobe    = LOBE_TRANSMISSION;
-    bs.isDelta = 0u;                  // overridden to 1u in the smooth branch below
-
-    bool isSmooth = (eta == 1.0) || IsSmooth(aT, aB);
-    if (isSmooth)
+    // smooth branch
+    if (eta == 1.0 || GGX::IsSmooth(aT, aB))
     {
-        float R = Fresnel::Dielectric(CosTheta(wo), 1.0, eta);
-        float T = 1.0 - R;
-
-        if (uc < R / (R + T))
-        {
-            // reflect branch
-            float3 wi = float3(-wo.x, -wo.y, wo.z);
-            float  f  = R / AbsCosTheta(wi);
-
-            bs.wi      = wi;
-            bs.pdf     = R / (R + T);
-            bs.weight  = f * AbsCosTheta(wi) / bs.pdf;
-            bs.lobe    = LOBE_SPECULAR;
-            bs.isDelta = 1u;
-        }
-        else
-        {
-            // transmission branch
-            float  eta_p;
-            float3 wi;
-            if (!Refract(wo, float3(0.0, 0.0, 1.0), eta, wi, eta_p))
-                return bs;
-
-            float f = T * GetTransmissionScale(eta_p, mode) / (AbsCosTheta(wi));
-
-            bs.wi      = wi;
-            bs.pdf     = T / (R + T);
-            bs.weight  = f * AbsCosTheta(wi) / bs.pdf;
-            bs.lobe    = LOBE_TRANSMISSION;
-            bs.isDelta = 1u;
-        }
-
-        return bs;
+        float  etaP;
+        float3 wi;
+        return Refract(wo, float3(0.0, 0.0, 1.0), eta, wi, etaP) ? wi : float3(0.0, 0.0, 0.0);
     }
 
     // rough surface branch
-    float3 wh = GGX::SampleRay(wo,aT,aB,u);
-
-    float R = Fresnel::Dielectric(dot(wo, wh), 1.0, eta);
-    float T = 1.0 - R;
-    if (uc < R / (R + T))
-    {
-        // reflect branch
-        float3 wi = reflect(-wo, wh);
-        if (!SameHemisphere(wo, wi))
-            return bs;
-
-        float D  = GGX::D(wh, aT, aB);
-        float G2 = GGX::G2(wo, wi, aT, aB);
-        float G1 = GGX::G1(wo, aT, aB);
-
-        float3 f = D * G2 * R / (4.0 * CosTheta(wo) * CosTheta(wi));
-
-        bs.wi     = wi;
-        bs.pdf    = D * G1 / (4.0 * AbsCosTheta(wo)) * (R / (R + T));
-        bs.weight = f * AbsCosTheta(wi) / bs.pdf;
-        bs.lobe   = LOBE_SPECULAR;
-    }
-    else
-    {
-        // transmission branch
-        float  eta_p;
-        float3 wi;
-        if (!Refract(wo, wh, eta, wi, eta_p))
-            return bs;
-
-        if (wi.z == 0.0)
-            return bs;
-
-        if (SameHemisphere(wo, wi))
-            return bs;
-
-        float D  = GGX::D(wh, aT, aB);
-        float G2 = GGX::G2(wo, wi, aT, aB);
-        float G1 = GGX::G1(wo, aT, aB);
-        float J  = Jacobian(wo, wi, wh, eta_p);
-
-        float3 f = D * G2 * T * abs(dot(wo, wh)) * J * GetTransmissionScale(eta_p, mode) / (abs(CosTheta(wo) * CosTheta(wi)));
-
-        bs.wi     = wi;
-        bs.pdf    = D * G1 * abs(dot(wo, wh)) * J / AbsCosTheta(wo) * (T / (R + T));
-        bs.weight = f * AbsCosTheta(wi) / bs.pdf;
-        bs.lobe   = LOBE_TRANSMISSION;
-    }
-
-    return bs;
+    float3 wh = GGX::SampleVisibleNormal(wo,aT,aB,u);
+            
+    float  etaP;
+    float3 wi;
+    if (!Refract(wo, wh, eta, wi, etaP) || SameHemisphere(wo, wi))
+        return 0.0;
+            
+    return wi;
 }
 
-} // namespace Dielectric
+} // namespace Transmission
+    
+    
+// ── Material Models ─────────────────────────────    
 
+namespace Conductor
+{
+
+namespace Smooth
+{
+            
+float3 EvaluateReflection(float3 wo, float3 F0)
+{
+    return Fresnel::Schlick(F0, AbsCosTheta(wo));
+}
+            
+} // namespace Conductor::Smooth
+   
+float3 EvaluateReflection(float3 wo, float3 wi, float3 F0, float aT, float aB)
+{
+    if (GGX::IsSmooth(aT, aB))
+        return 0.0;
+
+    if (!SameHemisphere(wo, wi))
+        return 0.0;
+     
+    float3 wh = wo + wi;
+    if (dot(wh, wh) <= 1.0e-6)
+        return 0.0;
+    
+    wh = normalize(wh);
+    if (wh.z < 0.0)
+        wh = -wh;
+            
+    float3 F = Fresnel::Schlick(F0, saturate(dot(wo, wh)));
+    return Reflection::EvaluateBRDF(wo, wi, F, aT, aB);
+}
+        
+} // namespace Conductor    
+
+namespace Dielectric
+{
+
+namespace Smooth
+{
+            
+float3 EvaluateReflection(float3 wo, float eta)
+{
+    return Fresnel::Dielectric(CosTheta(wo), 1.0, eta);
+}
+            
+float3 EvaluateTransmission(float3 wo, float3 wi, float eta, uint mode)
+{
+    float etaP;
+    if (!Transmission::Refract(wo, float3(0.0, 0.0, 1.0), eta, wi, etaP))
+        return 0.0;
+            
+    float F = Fresnel::Dielectric(CosTheta(wo), 1.0, eta);
+    return (1.0 - F) * GetTransmissionScale(etaP, mode);
+}
+            
+} // namespace Dielectric::Smooth
+    
+float3 EvaluateReflection(float3 wo, float3 wi, float aT, float aB, float eta)
+{
+    if (GGX::IsSmooth(aT, aB))
+        return 0.0;
+            
+    if (!SameHemisphere(wo, wi))
+        return 0;
+     
+    float3 wh = wo + wi;
+    if (dot(wh, wh) <= 1.0e-6)
+        return 0;
+    
+    wh = normalize(wh);
+    if (wh.z < 0.0)
+        wh = -wh;
+            
+    float F = Fresnel::Dielectric(dot(wo, wh), 1.0, eta);
+    return Reflection::EvaluateBRDF(wo, wi, float3(F, F, F), aT, aB);
+}
+    
+float3 EvaluateTransmission(float3 wo, float3 wi, float aT, float aB, float eta, uint mode)
+{
+    if (GGX::IsSmooth(aT, aB))
+        return 0.0;
+           
+    float  etaP;
+    float3 wh;
+    if (!Transmission::IsTransmittable(wo, wi, eta, wh, etaP))
+        return 0.0;
+            
+    float F = Fresnel::Dielectric(dot(wo, wh), 1.0, eta);
+    return Transmission::EvaluateBTDF(wo, wi, float3(1.0 - F, 1.0 - F, 1.0 - F), aT, aB, eta, mode);
+}
+        
+} // namespace Dielectric    
+    
+    
 }  // namespace BxDF
 
 #endif // _HLSL_BXDF_HEADER

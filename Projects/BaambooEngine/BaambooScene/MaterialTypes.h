@@ -8,6 +8,21 @@
 namespace baamboo
 {
 
+enum eMaterialFlags : u32
+{
+	eMaterialFlag_None        = 0,
+	eMaterialFlag_FaceNormals = 1 << 0,
+	eMaterialFlag_AlphaMask   = 1 << 1,
+	eMaterialFlag_AlphaBlend  = 1 << 2,
+	eMaterialFlag_DoubleSided = 1 << 3,
+};
+
+enum eMaterialType : u32
+{
+	eMaterialType_Default    = 0,
+	eMaterialType_Principled = 5,
+};
+
 // Complete local surface closure used by one boundary of a material stack.
 // Texture strings remain authoring paths until MeshSystem resolves them for the GPU.
 struct MaterialData
@@ -38,7 +53,8 @@ struct MaterialData
 
 	float subsurface   = 0.0f;
 	float transmission = 0.0f;
-	u32   materialType = 0u;
+	u32   materialType  = eMaterialType_Default;
+	u32   materialFlags = eMaterialFlag_None;
 
 	std::string albedoTex;
 	std::string normalTex;

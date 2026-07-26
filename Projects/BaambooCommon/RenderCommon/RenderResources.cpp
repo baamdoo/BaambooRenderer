@@ -462,6 +462,12 @@ ResourceManager::~ResourceManager()
 	RELEASE(m_pSceneResource);
 }
 
+void ResourceManager::ReplaceSceneResource(Box< SceneResource >&& pSceneResource)
+{
+	RELEASE(m_pSceneResource);
+	m_pSceneResource = pSceneResource.release();
+}
+
 //void ResourceManager::SetBuffer(const std::string& name, Weak< Buffer > buffer)
 //{
 //	m_Buffers.emplace(name, buffer);

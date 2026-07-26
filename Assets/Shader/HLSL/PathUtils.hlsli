@@ -37,6 +37,7 @@ struct SurfacePayload
 struct ShadowPayload
 {
     uint visible;
+    uint alphaSeed;
 };
 
 
@@ -123,11 +124,15 @@ float3 ReadBaseColor(MaterialData mat, float2 uv)
 
 float ReadOpacity(MaterialData mat, float2 uv)
 {
-    if (mat.alphaCutoff <= 0.0 || mat.albedoID == INVALID_INDEX)
-        return 1.0;
+    float opacity = mat.opacity;
 
-    Texture2D albedoTex = GetResource(mat.albedoID);
-    return albedoTex.SampleLevel(g_TrilinearWrapSampler, uv, 0).a;
+    if (mat.albedoID != INVALID_INDEX)
+    {
+        Texture2D albedoTex = GetResource(mat.albedoID);
+        opacity *= albedoTex.SampleLevel(g_TrilinearWrapSampler, uv, 0).a;
+    }
+
+    return saturate(opacity);
 }
 
 float ReadRoughness(MaterialData mat, float2 uv)
@@ -228,7 +233,7 @@ float3 OffsetRay(float3 p, float3 n, float3 w)
 }
 
 // Shadow ray visibility: returns true when no occluder lies between p and target
-bool IsVisible(float3 p, float3 n, float3 target)
+bool IsVisible(float3 p, float3 n, float3 target, uint alphaSeed)
 {
     float3 toTarget = target - p;
     float3 wi       = normalize(toTarget);
@@ -246,10 +251,11 @@ bool IsVisible(float3 p, float3 n, float3 target)
     ray.TMax      = max(PT_RAY_EPS, tMax - PT_RAY_EPS);
 
     ShadowPayload sp;
-    sp.visible = 0u;
+    sp.visible   = 0u;
+    sp.alphaSeed = alphaSeed;
     TraceRay(
         g_Scene,
-        RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
+        RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_FORCE_NON_OPAQUE,
         0xFF,
         1,
         0,
@@ -260,7 +266,7 @@ bool IsVisible(float3 p, float3 n, float3 target)
     return sp.visible != 0u;
 }
 
-bool IsDirectionVisible(float3 p, float3 n, float3 wi)
+bool IsDirectionVisible(float3 p, float3 n, float3 wi, uint alphaSeed)
 {
     wi = normalize(wi);
     float3 origin = OffsetRay(p, n, wi);
@@ -272,10 +278,11 @@ bool IsDirectionVisible(float3 p, float3 n, float3 wi)
     ray.TMax      = 1.0e30;
 
     ShadowPayload sp;
-    sp.visible = 0u;
+    sp.visible   = 0u;
+    sp.alphaSeed = alphaSeed;
     TraceRay(
         g_Scene,
-        RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
+        RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_FORCE_NON_OPAQUE,
         0xFF,
         1,
         0,

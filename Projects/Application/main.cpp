@@ -13,7 +13,7 @@ int main(int argc, char** argv)
 	bool bDumpAOV             = false;
 	bool bExitAfterDump       = false;
 	bool bPathTracerRequested = false;
-	std::string pathTracerScene = "cornell_box";
+	std::string pathTracerScene;
 	for (int i = 1; i < argc; ++i)
 	{
 		const std::string_view arg = argv[i];
@@ -22,8 +22,13 @@ int main(int argc, char** argv)
 			bDumpAOV = true;
 			bPathTracerRequested = true;
 		}
+		else if (arg == "--pathtracer" || arg == "--pt")
+		{
+			bPathTracerRequested = true;
+		}
 		else if (arg == "--exit-after-dump" || arg == "--pathtracer-exit-after-dump")
 		{
+			bDumpAOV = true;
 			bExitAfterDump = true;
 			bPathTracerRequested = true;
 		}
@@ -46,6 +51,9 @@ int main(int argc, char** argv)
 
 	if (bPathTracerRequested)
 	{
+		if (pathTracerScene.empty())
+			pathTracerScene = bDumpAOV ? "cornell_box" : std::string(RayTracingApp::s_DefaultPathTracerScene);
+
 		RayTracingApp app = {};
 		app.ConfigurePathTracerAutomation(bDumpAOV, bExitAfterDump, pathTracerScene);
 		try
@@ -61,14 +69,17 @@ int main(int argc, char** argv)
 		return app.Run();
 	}
 
+	eRendererAPI api = eRendererAPI::D3D12;
+	//eRendererAPI api = eRendererAPI::Vulkan;
+
 	//ExampleApp app = {};
 	//BistroApp app = {};
 	//LightingApp app = {};
-	//RayTracingApp app = {};
-	TerrainApp app = {};
+	RayTracingApp app = {};
+	//TerrainApp app = {};
 	try
 	{
-		app.Initialize(eRendererAPI::Vulkan);
+		app.Initialize(api);
 	}
 	catch (std::runtime_error& e)
 	{

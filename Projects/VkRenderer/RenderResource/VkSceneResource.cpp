@@ -411,6 +411,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 		material.emissivePower = materialView.emissivePower;
 
 		material.alphaCutoff        = materialView.alphaCutoff;
+		material.opacity            = materialView.opacity;
 		material.clearcoat          = materialView.clearcoat;
 		material.clearcoatRoughness = materialView.clearcoatRoughness;
 		material.anisotropy         = materialView.anisotropy;

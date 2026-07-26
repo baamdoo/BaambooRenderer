@@ -59,7 +59,7 @@ void OrientOpaqueSurfaceNormalForPath(inout SurfacePayload hp, SurfaceMaterial m
         hp.normal = -hp.normal;
 }
 
-float3 TracePath(RayDesc primaryRay, uint2 pixel, uint sampleIndex
+float3 TracePath(RayDesc primaryRay, inout RngState rng
 #if PT_VALIDATION
     , out SurfacePayload primaryHit
     , out PathContribution contribution
@@ -67,8 +67,6 @@ float3 TracePath(RayDesc primaryRay, uint2 pixel, uint sampleIndex
 #endif
 )
 {
-    RngState rng = InitRng(pixel, 0u, sampleIndex);
-
     RayDesc ray = primaryRay;
 
     float3 L    = float3(0.0, 0.0, 0.0); // radiance carried back along this path
@@ -89,15 +87,32 @@ float3 TracePath(RayDesc primaryRay, uint2 pixel, uint sampleIndex
     [loop]
     for (uint depth = 0u; depth < maxDepth; ++depth)
     {
-        SurfacePayload hp = (SurfacePayload)0;
+        SurfacePayload hp  = (SurfacePayload)0;
+        SurfaceMaterial sm = (SurfaceMaterial)0;
 
-        TraceRay(g_Scene, RAY_FLAG_NONE, 0xFF, 0, 0, 0, ray, hp);
-        SurfaceMaterial material = (SurfaceMaterial)0;
-        if (hp.hitKind != 0u)
+        [loop]
+        for (;;)
         {
-            material = LoadSurfaceMaterial(hp.materialID, hp.uv);
-            OrientOpaqueSurfaceNormalForPath(hp, material, -ray.Direction);
+            TraceRay(g_Scene, RAY_FLAG_FORCE_NON_OPAQUE, 0xFF, 0, 0, 0, ray, hp);
+
+            if (hp.hitKind == 0u)
+                break;
+
+            sm = LoadSurfaceMaterial(hp.materialID, hp.uv);
+
+            bool isAlphaBlend = (sm.materialFlags & MATERIAL_FLAG_ALPHA_BLEND) != 0;
+            bool isNullBranch = isAlphaBlend && NextFloat(rng) >= sm.opacity;
+
+            if (!isNullBranch)
+            {
+                OrientOpaqueSurfaceNormalForPath(hp, sm, -ray.Direction);
+                break;
+            }
+
+            // null intersection event: only ray segment range(min) updated for next trace
+            ray.TMin = hp.dist + PT_RAY_EPS;
         }
+
 #if PT_VALIDATION
         if (depth == 0u)
             primaryHit = hp;
@@ -123,9 +138,9 @@ float3 TracePath(RayDesc primaryRay, uint2 pixel, uint sampleIndex
 
         const float3 surfacePosition = ray.Origin + ray.Direction * hp.dist;
         // ── Case A: the random walk hit an emitter ─────────────────────
-        if (any(material.emission > 0.0))
+        if (any(sm.emission > 0.0))
         {
-            float3 emittedContribution = beta * material.emission;
+            float3 emittedContribution = beta * sm.emission;
             if (depth == 0u)
             {
                 if (IsPathFinite3(emittedContribution))
@@ -145,7 +160,6 @@ float3 TracePath(RayDesc primaryRay, uint2 pixel, uint sampleIndex
 #endif
                 }
             }
-            break;
         }
 
         // ── Case C: surface hit — NEE, then extend the walk ────────────
@@ -162,10 +176,10 @@ float3 TracePath(RayDesc primaryRay, uint2 pixel, uint sampleIndex
         PathContribution directContribution;
         float3 directLighting = EstimateDirectLighting(
             surfacePosition,
-            hp.normal,
+            hp.geometricNormal,
             frame,
             woWS,
-            material,
+            sm,
             hp.uv,
             etaExterior,
             directionalQuerySeed,
@@ -176,10 +190,10 @@ float3 TracePath(RayDesc primaryRay, uint2 pixel, uint sampleIndex
         PathContribution environmentDirectContribution;
         float3 environmentDirectLighting = EstimateEnvironmentDirectLighting(
             surfacePosition,
-            hp.normal,
+            hp.geometricNormal,
             frame,
             woWS,
-            material,
+            sm,
             hp.uv,
             etaExterior,
             directionalQuerySeed,
@@ -189,10 +203,10 @@ float3 TracePath(RayDesc primaryRay, uint2 pixel, uint sampleIndex
 #else
         float3 directLighting = EstimateDirectLighting(
             surfacePosition,
-            hp.normal,
+            hp.geometricNormal,
             frame,
             woWS,
-            material,
+            sm,
             hp.uv,
             etaExterior,
             directionalQuerySeed,
@@ -200,10 +214,10 @@ float3 TracePath(RayDesc primaryRay, uint2 pixel, uint sampleIndex
             rng);
         float3 environmentDirectLighting = EstimateEnvironmentDirectLighting(
             surfacePosition,
-            hp.normal,
+            hp.geometricNormal,
             frame,
             woWS,
-            material,
+            sm,
             hp.uv,
             etaExterior,
             directionalQuerySeed,
@@ -222,7 +236,7 @@ float3 TracePath(RayDesc primaryRay, uint2 pixel, uint sampleIndex
         float3 wo = BxDF::ToLocal(frame, woWS);
         // History-space continuation query: weight is already C_H / q_H.
         PathBSDFSample s = BxDF::LayerComposite::SampleRay(
-            material,
+            sm,
             hp.uv,
             wo,
             etaExterior,
@@ -234,7 +248,7 @@ float3 TracePath(RayDesc primaryRay, uint2 pixel, uint sampleIndex
         {
             // Direction-space query used only by outer MIS
             marginalPDF = BxDF::DirectionalComposite::MarginalPDF(
-                material,
+                sm,
                 hp.uv,
                 wo,
                 s.wi,
@@ -348,7 +362,7 @@ void RayGen()
         PathContribution pathContribution;
         PathBSDFSample primaryBSDFSample = (PathBSDFSample)0;
 
-        float3 sampleRadiance = TracePath(ray, rayIndex, sampleIndex, primaryHit, pathContribution, primaryBSDFSample);
+        float3 sampleRadiance = TracePath(ray, rng, primaryHit, pathContribution, primaryBSDFSample);
         if (IsPathFinite3(sampleRadiance))
             Lsum += sampleRadiance;
 
@@ -357,7 +371,7 @@ void RayGen()
         if (primaryHit.hitKind != 0u)
             validationSums.sampledLobeFrequency += BxDF::LayerComposite::SampledLobeVector(primaryBSDFSample);
 #else
-        float3 sampleRadiance = TracePath(ray, rayIndex, sampleIndex);
+        float3 sampleRadiance = TracePath(ray, rng);
         if (IsPathFinite3(sampleRadiance))
             Lsum += sampleRadiance;
 #endif
@@ -378,7 +392,9 @@ void RayGen()
         SurfacePayload primaryValidationHit = (SurfacePayload)0;
         PathContribution unusedPrimaryContribution;
         PathBSDFSample primaryValidationBSDFSample = (PathBSDFSample)0;
-        TracePath(primaryValidationRay, rayIndex, 0u, primaryValidationHit, unusedPrimaryContribution, primaryValidationBSDFSample);
+        RngState validationRng = InitRng(rayIndex, 0u, 0u);
+        validationRng.seed = PCGHash(validationRng.seed ^ 0xD1B54A35u);
+        TracePath(primaryValidationRay, validationRng, primaryValidationHit, unusedPrimaryContribution, primaryValidationBSDFSample);
 
         if (primaryValidationHit.hitKind == 0u)
             AccumulatePrimaryMissValidation(primaryValidation);
@@ -459,7 +475,7 @@ void ShadowMiss(inout ShadowPayload sp)
     sp.visible = 1u;
 }
 
-bool AlphaTestRejectsHit(in BuiltInTriangleIntersectionAttributes attr)
+bool AlphaTestRejectsHit(in BuiltInTriangleIntersectionAttributes attr, bool bSampleBlend, uint seed)
 {
     StructuredBuffer< MeshData >     Meshes      = GetResource(g_Meshes.index);
     StructuredBuffer< InstanceData > Instances   = GetResource(g_Instances.index);
@@ -472,7 +488,10 @@ bool AlphaTestRejectsHit(in BuiltInTriangleIntersectionAttributes attr)
         return false;
 
     MaterialData mat = Materials[instance.materialID];
-    if (mat.alphaCutoff <= 0.0 || mat.albedoID == INVALID_INDEX)
+
+    bool isMask  = (mat.materialFlags & MATERIAL_FLAG_ALPHA_MASK) != 0u;
+    bool isBlend = (mat.materialFlags & MATERIAL_FLAG_ALPHA_BLEND) != 0u;
+    if (!isMask && !(bSampleBlend && isBlend))
         return false;
 
     MeshData mesh = Meshes[instance.meshID];
@@ -496,20 +515,31 @@ bool AlphaTestRejectsHit(in BuiltInTriangleIntersectionAttributes attr)
         float2(v1.u, v1.v) * bary.y +
         float2(v2.u, v2.v) * bary.z;
 
-    return ReadOpacity(mat, uv) < mat.alphaCutoff;
+    float opacity = ReadOpacity(mat, uv);
+    if (isMask)
+        return opacity < mat.alphaCutoff;
+
+    uint opacitySeed = PCGHash(
+        seed ^
+        PCGHash(InstanceID() + 0x9E3779B9u) ^
+        PCGHash(PrimitiveIndex() + 0x85EBCA6Bu) ^
+        PCGHash(asuint(RayTCurrent()) + 0xC2B2AE35u));
+    float u = UintToUnitFloat(opacitySeed);
+
+    return u >= opacity;
 }
 
 [shader("anyhit")]
 void AnyHit_PrimaryAlpha(inout SurfacePayload hp, in BuiltInTriangleIntersectionAttributes attr)
 {
-    if (AlphaTestRejectsHit(attr))
+    if (AlphaTestRejectsHit(attr, false, 0u))
         IgnoreHit();
 }
 
 [shader("anyhit")]
 void AnyHit_ShadowAlpha(inout ShadowPayload sp, in BuiltInTriangleIntersectionAttributes attr)
 {
-    if (AlphaTestRejectsHit(attr))
+    if (AlphaTestRejectsHit(attr, true, sp.alphaSeed))
         IgnoreHit();
 }
 

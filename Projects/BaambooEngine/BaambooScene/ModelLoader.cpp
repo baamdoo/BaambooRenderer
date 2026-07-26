@@ -227,13 +227,64 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
             MaterialData material = {};
             material.name = aiMat->GetName().C_Str();
 
+            int shadingModel = aiShadingMode_NoShading;
+            const bool bPrincipled =
+                aiMat->Get(AI_MATKEY_SHADING_MODEL, shadingModel) == AI_SUCCESS &&
+                shadingModel == aiShadingMode_PBR_BRDF;
+            if (bPrincipled)
+            {
+                material.materialType = eMaterialType_Principled;
+                material.ior = 1.5f;
+            }
+
+            aiColor4D baseColor;
+            if (aiMat->Get(AI_MATKEY_BASE_COLOR, baseColor) == AI_SUCCESS ||
+                aiMat->Get(AI_MATKEY_COLOR_DIFFUSE, baseColor) == AI_SUCCESS)
+            {
+                material.tint = float4(baseColor.r, baseColor.g, baseColor.b, baseColor.a);
+            }
+
+            float opacity = material.tint.a;
+            if (aiMat->Get(AI_MATKEY_OPACITY, opacity) == AI_SUCCESS)
+                material.tint.a = std::clamp(opacity, 0.0f, 1.0f);
+
+            aiString alphaMode;
+            if (aiMat->Get(AI_MATKEY_GLTF_ALPHAMODE, alphaMode) == AI_SUCCESS)
+            {
+                const std::string alphaModeValue = alphaMode.C_Str();
+                material.alphaCutoff = 0.5f;
+                if (alphaModeValue == "MASK")
+                    material.materialFlags |= eMaterialFlag_AlphaMask;
+                else if (alphaModeValue == "BLEND")
+                    material.materialFlags |= eMaterialFlag_AlphaBlend;
+            }
+
+            float alphaCutoff = 0.5f;
+            if (aiMat->Get(AI_MATKEY_GLTF_ALPHACUTOFF, alphaCutoff) == AI_SUCCESS)
+                material.alphaCutoff = alphaCutoff;
+
+            int bDoubleSided = 0;
+            if (aiMat->Get(AI_MATKEY_TWOSIDED, bDoubleSided) == AI_SUCCESS &&
+                bDoubleSided != 0)
+            {
+                material.materialFlags |= eMaterialFlag_DoubleSided;
+            }
+
             aiColor3D color;
-            if (aiMat->Get(AI_MATKEY_COLOR_DIFFUSE, color) == AI_SUCCESS)
-                material.tint = float4(color.r, color.g, color.b, 1.0f);
-            if (aiMat->Get(AI_MATKEY_COLOR_SPECULAR, color) == AI_SUCCESS)
+            const bool bHasExplicitSpecularColor =
+                aiMat->Get(AI_MATKEY_COLOR_SPECULAR, color) == AI_SUCCESS;
+            if (bHasExplicitSpecularColor)
                 material.specularColor = float3(color.r, color.g, color.b);
             if (aiMat->Get(AI_MATKEY_SHEEN_COLOR_FACTOR, color) == AI_SUCCESS)
                 material.sheenColor = float3(color.r, color.g, color.b);
+            if (aiMat->Get(AI_MATKEY_COLOR_EMISSIVE, color) == AI_SUCCESS)
+            {
+                material.emissionColor = float3(color.r, color.g, color.b);
+                material.emissivePower = 1.0f;
+            }
+            float emissivePower = 1.0f;
+            if (aiMat->Get(AI_MATKEY_EMISSIVE_INTENSITY, emissivePower) == AI_SUCCESS)
+                material.emissivePower = emissivePower;
 
             float metallic = 0.0f;
             if (aiMat->Get(AI_MATKEY_METALLIC_FACTOR, metallic) == AI_SUCCESS)
@@ -259,6 +310,14 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
             if (aiMat->Get(AI_MATKEY_REFRACTI, ior) == AI_SUCCESS)
                 material.ior = ior;
 
+            if (bPrincipled && !bHasExplicitSpecularColor)
+            {
+                const float eta = std::max(material.ior, 1.0e-4f);
+                float f0 = (eta - 1.0f) / (eta + 1.0f);
+                f0 *= f0;
+                material.specularColor = float3(f0);
+            }
+
             float anisotropy = 0.0f;
             if (aiMat->Get(AI_MATKEY_ANISOTROPY_FACTOR, anisotropy) == AI_SUCCESS)
                 material.anisotropy = anisotropy;
@@ -271,7 +330,7 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
             if (aiMat->Get(AI_MATKEY_SHEEN_ROUGHNESS_FACTOR, sheenRoughness) == AI_SUCCESS)
                 material.sheenRoughness = sheenRoughness;
 
-            material.albedoTex     = GetTextureFilename(aiMat, aiTextureType_DIFFUSE);
+            material.albedoTex     = GetTextureFilename(aiMat, aiTextureType_BASE_COLOR);
             if (material.albedoTex.empty())
                 material.albedoTex = GetTextureFilename(aiMat, aiTextureType_DIFFUSE);
 

@@ -92,11 +92,6 @@ Iterative progressive path tracer (**NEE + power-heuristic MIS**, Russian roulet
 - Validate by dumping AOVs to EXR (headless CLI) compared against PBRT-v4 / Mitsuba 3 renders of identical generated scenes
 - Cached BLAS / on-demand TLAS management; progressive accumulation with automatic invalidation on camera or scene changes
 
-<details><summary>🚧 <b>In progress — n-layered substrate material</b></summary>
-
-The single-layer composite BSDF is complete and reference-validated; extending it to an n-layered slab material model.
-</details>
-
 <img src="Media/PT_white_room.png" width="100%" alt="White room — engine render vs Mitsuba 3 and PBRT-v4 references with absolute-difference maps">
 <p align="center"><i>The White Room — engine radiance vs Mitsuba 3 / PBRT-v4 references with absolute-difference maps</i></p>
 

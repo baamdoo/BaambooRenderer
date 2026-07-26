@@ -16,6 +16,9 @@ static const uint LOBE_SLOT_CLEARCOAT    = 2u;
 static const uint LOBE_SLOT_TRANSMISSION = 3u;
 static const uint LOBE_SLOT_COUNT        = 4u;
 
+// Keep both rough dielectric branches away from zero without discarding Fresnel importance sampling.
+static const float ROUGH_DIELECTRIC_PROPOSAL_SAFETY_MIX = 0.2;
+
 bool IsSmoothConductor(SurfaceMaterial material)
 {
     return !IsPrincipledMaterial(material) &&
@@ -40,147 +43,121 @@ float4 NormalizeLobePMF(float4 weights)
     return weights / weightSum;
 }
 
-float MaxComponent(float3 value)
+float DielectricF0(float eta)
 {
-    return max(max(value.x, value.y), value.z);
-}
-
-float NonPrincipledOpaqueWeight(SurfaceMaterial material)
-{
-    if (IsPrincipledMaterial(material) || HasTransmissionLobe(material))
-        return 0.0;
-
-    return 1.0 - saturate(material.metallic);
-}
-
-float NonPrincipledConductorWeight(SurfaceMaterial material)
-{
-    if (IsPrincipledMaterial(material))
-        return 0.0;
-
-    float transmission = saturate(material.transmission);
-    return (1.0 - transmission) * saturate(material.metallic);
-}
-
-float DielectricSpecularF0(SurfaceMaterial material, float eta)
-{
-    if (!HasDielectricSpecularLobe(material, eta))
-        return 0.0;
-
     eta = max(eta, 1.0e-4);
     float f0 = (eta - 1.0) / (eta + 1.0);
-    f0 *= f0;
-    return saturate(material.specularStrength) * MaxComponent(saturate(material.specularColor)) * f0;
+    return f0 * f0;
 }
 
-LobeMixture ResolveLobeMixture(SurfaceMaterial material, float eta)
+float DielectricSpecularScale(SurfaceMaterial sm, float eta)
+{
+    if (!IsPrincipledMaterial(sm) && !HasDielectricSpecularLobe(sm, eta))
+        return 0.0;
+
+    float strength = saturate(sm.specularStrength);
+    if (!IsPrincipledMaterial(sm))
+        return strength * max3(saturate(sm.specularColor));
+
+    float f0 = DielectricF0(eta);
+    float3 tint = f0 > 1.0e-6
+        ? max(sm.specularColor / f0, float3(0.0, 0.0, 0.0))
+        : float3(1.0, 1.0, 1.0);
+    return strength * max3(tint);
+}
+
+float ConductorReflectionProposalWeight(SurfaceMaterial sm, float3 wo)
+{
+    float metallic = saturate(sm.metallic);
+    if (metallic <= PT_LOBE_EPS)
+        return 0.0;
+
+    float3 F = IsPrincipledMaterial(sm)
+        ? saturate(sm.specularStrength) * BxDF::Fresnel::Schlick(saturate(sm.albedo), BxDF::AbsCosTheta(wo))
+        : BxDF::Fresnel::Schlick(saturate(sm.specularColor), BxDF::AbsCosTheta(wo));
+    return metallic * max3(max(F, float3(0.0, 0.0, 0.0)));
+}
+
+
+// pi_k: 'proposal' PMF
+LobeMixture ResolveLobeMixture(SurfaceMaterial sm, float eta, float3 wo)
 {
     LobeMixture ls;
     ls.pmf = float4(0.0, 0.0, 0.0, 0.0);
 
-    float metallic     = saturate(material.metallic);
-    float transmission = saturate(material.transmission);
-    float opaque       = 1.0 - transmission;
+    float metallic     = saturate(sm.metallic);
+    float dielectric   = 1.0 - metallic;
+    float transmission = saturate(sm.transmission);
+            
+    float opaqueDielectric = dielectric * (1.0 - transmission);
+    float wSheen           = SheenSamplingWeight(sm);
+    float wDiffuse         = max(opaqueDielectric, wSheen);
+            
+    bool isSymmetricDeltaProposal = sm.isSmooth != 0u && dielectric * transmission > 0.0;
+    float3 proposalWo = isSymmetricDeltaProposal ? float3(0.0, 0.0, 1.0) : wo;
 
-    float opaqueDiffuseWeight   = opaque * (1.0 - metallic);
-    float diffuseSamplingWeight = opaqueDiffuseWeight;
-    float sheenWeight           = SheenSamplingWeight(material);
-    float diffuseWeight         = max(diffuseSamplingWeight, sheenWeight);
-    float specularWeight        = IsPrincipledMaterial(material) ? 1.0 : NonPrincipledConductorWeight(material) + NonPrincipledOpaqueWeight(material) * DielectricSpecularF0(material, eta);
-    float clearcoatWeight       = IsPrincipledMaterial(material) ? saturate(material.clearcoat) * 0.25 : saturate(material.clearcoat);
-    float transmissionWeight    = IsPrincipledMaterial(material) ? 0.0 : transmission;
+    float dielectricFresnel = BxDF::Fresnel::Dielectric(BxDF::CosTheta(proposalWo), 1.0, eta);
+    float dielectricScale = DielectricSpecularScale(sm, eta);
+    bool hasDielectricReflection = dielectricScale > PT_LOBE_EPS;
+    bool hasTransmissiveDielectric =
+        transmission > PT_LOBE_EPS &&
+        dielectric > PT_LOBE_EPS;
 
-    if (IsSmoothConductor(material))
+    float dielectricReflectionProposal = dielectricFresnel * dielectricScale;
+    float transmissionFresnelProxy = 1.0 - dielectricFresnel;
+    if (hasTransmissiveDielectric)
+    {
+        if (sm.isSmooth != 0u)
+        {
+            if (hasDielectricReflection)
+                dielectricReflectionProposal = 1.0;
+            transmissionFresnelProxy = 1.0;
+        }
+        else
+        {
+            if (hasDielectricReflection)
+                dielectricReflectionProposal = lerp(dielectricReflectionProposal, 0.5, ROUGH_DIELECTRIC_PROPOSAL_SAFETY_MIX);
+            transmissionFresnelProxy = lerp(transmissionFresnelProxy, 0.5, ROUGH_DIELECTRIC_PROPOSAL_SAFETY_MIX);
+        }
+    }
+
+    float wSpecular =
+        ConductorReflectionProposalWeight(sm, proposalWo) +
+        dielectric * dielectricReflectionProposal;
+    float wClearcoat = IsPrincipledMaterial(sm) ? saturate(sm.clearcoat) * 0.25 : saturate(sm.clearcoat);
+    float wTransmission = dielectric * transmission * transmissionFresnelProxy;
+
+    if (IsSmoothConductor(sm))
     {
         ls.pmf.y = 1.0;
         return ls;
     }
 
-    ls.pmf = NormalizeLobePMF(float4(diffuseWeight, specularWeight, clearcoatWeight, transmissionWeight));
+    ls.pmf = NormalizeLobePMF(float4(wDiffuse, wSpecular, wClearcoat, wTransmission));
     return ls;
 }
-float DielectricViewFresnel(float3 wo, float eta)
-{
-    return saturate(BxDF::Fresnel::Dielectric(BxDF::CosTheta(wo), 1.0, eta));
-}
 
-float3 EvaluateDielectricReflection(SurfaceMaterial material, float3 wo, float3 wi, float eta)
-{
-    float2 alpha = GetAlpha2(material);
-    return BxDF::Dielectric::EvaluateBRDF(wo, wi, alpha.x, alpha.y, eta);
-}
 
-float3 EvaluateDielectricTransmission(SurfaceMaterial material, float3 wo, float3 wi, float eta)
-{
-    float2 alpha = GetAlpha2(material);
-    return BxDF::Dielectric::EvaluateBTDF(wo, wi, alpha.x, alpha.y, eta, PT_TRANSPORT_RADIANCE);
-}
-
-float DielectricReflectionPDF(SurfaceMaterial material, float3 wo, float3 wi, float eta)
-{
-    if (material.isSmooth != 0u)
-        return 0.0;
-
-    if (!BxDF::SameHemisphere(wo, wi))
-        return 0.0;
-
-    float3 wh = wo + wi;
-    if (dot(wh, wh) == 0.0)
-        return 0.0;
-    wh = normalize(wh);
-    if (wh.z < 0.0)
-        wh = -wh;
-
-    float2 alpha = GetAlpha2(material);
-    float R     = BxDF::Fresnel::Dielectric(dot(wo, wh), 1.0, eta);
-    float T     = 1.0 - R;
-    float denom = max(R + T, EPSILON_MIN);
-    return BxDF::GGX::EvaluatePDF(wo, wi, alpha.x, alpha.y) * (R / denom);
-}
-
-float DielectricTransmissionPDF(SurfaceMaterial material, float3 wo, float3 wi, float eta)
-{
-    if (material.isSmooth != 0u)
-        return 0.0;
-
-    float2 alpha = GetAlpha2(material);
-    float etaP;
-    float3 wh;
-    if (!BxDF::Dielectric::IsTransmittable(wo, wi, eta, wh, etaP))
-        return 0.0;
-
-    float R     = BxDF::Fresnel::Dielectric(dot(wo, wh), 1.0, eta);
-    float T     = 1.0 - R;
-    float denom = max(R + T, EPSILON_MIN);
-    return BxDF::Dielectric::EvaluatePDF(wo, wi, alpha.x, alpha.y, eta) * (T / denom);
-}
-        
-
-float3 EvaluateDiffuseBRDF(SurfaceMaterial material, float3 wo, float3 wi)
+float3 EvaluateDiffuseBRDF(SurfaceMaterial sm, float3 wo, float3 wi)
 {
     if (!BxDF::SameHemisphere(wo, wi))
         return float3(0.0, 0.0, 0.0);
 
-    float3 f = IsPrincipledMaterial(material)
-        ? BxDF::Diffuse::EvaluateBRDF(material.albedo, material.roughness, wo, wi)
-        : BxDF::Diffuse::Lambert(material.albedo);
+    float3 f = IsPrincipledMaterial(sm)
+        ? BxDF::Diffuse::EvaluateBRDF(sm.albedo, sm.roughness, wo, wi)
+        : BxDF::Diffuse::Lambert(sm.albedo);
 
-    if (!IsPrincipledMaterial(material))
-    {
-        float diffuseScale = (1.0 - saturate(material.transmission)) * (1.0 - saturate(material.metallic));
-        f *= diffuseScale;
-    }
-
-    return f;
+    float wDiffuse = (1.0 - saturate(sm.metallic)) * (1.0 - saturate(sm.transmission));
+    return f * wDiffuse;
 }
 
-float3 EvaluateSheenBRDF(SurfaceMaterial material, float3 wo, float3 wi)
+float3 EvaluateSheenBRDF(SurfaceMaterial sm, float3 wo, float3 wi)
 {
-    if (!HasSheenLobe(material) || !BxDF::SameHemisphere(wo, wi))
+    if (!HasSheenLobe(sm) || !BxDF::SameHemisphere(wo, wi))
         return float3(0.0, 0.0, 0.0);
 
-    if (!IsPrincipledMaterial(material))
-        return BxDF::Sheen::EvaluateBRDF(material.sheenColor, material.sheenRoughness, wo, wi);
+    if (!IsPrincipledMaterial(sm))
+        return BxDF::Sheen::EvaluateBRDF(sm.sheenColor, sm.sheenRoughness, wo, wi);
 
     float3 h = wo + wi;
     float  hLenSq = dot(h, h);
@@ -189,65 +166,74 @@ float3 EvaluateSheenBRDF(SurfaceMaterial material, float3 wo, float3 wi)
 
     h = h * rsqrt(hLenSq);
     float sheenWeight = pow(saturate(1.0 - dot(wi, h)), 5.0);
-    return material.sheenColor * sheenWeight;
+    return sm.sheenColor * sheenWeight;
 }
 
-float3 EvaluateSmoothSpecularWeight(SurfaceMaterial material, float3 wo, float eta)
+float3 EvaluateSmoothSpecularWeight(SurfaceMaterial sm, float3 wo, float eta)
 {
-    float cosTheta = saturate(BxDF::AbsCosTheta(wo));
-    if (!IsPrincipledMaterial(material))
+    float wConductor  = saturate(sm.metallic);
+    float wDielectric = 1.0 - wConductor;
+    
+    if (!IsPrincipledMaterial(sm))
     {
-        float3 weight = float3(0.0, 0.0, 0.0);
-
-        float conductorWeight = NonPrincipledConductorWeight(material);
-        if (conductorWeight > PT_LOBE_EPS)
-            weight += conductorWeight * BxDF::Fresnel::Schlick(material.specularColor, cosTheta);
-
-        float opaqueDielectricWeight = NonPrincipledOpaqueWeight(material);
-        if (opaqueDielectricWeight > PT_LOBE_EPS && HasDielectricSpecularLobe(material, eta))
-        {
-            float  dielectricF = BxDF::Fresnel::Dielectric(cosTheta, 1.0, eta);
-            float3 specularScale = saturate(material.specularColor) * saturate(material.specularStrength);
-            weight += opaqueDielectricWeight * specularScale * dielectricF;
-        }
-
-        return weight;
-    }
-
-    float f0Eta = (eta - 1.0) / (eta + 1.0);
-    f0Eta *= f0Eta;
-
-    float  dielectricF = BxDF::Fresnel::Dielectric(cosTheta, 1.0, eta);
-    float3 dielectricTint = (f0Eta > 1.0e-6) ? max(material.specularColor / f0Eta, float3(0.0, 0.0, 0.0)) : float3(1.0, 1.0, 1.0);
-    float3 dielectricFresnel = (1.0 - saturate(material.metallic)) * dielectricF * dielectricTint;
-    float3 metallicFresnel = saturate(material.metallic) * BxDF::Fresnel::Schlick(material.albedo, cosTheta);
-    return (dielectricFresnel + metallicFresnel) * material.specularStrength;
-}
-
-float3 EvaluateSpecularBRDF(SurfaceMaterial material, float3 wo, float3 wi, float eta)
-{
-    if (!BxDF::SameHemisphere(wo, wi) || material.isSmooth != 0u)
-        return float3(0.0, 0.0, 0.0);
-
-    if (!IsPrincipledMaterial(material))
-    {
-        float2 alpha = GetAlpha2(material);
         float3 f = float3(0.0, 0.0, 0.0);
 
-        float conductorWeight = NonPrincipledConductorWeight(material);
-        if (conductorWeight > PT_LOBE_EPS)
-            f += conductorWeight * BxDF::GGX::EvaluateBRDF(wo, wi, material.specularColor, alpha.x, alpha.y);
+        if (wConductor > PT_LOBE_EPS)
+            f += wConductor * BxDF::Conductor::Smooth::EvaluateReflection(wo, sm.specularColor);
 
-        float opaqueDielectricWeight = NonPrincipledOpaqueWeight(material);
-        if (opaqueDielectricWeight > PT_LOBE_EPS && HasDielectricSpecularLobe(material, eta))
+        if (wDielectric > PT_LOBE_EPS && HasDielectricSpecularLobe(sm, eta))
         {
-            float3 specularScale = saturate(material.specularColor) * saturate(material.specularStrength);
-            f += opaqueDielectricWeight * specularScale * EvaluateDielectricReflection(material, wo, wi, eta);
+            float3 specularScale = saturate(sm.specularColor) * saturate(sm.specularStrength);
+            f += wDielectric * specularScale * BxDF::Dielectric::Smooth::EvaluateReflection(wo, eta);
         }
 
         return f;
     }
 
+    // principled branch
+    float cosTheta = saturate(BxDF::AbsCosTheta(wo));
+    
+    float f0Eta = (eta - 1.0) / (eta + 1.0);
+    f0Eta *= f0Eta;
+            
+    float3 dielectricTint = (f0Eta > 1.0e-6) ? max(sm.specularColor / f0Eta, float3(0.0, 0.0, 0.0)) : float3(1.0, 1.0, 1.0);
+            
+    float  fd = BxDF::Fresnel::Dielectric(cosTheta, 1.0, eta);
+    float3 Fdielectric = float3(fd, fd, fd);
+    float3 Fconductor  = BxDF::Fresnel::Schlick(sm.albedo, cosTheta);
+
+    return (dielectricTint * wDielectric * Fdielectric + wConductor * Fconductor) * sm.specularStrength;
+}
+
+// 
+float3 EvaluateSpecularBRDF(SurfaceMaterial sm, float3 wo, float3 wi, float eta)
+{
+    if (!BxDF::SameHemisphere(wo, wi) || sm.isSmooth != 0u)
+        return float3(0.0, 0.0, 0.0);
+
+    float wConductor  = saturate(sm.metallic);
+    float wDielectric = 1.0 - wConductor;
+            
+    float2 alpha = GetAlpha2(sm);
+            
+    if (!IsPrincipledMaterial(sm))
+    {
+        float3 f = float3(0.0, 0.0, 0.0);
+        if (wConductor > PT_LOBE_EPS)
+        {
+            f += wConductor * BxDF::Conductor::EvaluateReflection(wo, wi, sm.specularColor, alpha.x, alpha.y);
+        }
+
+        if (wDielectric > PT_LOBE_EPS && HasDielectricSpecularLobe(sm, eta))
+        {
+            float3 specularScale = saturate(sm.specularColor) * saturate(sm.specularStrength);
+            f += wDielectric * specularScale * BxDF::Dielectric::EvaluateReflection(wo, wi, alpha.x, alpha.y, eta);
+        }
+
+        return f;
+    }
+    
+    // principled branch
     float3 h = wo + wi;
     float  hLenSq = dot(h, h);
     if (hLenSq <= 0.0)
@@ -256,135 +242,126 @@ float3 EvaluateSpecularBRDF(SurfaceMaterial material, float3 wo, float3 wi, floa
 
     float WoH = saturate(dot(wo, h));
     if (WoH <= 0.0)
-        return float3(0.0, 0.0, 0.0);
-
-    float2 alpha = GetAlpha2(material);
-    
-    float  D = BxDF::GGX::D(h, alpha.x, alpha.y);
-    float  G = BxDF::GGX::G2(wo, wi, alpha.x, alpha.y);
+        return float3(0.0, 0.0, 0.0);        
     
     float f0Eta = (eta - 1.0) / (eta + 1.0);
     f0Eta *= f0Eta;
 
-    float  dielectricF = BxDF::Fresnel::Dielectric(WoH, 1.0, eta);
-    float3 dielectricTint = (f0Eta > 1.0e-6) ? max(material.specularColor / f0Eta, float3(0.0, 0.0, 0.0)) : float3(1.0, 1.0, 1.0);
-    float3 dielectricFresnel = (1.0 - saturate(material.metallic)) * dielectricF * dielectricTint;
-    float3 metallicFresnel = saturate(material.metallic) * BxDF::Fresnel::Schlick(material.albedo, WoH);
-    float3 F = (dielectricFresnel + metallicFresnel) * material.specularStrength;
-    
-    float  denom = 4.0 * BxDF::AbsCosTheta(wo) * BxDF::AbsCosTheta(wi);
-    return (denom > 0.0) ? (F * D * G / denom) : float3(0.0, 0.0, 0.0);
+    float3 dielectricTint = (f0Eta > 1.0e-6) ? max(sm.specularColor / f0Eta, float3(0.0, 0.0, 0.0)) : float3(1.0, 1.0, 1.0);
+            
+    float  fd = BxDF::Fresnel::Dielectric(WoH, 1.0, eta);
+    float3 Fdielectric = float3(fd, fd, fd);
+    float3 Fconductor  = BxDF::Fresnel::Schlick(sm.albedo, WoH);
+            
+    float3 Fprincipled = (dielectricTint * wDielectric * Fdielectric + wConductor * Fconductor) * sm.specularStrength;
+    return Fprincipled * BxDF::Reflection::EvaluateBRDF(wo, wi, float3(1.0, 1.0, 1.0), alpha.x, alpha.y);
 }
 
-float3 EvaluateClearcoatBRDF(SurfaceMaterial material, float3 wo, float3 wi)
+float3 EvaluateClearcoatBRDF(SurfaceMaterial sm, float3 wo, float3 wi)
 {
-    if (!HasClearcoatLobe(material) || !BxDF::SameHemisphere(wo, wi))
+    if (!HasClearcoatLobe(sm) || !BxDF::SameHemisphere(wo, wi))
         return float3(0.0, 0.0, 0.0);
 
-    float3 clearcoatBRDF = BxDF::Clearcoat::EvaluateBRDF(wo, wi, clamp(material.clearcoatRoughness, 1.0e-3, 1.0));
-    if (!IsPrincipledMaterial(material))
-        return saturate(material.clearcoat) * clearcoatBRDF;
+    float3 clearcoatBRDF = BxDF::Clearcoat::EvaluateBRDF(wo, wi, clamp(sm.clearcoatRoughness, 1.0e-3, 1.0));
+    if (!IsPrincipledMaterial(sm))
+        return saturate(sm.clearcoat) * clearcoatBRDF;
 
     float noV = BxDF::AbsCosTheta(wo);
     float noL = BxDF::AbsCosTheta(wi);
     
     // disney-principled clearcoat: BxDF keeps the physical denominator; this adapter matches Disney/Mitsuba.
     float disneyClearcoatScale = 4.0 * noV * noL;
-    return (material.clearcoat * 0.25) * disneyClearcoatScale * clearcoatBRDF;
+    return (sm.clearcoat * 0.25) * disneyClearcoatScale * clearcoatBRDF;
 }
 
 
-PathContribution EvaluateBoundaryLobes(SurfaceMaterial material, float3 wo, float3 wi, float etaAbove, float etaBelow)
+// wk * fk : 'physical' weighted bsdf
+PathContribution EvaluateBoundaryLobes(
+    SurfaceMaterial sm,
+    float3 wo,
+    float3 wi,
+    float etaAbove,
+    float etaBelow,
+    uint transportMode)
 {
     Layered::DielectricFrame frame = Layered::MakeDielectricFrame(wo, etaAbove, etaBelow);
 
-    float3 woLayer    = BxDF::RotateXY(frame.wo, -material.anisotropyRotation);
+    float3 woLayer    = BxDF::RotateXY(frame.wo, -sm.anisotropyRotation);
     float3 wiIncident = frame.bFlipped != 0u ? -wi : wi;
-    float3 wiLayer    = BxDF::RotateXY(wiIncident, -material.anisotropyRotation);
+    float3 wiLayer    = BxDF::RotateXY(wiIncident, -sm.anisotropyRotation);
 
     PathContribution lobes = ZeroPathContribution();
-    lobes.diffuse  = EvaluateDiffuseBRDF(material, woLayer, wiLayer) + EvaluateSheenBRDF(material, woLayer, wiLayer);
-    lobes.specular = EvaluateSpecularBRDF(material, woLayer, wiLayer, frame.eta);
-    lobes.specular += EvaluateClearcoatBRDF(material, woLayer, wiLayer);
+    lobes.diffuse  = EvaluateDiffuseBRDF(sm, woLayer, wiLayer) + EvaluateSheenBRDF(sm, woLayer, wiLayer);
+    lobes.specular = EvaluateSpecularBRDF(sm, woLayer, wiLayer, frame.eta) + EvaluateClearcoatBRDF(sm, woLayer, wiLayer);
 
-    float transmissionWeight = IsPrincipledMaterial(material) ? 0.0 : saturate(material.transmission);
-    if (transmissionWeight > PT_LOBE_EPS)
+    float wTransmission = (1.0 - saturate(sm.metallic)) * saturate(sm.transmission);
+    if (wTransmission > PT_LOBE_EPS && !BxDF::SameHemisphere(woLayer, wiLayer))
     {
-        if (BxDF::SameHemisphere(woLayer, wiLayer))
-            lobes.specular += transmissionWeight * EvaluateDielectricReflection(material, woLayer, wiLayer, frame.eta);
-        else
-            lobes.transmission = transmissionWeight * EvaluateDielectricTransmission(material, woLayer, wiLayer, frame.eta);
+        float2 alpha = GetAlpha2(sm);
+        lobes.transmission = wTransmission * BxDF::Dielectric::EvaluateTransmission(woLayer, wiLayer, alpha.x, alpha.y, frame.eta, transportMode);
     }
 
     return lobes;
 }
 
-float BoundaryMarginalPDF(SurfaceMaterial material, float3 wo, float3 wi, float etaAbove, float etaBelow)
+PathContribution EvaluateBoundaryLobes(SurfaceMaterial sm, float3 wo, float3 wi, float etaAbove, float etaBelow)
+{
+    return EvaluateBoundaryLobes(sm, wo, wi, etaAbove, etaBelow, PT_TRANSPORT_RADIANCE);
+}
+
+// 'proposal' bsdf's sampling pdf
+float BoundaryMarginalPDF(SurfaceMaterial sm, float3 wo, float3 wi, float etaAbove, float etaBelow)
 {
     Layered::DielectricFrame frame = Layered::MakeDielectricFrame(wo, etaAbove, etaBelow);
 
-    float3 woLayer    = BxDF::RotateXY(frame.wo, -material.anisotropyRotation);
+    float3 woLayer    = BxDF::RotateXY(frame.wo, -sm.anisotropyRotation);
     float3 wiIncident = frame.bFlipped != 0u ? -wi : wi;
-    float3 wiLayer    = BxDF::RotateXY(wiIncident, -material.anisotropyRotation);
+    float3 wiLayer    = BxDF::RotateXY(wiIncident, -sm.anisotropyRotation);
 
-    LobeMixture ls = ResolveLobeMixture(material, frame.eta);
+    float2 alpha = GetAlpha2(sm);
+            
+    LobeMixture ls = ResolveLobeMixture(sm, frame.eta, woLayer);
     float pdf = ls.pmf.x * BxDF::Diffuse::EvaluatePDF(woLayer, wiLayer);
 
-    if (ls.pmf.y > PT_LOBE_EPS && material.isSmooth == 0u)
-    {
-        float2 alpha = GetAlpha2(material);
-        pdf += ls.pmf.y * BxDF::GGX::EvaluatePDF(woLayer, wiLayer, alpha.x, alpha.y);
-    }
+    if (ls.pmf.y > 0.0 && sm.isSmooth == 0u)
+        pdf += ls.pmf.y * BxDF::Reflection::EvaluatePDF(woLayer, wiLayer, alpha.x, alpha.y);
 
-    if (ls.pmf.z > PT_LOBE_EPS)
-        pdf += ls.pmf.z * BxDF::Clearcoat::EvaluatePDF(woLayer, wiLayer, clamp(material.clearcoatRoughness, 1.0e-3, 1.0));
+    if (ls.pmf.z > 0.0)
+        pdf += ls.pmf.z * BxDF::Clearcoat::EvaluatePDF(woLayer, wiLayer, clamp(sm.clearcoatRoughness, 1.0e-3, 1.0));
 
-    if (ls.pmf.w > PT_LOBE_EPS)
-    {
-        float dielectricPdf = BxDF::SameHemisphere(woLayer, wiLayer)
-            ? DielectricReflectionPDF(material, woLayer, wiLayer, frame.eta)
-            : DielectricTransmissionPDF(material, woLayer, wiLayer, frame.eta);
-        pdf += ls.pmf.w * dielectricPdf;
-    }
+    if (ls.pmf.w > 0.0 && sm.isSmooth == 0u)
+        pdf += ls.pmf.w * BxDF::Transmission::EvaluatePDF(woLayer, wiLayer, alpha.x, alpha.y, frame.eta);
 
     return pdf;
 }
 
-uint ChooseLobeSlot(LobeMixture ls, float uc, out float lobeUc)
+uint ChooseLobeSlot(LobeMixture ls, float uc)
 {
     float remainingUc = saturate(uc);
 
     float cumulative = ls.pmf.x;
-    if (ls.pmf.x > PT_LOBE_EPS && remainingUc < cumulative)
+    if (ls.pmf.x > 0.0 && remainingUc < cumulative)
     {
-        lobeUc = saturate(remainingUc / max(ls.pmf.x, EPSILON_MIN));
         return LOBE_SLOT_DIFFUSE;
     }
 
-    float previous = cumulative;
     cumulative += ls.pmf.y;
-    if (ls.pmf.y > PT_LOBE_EPS && remainingUc < cumulative)
+    if (ls.pmf.y > 0.0 && remainingUc < cumulative)
     {
-        lobeUc = saturate((remainingUc - previous) / max(ls.pmf.y, EPSILON_MIN));
         return LOBE_SLOT_SPECULAR;
     }
 
-    previous = cumulative;
     cumulative += ls.pmf.z;
-    if (ls.pmf.z > PT_LOBE_EPS && remainingUc < cumulative)
+    if (ls.pmf.z > 0.0 && remainingUc < cumulative)
     {
-        lobeUc = saturate((remainingUc - previous) / max(ls.pmf.z, EPSILON_MIN));
         return LOBE_SLOT_CLEARCOAT;
     }
 
-    previous = cumulative;
-    if (ls.pmf.w > PT_LOBE_EPS)
+    if (ls.pmf.w > 0.0)
     {
-        lobeUc = saturate((remainingUc - previous) / max(ls.pmf.w, EPSILON_MIN));
         return LOBE_SLOT_TRANSMISSION;
     }
 
-    lobeUc = 0.0;
     return LOBE_SLOT_DIFFUSE;
 }
 
@@ -394,13 +371,12 @@ Layered::LayerEvent SampleLayerEvent(SurfaceMaterial sm, float3 wo, float etaAbo
     Layered::DielectricFrame frame = Layered::MakeDielectricFrame(wo, etaAbove, etaBelow);
     float3 woLayer = BxDF::RotateXY(frame.wo, -sm.anisotropyRotation);
 
-    LobeMixture ls = ResolveLobeMixture(sm, frame.eta);
+    LobeMixture ls = ResolveLobeMixture(sm, frame.eta, woLayer);
 
-    float lobeUc;
-    uint slot = ChooseLobeSlot(ls, NextFloat(rng), lobeUc);
+    uint slot = ChooseLobeSlot(ls, NextFloat(rng));
 
     float slotPmf = ls.pmf[slot];
-    if (slotPmf <= PT_LOBE_EPS)
+    if (!IsPathFinite(slotPmf) || slotPmf <= 0.0)
         return event;
 
     float2 u = NextFloat2(rng);
@@ -438,9 +414,8 @@ Layered::LayerEvent SampleLayerEvent(SurfaceMaterial sm, float3 wo, float etaAbo
             {
                 float2 alpha = GetAlpha2(sm);
 
-                float3 wh = BxDF::GGX::SampleRay(woLayer, alpha.x, alpha.y, u);
-                bs.wi  = reflect(-woLayer, wh);
-                bs.pdf = BxDF::GGX::EvaluatePDF(woLayer, bs.wi, alpha.x, alpha.y);
+                bs.wi  = BxDF::Reflection::SampleRay(woLayer, alpha.x, alpha.y, u);
+                bs.pdf = BxDF::Reflection::EvaluatePDF(woLayer, bs.wi, alpha.x, alpha.y);
 
                 if (!IsPathFinite(bs.pdf) || bs.pdf <= 0.0)
                     return event;
@@ -456,6 +431,7 @@ Layered::LayerEvent SampleLayerEvent(SurfaceMaterial sm, float3 wo, float etaAbo
         case LOBE_SLOT_CLEARCOAT:
         {
             float alpha = clamp(sm.clearcoatRoughness, 1.0e-3, 1.0);
+                    
             bs.wi  = BxDF::Clearcoat::SampleRay(woLayer, alpha, u);
             bs.pdf = BxDF::Clearcoat::EvaluatePDF(woLayer, bs.wi, alpha);
 
@@ -472,17 +448,41 @@ Layered::LayerEvent SampleLayerEvent(SurfaceMaterial sm, float3 wo, float etaAbo
         case LOBE_SLOT_TRANSMISSION:
         {
             float2 alpha = GetAlpha2(sm);
+            bool isDelta = frame.eta == 1.0 || BxDF::GGX::IsSmooth(alpha.x, alpha.y);
 
-            bs = BxDF::Dielectric::SampleRay(
-                woLayer,
-                alpha.x,
-                alpha.y,
-                frame.eta,
-                transportMode,
-                lobeUc,
-                u);
+            bs.wi = BxDF::Transmission::SampleRay(woLayer, alpha.x, alpha.y, frame.eta, u);
+            if (!IsPathFinite3(bs.wi) || dot(bs.wi, bs.wi) <= EPSILON_MIN)
+                return event;
 
-            bs.weight *= saturate(sm.transmission);
+            float wTransmission = (1.0 - saturate(sm.metallic)) * saturate(sm.transmission);
+            if (isDelta)
+            {
+                bs.pdf     = 1.0; // deterministic conditional mass
+                bs.isDelta = 1u;
+                bs.weight = wTransmission * BxDF::Dielectric::Smooth::EvaluateTransmission(
+                    woLayer,
+                    bs.wi,
+                    frame.eta,
+                    transportMode);
+            }
+            else
+            {
+                bs.pdf     = BxDF::Transmission::EvaluatePDF(woLayer, bs.wi, alpha.x, alpha.y, frame.eta);
+                bs.isDelta = 0u;
+                if (!IsPathFinite(bs.pdf) || bs.pdf <= 0.0)
+                    return event;
+
+                float3 f = BxDF::Dielectric::EvaluateTransmission(
+                    woLayer,
+                    bs.wi,
+                    alpha.x,
+                    alpha.y,
+                    frame.eta,
+                    transportMode);
+                bs.weight = wTransmission * f * BxDF::AbsCosTheta(bs.wi) / bs.pdf;
+            }
+
+            bs.lobe = BxDF::LOBE_TRANSMISSION;
         }
         break;
 
@@ -499,13 +499,17 @@ Layered::LayerEvent SampleLayerEvent(SurfaceMaterial sm, float3 wo, float etaAbo
 
     // layer frame -> incident(or transmitted)-side frame
     float3 wiIncident = BxDF::RotateXY(bs.wi, sm.anisotropyRotation);
-    event.wi     = frame.bFlipped != 0u ? -wiIncident : wiIncident;
+    event.wi = frame.bFlipped != 0u ? -wiIncident : wiIncident;
+    event.isDelta        = bs.isDelta;
+    event.isTransmission = BxDF::SameHemisphere(woLayer, bs.wi) ? 0u : 1u;
+    event.eta            = event.isTransmission != 0u ? frame.eta : 1.0;
+
     event.pdf    = slotPmf * bs.pdf;
     event.weight = bs.weight / slotPmf;
 
-    event.isDelta        = bs.isDelta;
-    event.isTransmission = bs.lobe == BxDF::LOBE_TRANSMISSION ? 1u : 0u;
-    event.eta            = event.isTransmission != 0u ? frame.eta : 1.0;
+    if (!IsPathFinite(event.pdf) || event.pdf <= 0.0 ||
+        !IsPathFinite3(event.weight) || any(event.weight < 0.0))
+        return Layered::InitializeLayerEvent();
 
     event.lobe  = bs.lobe;
     event.flags = bs.lobe == BxDF::LOBE_DIFFUSE ? PT_BSDF_FLAG_DIFFUSE : event.isTransmission != 0u ? PT_BSDF_FLAG_TRANSMISSION : PT_BSDF_FLAG_GLOSSY;
@@ -640,25 +644,23 @@ PathBSDFSample SampleRay(SurfaceMaterial rootMaterial, float2 uv, float3 wo, flo
 float3 SurfaceLobeMask(SurfaceMaterial material, float etaAbove, float etaBelow)
 {
     float eta = max(etaBelow, 1.0e-4) / max(etaAbove, 1.0e-4);
-    LobeMixture ls = ResolveLobeMixture(material, eta);
+    float3 wo = float3(0.0, 0.0, 1.0);
+    LobeMixture ls = ResolveLobeMixture(material, eta, wo);
     return float3(
         ls.pmf.x > PT_LOBE_EPS ? 1.0 : 0.0,
-        (ls.pmf.y > PT_LOBE_EPS || ls.pmf.z > PT_LOBE_EPS || ls.pmf.w > PT_LOBE_EPS) ? 1.0 : 0.0,
+        (ls.pmf.y > PT_LOBE_EPS || ls.pmf.z > PT_LOBE_EPS) ? 1.0 : 0.0,
         ls.pmf.w > PT_LOBE_EPS ? 1.0 : 0.0);
 }
 
 float3 SurfaceLobeWeight(SurfaceMaterial material, float3 wo, float etaAbove, float etaBelow)
 {
     Layered::DielectricFrame frame = Layered::MakeDielectricFrame(wo, etaAbove, etaBelow);
-    LobeMixture ls = ResolveLobeMixture(material, frame.eta);
+    LobeMixture ls = ResolveLobeMixture(material, frame.eta, frame.wo);
 
-    float transmissionFresnel = (ls.pmf.w > PT_LOBE_EPS)
-        ? DielectricViewFresnel(frame.wo, frame.eta)
-        : 0.0;
     return float3(
         ls.pmf.x,
-        ls.pmf.y + ls.pmf.z + ls.pmf.w * transmissionFresnel,
-        ls.pmf.w * (1.0 - transmissionFresnel));
+        ls.pmf.y + ls.pmf.z,
+        ls.pmf.w);
 }
 
 float3 SampledLobeVector(PathBSDFSample sample)
@@ -1277,31 +1279,30 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float3 wo, float3 wi,
         }
 
         Layered::DielectricFrame frame = Layered::MakeDielectricFrame(-probeW, probeEtaAbove, probeEtaBelow);
-        LayerComposite::LobeMixture mixture = LayerComposite::ResolveLobeMixture(probeMaterial, frame.eta);
+        LayerComposite::LobeMixture mixture = LayerComposite::ResolveLobeMixture(probeMaterial, frame.eta, frame.wo);
 
         bool hasRoughReflection = probeMaterial.isSmooth == 0u &&
-                                  mixture.pmf.y > PT_LOBE_EPS;
+                                  mixture.pmf.y > 0.0;
         bool hasRoughTransmission = probeMaterial.isSmooth == 0u &&
-                                    abs(frame.eta - 1.0) > PT_LOBE_EPS &&
-                                    mixture.pmf.w > PT_LOBE_EPS;
-        bool hasClearcoat = mixture.pmf.z > PT_LOBE_EPS;
-        hasContinuousProposal = mixture.pmf.x > PT_LOBE_EPS ||
+                                    frame.eta != 1.0 &&
+                                    mixture.pmf.w > 0.0;
+        bool hasClearcoat = mixture.pmf.z > 0.0;
+        hasContinuousProposal = mixture.pmf.x > 0.0 ||
                                 hasRoughReflection ||
                                 hasRoughTransmission ||
                                 hasClearcoat;
         if (hasContinuousProposal)
             break;
 
-        bool hasDeltaTransmission = mixture.pmf.w > PT_LOBE_EPS &&
-                                    (probeMaterial.isSmooth != 0u ||
-                                     abs(frame.eta - 1.0) <= PT_LOBE_EPS);
+        bool hasDeltaTransmission = mixture.pmf.w > 0.0 &&
+                                    (probeMaterial.isSmooth != 0u || frame.eta == 1.0);
         if (!hasDeltaTransmission)
             break;
 
         float3 woLayer = BxDF::RotateXY(frame.wo, -probeMaterial.anisotropyRotation);
         float3 wiLayer;
         float etaP;
-        if (!BxDF::Dielectric::Refract(
+        if (!BxDF::Transmission::Refract(
                 woLayer,
                 float3(0.0, 0.0, 1.0),
                 frame.eta,

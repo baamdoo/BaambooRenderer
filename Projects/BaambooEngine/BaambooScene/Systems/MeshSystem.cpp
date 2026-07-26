@@ -22,6 +22,7 @@ MaterialRenderView MakeMaterialRenderView(
     view.emissivePower = material.emissivePower;
 
     view.alphaCutoff        = material.alphaCutoff;
+    view.opacity            = material.tint.a;
     view.clearcoat          = material.clearcoat;
     view.clearcoatRoughness = material.clearcoatRoughness;
     view.anisotropy         = material.anisotropy;
@@ -33,7 +34,8 @@ MaterialRenderView MakeMaterialRenderView(
     view.subsurface         = material.subsurface;
     view.transmission       = material.transmission;
     view.materialType       = material.materialType;
-    view.materialFlags      = bFaceNormals ? MATERIAL_FLAG_FACE_NORMALS : 0u;
+    view.materialFlags      = material.materialFlags |
+        (bFaceNormals ? MATERIAL_FLAG_FACE_NORMALS : 0u);
 
     view.albedoTex       = material.albedoTex;
     view.normalTex       = material.normalTex;

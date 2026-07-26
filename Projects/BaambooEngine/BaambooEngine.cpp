@@ -69,11 +69,17 @@ void DrawUI(baamboo::Engine& engine)
 	engine.DrawUI();
 }
 
-void Destroy()
+void ResetSceneState()
 {
+	EntityDeletionQueue.clear();
 	EntityToCopy.Reset();
 	SelectedEntity.Reset();
 	ContentBrowserSetup = 0;
+}
+
+void Destroy()
+{
+	ResetSceneState();
 
 	if (ImGui::GetCurrentContext())
 		ImGui::DestroyContext();
@@ -238,6 +244,52 @@ void Engine::Release()
 	RELEASE(m_pRendererBackend);
 
 	ImGui::Destroy();
+}
+
+void Engine::RestartRuntime(eRendererAPI api)
+{
+	Release();
+	Initialize(api);
+
+	m_bRunning = true;
+	m_RenderViewQueue.open();
+	m_RenderThread = std::thread(&Engine::RenderLoop, this);
+}
+
+bool Engine::ReloadScene()
+{
+	if (!m_pRendererBackend)
+		return false;
+
+	Input::Inst()->Reset();
+
+	m_bRunning = false;
+	m_RenderViewQueue.close();
+	if (m_RenderThread.joinable())
+		m_RenderThread.join();
+	m_RenderViewQueue.clear();
+
+	m_pRendererBackend->WaitIdle();
+	ImGui::ResetSceneState();
+
+	RELEASE(m_pScene);
+
+	auto pDevice = m_pRendererBackend->GetDevice();
+	BB_ASSERT(pDevice, "Cannot reload a scene without a render device");
+	pDevice->GetResourceManager().ReplaceSceneResource(pDevice->CreateSceneResource());
+
+	m_PendingResize = {};
+	m_bRenderSuspended = false;
+	m_bWindowResized = false;
+	m_ResizeWidth = m_ResizeHeight = -1;
+
+	if (!LoadScene())
+		return false;
+
+	m_RenderViewQueue.open();
+	m_bRunning = true;
+	m_RenderThread = std::thread(&Engine::RenderLoop, this);
+	return true;
 }
 
 void Engine::ApplyScriptBehaviors(float dt)
@@ -2215,31 +2267,18 @@ void Engine::ProcessInput()
 	{
 		if (s_RendererAPI != eRendererAPI::Vulkan)
 		{
-			m_bRunning = false;
 			// NOTE. There is a bug which the window image is not properly updated 
 			//       i.e. the last image output by d3d12 renderer remains intact.
 			//       While the rendering-to-present process is executed normally(according to RenderDoc and PIX).
 			//       It is hard to debug. So bypassed by window recreation for now.
-			Release();
-			Initialize(eRendererAPI::Vulkan);
-
-			m_bRunning = true;
-			m_RenderViewQueue.open();
-			m_RenderThread = std::thread(&Engine::RenderLoop, this);
+			RestartRuntime(eRendererAPI::Vulkan);
 		}
 	}
 	else if (glfwGetKey(m_pWindow->Handle(), GLFW_KEY_LEFT_SHIFT) && glfwGetKey(m_pWindow->Handle(), GLFW_KEY_D))
 	{
 		if (s_RendererAPI != eRendererAPI::D3D12)
 		{
-			m_bRunning = false;
-
-			Release();
-			Initialize(eRendererAPI::D3D12);
-
-			m_bRunning = true;
-			m_RenderViewQueue.open();
-			m_RenderThread = std::thread(&Engine::RenderLoop, this);
+			RestartRuntime(eRendererAPI::D3D12);
 		}
 	}
 }

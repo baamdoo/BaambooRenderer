@@ -940,6 +940,8 @@ public:
 
     virtual Arc< Texture > GetFlatBlackTextureCube() { return m_pBlackTextureCube; }
 
+    void ReplaceSceneResource(Box< SceneResource >&& pSceneResource);
+
     /*void SetBuffer(const std::string& name, Weak< Buffer > buffer);
     void SetTexture(const std::string& name, Weak< Texture > texture);
     void SetSampler(const std::string& name, Arc< Sampler > sampler);

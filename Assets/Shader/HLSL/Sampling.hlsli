@@ -41,27 +41,32 @@ RngState InitRng(uint2 pixel, uint frameIndex, uint sampleIndex)
 }
 
 
-// Return a uniform [0, 1) sample and advance the RNG to the next dimension.
-float NextFloat(inout RngState rng)
+// Return the next raw random bits and advance the RNG to the next dimension.
+uint NextUint(inout RngState rng)
 {
     // Hash (seed + counter), not (state after counter rounds of PCG):
     // the additive form makes random access to any dimension O(1), which
     // we rely on for the Sobol migration in Phase 7.
     uint hashed = PCGHash(rng.seed + rng.counter);
     rng.counter++;
+    return hashed;
+}
 
-    // Map uint32 -> float in [0, 1).
-    //
-    // Why (1.0 / 4294967296.0) and not 0xFFFFFFFF?
-    //   2^32 = 4294967296 gives an exact half-open mapping [0, 1).
-    //   Dividing by 0xFFFFFFFF would put the maximum at exactly 1.0,
-    //   which breaks inverse-transform sampling at the interval endpoint
-    //   (e.g. acos(1.0) at the pole, log(1.0) in Russian Roulette).
-    //
-    // Note: multiplying by a precomputed reciprocal is faster than
-    // division on GPUs and is bit-exact for powers of two. The constant
-    // 2^-32 is exactly representable in float32.
-    return float(hashed) * (1.0 / 4294967296.0);
+
+// Convert the upper 24 random bits to a float that is strictly in [0, 1).
+float UintToUnitFloat(uint bits)
+{
+    return float(bits >> 8u) * (1.0 / 16777216.0);
+}
+
+
+// Return a uniform [0, 1) sample and advance the RNG to the next dimension.
+float NextFloat(inout RngState rng)
+{
+    // Keeping only 24 bits avoids float32 rounding the largest uint values
+    // to exactly 1.0, which would violate the half-open sampling contract.
+    return UintToUnitFloat(NextUint(rng));
+
 }
 
 

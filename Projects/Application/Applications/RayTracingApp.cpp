@@ -13,6 +13,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui/backends/imgui_impl_glfw.h>
 
+#include <array>
 #include <fstream>
 #include <sstream>
 #include <unordered_map>
@@ -23,6 +24,30 @@ namespace
 {
 
 constexpr u32 kPathTracerPrincipledMaterialType = 5u;
+
+struct PathTracerScenePreset
+{
+	const char* label;
+	const char* sceneName;
+	const char* description;
+};
+
+constexpr std::array< PathTracerScenePreset, 4 > kPathTracerScenePresets = {{
+	{ "Shader Ball (Layered)", "usd_shaderball_n2", "Default N=2 layered-material preview." },
+	{ "Cornell Box (Baseline)", "cornell_box", "Fast canonical lighting and transport baseline." },
+	{ "Grey Gallery (Reference)", "gallery_grey_white_room_n1", "Complex interior, alpha coverage, and firefly regression scene." },
+	{ "Breakfast Gallery (Materials)", "gallery_breakfast_room_n1", "Production-style textured material showcase." },
+}};
+
+bool IsPathTracerScenePresetAvailable(const PathTracerScenePreset& preset)
+{
+	const std::string_view sceneName = preset.sceneName;
+	if (sceneName == "usd_shaderball_n2")
+		return fs::exists(ASSET_PATH / "Model" / "USDShaderBallForGltf" / "USDShaderBallForGltf.glb");
+	if (sceneName.starts_with("gallery_"))
+		return fs::exists(ASSET_PATH / "Generated" / preset.sceneName / "scene.baamboo");
+	return fs::exists(ASSET_PATH / "Generated" / preset.sceneName / "meshes" / "floor.ply");
+}
 
 struct GalleryMaterialEntry
 {
@@ -172,6 +197,18 @@ baamboo::MaterialLayer ParseGalleryMaterialLayer(
 	material.emissionColor = ParseFloat3Value(values, "emissionColor", material.emissionColor);
 	material.emissivePower = ParseFloat(values, "emissivePower", material.emissivePower);
 	material.alphaCutoff = ParseFloat(values, "alphaCutoff", material.alphaCutoff);
+	if (auto it = values.find("alphaMode"); it != values.end())
+	{
+		if (it->second == "MASK")
+			material.materialFlags |= baamboo::eMaterialFlag_AlphaMask;
+		else if (it->second == "BLEND")
+			material.materialFlags |= baamboo::eMaterialFlag_AlphaBlend;
+	}
+	else if (values.contains("alphaCutoff") && material.alphaCutoff > 0.0f)
+	{
+		// Legacy generated manifests encoded MASK solely through a positive cutoff.
+		material.materialFlags |= baamboo::eMaterialFlag_AlphaMask;
+	}
 	if (auto it = values.find("albedoTex"); it != values.end())
 		material.albedoTex = AssetRelativeToString(it->second);
 	layer.thickness = ParseFloat(values, "thickness", layer.thickness);
@@ -260,12 +297,31 @@ GallerySceneData LoadGallerySceneManifest(std::string_view sceneName)
 	}
 	return data;
 }
+
+uint2 GetPathTracerSceneExtent(std::string_view sceneName)
+{
+	uint2 extent = uint2(512u, 512u);
+	if (IsGalleryScene(sceneName))
+	{
+		const auto gallery = LoadGallerySceneManifest(sceneName);
+		if (gallery.bValid)
+			extent = uint2(gallery.width, gallery.height);
+	}
+	return extent;
+}
 bool IsPrincipledMaterialTestScene(std::string_view sceneName)
 {
 	return sceneName == "cornell_principled" || sceneName == "cornell_principled_diffuse" ||
 		sceneName == "cornell_principled_specular" || sceneName == "cornell_principled_clearcoat" ||
-		sceneName == "cornell_principled_sheen";
+		sceneName == "cornell_principled_sheen" || sceneName == "cornell_principled_glass";
 }
+bool IsPhase0MaterialValidationScene(std::string_view sceneName)
+{
+	return sceneName == "cornell_principled_grid" ||
+		sceneName == "cornell_emissive_reflective" ||
+		sceneName == "gltf_phase0_materials";
+}
+
 
 bool IsEnvironmentMapTestScene(std::string_view sceneName)
 {
@@ -299,7 +355,7 @@ bool IsSupportedPathTracerScene(std::string_view sceneName)
 		sceneName == "cornell_box_conductor" || sceneName == "cornell_box_conductor_smooth" || sceneName == "cornell_anisotropic_conductor" ||
 		sceneName == "cornell_box_mixed_metallic" || sceneName == "cornell_box_opaque_dielectric" || sceneName == "cornell_box_mixed_transmission" ||
 		sceneName == "cornell_box_dielectric" || sceneName == "cornell_box_dielectric_smooth" ||
-		sceneName == "cornell_principled_glass" || IsPrincipledMaterialTestScene(sceneName) ||
+		(IsPrincipledMaterialTestScene(sceneName) || IsPhase0MaterialValidationScene(sceneName)) ||
 		IsNLayerValidationScene(sceneName) || IsShaderBallLayerScene(sceneName) || IsGalleryScene(sceneName);
 }
 
@@ -311,6 +367,11 @@ void RayTracingApp::Initialize(eRendererAPI api)
 	m_DeviceSettings.bMeshShader = true;
 
 	Super::Initialize(api);
+}
+
+void RayTracingApp::ConfigureCamera()
+{
+	m_CameraController.Reset();
 
 	float cameraFovY = IsEnvironmentMapTestScene(m_PathTracerReferenceScene) ? 45.0f : 40.0f;
 	if (IsGalleryScene(m_PathTracerReferenceScene))
@@ -340,7 +401,10 @@ void RayTracingApp::Initialize(eRendererAPI api)
 		m_CameraController.SetLookAt(float3(0.0f, 1.0f, 3.5f), float3(0.0f, 1.0f, 0.0f));
 	}
 
-	m_pCamera = new EditorCamera(m_CameraController, m_pWindow->Width(), m_pWindow->Height());
+	if (!m_pCamera)
+		m_pCamera = new EditorCamera(m_CameraController, m_pWindow->Width(), m_pWindow->Height());
+	else
+		m_pCamera->Resize(m_pWindow->Width(), m_pWindow->Height());
 	m_pCamera->fov   = cameraFovY;
 	m_pCamera->zNear = 0.1f;
 	m_pCamera->zFar  = 100.0f;
@@ -348,6 +412,31 @@ void RayTracingApp::Initialize(eRendererAPI api)
 
 void RayTracingApp::Update(float dt)
 {
+	const i32 requestedPreset = m_RequestedPathTracerPreset.exchange(-1, std::memory_order_acq_rel);
+	if (requestedPreset >= 0 && requestedPreset < static_cast< i32 >(kPathTracerScenePresets.size()) &&
+		m_PathTracerReferenceScene != kPathTracerScenePresets[requestedPreset].sceneName)
+	{
+		const std::string previousScene = m_PathTracerReferenceScene;
+		m_PathTracerPresetToApply = requestedPreset;
+
+		try
+		{
+			if (ReloadScene())
+				return;
+		}
+		catch (const std::exception& error)
+		{
+			fprintf(stderr, "Failed to load path tracer preset '%s': %s\n",
+				kPathTracerScenePresets[requestedPreset].sceneName, error.what());
+		}
+
+		m_PathTracerReferenceScene = previousScene;
+		m_PathTracerPresetToApply = -1;
+		if (!ReloadScene())
+			throw std::runtime_error("Failed to restore the previous path tracer scene");
+		return;
+	}
+
 	Super::Update(dt);
 
 	m_CameraController.Update(dt);
@@ -362,17 +451,17 @@ void RayTracingApp::Update(float dt)
 
 void RayTracingApp::Release()
 {
+	Super::Release();
+
 	m_CameraController.Reset();
 	m_pPathTracerNode = Weak< PathTracerNode >();
-
-	Super::Release();
 }
 
 void RayTracingApp::ConfigurePathTracerAutomation(bool bDumpAOV, bool bExitAfterDump, std::string_view referenceSceneName)
 {
 	m_bAutoDumpAOV      = bDumpAOV;
 	m_bExitAfterAOVDump = bExitAfterDump;
-	m_PathTracerReferenceScene = IsSupportedPathTracerScene(referenceSceneName) ? std::string(referenceSceneName) : "cornell_box";
+	m_PathTracerReferenceScene = IsSupportedPathTracerScene(referenceSceneName) ? std::string(referenceSceneName) : std::string(s_DefaultPathTracerScene);
 }
 
 bool RayTracingApp::InitWindow()
@@ -380,17 +469,9 @@ bool RayTracingApp::InitWindow()
 	// **
 	// Create window
 	// **
-	u32 windowWidth = 512u;
-	u32 windowHeight = 512u;
-	if (IsGalleryScene(m_PathTracerReferenceScene))
-	{
-		const auto gallery = LoadGallerySceneManifest(m_PathTracerReferenceScene);
-		if (gallery.bValid)
-		{
-			windowWidth = gallery.width;
-			windowHeight = gallery.height;
-		}
-	}
+	const uint2 extent = GetPathTracerSceneExtent(m_PathTracerReferenceScene);
+	const u32 windowWidth = extent.x;
+	const u32 windowHeight = extent.y;
 	WindowDescriptor windowDesc = { .width = static_cast< i32 >(windowWidth), .height = static_cast< i32 >(windowHeight), .numDesiredImages = 3, .bVSync = false };
 	m_pWindow = new Window(windowDesc);
 
@@ -499,6 +580,18 @@ bool RayTracingApp::InitWindow()
 
 bool RayTracingApp::LoadScene()
 {
+	if (m_PathTracerPresetToApply >= 0 && m_PathTracerPresetToApply < static_cast< i32 >(kPathTracerScenePresets.size()))
+	{
+		m_PathTracerReferenceScene = kPathTracerScenePresets[m_PathTracerPresetToApply].sceneName;
+		m_PathTracerPresetToApply = -1;
+
+		const uint2 extent = GetPathTracerSceneExtent(m_PathTracerReferenceScene);
+		if (m_pWindow && (m_pWindow->Width() != static_cast< i32 >(extent.x) || m_pWindow->Height() != static_cast< i32 >(extent.y)))
+			glfwSetWindowSize(m_pWindow->Handle(), static_cast< i32 >(extent.x), static_cast< i32 >(extent.y));
+	}
+
+	ConfigureCamera();
+	m_pPathTracerNode = Weak< PathTracerNode >();
 	m_pScene = new Scene("RaytracingTestScene");
 
 	ConfigureRenderGraph();
@@ -510,6 +603,48 @@ bool RayTracingApp::LoadScene()
 void RayTracingApp::DrawUI()
 {
 	Super::DrawUI();
+
+	ImGui::Begin("Path Tracer Scene");
+	{
+		const PathTracerScenePreset* pCurrentPreset = nullptr;
+		for (const auto& preset : kPathTracerScenePresets)
+		{
+			if (m_PathTracerReferenceScene == preset.sceneName)
+			{
+				pCurrentPreset = &preset;
+				break;
+			}
+		}
+
+		const char* preview = pCurrentPreset ? pCurrentPreset->label : m_PathTracerReferenceScene.c_str();
+		ImGui::BeginDisabled(m_bAutoDumpAOV);
+		if (ImGui::BeginCombo("Preset", preview))
+		{
+			for (i32 presetIndex = 0; presetIndex < static_cast< i32 >(kPathTracerScenePresets.size()); ++presetIndex)
+			{
+				const auto& preset = kPathTracerScenePresets[presetIndex];
+				if (!IsPathTracerScenePresetAvailable(preset))
+					continue;
+
+				const bool bSelected = m_PathTracerReferenceScene == preset.sceneName;
+				if (ImGui::Selectable(preset.label, bSelected) && !bSelected)
+					m_RequestedPathTracerPreset.store(presetIndex, std::memory_order_release);
+				if (bSelected)
+					ImGui::SetItemDefaultFocus();
+			}
+			ImGui::EndCombo();
+		}
+		ImGui::EndDisabled();
+
+		if (pCurrentPreset)
+			ImGui::TextWrapped("%s", pCurrentPreset->description);
+		else
+			ImGui::TextWrapped("Custom validation scene selected through --pt-scene.");
+		ImGui::TextDisabled("Generated presets appear when their scene assets are available.");
+		if (m_bAutoDumpAOV)
+			ImGui::TextDisabled("Preset switching is disabled during an automated dump.");
+	}
+	ImGui::End();
 
 	ImGui::Begin("Editor Camera");
 	{
@@ -622,8 +757,11 @@ void RayTracingApp::ConfigureRenderGraph()
 	else if (m_PathTracerReferenceScene == "cornell_box_opaque_dielectric")
 		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 8u, 4096u);
 	else if (IsShaderBallLayerScene(m_PathTracerReferenceScene))
-		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 8u, 4096u, 16u,
-			(ASSET_PATH / "Texture" / "studio_small.exr").string());
+	{
+		const fs::path environmentMap = ASSET_PATH / "Texture" / "studio_small.exr";
+		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 1u, 4096u, 16u,
+			fs::exists(environmentMap) ? environmentMap.string() : std::string());
+	}
 	else if (IsNLayerValidationScene(m_PathTracerReferenceScene))
 		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 8u, 4096u, 16u);
 	else if (m_PathTracerReferenceScene == "cornell_textured" || m_PathTracerReferenceScene == "cornell_mesh" ||
@@ -636,9 +774,15 @@ void RayTracingApp::ConfigureRenderGraph()
 		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 8u, 4096u, 16u);
 	else if (m_PathTracerReferenceScene == "cornell_box_mixed_transmission")
 		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 8u, 4096u, 12u);
+	else if (m_PathTracerReferenceScene == "cornell_principled_grid")
+		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 8u, 4096u, 12u);
+	else if (m_PathTracerReferenceScene == "cornell_emissive_reflective")
+		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 4u, 1024u, 8u);
+	else if (m_PathTracerReferenceScene == "gltf_phase0_materials")
+		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.1f), 1u, 128u, 1u);
 	else if (IsPrincipledMaterialTestScene(m_PathTracerReferenceScene))
 		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 8u, 4096u, 12u);
-	else if (m_PathTracerReferenceScene == "cornell_box_dielectric" || m_PathTracerReferenceScene == "cornell_principled_glass")
+	else if (m_PathTracerReferenceScene == "cornell_box_dielectric")
 		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 8u, 2048u, 12u);
 	else if (m_PathTracerReferenceScene == "cornell_box_dielectric_smooth")
 		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 8u, 4096u, 16u);
@@ -857,6 +1001,36 @@ void RayTracingApp::ConfigureSceneObjects()
 
 					materialComponent.layers = std::move(layers);
 				}, true);
+
+			if (!fs::exists(ASSET_PATH / "Texture" / "studio_small.exr"))
+			{
+				const auto createStudioLight = [this](const char* name, const float3& position, const float3& radiance, f32 radius)
+				{
+					auto lightEntity = m_pScene->CreateEntity(name);
+					lightEntity.AttachComponent< LightComponent >();
+
+					auto& light = lightEntity.GetComponent< LightComponent >();
+					light.type = eLightType::Sphere;
+					light.color = radiance;
+					light.temperatureK = 0.0f;
+					light.radiusM = radius;
+					light.luminousFluxLm = 4.0f * 3.14159265358979323846f * 3.14159265358979323846f * radius * radius;
+
+					lightEntity.GetComponent< TransformComponent >().transform.position = position;
+				};
+
+				createStudioLight("Shader Ball Key Light", float3(-2.0f, 2.8f, 2.0f), float3(13.0f, 10.5f, 8.0f), 0.45f);
+				createStudioLight("Shader Ball Fill Light", float3(2.2f, 1.4f, 1.5f), float3(3.0f, 4.0f, 6.0f), 0.65f);
+			}
+
+			createPostProcessVolume();
+			return;
+		}
+		if (m_PathTracerReferenceScene == "gltf_phase0_materials")
+		{
+			const fs::path fixturePath = ASSET_PATH / "Generated" / "gltf_phase0_materials" / "phase0_materials.gltf";
+			auto fixture = m_pScene->ImportModel(fixturePath, descriptor);
+			UNUSED(fixture);
 
 			createPostProcessVolume();
 			return;
@@ -1215,10 +1389,55 @@ void RayTracingApp::ConfigureSceneObjects()
 			}
 			m_pScene->Registry().patch< TransformComponent >(meshEntity.ID(), [](auto&) {});
 		}
+		else if (m_PathTracerReferenceScene == "cornell_principled_grid")
+		{
+			constexpr f32 levels[3] = { 0.0f, 0.5f, 1.0f };
+			constexpr f32 xs[3]     = { -0.58f, 0.0f, 0.58f };
+			constexpr f32 ys[3]     = { 0.34f, 0.91f, 1.48f };
+			constexpr const char* suffixes[3] = { "00", "05", "10" };
+			const float3 baseColor = float3(0.55f, 0.12f, 0.14f);
+			const f32 eta = 1.5f;
+			const f32 f0  = ((eta - 1.0f) / (eta + 1.0f)) * ((eta - 1.0f) / (eta + 1.0f));
+
+			for (u32 transmissionIndex = 0; transmissionIndex < 3u; ++transmissionIndex)
+			{
+				for (u32 metallicIndex = 0; metallicIndex < 3u; ++metallicIndex)
+				{
+					const std::string filename =
+						std::string("principled_ball_m") + suffixes[metallicIndex] +
+						"_t" + suffixes[transmissionIndex] + ".ply";
+					const fs::path spherePath = meshDir / filename;
+					auto sphereEntity = m_pScene->ImportModel(spherePath, descriptor);
+					auto& sphereTransform = sphereEntity.GetComponent< TransformComponent >();
+					sphereTransform.transform.position = float3(xs[metallicIndex], ys[transmissionIndex], -0.15f);
+					sphereTransform.transform.scale    = float3(0.21f);
+					m_pScene->Registry().patch< TransformComponent >(sphereEntity.ID(), [](auto&) {});
+
+					const f32 metallic     = levels[metallicIndex];
+					const f32 transmission = levels[transmissionIndex];
+					forEachMaterialByMeshPath(spherePath, [baseColor, metallic, transmission, eta, f0](baamboo::MaterialData& mat, MaterialComponent&)
+					{
+						mat.tint               = float4(baseColor, 1.0f);
+						mat.metallic           = metallic;
+						mat.roughness          = 0.35f;
+						mat.ior                = eta;
+						mat.transmission       = transmission;
+						mat.specularColor      = float3(f0);
+						mat.specularStrength   = 1.0f;
+						mat.clearcoat          = 0.0f;
+						mat.clearcoatRoughness = 0.0f;
+						mat.sheenColor         = float3(0.0f);
+						mat.sheenRoughness     = 0.0f;
+						mat.materialType       = kPathTracerPrincipledMaterialType;
+					});
+				}
+			}
+		}
 		else if (m_PathTracerReferenceScene == "cornell_box_conductor" || m_PathTracerReferenceScene == "cornell_box_conductor_smooth" ||
 			m_PathTracerReferenceScene == "cornell_box_mixed_metallic" || m_PathTracerReferenceScene == "cornell_box_opaque_dielectric" || m_PathTracerReferenceScene == "cornell_box_mixed_transmission" || m_PathTracerReferenceScene == "cornell_directional_light" || m_PathTracerReferenceScene == "cornell_disk_light" || m_PathTracerReferenceScene == "cornell_spot_light" || m_PathTracerReferenceScene == "cornell_tube_light" || m_PathTracerReferenceScene == "cornell_many_lights" ||
 			m_PathTracerReferenceScene == "cornell_box_dielectric" || m_PathTracerReferenceScene == "cornell_box_dielectric_smooth" ||
-			m_PathTracerReferenceScene == "cornell_principled_glass" || IsPrincipledMaterialTestScene(m_PathTracerReferenceScene) ||
+			IsPrincipledMaterialTestScene(m_PathTracerReferenceScene) ||
+			m_PathTracerReferenceScene == "cornell_emissive_reflective" ||
 			IsNLayerValidationScene(m_PathTracerReferenceScene))
 		{
 			const fs::path spherePath = ASSET_PATH / "Model" / "_synthetic" / "icosphere_unit_hi.ply";
@@ -1237,6 +1456,20 @@ void RayTracingApp::ConfigureSceneObjects()
 					mat.roughness        = 1.0f;
 					mat.transmission     = 0.0f;
 					mat.specularStrength = 0.0f;
+				});
+			}
+			else if (m_PathTracerReferenceScene == "cornell_emissive_reflective")
+			{
+				forEachMaterialByMeshPath(spherePath, [](baamboo::MaterialData& mat, MaterialComponent&)
+				{
+					mat.tint             = float4(0.45f, 0.28f, 0.12f, 1.0f);
+					mat.metallic         = 0.0f;
+					mat.roughness        = 1.0f;
+					mat.ior              = 1.0f;
+					mat.transmission     = 0.0f;
+					mat.specularStrength = 0.0f;
+					mat.emissionColor    = float3(0.35f, 0.08f, 0.02f);
+					mat.emissivePower    = 1.0f;
 				});
 			}
 			else if (m_PathTracerReferenceScene == "cornell_box_conductor" || m_PathTracerReferenceScene == "cornell_box_conductor_smooth")
@@ -1372,6 +1605,7 @@ void RayTracingApp::ConfigureSceneObjects()
 				f32 sheenTint = 0.5f;
 				f32 clearcoat = 1.0f;
 				f32 clearcoatGloss = 0.85f;
+				f32 transmission = 0.0f;
 
 				if (m_PathTracerReferenceScene == "cornell_principled_diffuse")
 				{
@@ -1408,6 +1642,17 @@ void RayTracingApp::ConfigureSceneObjects()
 					clearcoat = 0.0f;
 					clearcoatGloss = 0.0f;
 				}
+				else if (m_PathTracerReferenceScene == "cornell_principled_glass")
+				{
+					baseColor = float3(1.0f);
+					roughness = 0.4f;
+					eta = 1.5f;
+					specTint = 0.0f;
+					sheen = 0.0f;
+					clearcoat = 0.0f;
+					clearcoatGloss = 0.0f;
+					transmission = 1.0f;
+				}
 
 				const f32 baseLuminance = baseColor.x * 0.2126f + baseColor.y * 0.7152f + baseColor.z * 0.0722f;
 				const float3 colorTint = baseLuminance > 1.0e-4f ? baseColor / baseLuminance : float3(1.0f);
@@ -1416,13 +1661,13 @@ void RayTracingApp::ConfigureSceneObjects()
 				const float3 sheenColor = sheen * (float3(1.0f) * (1.0f - sheenTint) + colorTint * sheenTint);
 				const f32 clearcoatAlpha = clearcoat > 0.0f ? 0.1f * (1.0f - clearcoatGloss) + 0.001f * clearcoatGloss : 0.0f;
 
-				forEachMaterialByMeshPath(spherePath, [baseColor, roughness, eta, f0, specularTint, sheenColor, clearcoat, clearcoatAlpha](baamboo::MaterialData& mat, MaterialComponent&)
+				forEachMaterialByMeshPath(spherePath, [baseColor, roughness, eta, f0, specularTint, sheenColor, clearcoat, clearcoatAlpha, transmission](baamboo::MaterialData& mat, MaterialComponent&)
 				{
 					mat.tint               = float4(baseColor, 1.0f);
 					mat.metallic           = 0.0f;
 					mat.roughness          = roughness;
 					mat.ior                = eta;
-					mat.transmission       = 0.0f;
+					mat.transmission       = transmission;
 					mat.specularColor      = f0 * specularTint;
 					mat.specularStrength   = 1.0f;
 					mat.clearcoat          = clearcoat;
@@ -1438,8 +1683,7 @@ void RayTracingApp::ConfigureSceneObjects()
 				{
 					mat.tint             = float4(1.0f);
 					mat.metallic         = 0.0f;
-					mat.roughness        = m_PathTracerReferenceScene == "cornell_box_dielectric_smooth" ? 0.0f :
-						(m_PathTracerReferenceScene == "cornell_principled_glass" ? 0.16f : 0.15f);
+					mat.roughness        = m_PathTracerReferenceScene == "cornell_box_dielectric_smooth" ? 0.0f : 0.15f;
 					mat.ior              = 1.5f;
 					mat.transmission     = 1.0f;
 					mat.specularColor    = float3(1.0f);

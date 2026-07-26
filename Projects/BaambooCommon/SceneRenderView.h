@@ -86,6 +86,7 @@ struct MaterialRenderView
 	float  emissivePower;
 
 	float  alphaCutoff;
+	float  opacity = 1.0f;
 	float  clearcoat;
 	float  clearcoatRoughness;
 	float  anisotropy;
