@@ -1,8 +1,6 @@
 # BaambooRenderer
 
-> Development status: Direct3D 12 is the primary backend; Vulkan and selected advanced samples remain experimental while correctness hardening continues.
-
-A real-time rendering engine written from scratch in **C++23**, with a primary **Direct3D 12** backend (Shader Model 6.6, fully bindless) and an experimental **Vulkan 1.4** backend behind a single abstract rendering interface.
+A real-time rendering engine written from scratch in **C++23**, with a **Direct3D 12** backend (Shader Model 6.6, fully bindless) and an **Vulkan 1.4** backend behind a single abstract rendering interface.
 
 The end goal, and the motivation behind this project: learning how **high-quality AAA open-world rendering** is built for high-end PCs — using this engine as a long-term **sandbox for researching and implementing state-of-the-art graphics techniques**.
 
