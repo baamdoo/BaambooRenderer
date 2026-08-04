@@ -153,6 +153,7 @@ Dx12ResourceManager::Dx12ResourceManager(Dx12RenderDevice& rd)
     m_pGlobalRootSignature->AddCBV(11, kGlobalDescriptorSpace);          // g_Lights
     m_pGlobalRootSignature->AddCBV(12, kGlobalDescriptorSpace);          // g_SceneEnvironment
     m_pGlobalRootSignature->AddCBV(13, kGlobalDescriptorSpace);          // g_FrozenCamera
+    m_pGlobalRootSignature->AddConstants(14, kGlobalDescriptorSpace, 1); // g_MaterialTextures
     // Local CBVs
     for (u32 i = 0; i < (kMaxViews - 8) / 3; ++i)
     {

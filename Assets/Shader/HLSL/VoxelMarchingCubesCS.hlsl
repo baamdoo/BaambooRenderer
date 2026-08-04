@@ -52,7 +52,7 @@ Vertex MakeEdgeVertex(int edge, float cornerVal[8], float3 cornerPos[8], float3 
     vert.posX = pos.x; vert.posY = pos.y; vert.posZ = pos.z;
     vert.u = 0.0; vert.v = 0.0;
     vert.normalX = n.x; vert.normalY = n.y; vert.normalZ = n.z;
-    vert.tangentX = 0.0; vert.tangentY = 0.0; vert.tangentZ = 0.0;
+    vert.tangentX = 0.0; vert.tangentY = 0.0; vert.tangentZ = 0.0; vert.tangentW = 1.0;
     return vert;
 }
 

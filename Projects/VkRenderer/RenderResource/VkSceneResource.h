@@ -34,8 +34,7 @@ struct VkSceneResource : public render::SceneResource
     BufferHandle GetOrUpdateMeshletVertices(u64 entity, const std::string& filepath, const void* pData, u32 count);
     BufferHandle GetOrUpdateMeshletTriangles(u64 entity, const std::string& filepath, const void* pData, u32 count);
 
-    Arc< VulkanTexture > GetOrLoadTexture(u64 entity, const std::string& filepath, render::eTextureColorSpace colorSpace = render::eTextureColorSpace::Linear);
-    Arc< VulkanTexture > GetTexture(const std::string& filepath);
+    Arc< VulkanTexture > GetOrLoadTexture(const std::string& filepath, render::eTextureColorSpace colorSpace = render::eTextureColorSpace::Linear);
 
     void SetCurrentContextIndex(u32 index) { m_ContextIndex = index; }
 
@@ -89,6 +88,7 @@ private:
 
         Box< StaticBufferAllocator > pTransformAllocator;
         Box< StaticBufferAllocator > pMaterialAllocator;
+        Box< StaticBufferAllocator > pMaterialTextureAllocator;
         Box< StaticBufferAllocator > pLightAllocator;
 
         Arc< VulkanUniformBuffer > pCameraBuffer;

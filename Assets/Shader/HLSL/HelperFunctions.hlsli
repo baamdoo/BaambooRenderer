@@ -19,6 +19,11 @@ float3 sq(float3 x)
     return x * x;
 }
 
+float max2(float2 v)
+{
+    return max(v.x, v.y);
+}
+
 float max3(float v1, float v2, float v3)
 {
     return max(max(v1, v2), v3);

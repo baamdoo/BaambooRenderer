@@ -1,12 +1,10 @@
 #include "RendererPch.h"
-#include "VkShader.h"
 #include "VkSceneResource.h"
 
 #include "RenderDevice/VkDescriptorSet.h"
 #include "RenderDevice/VkDescriptorPool.h"
 #include "RenderDevice/VkResourceManager.h"
 #include "RenderDevice/VkBufferAllocator.h"
-#include "RenderDevice/VkRenderPipeline.h"
 #include "RenderDevice/VkCommandContext.h"
 
 #include "Timer.h"
@@ -37,75 +35,14 @@ enum
 
 	eCommonSetBindingIndex_Light        = 10,
 	eCommonSetBindingIndex_Environment  = 11,
-	eCommonSetBindingIndex_FrozenCamera = 12,
+	eCommonSetBindingIndex_FrozenCamera    = 12,
+	eCommonSetBindingIndex_MaterialTexture = 13,
 };
-
-static VulkanComputePipeline* s_CombineTexturesPipeline = nullptr;
 
 static std::string MakeTextureCacheKey(const std::string& filepath, render::eTextureColorSpace colorSpace)
 {
 	return filepath + (colorSpace == render::eTextureColorSpace::SRGB ? "|srgb" : "|linear");
 }
-
-Arc< VulkanTexture > CombineTextures(VkRenderDevice& rd, const char* name, Arc< VulkanTexture > pTextureR, Arc< VulkanTexture > pTextureG, Arc< VulkanTexture > pTextureB, Arc< VulkanSampler > pSampler)
-{
-	using namespace render;
-
-	u32 width 
-		= std::max({ pTextureR->Desc().extent.width, pTextureG->Desc().extent.width, pTextureB->Desc().extent.width });
-	u32 height 
-		= std::max({ pTextureR->Desc().extent.height, pTextureG->Desc().extent.height, pTextureB->Desc().extent.height });
-	auto pCombinedTexture =
-		VulkanTexture::Create(
-			rd,
-			name,
-			{
-				.resolution = { width, height, 1 },
-				.imageUsage = eTextureUsage_Sample | eTextureUsage_Storage
-			});
-
-	auto pContext = rd.BeginCommand(eCommandType::Compute, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
-	if (pContext)
-	{
-		pContext->SetRenderPipeline(s_CombineTexturesPipeline);
-
-		VkImageSubresourceRange subresourceRange = {};
-		subresourceRange.aspectMask   = VK_IMAGE_ASPECT_COLOR_BIT;
-		subresourceRange.baseMipLevel = 0;
-		subresourceRange.levelCount   = pCombinedTexture->Desc().mipLevels;
-		subresourceRange.layerCount   = pCombinedTexture->Desc().arrayLayers;
-		pContext->TransitionImageLayout(pTextureR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange);
-		pContext->TransitionImageLayout(pTextureG, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange);
-		pContext->TransitionImageLayout(pTextureB, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange);
-		pContext->TransitionImageLayout(pCombinedTexture, VK_IMAGE_LAYOUT_GENERAL, subresourceRange);
-		pContext->PushDescriptor(
-			1, 0, 
-			{ pSampler->vkSampler(), pTextureR->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
-			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-		pContext->PushDescriptor(
-			1, 1,
-			{ pSampler->vkSampler(), pTextureG->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
-			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-		pContext->PushDescriptor(
-			1, 2,
-			{ pSampler->vkSampler(), pTextureB->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
-			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-		pContext->PushDescriptor(
-			1, 3,
-			{ pSampler->vkSampler(), pCombinedTexture->vkView(), VK_IMAGE_LAYOUT_GENERAL },
-			VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-
-		pContext->Dispatch2D< 16, 16 >(width, height);
-
-		pContext->TransitionImageLayout(pCombinedTexture, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange);
-		pContext->Close();
-
-		rd.ExecuteCommand(pContext);
-	}
-
-	return pCombinedTexture;
-}
-
 
 void VkSceneResource::PerFrameData::Reset()
 {
@@ -118,6 +55,8 @@ void VkSceneResource::PerFrameData::Reset()
 		pTransformAllocator->Reset();
 	if (pMaterialAllocator) 
 		pMaterialAllocator->Reset();
+	if (pMaterialTextureAllocator)
+		pMaterialTextureAllocator->Reset();
 	if (pLightAllocator) 
 		pLightAllocator->Reset();
 	/*if (pIndirectCommandAllocator) 
@@ -145,7 +84,8 @@ VkSceneResource::VkSceneResource(VkRenderDevice& rd)
 		//frameData.pIndirectCommandAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(IndirectCommandData) * kMaxEntityCount, VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_2_INDIRECT_BUFFER_BIT);
 
 		frameData.pTransformAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(TransformData) * kMaxEntityCount, VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
-		frameData.pMaterialAllocator  = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(MaterialData) * kMaxEntityCount, VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
+		frameData.pMaterialAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(MaterialData) * kMaxEntityCount, VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
+		frameData.pMaterialTextureAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(MaterialTextureData) * kMaxEntityCount, VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
 		frameData.pLightAllocator     = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(LightData), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
 
 		frameData.pCameraBuffer           = VulkanUniformBuffer::Create(m_RenderDevice, "CameraBuffer", sizeof(CameraData));
@@ -173,6 +113,7 @@ VkSceneResource::VkSceneResource(VkRenderDevice& rd)
 		{ eCommonSetBindingIndex_Light, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, VK_NULL_HANDLE },
 		{ eCommonSetBindingIndex_Environment, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, VK_NULL_HANDLE },
 		{ eCommonSetBindingIndex_FrozenCamera, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_ALL, VK_NULL_HANDLE },
+		{ eCommonSetBindingIndex_MaterialTexture, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, VK_NULL_HANDLE },
 		{ eCommonSetBindingIndex_SceneTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kMaxBindlessDescriptorResourceCount, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, VK_NULL_HANDLE },
 	};
 
@@ -194,6 +135,7 @@ VkSceneResource::VkSceneResource(VkRenderDevice& rd)
 
 	std::vector < VkDescriptorBindingFlags > flags =
 	{
+		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT,
 		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT,
 		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT,
 		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT,
@@ -249,8 +191,6 @@ VkSceneResource::~VkSceneResource()
 	vkDestroyPipelineLayout(m_RenderDevice.vkDevice(), m_vkGlobalPipelineLayout, nullptr);
 	vkDestroyDescriptorSetLayout(m_RenderDevice.vkDevice(), m_vkSetLayout, nullptr);
 	RELEASE(m_pDescriptorPool);
-
-	RELEASE(s_CombineTexturesPipeline);
 }
 
 void VkSceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneView, VkCommandContext& ctx)
@@ -351,6 +291,7 @@ void VkSceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneVie
 	descriptorSet.StageDescriptor(m_FrameData[m_ContextIndex].pTransformAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Transform, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 
 	descriptorSet.StageDescriptor(m_FrameData[m_ContextIndex].pMaterialAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Material, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+	descriptorSet.StageDescriptor(m_FrameData[m_ContextIndex].pMaterialTextureAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_MaterialTexture, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 	descriptorSet.StageDescriptor(m_FrameData[m_ContextIndex].pLightAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Light, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 }
 
@@ -399,6 +340,11 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 
 	std::vector< MaterialData > materials;
 	materials.reserve(sceneView.materials.size());
+	u64 materialTextureCount = 0;
+	for (const auto& materialView : sceneView.materials)
+		materialTextureCount += materialView.textures.size();
+	std::vector< MaterialTextureData > materialTextures;
+	materialTextures.reserve(materialTextureCount);
 	std::unordered_map< VulkanTexture*, u32 > srvIndexCache;
 	for (auto& materialView : sceneView.materials)
 	{
@@ -429,202 +375,50 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
         material.layerOffset   = materialView.layerOffset;
         material.layerCount    = materialView.layerCount;
 
-		material.albedoID = kInvalidIndex;
-		if (!materialView.albedoTex.empty())
+		material.textureOffset = (u32)materialTextures.size();
+		for (const auto& textureView : materialView.textures)
 		{
-			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.albedoTex, render::eTextureColorSpace::SRGB);
-			if (srvIndexCache.contains(pMaterialTex.get()))
+			if (textureView.filepath.empty())
+				continue;
+
+			BB_ASSERT(textureView.semantic <= eMaterialTextureSemantic_Transmission, "Invalid material texture semantic: %u", textureView.semantic);
+			BB_ASSERT(textureView.channel <= eMaterialTextureChannel_RGBA, "Invalid material texture channel: %u", textureView.channel);
+			BB_ASSERT(textureView.colorSpace <= eMaterialTextureColorSpace_SRGB, "Invalid material texture color space: %u", textureView.colorSpace);
+
+			const render::eTextureColorSpace colorSpace = textureView.colorSpace == eMaterialTextureColorSpace_SRGB
+				? render::eTextureColorSpace::SRGB
+				: render::eTextureColorSpace::Linear;
+			auto pMaterialTex = GetOrLoadTexture(textureView.filepath, colorSpace);
+			if (!pMaterialTex)
+				continue;
+
+			u32 textureID = kInvalidIndex;
+			if (const auto it = srvIndexCache.find(pMaterialTex.get()); it != srvIndexCache.end())
 			{
-				material.albedoID = srvIndexCache[pMaterialTex.get()];
+				textureID = it->second;
 			}
 			else
 			{
+				BB_ASSERT(imageInfos.size() < kMaxBindlessDescriptorResourceCount, "Too many scene texture descriptors");
 				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pMaterialTex->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
-				material.albedoID = (u32)imageInfos.size() - 1;
-				srvIndexCache.emplace(pMaterialTex.get(), material.albedoID);
+				textureID = (u32)imageInfos.size() - 1;
+				srvIndexCache.emplace(pMaterialTex.get(), textureID);
 			}
+
+			materialTextures.push_back(
+				{
+					.textureID = textureID,
+					.semantic  = textureView.semantic,
+					.channel   = textureView.channel,
+				});
 		}
-
-		material.normalID = kInvalidIndex;
-		if (!materialView.normalTex.empty())
-		{
-			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.normalTex);
-			if (srvIndexCache.contains(pMaterialTex.get()))
-			{
-				material.normalID = srvIndexCache[pMaterialTex.get()];
-			}
-			else
-			{
-				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pMaterialTex->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
-				material.normalID = (u32)imageInfos.size() - 1;
-				srvIndexCache.emplace(pMaterialTex.get(), material.normalID);
-			}
-		}
-
-		material.specularID = kInvalidIndex;
-		if (!materialView.specularTex.empty())
-		{
-			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.specularTex, render::eTextureColorSpace::SRGB);
-			if (srvIndexCache.contains(pMaterialTex.get()))
-			{
-				material.specularID = srvIndexCache[pMaterialTex.get()];
-			}
-			else
-			{
-				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pMaterialTex->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
-				material.specularID = (u32)imageInfos.size() - 1;
-				srvIndexCache.emplace(pMaterialTex.get(), material.specularID);
-			}
-		}
-
-		// combine orm
-		std::string aoStr        = materialView.aoTex;
-		std::string roughnessStr = materialView.roughnessTex;
-		std::string metallicStr  = materialView.metallicTex;
-		std::string ormStr       = aoStr + roughnessStr + metallicStr;
-
-		material.metallicRoughnessAoID = kInvalidIndex;
-		auto pORM = GetTexture(ormStr);
-		if (!pORM)
-		{
-			if (s_CombineTexturesPipeline == nullptr)
-			{
-				s_CombineTexturesPipeline = new VulkanComputePipeline(m_RenderDevice, "CombineTextures");
-				Arc< VulkanShader > pCS
-					= VulkanShader::Create(m_RenderDevice, "CombineTextures", { .stage = render::eShaderStage::Compute, .filename = "CombineTextures" });
-				s_CombineTexturesPipeline->SetComputeShader(std::move(pCS)).Build();
-			}
-
-			Arc< VulkanTexture > pCombiningTextures[3] = {};
-			if (!materialView.aoTex.empty())
-				pCombiningTextures[0] = GetOrLoadTexture(materialView.id, materialView.aoTex);
-			else
-				pCombiningTextures[0] = StaticCast<VulkanTexture>(rm.GetFlatWhiteTexture());
-
-			if (!materialView.roughnessTex.empty())
-				pCombiningTextures[1] = GetOrLoadTexture(materialView.id, materialView.roughnessTex);
-			else
-				pCombiningTextures[1] = StaticCast<VulkanTexture>(rm.GetFlatWhiteTexture());
-
-			if (!materialView.metallicTex.empty())
-				pCombiningTextures[2] = GetOrLoadTexture(materialView.id, materialView.metallicTex);
-			else
-				pCombiningTextures[2] = StaticCast<VulkanTexture>(rm.GetFlatWhiteTexture());
-
-			pORM = CombineTextures(m_RenderDevice, "ORM", pCombiningTextures[0], pCombiningTextures[1], pCombiningTextures[2], m_pDefaultSampler);
-			m_TextureCache.emplace(ormStr, pORM);
-		}
-
-		if (srvIndexCache.contains(pORM.get()))
-		{
-			material.metallicRoughnessAoID = srvIndexCache[pORM.get()];
-		}
-		else
-		{
-			imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pORM->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
-			material.metallicRoughnessAoID = (u32)imageInfos.size() - 1;
-			srvIndexCache.emplace(pORM.get(), material.metallicRoughnessAoID);
-		}
-
-		material.emissiveID = kInvalidIndex;
-		if (!materialView.emissionTex.empty())
-		{
-			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.emissionTex, render::eTextureColorSpace::SRGB);
-			if (srvIndexCache.contains(pMaterialTex.get()))
-			{
-				material.emissiveID = srvIndexCache[pMaterialTex.get()];
-			}
-			else
-			{
-				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pMaterialTex->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
-				material.emissiveID = (u32)imageInfos.size() - 1;
-				srvIndexCache.emplace(pMaterialTex.get(), material.emissiveID);
-			}
-		}
-
-		material.clearcoatID = kInvalidIndex;
-		if (!materialView.clearcoatTex.empty())
-		{
-			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.clearcoatTex);
-			if (srvIndexCache.contains(pMaterialTex.get()))
-			{
-				material.clearcoatID = srvIndexCache[pMaterialTex.get()];
-			}
-			else
-			{
-				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pMaterialTex->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
-				material.clearcoatID = (u32)imageInfos.size() - 1;
-				srvIndexCache.emplace(pMaterialTex.get(), material.clearcoatID);
-			}
-		}
-
-		material.sheenID = kInvalidIndex;
-		if (!materialView.sheenTex.empty())
-		{
-			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.sheenTex, render::eTextureColorSpace::SRGB);
-			if (srvIndexCache.contains(pMaterialTex.get()))
-			{
-				material.sheenID = srvIndexCache[pMaterialTex.get()];
-			}
-			else
-			{
-				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pMaterialTex->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
-				material.sheenID = (u32)imageInfos.size() - 1;
-				srvIndexCache.emplace(pMaterialTex.get(), material.sheenID);
-			}
-		}
-
-		material.anisotropyID = kInvalidIndex;
-		if (!materialView.anisotropyTex.empty())
-		{
-			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.anisotropyTex);
-			if (srvIndexCache.contains(pMaterialTex.get()))
-			{
-				material.anisotropyID = srvIndexCache[pMaterialTex.get()];
-			}
-			else
-			{
-				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pMaterialTex->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
-				material.anisotropyID = (u32)imageInfos.size() - 1;
-				srvIndexCache.emplace(pMaterialTex.get(), material.anisotropyID);
-			}
-		}
-
-		material.subsurfaceID = kInvalidIndex;
-		if (!materialView.subsurfaceTex.empty())
-		{
-			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.subsurfaceTex);
-			if (srvIndexCache.contains(pMaterialTex.get()))
-			{
-				material.subsurfaceID = srvIndexCache[pMaterialTex.get()];
-			}
-			else
-			{
-				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pMaterialTex->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
-				material.subsurfaceID = (u32)imageInfos.size() - 1;
-				srvIndexCache.emplace(pMaterialTex.get(), material.subsurfaceID);
-			}
-		}
-
-		material.transmissionID = kInvalidIndex;
-		if (!materialView.transmissionTex.empty())
-		{
-			auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.transmissionTex);
-			if (srvIndexCache.contains(pMaterialTex.get()))
-			{
-				material.transmissionID = srvIndexCache[pMaterialTex.get()];
-			}
-			else
-			{
-				imageInfos.push_back({ m_pDefaultSampler->vkSampler(), pMaterialTex->vkView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
-				material.transmissionID = (u32)imageInfos.size() - 1;
-				srvIndexCache.emplace(pMaterialTex.get(), material.transmissionID);
-			}
-		}
-
+		material.textureCount = (u32)materialTextures.size() - material.textureOffset;
 		materials.push_back(material);
 	}
-	UpdateFrameBuffer(ctx, materials.data(), (u32)materials.size(), sizeof(MaterialData), *m_FrameData[m_ContextIndex].pMaterialAllocator, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
+	if (materialTextures.empty())
+		materialTextures.push_back({}); // Keep the Vulkan storage-buffer descriptor range non-zero.
+	UpdateFrameBuffer(ctx, materialTextures.data(), (u32)materialTextures.size(), sizeof(MaterialTextureData), *m_FrameData[m_ContextIndex].pMaterialTextureAllocator, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
+	UpdateFrameBuffer(ctx, materials.data(), (u32)materials.size(), sizeof(MaterialData), *m_FrameData[m_ContextIndex].pMaterialAllocator, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT);
 
 	std::vector< MeshData > meshes;
 	for (const auto& meshView : sceneView.meshes)
@@ -885,7 +679,7 @@ BufferHandle VkSceneResource::GetOrUpdateMeshletTriangles(u64 entity, const std:
 	return handle;
 }
 
-Arc< VulkanTexture > VkSceneResource::GetOrLoadTexture(u64 entity, const std::string& filepath, render::eTextureColorSpace colorSpace)
+Arc< VulkanTexture > VkSceneResource::GetOrLoadTexture(const std::string& filepath, render::eTextureColorSpace colorSpace)
 {
 	auto& rm = m_RenderDevice.GetResourceManager();
 
@@ -900,16 +694,6 @@ Arc< VulkanTexture > VkSceneResource::GetOrLoadTexture(u64 entity, const std::st
 	m_TextureCache.emplace(cacheKey, vkTex);
 
 	return vkTex;
-}
-
-Arc< VulkanTexture > VkSceneResource::GetTexture(const std::string& filepath)
-{
-	std::string f = filepath.data();
-	auto it = m_TextureCache.find(filepath);
-	if (it != m_TextureCache.end())
-		return it->second;
-
-	return nullptr;
 }
 
 void VkSceneResource::ResetFrameBuffers()

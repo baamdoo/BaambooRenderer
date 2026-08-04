@@ -2,15 +2,12 @@
 #include "Dx12SceneResource.h"
 #include "Dx12Buffer.h"
 #include "Dx12Texture.h"
-#include "Dx12Shader.h"
 #include "Dx12AccelerationStructure.h"
 
 #include "RenderDevice/Dx12CommandContext.h"
-#include "RenderDevice/Dx12CommandQueue.h"
 #include "RenderDevice/Dx12Rootsignature.h"
 #include "RenderDevice/Dx12CommandSignature.h"
 #include "RenderDevice/Dx12BufferAllocator.h"
-#include "RenderDevice/Dx12RenderPipeline.h"
 #include "RenderDevice/Dx12ResourceManager.h"
 
 #include "SceneRenderView.h"
@@ -19,57 +16,9 @@
 namespace dx12
 {
 
-static Dx12ComputePipeline* s_CombineTexturesPSO = nullptr;
-
 static std::string MakeTextureCacheKey(const std::string& filepath, render::eTextureColorSpace colorSpace)
 {
     return filepath + (colorSpace == render::eTextureColorSpace::SRGB ? "|srgb" : "|linear");
-}
-
-Arc< Dx12Texture > CombineTextures(Dx12RenderDevice& rd, const char* name, Arc< Dx12Texture > pTextureR, Arc< Dx12Texture > pTextureG, Arc< Dx12Texture > pTextureB)
-{
-    using namespace render;
-
-    u32 width
-        = (u32)std::max({ pTextureR->Desc().Width, pTextureG->Desc().Width, pTextureB->Desc().Width });
-    u32 height
-        = (u32)std::max({ pTextureR->Desc().Height, pTextureG->Desc().Height, pTextureB->Desc().Height });
-    auto pCombinedTexture =
-        Dx12Texture::Create(
-            rd,
-            name,
-            {
-                .resolution = { width, height, 1 },
-                .imageUsage = eTextureUsage_Sample | eTextureUsage_Storage
-            });
-
-    auto& cmdQueue = rd.GraphicsQueue();
-    auto  pContext = cmdQueue.Allocate(); // use direct queue for state management
-    {
-        pContext->SetRenderPipeline(s_CombineTexturesPSO);
-        
-        pContext->TransitionBarrier(pTextureR.get(), BarrierStates::NonPixelShaderResource, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, false);
-        pContext->TransitionBarrier(pTextureG.get(), BarrierStates::NonPixelShaderResource, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, false);
-        pContext->TransitionBarrier(pTextureB.get(), BarrierStates::NonPixelShaderResource, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, false);
-        pContext->TransitionBarrier(pCombinedTexture.get(), BarrierStates::UnorderedAccess);
-
-        pContext->StageDescriptors(
-            {
-                { "g_TextureR", pTextureR->GetShaderResourceHandle() },
-                { "g_TextureG", pTextureG->GetShaderResourceHandle() },
-                { "g_TextureB", pTextureB->GetShaderResourceHandle() },
-                { "g_OutCombinedTexture", pCombinedTexture->GetUnorderedAccessHandle(0) }
-            });
-
-        pContext->Dispatch2D< 16, 16 >(width, height);
-
-        pContext->TransitionBarrier(pCombinedTexture.get(), BarrierStates::PixelShaderResource);
-        pContext->Close();
-    }
-    auto fenceValue = cmdQueue.ExecuteCommandList(pContext);
-    cmdQueue.WaitForFenceValue(fenceValue);
-
-    return pCombinedTexture;
 }
 
 void Dx12SceneResource::PerFrameData::Reset()
@@ -83,6 +32,8 @@ void Dx12SceneResource::PerFrameData::Reset()
         pTransformAllocator->Reset();
     if (pMaterialAllocator)
         pMaterialAllocator->Reset();
+    if (pMaterialTextureAllocator)
+        pMaterialTextureAllocator->Reset();
     if (pLightAllocator)
         pLightAllocator->Reset();
 }
@@ -105,9 +56,10 @@ Dx12SceneResource::Dx12SceneResource(Dx12RenderDevice& rd)
         frameData.pMeshDataAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MeshDataPool", sizeof(MeshData), _KB(1LL), render::eBufferUsage_Storage); // Storage/UAV: voxel mCount patch CS writes lods[0].mCount
         frameData.pInstanceAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, "InstancePool", sizeof(InstanceData), kMaxEntityCount);
 
-        frameData.pTransformAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, "TransformPool", sizeof(TransformData), kMaxEntityCount);
-        frameData.pMaterialAllocator  = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MaterialPool", sizeof(MaterialData), kMaxEntityCount);
-        frameData.pLightAllocator     = MakeBox< StaticBufferAllocator >(m_RenderDevice, "LightPool", sizeof(LightData), 1);
+        frameData.pTransformAllocator       = MakeBox< StaticBufferAllocator >(m_RenderDevice, "TransformPool", sizeof(TransformData), kMaxEntityCount);
+        frameData.pMaterialAllocator        = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MaterialPool", sizeof(MaterialData), kMaxEntityCount);
+        frameData.pMaterialTextureAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MaterialTexturePool", sizeof(MaterialTextureData), kMaxEntityCount);
+        frameData.pLightAllocator           = MakeBox< StaticBufferAllocator >(m_RenderDevice, "LightPool", sizeof(LightData), 1);
 
         frameData.pCameraBuffer           = Dx12ConstantBuffer::Create(m_RenderDevice, "CameraBuffer", sizeof(CameraData));
         frameData.pCullBuffer             = Dx12ConstantBuffer::Create(m_RenderDevice, "CullBuffer", sizeof(CullData));
@@ -152,8 +104,6 @@ Dx12SceneResource::Dx12SceneResource(Dx12RenderDevice& rd)
 
 Dx12SceneResource::~Dx12SceneResource()
 {
-    RELEASE(s_CombineTexturesPSO);
-
     RELEASE(m_pIndirectDrawSignature);
     RELEASE(m_pIndirectDispatchSignature);
 }
@@ -236,7 +186,6 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
 {
     using namespace render;
 
-    auto& rm  = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
     auto& ctx = static_cast<Dx12CommandContext&>(context);
     if (sceneView.sceneRevision != m_LastSceneRevision)
     {
@@ -274,6 +223,8 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
 
     std::vector< MaterialData > materials;
     materials.reserve(sceneView.materials.size());
+    std::vector< MaterialTextureData > materialTextures;
+    materialTextures.reserve(sceneView.materials.size() * 4u);
     std::unordered_map< Dx12Texture*, u32 > srvIndexCache;
     for (auto& materialView : sceneView.materials)
     {
@@ -299,195 +250,38 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
         material.transmission       = materialView.transmission;
         material.materialType       = materialView.materialType;
         material.materialFlags      = materialView.materialFlags;
+        material.textureOffset      = static_cast<u32>(materialTextures.size());
         material.layerOffset        = materialView.layerOffset;
         material.layerCount         = materialView.layerCount;
 
-        material.albedoID = kInvalidIndex;
-        if (!materialView.albedoTex.empty())
+        for (const auto& textureView : materialView.textures)
         {
-            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.albedoTex, render::eTextureColorSpace::SRGB);
-            if (srvIndexCache.contains(pMaterialTex.get()))
-            {
-                material.albedoID = srvIndexCache[pMaterialTex.get()];
-            }
-            else if (pMaterialTex)
-            {
-                material.albedoID = pMaterialTex->GetShaderResourceHandle();
-                srvIndexCache.emplace(pMaterialTex.get(), material.albedoID);
-            }
+            BB_ASSERT(textureView.semantic <= eMaterialTextureSemantic_Transmission, "Invalid material texture semantic: %u", textureView.semantic);
+            BB_ASSERT(textureView.channel <= eMaterialTextureChannel_RGBA, "Invalid material texture channel: %u", textureView.channel);
+            BB_ASSERT(textureView.colorSpace <= eMaterialTextureColorSpace_SRGB, "Invalid material texture color space: %u", textureView.colorSpace);
+
+            const auto colorSpace = textureView.colorSpace == eMaterialTextureColorSpace_SRGB
+                ? render::eTextureColorSpace::SRGB
+                : render::eTextureColorSpace::Linear;
+            auto pMaterialTex = GetOrLoadTexture(textureView.filepath, colorSpace);
+            if (!pMaterialTex)
+                continue;
+
+            auto [it, bInserted] = srvIndexCache.try_emplace(pMaterialTex.get(), pMaterialTex->GetShaderResourceHandle());
+            UNUSED(bInserted);
+            materialTextures.push_back({
+                .textureID = it->second,
+                .semantic  = textureView.semantic,
+                .channel   = textureView.channel,
+                .padding0  = 0u
+            });
         }
-
-        material.normalID = kInvalidIndex;
-        if (!materialView.normalTex.empty())
-        {
-            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.normalTex);
-            if (srvIndexCache.contains(pMaterialTex.get()))
-            {
-                material.normalID = srvIndexCache[pMaterialTex.get()];
-            }
-			else if (pMaterialTex)
-            {
-                material.normalID = pMaterialTex->GetShaderResourceHandle();
-                srvIndexCache.emplace(pMaterialTex.get(), material.normalID);
-            }
-        }
-
-        material.specularID = kInvalidIndex;
-        if (!materialView.specularTex.empty())
-        {
-            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.specularTex, render::eTextureColorSpace::SRGB);
-            if (srvIndexCache.contains(pMaterialTex.get()))
-            {
-                material.specularID = srvIndexCache[pMaterialTex.get()];
-            }
-            else if (pMaterialTex)
-            {
-                material.specularID = pMaterialTex->GetShaderResourceHandle();
-                srvIndexCache.emplace(pMaterialTex.get(), material.specularID);
-            }
-        }
-
-        // combine orm
-        std::string aoStr        = materialView.aoTex;
-        std::string roughnessStr = materialView.roughnessTex;
-        std::string metallicStr  = materialView.metallicTex;
-        std::string ormStr       = aoStr + roughnessStr + metallicStr;
-
-        material.metallicRoughnessAoID = kInvalidIndex;
-        auto pORM = GetTexture(ormStr);
-        if (!pORM)
-        {
-            if (s_CombineTexturesPSO == nullptr)
-            {
-                s_CombineTexturesPSO = new Dx12ComputePipeline(m_RenderDevice, "CombineTextures");
-                Arc< Dx12Shader > pCS
-                    = Dx12Shader::Create(m_RenderDevice, "CombineTexturesCS", { .stage = render::eShaderStage::Compute, .filename = "CombineTexturesCS" });
-                s_CombineTexturesPSO->SetComputeShader(std::move(pCS)).Build();
-            }
-
-            Arc< Dx12Texture > pCombiningTextures[3] = {};
-            if (!materialView.aoTex.empty())
-                pCombiningTextures[0] = GetOrLoadTexture(materialView.id, materialView.aoTex);
-            else
-                pCombiningTextures[0] = StaticCast<Dx12Texture>(rm.GetFlatWhiteTexture());
-
-            if (!materialView.roughnessTex.empty())
-                pCombiningTextures[1] = GetOrLoadTexture(materialView.id, materialView.roughnessTex);
-            else
-                pCombiningTextures[1] = StaticCast<Dx12Texture>(rm.GetFlatWhiteTexture());
-
-            if (!materialView.metallicTex.empty())
-                pCombiningTextures[2] = GetOrLoadTexture(materialView.id, materialView.metallicTex);
-            else
-                pCombiningTextures[2] = StaticCast<Dx12Texture>(rm.GetFlatWhiteTexture());
-
-            pORM = CombineTextures(m_RenderDevice, "ORM", pCombiningTextures[0], pCombiningTextures[1], pCombiningTextures[2]);
-            m_TextureCache.emplace(ormStr, pORM);
-        }
-
-        if (srvIndexCache.contains(pORM.get()))
-        {
-            material.metallicRoughnessAoID = srvIndexCache[pORM.get()];
-        }
-        else if (pORM)
-        {
-            material.metallicRoughnessAoID = pORM->GetShaderResourceHandle();
-            srvIndexCache.emplace(pORM.get(), material.metallicRoughnessAoID);
-        }
-
-        material.emissiveID = kInvalidIndex;
-        if (!materialView.emissionTex.empty())
-        {
-            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.emissionTex, render::eTextureColorSpace::SRGB);
-            if (srvIndexCache.contains(pMaterialTex.get()))
-            {
-                material.emissiveID = srvIndexCache[pMaterialTex.get()];
-            }
-            else if (pMaterialTex)
-            {
-                material.emissiveID = pMaterialTex->GetShaderResourceHandle();
-                srvIndexCache.emplace(pMaterialTex.get(), material.emissiveID);
-            }
-        }
-
-        material.clearcoatID = kInvalidIndex;
-        if (!materialView.clearcoatTex.empty())
-        {
-            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.clearcoatTex);
-            if (srvIndexCache.contains(pMaterialTex.get()))
-            {
-                material.clearcoatID = srvIndexCache[pMaterialTex.get()];
-            }
-            else if (pMaterialTex)
-            {
-                material.clearcoatID = pMaterialTex->GetShaderResourceHandle();
-                srvIndexCache.emplace(pMaterialTex.get(), material.clearcoatID);
-            }
-        }
-
-        material.sheenID = kInvalidIndex;
-        if (!materialView.sheenTex.empty())
-        {
-            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.sheenTex, render::eTextureColorSpace::SRGB);
-            if (srvIndexCache.contains(pMaterialTex.get()))
-            {
-                material.sheenID = srvIndexCache[pMaterialTex.get()];
-            }
-            else if (pMaterialTex)
-            {
-                material.sheenID = pMaterialTex->GetShaderResourceHandle();
-                srvIndexCache.emplace(pMaterialTex.get(), material.sheenID);
-            }
-        }
-
-        material.anisotropyID = kInvalidIndex;
-        if (!materialView.anisotropyTex.empty())
-        {
-            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.anisotropyTex);
-            if (srvIndexCache.contains(pMaterialTex.get()))
-            {
-                material.anisotropyID = srvIndexCache[pMaterialTex.get()];
-            }
-            else if (pMaterialTex)
-            {
-                material.anisotropyID = pMaterialTex->GetShaderResourceHandle();
-                srvIndexCache.emplace(pMaterialTex.get(), material.anisotropyID);
-            }
-        }
-
-        material.subsurfaceID = kInvalidIndex;
-        if (!materialView.subsurfaceTex.empty())
-        {
-            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.subsurfaceTex);
-            if (srvIndexCache.contains(pMaterialTex.get()))
-            {
-                material.subsurfaceID = srvIndexCache[pMaterialTex.get()];
-            }
-            else if (pMaterialTex)
-            {
-                material.subsurfaceID = pMaterialTex->GetShaderResourceHandle();
-                srvIndexCache.emplace(pMaterialTex.get(), material.subsurfaceID);
-            }
-        }
-
-        material.transmissionID = kInvalidIndex;
-        if (!materialView.transmissionTex.empty())
-        {
-            auto pMaterialTex = GetOrLoadTexture(materialView.id, materialView.transmissionTex);
-            if (srvIndexCache.contains(pMaterialTex.get()))
-            {
-                material.transmissionID = srvIndexCache[pMaterialTex.get()];
-            }
-            else if (pMaterialTex)
-            {
-                material.transmissionID = pMaterialTex->GetShaderResourceHandle();
-                srvIndexCache.emplace(pMaterialTex.get(), material.transmissionID);
-            }
-        }
+        material.textureCount = static_cast<u32>(materialTextures.size()) - material.textureOffset;
 
         materials.push_back(material);
     }
     UpdateFrameBuffer(ctx, materials.data(), (u32)materials.size(), sizeof(MaterialData), *m_FrameData[m_ContextIndex].pMaterialAllocator, BarrierStates::ShaderResource);
+    UpdateFrameBuffer(ctx, materialTextures.data(), (u32)materialTextures.size(), sizeof(MaterialTextureData), *m_FrameData[m_ContextIndex].pMaterialTextureAllocator, BarrierStates::ShaderResource);
 
     u32 vTotalCount  = 0;
     u32 iTotalCount  = 0;
@@ -688,6 +482,10 @@ void Dx12SceneResource::BindSceneResources(render::CommandContext& context)
     d3d12CommandList2->SetComputeRoot32BitConstant(materialBufferIdx, GetMaterialBuffer()->GetShaderResourceHandle(), 0);
     d3d12CommandList2->SetGraphicsRoot32BitConstant(materialBufferIdx, GetMaterialBuffer()->GetShaderResourceHandle(), 0);
 
+    auto materialTextureBufferIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, kGlobalDescriptorSpace, 14);
+    d3d12CommandList2->SetComputeRoot32BitConstant(materialTextureBufferIdx, GetMaterialTextureBuffer()->GetShaderResourceHandle(), 0);
+    d3d12CommandList2->SetGraphicsRoot32BitConstant(materialTextureBufferIdx, GetMaterialTextureBuffer()->GetShaderResourceHandle(), 0);
+
     auto lightRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_CBV, kGlobalDescriptorSpace, 11);
     d3d12CommandList2->SetComputeRootConstantBufferView(lightRootIdx, GetLightBuffer()->GpuAddress());
     d3d12CommandList2->SetGraphicsRootConstantBufferView(lightRootIdx, GetLightBuffer()->GpuAddress());
@@ -835,7 +633,7 @@ Arc< Dx12BottomLevelAS > Dx12SceneResource::GetOrCreateBLAS(const std::string& t
     return pBLAS;
 }
 
-Arc< Dx12Texture > Dx12SceneResource::GetOrLoadTexture(u64 entity, const std::string& filepath, render::eTextureColorSpace colorSpace)
+Arc< Dx12Texture > Dx12SceneResource::GetOrLoadTexture(const std::string& filepath, render::eTextureColorSpace colorSpace)
 {
     const std::string cacheKey = MakeTextureCacheKey(filepath, colorSpace);
     if (m_TextureCache.contains(cacheKey))
@@ -848,17 +646,6 @@ Arc< Dx12Texture > Dx12SceneResource::GetOrLoadTexture(u64 entity, const std::st
 
     m_TextureCache.emplace(cacheKey, pTex);
     return pTex;
-}
-
-Arc< Dx12Texture > Dx12SceneResource::GetTexture(const std::string& filepath)
-{
-    std::string f = filepath.data();
-    if (m_TextureCache.contains(f))
-    {
-        return m_TextureCache.find(f)->second;
-    }
-
-    return nullptr;
 }
 
 void Dx12SceneResource::UpdateFrameBuffer(Dx12CommandContext& context, const void* pData, u32 count, u64 elementSizeInBytes, StaticBufferAllocator& targetBuffer, const BarrierState& stateAfter)
@@ -913,6 +700,11 @@ Arc< Dx12StructuredBuffer > Dx12SceneResource::GetTransformBuffer() const
 Arc< Dx12StructuredBuffer > Dx12SceneResource::GetMaterialBuffer() const
 {
     return m_FrameData[m_ContextIndex].pMaterialAllocator->GetBuffer();
+}
+
+Arc< Dx12StructuredBuffer > Dx12SceneResource::GetMaterialTextureBuffer() const
+{
+    return m_FrameData[m_ContextIndex].pMaterialTextureAllocator->GetBuffer();
 }
 
 Arc< Dx12StructuredBuffer > Dx12SceneResource::GetLightBuffer() const

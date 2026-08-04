@@ -10,6 +10,9 @@
 namespace baamboo
 {
 
+namespace
+{
+
 mat4 ConvertMatrix(const aiMatrix4x4& aiMat)
 {
 	mat4 mResult;
@@ -21,6 +24,71 @@ mat4 ConvertMatrix(const aiMatrix4x4& aiMat)
 	mResult[0][3] = aiMat.d1; mResult[1][3] = aiMat.d2; mResult[2][3] = aiMat.d3; mResult[3][3] = aiMat.d4;
 	return mResult;
 }
+
+std::vector< f32 > ComputeTangentHandedness(const aiMesh& mesh, bool bFlipUVs)
+{
+    std::vector< f32 > handedness(mesh.mNumVertices, 0.0f);
+    if (!mesh.HasTextureCoords(0) || !mesh.HasTangentsAndBitangents())
+        return handedness;
+
+    for (u32 faceIndex = 0; faceIndex < mesh.mNumFaces; ++faceIndex)
+    {
+        const aiFace& face = mesh.mFaces[faceIndex];
+        if (face.mNumIndices != 3)
+            continue;
+
+        const u32 i0 = face.mIndices[0];
+        const u32 i1 = face.mIndices[1];
+        const u32 i2 = face.mIndices[2];
+
+        const float3 p0 = float3(mesh.mVertices[i0].x, mesh.mVertices[i0].y, mesh.mVertices[i0].z);
+        const float3 p1 = float3(mesh.mVertices[i1].x, mesh.mVertices[i1].y, mesh.mVertices[i1].z);
+        const float3 p2 = float3(mesh.mVertices[i2].x, mesh.mVertices[i2].y, mesh.mVertices[i2].z);
+
+        float2 uv0 = float2(mesh.mTextureCoords[0][i0].x, mesh.mTextureCoords[0][i0].y);
+        float2 uv1 = float2(mesh.mTextureCoords[0][i1].x, mesh.mTextureCoords[0][i1].y);
+        float2 uv2 = float2(mesh.mTextureCoords[0][i2].x, mesh.mTextureCoords[0][i2].y);
+        if (bFlipUVs)
+        {
+            uv0.y = 1.0f - uv0.y;
+            uv1.y = 1.0f - uv1.y;
+            uv2.y = 1.0f - uv2.y;
+        }
+
+        const float3 edge01 = p1 - p0;
+        const float3 edge02 = p2 - p0;
+        const float2 uv01   = uv1 - uv0;
+        const float2 uv02   = uv2 - uv0;
+        const f32 determinant = uv01.x * uv02.y - uv01.y * uv02.x;
+        if (std::abs(determinant) <= 1.0e-12f)
+            continue;
+
+        const float3 dPdv = (edge02 * uv01.x - edge01 * uv02.x) / determinant;
+        for (u32 corner = 0; corner < 3; ++corner)
+        {
+            const u32 vertexIndex = face.mIndices[corner];
+            if (handedness[vertexIndex] != 0.0f)
+                continue;
+
+            const aiVector3D& normal  = mesh.mNormals[vertexIndex];
+            const aiVector3D& tangent = mesh.mTangents[vertexIndex];
+            const float3 N = float3(normal.x, normal.y, normal.z);
+            const float3 T = float3(tangent.x, tangent.y, tangent.z);
+            const float3 B = glm::cross(N, T);
+            if (glm::dot(B, B) <= 1.0e-12f || glm::dot(dPdv, dPdv) <= 1.0e-12f)
+                continue;
+
+            handedness[vertexIndex] = glm::dot(B, dPdv) < 0.0f ? -1.0f : 1.0f;
+        }
+    }
+
+    for (f32& sign : handedness)
+        sign = sign < 0.0f ? -1.0f : 1.0f;
+
+    return handedness;
+}
+
+} // namespace
 
 
 ModelNode::~ModelNode()
@@ -46,7 +114,7 @@ ModelLoader::ModelLoader(fs::path filepath, MeshDescriptor descriptor)
 		aiProcess_ValidateDataStructure |
 		aiProcess_JoinIdenticalVertices;
 	importFlags |= (descriptor.bOptimize ? aiProcess_OptimizeMeshes | aiProcess_ImproveCacheLocality : 0);
-	importFlags |= (descriptor.bConvertToLeftHanded ? aiProcess_ConvertToLeftHanded : 0);
+	importFlags |= descriptor.bConvertToLeftHanded ? aiProcess_MakeLeftHanded | aiProcess_FlipWindingOrder : 0;
 	//importFlags |= (descriptor.bWindingCW ? aiProcess_FlipWindingOrder : 0);
 	//importFlags |= ((descriptor.rendererAPI == eRendererAPI::D3D11 || descriptor.rendererAPI == eRendererAPI::D3D12) ? aiProcess_ConvertToLeftHanded : 0);
 
@@ -105,6 +173,9 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
 	assert(mesh->HasPositions());
 	assert(mesh->HasNormals());
 
+	const bool bFlipUVs = descriptor.bConvertToLeftHanded;
+	const std::vector< f32 > tangentHandedness = ComputeTangentHandedness(*mesh, bFlipUVs);
+
 	MeshData meshData = {};
 	meshData.name     = mesh->mName.C_Str();
 	meshData.aabb     = BoundingBox(*(float3*)(&mesh->mAABB.mMin), *(float3*)(&mesh->mAABB.mMax));
@@ -117,7 +188,7 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
     if (bHasBones)
     {
         meshData.bHasSkinnedData = true;
-        meshData.vertexFormat    = eVertexFormat::P3U2N3T3S;
+        meshData.vertexFormat    = eVertexFormat::P3U2N3T4S;
 
         // Process bone weights first
         meshData.boneIndices.resize(mesh->mNumVertices, 0);
@@ -127,7 +198,7 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
         meshData.skinnedVertices.reserve(mesh->mNumVertices);
         for (u32 i = 0; i < mesh->mNumVertices; ++i)
         {
-            VertexP3U2N3T3S vertex{};
+            VertexP3U2N3T4S vertex{};
 
             // Position
             vertex.position.x = mesh->mVertices[i].x;
@@ -138,7 +209,9 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
             if (mesh->HasTextureCoords(0))
             {
                 vertex.uv.x = mesh->mTextureCoords[0][i].x;
-                vertex.uv.y = mesh->mTextureCoords[0][i].y;
+                vertex.uv.y = bFlipUVs
+                    ? 1.0f - mesh->mTextureCoords[0][i].y
+                    : mesh->mTextureCoords[0][i].y;
             }
 
             // Normal
@@ -155,6 +228,7 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
                 vertex.tangent.x = mesh->mTangents[i].x;
                 vertex.tangent.y = mesh->mTangents[i].y;
                 vertex.tangent.z = mesh->mTangents[i].z;
+                vertex.tangent.w = tangentHandedness[i];
             }
 
             // Skinning
@@ -182,7 +256,9 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
             if (mesh->HasTextureCoords(0))
             {
                 vertex.uv.x = mesh->mTextureCoords[0][i].x;
-                vertex.uv.y = mesh->mTextureCoords[0][i].y;
+                vertex.uv.y = bFlipUVs
+                    ? 1.0f - mesh->mTextureCoords[0][i].y
+                    : mesh->mTextureCoords[0][i].y;
             }
 
             if (mesh->HasTangentsAndBitangents())
@@ -190,9 +266,7 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
                 vertex.tangent.x = mesh->mTangents[i].x;
                 vertex.tangent.y = mesh->mTangents[i].y;
                 vertex.tangent.z = mesh->mTangents[i].z;
-                // vertex.bitangent.x = mesh->mBitangents[i].x;
-                // vertex.bitangent.y = mesh->mBitangents[i].y;
-                // vertex.bitangent.z = mesh->mBitangents[i].z;
+                vertex.tangent.w = tangentHandedness[i];
             }
 
             meshData.vertices.push_back(vertex);
@@ -340,6 +414,15 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
 
             material.metallicTex   = GetTextureFilename(aiMat, aiTextureType_METALNESS);
             material.roughnessTex  = GetTextureFilename(aiMat, aiTextureType_DIFFUSE_ROUGHNESS);
+
+            const std::string packedMetallicRoughnessTex = GetTextureFilename(aiMat, aiTextureType_GLTF_METALLIC_ROUGHNESS);
+            if (!packedMetallicRoughnessTex.empty())
+            {
+                material.roughnessTex        = packedMetallicRoughnessTex;
+                material.metallicTex         = packedMetallicRoughnessTex;
+                material.roughnessTexChannel = eMaterialTextureChannel_G;
+                material.metallicTexChannel  = eMaterialTextureChannel_B;
+            }
             material.aoTex         = GetTextureFilename(aiMat, aiTextureType_AMBIENT_OCCLUSION);
             if (material.aoTex.empty())
                 material.aoTex     = GetTextureFilename(aiMat, aiTextureType_LIGHTMAP);

@@ -1,0 +1,78 @@
+{
+  "scene_name": "cornell_box",
+  "camera": {
+    "eye": [
+      0.0,
+      1.0,
+      3.5
+    ],
+    "target": [
+      0.0,
+      1.0,
+      0.0
+    ],
+    "forward_unit": [
+      0.0,
+      0.0,
+      -1.0
+    ],
+    "fov_smaller_deg": 40.0,
+    "resolution": [
+      512,
+      512
+    ],
+    "samples": 1024,
+    "max_depth": 8,
+    "integrator": "path"
+  },
+  "materials": {
+    "white": {
+      "type": "diffuse",
+      "reflectance": [
+        0.725,
+        0.71,
+        0.68
+      ]
+    },
+    "red": {
+      "type": "diffuse",
+      "reflectance": [
+        0.63,
+        0.065,
+        0.05
+      ]
+    },
+    "green": {
+      "type": "diffuse",
+      "reflectance": [
+        0.14,
+        0.45,
+        0.091
+      ]
+    }
+  },
+  "textures": {},
+  "lights": [
+    {
+      "id": "ceiling_light",
+      "L": [
+        17.0,
+        12.0,
+        4.0
+      ],
+      "area": 0.25,
+      "normal": [
+        0.0,
+        -1.0,
+        0.0
+      ],
+      "total_power_rgb": [
+        13.351768777756622,
+        9.42477796076938,
+        3.141592653589793
+      ]
+    }
+  ],
+  "infinite_lights": [],
+  "n_shapes": 6
+}

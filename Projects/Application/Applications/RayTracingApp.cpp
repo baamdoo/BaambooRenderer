@@ -14,6 +14,7 @@
 #include <imgui/backends/imgui_impl_glfw.h>
 
 #include <array>
+#include <cmath>
 #include <fstream>
 #include <sstream>
 #include <unordered_map>
@@ -349,7 +350,7 @@ bool IsShaderBallLayerScene(std::string_view sceneName)
 
 bool IsSupportedPathTracerScene(std::string_view sceneName)
 {
-	return sceneName == "cornell_box" || sceneName == "cornell_open" || sceneName == "cornell_sphere_light" || sceneName == "cornell_directional_light" || sceneName == "cornell_disk_light" || sceneName == "cornell_spot_light" || sceneName == "cornell_tube_light" || sceneName == "cornell_many_lights" || sceneName == "cornell_textured" || sceneName == "cornell_material_maps" || sceneName == "cornell_normal_map" ||
+	return sceneName == "cornell_box" || sceneName == "cornell_open" || sceneName == "cornell_sphere_light" || sceneName == "cornell_directional_light" || sceneName == "cornell_disk_light" || sceneName == "cornell_spot_light" || sceneName == "cornell_tube_light" || sceneName == "cornell_many_lights" || sceneName == "cornell_textured" || sceneName == "cornell_material_maps" || sceneName == "cornell_normal_map" || sceneName == "ray_cone_mip_ladder" || sceneName == "ray_cone_secondary_mip" ||
 		sceneName == "cornell_mesh" || sceneName == "cornell_transform" || sceneName == "cornell_transform_rot" ||
 		sceneName == "cornell_transform_model" || IsEnvironmentMapTestScene(sceneName) || sceneName == "dining_room" || IsComplexRoomTestScene(sceneName) ||
 		sceneName == "cornell_box_conductor" || sceneName == "cornell_box_conductor_smooth" || sceneName == "cornell_anisotropic_conductor" ||
@@ -746,6 +747,10 @@ void RayTracingApp::ConfigureRenderGraph()
 		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.12f, 0.12f, 0.16f), 8u, 4096u, 12u);
 	else if (m_PathTracerReferenceScene == "cornell_open")
 		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(1.0f), 4u, 1024u);
+	else if (m_PathTracerReferenceScene == "ray_cone_mip_ladder")
+		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(1.0f), 1u, 128u, 1u);
+	else if (m_PathTracerReferenceScene == "ray_cone_secondary_mip")
+		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 1u, 128u, 2u);
 	else if (m_PathTracerReferenceScene == "cornell_many_lights")
 		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 4u, 4096u, 1u);
 	else if (m_PathTracerReferenceScene == "cornell_tube_light")
@@ -1048,6 +1053,91 @@ void RayTracingApp::ConfigureSceneObjects()
 			return entity;
 		};
 
+		if (m_PathTracerReferenceScene == "ray_cone_mip_ladder")
+		{
+			const fs::path mipLadderPath =
+				ASSET_PATH / "Generated" / m_PathTracerReferenceScene / "textures" / "mip_ladder.dds";
+			const float3 aluminumF0 = float3(0.92804748f, 0.91780447f, 0.91890865f);
+
+			for (u32 panelIndex = 0u; panelIndex < 6u; ++panelIndex)
+			{
+				const fs::path panelPath =
+					meshDir / ("mip_panel_" + std::to_string(panelIndex) + ".ply");
+				auto panelEntity = m_pScene->ImportModel(panelPath, descriptor);
+				UNUSED(panelEntity);
+
+				forEachMaterialByMeshPath(panelPath,
+					[&](baamboo::MaterialData& mat, MaterialComponent&)
+					{
+						mat.tint             = float4(aluminumF0, 1.0f);
+						mat.metallic         = 1.0f;
+						mat.roughness        = 1.0f;
+						mat.roughnessTex     = mipLadderPath.string();
+						mat.specularColor    = aluminumF0;
+						mat.specularStrength = 1.0f;
+						mat.transmission     = 0.0f;
+					});
+			}
+
+			createPostProcessVolume();
+			return;
+		}
+
+		if (m_PathTracerReferenceScene == "ray_cone_secondary_mip")
+		{
+			const fs::path mipLadderPath =
+				ASSET_PATH / "Generated" / m_PathTracerReferenceScene / "textures" / "mip_ladder.dds";
+
+			const auto loadProbe = [&](const char* file, f32 eta, bool bMirror)
+			{
+				const fs::path probePath = meshDir / file;
+				auto probeEntity = m_pScene->ImportModel(probePath, descriptor);
+				UNUSED(probeEntity);
+
+				forEachMaterialByMeshPath(probePath,
+					[=](baamboo::MaterialData& mat, MaterialComponent&)
+					{
+						mat.tint             = float4(1.0f);
+						mat.metallic         = bMirror ? 1.0f : 0.0f;
+						mat.roughness        = 0.0f;
+						mat.ior              = eta;
+						mat.specularColor    = float3(1.0f);
+						mat.specularStrength = bMirror ? 1.0f : 0.0f;
+						mat.transmission     = bMirror ? 0.0f : 1.0f;
+						mat.emissivePower    = 0.0f;
+					});
+			};
+
+			const auto loadEmitter = [&](const char* file)
+			{
+				const fs::path emitterPath = meshDir / file;
+				auto emitterEntity = m_pScene->ImportModel(emitterPath, descriptor);
+				UNUSED(emitterEntity);
+
+				forEachMaterialByMeshPath(emitterPath,
+					[&](baamboo::MaterialData& mat, MaterialComponent&)
+					{
+						mat.tint             = float4(0.0f, 0.0f, 0.0f, 1.0f);
+						mat.metallic         = 0.0f;
+						mat.roughness        = 1.0f;
+						mat.specularStrength = 0.0f;
+						mat.transmission     = 0.0f;
+						mat.emissionColor    = float3(1.0f);
+						mat.emissivePower    = 1.0f;
+						mat.emissionTex      = mipLadderPath.string();
+					});
+			};
+
+			loadProbe("secondary_mirror_probe.ply", 1.0f, true);
+			loadProbe("secondary_eta15_probe.ply", 1.5f, false);
+			loadProbe("secondary_eta1_probe.ply", 1.0f, false);
+			loadEmitter("secondary_mirror_emitter.ply");
+			loadEmitter("secondary_eta15_emitter.ply");
+			loadEmitter("secondary_eta1_emitter.ply");
+
+			createPostProcessVolume();
+			return;
+		}
 		if (IsComplexRoomTestScene(m_PathTracerReferenceScene))
 		{
 			const fs::path checkerPath = ASSET_PATH / "Generated" / m_PathTracerReferenceScene / "textures" / "checker.exr";
@@ -1064,7 +1154,10 @@ void RayTracingApp::ConfigureSceneObjects()
 				forEachStaticMeshByMeshPath(meshDir / file, [](StaticMeshComponent& mesh)
 				{
 					for (u32 i = 0; i < mesh.numVertices; ++i)
+					{
 						mesh.pVertices[i].uv.y = 1.0f - mesh.pVertices[i].uv.y;
+						mesh.pVertices[i].tangent.w = -mesh.pVertices[i].tangent.w;
+					}
 				});
 			};
 
@@ -1185,7 +1278,10 @@ void RayTracingApp::ConfigureSceneObjects()
 			forEachStaticMeshByMeshPath(meshDir / "floor.ply", [](StaticMeshComponent& mesh)
 			{
 				for (u32 i = 0; i < mesh.numVertices; ++i)
+				{
 					mesh.pVertices[i].uv.y = 1.0f - mesh.pVertices[i].uv.y;
+					mesh.pVertices[i].tangent.w = -mesh.pVertices[i].tangent.w;
+				}
 			});
 			forEachMaterialByMeshPath(meshDir / "floor.ply", [](baamboo::MaterialData& mat, MaterialComponent&)
 			{
@@ -1293,7 +1389,10 @@ void RayTracingApp::ConfigureSceneObjects()
 			forEachStaticMeshByMeshPath(meshDir / "floor.ply", [](StaticMeshComponent& mesh)
 			{
 				for (u32 i = 0; i < mesh.numVertices; ++i)
+				{
 					mesh.pVertices[i].uv.y = 1.0f - mesh.pVertices[i].uv.y;
+					mesh.pVertices[i].tangent.w = -mesh.pVertices[i].tangent.w;
+				}
 			});
 			forEachMaterialByMeshPath(meshDir / "floor.ply", [checkerPath](baamboo::MaterialData& mat, MaterialComponent&)
 			{
@@ -1308,7 +1407,10 @@ void RayTracingApp::ConfigureSceneObjects()
 			forEachStaticMeshByMeshPath(meshDir / "floor.ply", [](StaticMeshComponent& mesh)
 			{
 				for (u32 i = 0; i < mesh.numVertices; ++i)
+				{
 					mesh.pVertices[i].uv.y = 1.0f - mesh.pVertices[i].uv.y;
+					mesh.pVertices[i].tangent.w = -mesh.pVertices[i].tangent.w;
+				}
 			});
 			forEachMaterialByMeshPath(meshDir / "floor.ply", [roughnessPath, aluminumF0](baamboo::MaterialData& mat, MaterialComponent&)
 			{
@@ -1327,7 +1429,10 @@ void RayTracingApp::ConfigureSceneObjects()
 			forEachStaticMeshByMeshPath(meshDir / "floor.ply", [](StaticMeshComponent& mesh)
 			{
 				for (u32 i = 0; i < mesh.numVertices; ++i)
+				{
 					mesh.pVertices[i].uv.y = 1.0f - mesh.pVertices[i].uv.y;
+					mesh.pVertices[i].tangent.w = -mesh.pVertices[i].tangent.w;
+				}
 			});
 			forEachMaterialByMeshPath(meshDir / "floor.ply", [normalPath](baamboo::MaterialData& mat, MaterialComponent&)
 			{
@@ -1659,9 +1764,11 @@ void RayTracingApp::ConfigureSceneObjects()
 				const f32 f0 = ((eta - 1.0f) / (eta + 1.0f)) * ((eta - 1.0f) / (eta + 1.0f));
 				const float3 specularTint = float3(1.0f) * (1.0f - specTint) + colorTint * specTint;
 				const float3 sheenColor = sheen * (float3(1.0f) * (1.0f - sheenTint) + colorTint * sheenTint);
-				const f32 clearcoatAlpha = clearcoat > 0.0f ? 0.1f * (1.0f - clearcoatGloss) + 0.001f * clearcoatGloss : 0.0f;
+				const f32 clearcoatAlpha =
+					clearcoat > 0.0f ? 0.1f * (1.0f - clearcoatGloss) + 0.001f * clearcoatGloss : 0.0f;
+				const f32 clearcoatRoughness = std::sqrt(clearcoatAlpha);
 
-				forEachMaterialByMeshPath(spherePath, [baseColor, roughness, eta, f0, specularTint, sheenColor, clearcoat, clearcoatAlpha, transmission](baamboo::MaterialData& mat, MaterialComponent&)
+				forEachMaterialByMeshPath(spherePath, [baseColor, roughness, eta, f0, specularTint, sheenColor, clearcoat, clearcoatRoughness, transmission](baamboo::MaterialData& mat, MaterialComponent&)
 				{
 					mat.tint               = float4(baseColor, 1.0f);
 					mat.metallic           = 0.0f;
@@ -1671,7 +1778,7 @@ void RayTracingApp::ConfigureSceneObjects()
 					mat.specularColor      = f0 * specularTint;
 					mat.specularStrength   = 1.0f;
 					mat.clearcoat          = clearcoat;
-					mat.clearcoatRoughness = clearcoatAlpha;
+					mat.clearcoatRoughness = clearcoatRoughness;
 					mat.sheenColor         = sheenColor;
 					mat.sheenRoughness     = roughness;
 					mat.materialType       = kPathTracerPrincipledMaterialType;

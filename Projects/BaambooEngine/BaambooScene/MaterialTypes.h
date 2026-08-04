@@ -2,6 +2,7 @@
 
 #include "Primitives.h"
 #include "MathTypes.h"
+#include "ShaderTypes.h"
 
 #include <string>
 
@@ -61,6 +62,8 @@ struct MaterialData
 	std::string aoTex;
 	std::string roughnessTex;
 	std::string metallicTex;
+	eMaterialTextureChannel roughnessTexChannel = eMaterialTextureChannel_R;
+	eMaterialTextureChannel metallicTexChannel  = eMaterialTextureChannel_R;
 	std::string emissionTex;
 	std::string clearcoatTex;
 	std::string sheenTex;

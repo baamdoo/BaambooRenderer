@@ -7,6 +7,7 @@
 
 #include <array>
 #include <functional>
+#include <vector>
 
 enum eComponentType
 {
@@ -73,6 +74,14 @@ struct StaticMeshRenderView
 	u8 maxLOD;
 };
 
+struct MaterialTextureRenderView
+{
+	std::string filepath;
+	u32 semantic   = eMaterialTextureSemantic_BaseColor;
+	u32 channel    = eMaterialTextureChannel_RGBA;
+	u32 colorSpace = eMaterialTextureColorSpace_Linear;
+};
+
 struct MaterialRenderView
 {
 	u64 id;
@@ -105,18 +114,7 @@ struct MaterialRenderView
     u32 layerOffset = kInvalidIndex;
     u32 layerCount  = 0u;
 
-	std::string albedoTex;
-	std::string normalTex;
-	std::string specularTex;
-	std::string aoTex;
-	std::string roughnessTex;
-	std::string metallicTex;
-	std::string emissionTex;
-	std::string clearcoatTex;
-	std::string sheenTex;
-	std::string anisotropyTex;
-	std::string subsurfaceTex;
-	std::string transmissionTex;
+	std::vector< MaterialTextureRenderView > textures;
 };
 
 struct DrawRenderView

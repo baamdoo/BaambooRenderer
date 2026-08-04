@@ -75,22 +75,27 @@ struct VertexP3U2N3
     float3 normal;
 };
 
-struct VertexP3U2N3T3
+struct alignas(16) VertexP3U2N3T4
 {
     float3 position;
     float2 uv;
     float3 normal;
-    float3 tangent;
+    float4 tangent = float4(0.0f, 0.0f, 0.0f, 1.0f);
 };
+static_assert(sizeof(VertexP3U2N3T4) == 48);
 
-struct VertexP3U2N3T3S
+struct alignas(16) VertexP3U2N3T4S
 {
     float3 position;
     float2 uv;
     float3 normal;
-    float3 tangent;
+    float4 tangent = float4(0.0f, 0.0f, 0.0f, 1.0f);
+
     u32    boneIndices; // one index per byte
     float4 boneWeights;
+    u32    padding0 = 0;
+    u32    padding1 = 0;
+    u32    padding2 = 0;
 
     // Helper methods for packing/unpacking bone indices
     void SetBoneIndex(u32 slot, u8 index)
@@ -114,14 +119,15 @@ struct VertexP3U2N3T3S
             (static_cast<u32>(index3) << 24);
     }
 };
+static_assert(sizeof(VertexP3U2N3T4S) == 80);
 
 enum class eVertexFormat
 {
     P3,          // Position only
     P3U2,        // Position + UV
     P3U2N3,      // Position + UV + Normal
-    P3U2N3T3,    // Position + UV + Normal + Tangent
-    P3U2N3T3S,   // Position + UV + Normal + Tangent + Skinning
+    P3U2N3T4,    // Position + UV + Normal + Tangent handedness
+    P3U2N3T4S,   // Position + UV + Normal + Tangent handedness + Skinning
 };
 
 // Helper to get vertex size
@@ -132,13 +138,13 @@ inline u32 GetVertexSize(eVertexFormat format)
     case eVertexFormat::P3:        return sizeof(VertexP3);
     case eVertexFormat::P3U2:      return sizeof(VertexP3U2);
     case eVertexFormat::P3U2N3:    return sizeof(VertexP3U2N3);
-    case eVertexFormat::P3U2N3T3:  return sizeof(VertexP3U2N3T3);
-    case eVertexFormat::P3U2N3T3S: return sizeof(VertexP3U2N3T3S);
+    case eVertexFormat::P3U2N3T4:  return sizeof(VertexP3U2N3T4);
+    case eVertexFormat::P3U2N3T4S: return sizeof(VertexP3U2N3T4S);
     default: return 0;
     }
 }
 
-using Vertex = VertexP3U2N3T3;
+using Vertex = VertexP3U2N3T4;
 using Index = u32;
 
 struct Meshlet

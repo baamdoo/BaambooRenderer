@@ -113,6 +113,51 @@ struct CullData
 };
 static_assert(sizeof(CullData) == 6 * sizeof(float4) + 32);
 
+enum eMaterialTextureSemantic : u32
+{
+    eMaterialTextureSemantic_BaseColor = 0,
+    eMaterialTextureSemantic_Opacity,
+    eMaterialTextureSemantic_Normal,
+    eMaterialTextureSemantic_Occlusion,
+    eMaterialTextureSemantic_PerceptualRoughness,
+    eMaterialTextureSemantic_Metallic,
+    eMaterialTextureSemantic_Emission,
+    eMaterialTextureSemantic_Specular,
+    eMaterialTextureSemantic_Clearcoat,
+    eMaterialTextureSemantic_Sheen,
+    eMaterialTextureSemantic_Anisotropy,
+    eMaterialTextureSemantic_Subsurface,
+    eMaterialTextureSemantic_Transmission,
+};
+
+enum eMaterialTextureChannel : u32
+{
+    eMaterialTextureChannel_R = 0,
+    eMaterialTextureChannel_G,
+    eMaterialTextureChannel_B,
+    eMaterialTextureChannel_A,
+    eMaterialTextureChannel_RGB,
+    eMaterialTextureChannel_RGBA,
+};
+
+enum eMaterialTextureColorSpace : u32
+{
+    eMaterialTextureColorSpace_Linear = 0,
+    eMaterialTextureColorSpace_SRGB,
+};
+
+
+
+
+struct MaterialTextureData
+{
+    u32 textureID;
+    u32 semantic;
+    u32 channel;
+    u32 padding0;
+};
+static_assert(sizeof(MaterialTextureData) == 16);
+
 
 struct MaterialData
 {
@@ -143,22 +188,12 @@ struct MaterialData
     u32   materialType;
     u32   materialFlags;
 
-    u32 albedoID;
-    u32 normalID;
-    u32 specularID;
-    u32 metallicRoughnessAoID;
-
-    u32 emissiveID;
-    u32 clearcoatID;
-    u32 sheenID;
-    u32 anisotropyID;
-
-    u32 subsurfaceID;
-    u32 transmissionID;
+    u32 textureOffset;
+    u32 textureCount;
     u32 layerOffset;
     u32 layerCount;
 };
-static_assert(sizeof(MaterialData) == 160);
+static_assert(sizeof(MaterialData) == 128);
 
 struct MaterialSlabData
 {

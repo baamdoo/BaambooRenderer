@@ -112,9 +112,11 @@ void PathValidationBuildONB(float3 n, out float3 t, out float3 b)
     t = float3(1.0 + sign * n.x * n.x * a, sign * h, -sign * n.x);
     b = float3(h, sign + n.y * n.y * a, -n.y);
 }
-void AccumulatePrimaryHitValidation(inout PathValidationSums sums, SurfacePayload primaryHit, RayDesc primaryRay, PathBSDFSample primaryBSDFSample)
+void AccumulatePrimaryHitValidation(inout PathValidationSums sums, SurfaceData primaryHit, RayDesc primaryRay, PathBSDFSample primaryBSDFSample)
 {
-    SurfaceMaterial primaryMaterial = LoadSurfaceMaterial(primaryHit.materialID, primaryHit.uv);
+    StructuredBuffer< InstanceData > Instances = GetResource(g_Instances.index);
+    uint primaryMaterialID = Instances[primaryHit.instanceID].materialID;
+    SurfaceMaterial primaryMaterial = LoadSurfaceMaterial(primaryMaterialID, primaryHit.uv, primaryHit.ddxUV, primaryHit.ddyUV, primaryHit.tangent.w);
     BxDF::Frame primaryFrame = MakeSurfaceFrame(primaryHit);
     float3 primaryWo = BxDF::ToLocal(primaryFrame, -primaryRay.Direction);
 
@@ -130,7 +132,7 @@ void AccumulatePrimaryHitValidation(inout PathValidationSums sums, SurfacePayloa
     sums.materialSpecularColor  += primaryMaterial.specularColor;
     sums.emission               += primaryMaterial.emission;
     sums.primaryId              += float3(
-        primaryHit.materialID == INVALID_INDEX ? 0.0 : float(primaryHit.materialID + 1u),
+        primaryMaterialID == INVALID_INDEX ? 0.0 : float(primaryMaterialID + 1u),
         float(primaryHit.instanceID + 1u),
         float(primaryHit.primitiveID + 1u));
 }

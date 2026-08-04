@@ -307,12 +307,12 @@ void ExampleApp::ConfigureSceneObjects()
 			}
 		}
 
-		/*auto helmet = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
+		auto helmet = m_pScene->ImportModel(MODEL_PATH.append("DamagedHelmet/DamagedHelmet.gltf"), descriptor);
 		{
 			auto& tc = helmet.GetComponent< TransformComponent >();
 			tc.transform.position = float3(0.0f, 0.5f, 10.0f);
 			tc.transform.scale    = float3(2.0f);
-		}*/
+		}
 	}
 
 	// animated mesh

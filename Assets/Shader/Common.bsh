@@ -8,6 +8,31 @@
 #define MATERIAL_FLAG_ALPHA_MASK   (1u << 1u)
 #define MATERIAL_FLAG_ALPHA_BLEND  (1u << 2u)
 #define MATERIAL_FLAG_DOUBLE_SIDED (1u << 3u)
+
+#define MATERIAL_TEXTURE_SEMANTIC_BASE_COLOR           0u
+#define MATERIAL_TEXTURE_SEMANTIC_OPACITY              1u
+#define MATERIAL_TEXTURE_SEMANTIC_NORMAL               2u
+#define MATERIAL_TEXTURE_SEMANTIC_OCCLUSION            3u
+#define MATERIAL_TEXTURE_SEMANTIC_PERCEPTUAL_ROUGHNESS 4u
+#define MATERIAL_TEXTURE_SEMANTIC_METALLIC             5u
+#define MATERIAL_TEXTURE_SEMANTIC_EMISSION             6u
+#define MATERIAL_TEXTURE_SEMANTIC_SPECULAR             7u
+#define MATERIAL_TEXTURE_SEMANTIC_CLEARCOAT            8u
+#define MATERIAL_TEXTURE_SEMANTIC_SHEEN                9u
+#define MATERIAL_TEXTURE_SEMANTIC_ANISOTROPY           10u
+#define MATERIAL_TEXTURE_SEMANTIC_SUBSURFACE           11u
+#define MATERIAL_TEXTURE_SEMANTIC_TRANSMISSION         12u
+
+#define MATERIAL_TEXTURE_CHANNEL_R    0u
+#define MATERIAL_TEXTURE_CHANNEL_G    1u
+#define MATERIAL_TEXTURE_CHANNEL_B    2u
+#define MATERIAL_TEXTURE_CHANNEL_A    3u
+#define MATERIAL_TEXTURE_CHANNEL_RGB  4u
+#define MATERIAL_TEXTURE_CHANNEL_RGBA 5u
+
+
+
+
 #ifndef PROFILING_LEVEL
 #define PROFILING_LEVEL 1
 #endif
@@ -34,7 +59,7 @@ struct Vertex
 	float posX, posY, posZ;
 	float u, v;
 	float normalX, normalY, normalZ;
-	float tangentX, tangentY, tangentZ;
+	float tangentX, tangentY, tangentZ, tangentW;
 };
 
 struct SkinnedVertex
@@ -42,9 +67,10 @@ struct SkinnedVertex
     float posX, posY, posZ;
     float u, v;
     float normalX, normalY, normalZ;
-    float tangentX, tangentY, tangentZ;
+    float tangentX, tangentY, tangentZ, tangentW;
     uint  boneIndices;  // one index per byte
     float weight0, weight1, weight2, weight3;
+    uint  padding0, padding1, padding2;
 };
 
 
@@ -222,6 +248,14 @@ struct BoneTransformData
 //-------------------------------------------------------------------------
 // Material
 //-------------------------------------------------------------------------
+struct MaterialTextureData
+{
+    uint textureID;
+    uint semantic;
+    uint channel;
+    uint padding0;
+};
+
 struct MaterialData 
 {
 	float tintR, tintG, tintB; 
@@ -251,18 +285,8 @@ struct MaterialData
     uint  materialType;
 	uint  materialFlags;
 
-	uint albedoID;
-	uint normalID;
-	uint specularID;
-	uint metallicRoughnessAoID;
-
-	uint emissiveID;
-	uint clearcoatID;
-	uint sheenID;
-	uint anisotropyID;
-
-	uint subsurfaceID;
-    uint transmissionID;
+	uint textureOffset;
+	uint textureCount;
     uint layerOffset;
     uint layerCount;
 };

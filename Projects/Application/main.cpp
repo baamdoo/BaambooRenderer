@@ -72,10 +72,10 @@ int main(int argc, char** argv)
 	eRendererAPI api = eRendererAPI::D3D12;
 	//eRendererAPI api = eRendererAPI::Vulkan;
 
-	//ExampleApp app = {};
+	ExampleApp app = {};
 	//BistroApp app = {};
 	//LightingApp app = {};
-	RayTracingApp app = {};
+	//RayTracingApp app = {};
 	//TerrainApp app = {};
 	try
 	{

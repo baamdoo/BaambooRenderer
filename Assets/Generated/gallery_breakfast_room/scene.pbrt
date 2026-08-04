@@ -1,0 +1,744 @@
+Integrator "path"
+    "integer maxdepth" [ 12 ]
+Sampler "halton"
+    "integer pixelsamples" [ 4096 ]
+PixelFilter "triangle"
+    "float xradius" [ 0.5 ] "float yradius" [ 0.5 ]
+Film "rgb"
+    "integer xresolution" [ 640 ]
+    "integer yresolution" [ 360 ]
+LookAt 0.587317 2.7623 9.71429
+       0.574258997 2.69843698 8.71641676
+       -0.000835625725 0.997958672 -0.063857579
+Camera "perspective"
+    "float fov" [ 35.9833978 ]
+
+WorldBegin
+
+AttributeBegin
+    LightSource "infinite"
+        "string filename" [ "engine_textures/spaichingen_hill_2k_baamboo_pbrt_equiarea.exr" ]
+        "float scale" [ 1.0 ]
+AttributeEnd
+
+Texture "tex_0" "spectrum" "imagemap"
+    "string filename" [ "engine_textures/Teacup.png" ]
+    "string filter" [ "bilinear" ]
+    "string wrap" [ "repeat" ]
+    "string encoding" [ "sRGB" ]
+
+Texture "tex_1" "spectrum" "imagemap"
+    "string filename" [ "engine_textures/Tiles.jpg" ]
+    "string filter" [ "bilinear" ]
+    "string wrap" [ "repeat" ]
+    "string encoding" [ "sRGB" ]
+
+Texture "tex_2" "spectrum" "imagemap"
+    "string filename" [ "engine_textures/picture3.jpg" ]
+    "string filter" [ "bilinear" ]
+    "string wrap" [ "repeat" ]
+    "string encoding" [ "sRGB" ]
+
+MakeNamedMaterial "mat_0000_FrostedGlass_0001"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 0.79311 0.79311 0.79311 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.01 ]
+    "float vroughness" [ 0.01 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0001_WhitePlastic_0001"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 1 1 1 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.01 ]
+    "float vroughness" [ 0.01 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0002_WhitePlastic_0002"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 1 1 1 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.01 ]
+    "float vroughness" [ 0.01 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0003_FrostedGlass_0002"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 0.79311 0.79311 0.79311 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.01 ]
+    "float vroughness" [ 0.01 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0004_WhitePlastic_0003"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 1 1 1 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.01 ]
+    "float vroughness" [ 0.01 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0005_WhitePlastic_0004"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 1 1 1 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.01 ]
+    "float vroughness" [ 0.01 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0006_None"
+    "string type" [ "diffuse" ]
+    "rgb reflectance" [ 0 0 0 ]
+
+MakeNamedMaterial "mat_0007_BlackPaint_0001"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 0.01 0.01 0.01 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.04 ]
+    "float vroughness" [ 0.04 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0008_BlackPaint_0002"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 0.01 0.01 0.01 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.04 ]
+    "float vroughness" [ 0.04 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0009_Ceramic_0001"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 1 1 1 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.0001 ]
+    "float vroughness" [ 0.0001 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0010_Gold_0001"
+    "string type" [ "conductor" ]
+    "rgb reflectance" [ 0.966662793 0.802190051 0.32405055 ]
+    "float uroughness" [ 0.01 ]
+    "float vroughness" [ 0.01 ]
+    "bool remaproughness" [ false ]
+
+MakeNamedMaterial "mat_0011_RoughMetal_0001"
+    "string type" [ "conductor" ]
+    "rgb reflectance" [ 0.928047478 0.917804467 0.918908647 ]
+    "float uroughness" [ 0.01 ]
+    "float vroughness" [ 0.01 ]
+    "bool remaproughness" [ false ]
+
+MakeNamedMaterial "mat_0012_PaintedCeramic_0001"
+    "string type" [ "coateddiffuse" ]
+    "texture reflectance" [ "tex_0" ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.0001 ]
+    "float vroughness" [ 0.0001 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0013_Gold_0002"
+    "string type" [ "conductor" ]
+    "rgb reflectance" [ 0.966662793 0.802190051 0.32405055 ]
+    "float uroughness" [ 0.01 ]
+    "float vroughness" [ 0.01 ]
+    "bool remaproughness" [ false ]
+
+MakeNamedMaterial "mat_0014_Ceramic_0002"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 1 1 1 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.0001 ]
+    "float vroughness" [ 0.0001 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0015_Ceramic_0003"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 1 1 1 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.0001 ]
+    "float vroughness" [ 0.0001 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0016_Gold_0003"
+    "string type" [ "conductor" ]
+    "rgb reflectance" [ 0.966662793 0.802190051 0.32405055 ]
+    "float uroughness" [ 0.01 ]
+    "float vroughness" [ 0.01 ]
+    "bool remaproughness" [ false ]
+
+MakeNamedMaterial "mat_0017_PaintedCeramic_0002"
+    "string type" [ "coateddiffuse" ]
+    "texture reflectance" [ "tex_0" ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.0001 ]
+    "float vroughness" [ 0.0001 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0018_Gold_0004"
+    "string type" [ "conductor" ]
+    "rgb reflectance" [ 0.966662793 0.802190051 0.32405055 ]
+    "float uroughness" [ 0.01 ]
+    "float vroughness" [ 0.01 ]
+    "bool remaproughness" [ false ]
+
+MakeNamedMaterial "mat_0019_Ceramic_0004"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 1 1 1 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.0001 ]
+    "float vroughness" [ 0.0001 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0020_RoughMetal_0002"
+    "string type" [ "conductor" ]
+    "rgb reflectance" [ 0.928047478 0.917804467 0.918908647 ]
+    "float uroughness" [ 0.01 ]
+    "float vroughness" [ 0.01 ]
+    "bool remaproughness" [ false ]
+
+MakeNamedMaterial "mat_0021_Ceramic_0005"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 1 1 1 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.0001 ]
+    "float vroughness" [ 0.0001 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0022_WhitePlastic_0005"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 1 1 1 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.01 ]
+    "float vroughness" [ 0.01 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0023_Chrome_0001"
+    "string type" [ "conductor" ]
+    "rgb reflectance" [ 0.687547331 0.649065459 0.687011185 ]
+    "float uroughness" [ 0.0025 ]
+    "float vroughness" [ 0.0025 ]
+    "bool remaproughness" [ false ]
+
+MakeNamedMaterial "mat_0024_BlackRubber_0001"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 0.05 0.05 0.05 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.04 ]
+    "float vroughness" [ 0.04 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0025_WhitePlastic_0006"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 1 1 1 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.01 ]
+    "float vroughness" [ 0.01 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0026_Chrome_0002"
+    "string type" [ "conductor" ]
+    "rgb reflectance" [ 0.687547331 0.649065459 0.687011185 ]
+    "float uroughness" [ 0.0025 ]
+    "float vroughness" [ 0.0025 ]
+    "bool remaproughness" [ false ]
+
+MakeNamedMaterial "mat_0027_BlackRubber_0002"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 0.05 0.05 0.05 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.04 ]
+    "float vroughness" [ 0.04 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0028_WhitePlastic_0007"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 1 1 1 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.01 ]
+    "float vroughness" [ 0.01 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0029_Chrome_0003"
+    "string type" [ "conductor" ]
+    "rgb reflectance" [ 0.687547331 0.649065459 0.687011185 ]
+    "float uroughness" [ 0.0025 ]
+    "float vroughness" [ 0.0025 ]
+    "bool remaproughness" [ false ]
+
+MakeNamedMaterial "mat_0030_BlackRubber_0003"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 0.05 0.05 0.05 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.04 ]
+    "float vroughness" [ 0.04 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0031_WhitePlastic_0008"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 1 1 1 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.01 ]
+    "float vroughness" [ 0.01 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0032_Chrome_0004"
+    "string type" [ "conductor" ]
+    "rgb reflectance" [ 0.687547331 0.649065459 0.687011185 ]
+    "float uroughness" [ 0.0025 ]
+    "float vroughness" [ 0.0025 ]
+    "bool remaproughness" [ false ]
+
+MakeNamedMaterial "mat_0033_BlackRubber_0004"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 0.05 0.05 0.05 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.04 ]
+    "float vroughness" [ 0.04 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0034_WhitePlastic_0009"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 1 1 1 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.01 ]
+    "float vroughness" [ 0.01 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0035_Chrome_0005"
+    "string type" [ "conductor" ]
+    "rgb reflectance" [ 0.687547331 0.649065459 0.687011185 ]
+    "float uroughness" [ 0.0025 ]
+    "float vroughness" [ 0.0025 ]
+    "bool remaproughness" [ false ]
+
+MakeNamedMaterial "mat_0036_BlackRubber_0005"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 0.05 0.05 0.05 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.04 ]
+    "float vroughness" [ 0.04 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0037_WhiteMarble"
+    "string type" [ "diffuse" ]
+    "rgb reflectance" [ 0.325037 0.325037 0.325037 ]
+
+MakeNamedMaterial "mat_0038_FloorTiles"
+    "string type" [ "diffuse" ]
+    "texture reflectance" [ "tex_1" ]
+
+MakeNamedMaterial "mat_0039_Walls_0001"
+    "string type" [ "diffuse" ]
+    "rgb reflectance" [ 0.2 0.2 0.2 ]
+
+MakeNamedMaterial "mat_0040_WhitePlastic_0010"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 1 1 1 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.01 ]
+    "float vroughness" [ 0.01 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0041_Chrome_0006"
+    "string type" [ "conductor" ]
+    "rgb reflectance" [ 0.687547331 0.649065459 0.687011185 ]
+    "float uroughness" [ 0.0025 ]
+    "float vroughness" [ 0.0025 ]
+    "bool remaproughness" [ false ]
+
+MakeNamedMaterial "mat_0042_BlackRubber_0006"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 0.05 0.05 0.05 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.04 ]
+    "float vroughness" [ 0.04 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0043_Ceramic_0006"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 1 1 1 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.0001 ]
+    "float vroughness" [ 0.0001 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0044_Ceramic_0007"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 1 1 1 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.0001 ]
+    "float vroughness" [ 0.0001 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0045_Gold_0005"
+    "string type" [ "conductor" ]
+    "rgb reflectance" [ 0.966662793 0.802190051 0.32405055 ]
+    "float uroughness" [ 0.01 ]
+    "float vroughness" [ 0.01 ]
+    "bool remaproughness" [ false ]
+
+MakeNamedMaterial "mat_0046_RoughMetal_0003"
+    "string type" [ "conductor" ]
+    "rgb reflectance" [ 0.928047478 0.917804467 0.918908647 ]
+    "float uroughness" [ 0.01 ]
+    "float vroughness" [ 0.01 ]
+    "bool remaproughness" [ false ]
+
+MakeNamedMaterial "mat_0047_PaintedCeramic_0003"
+    "string type" [ "coateddiffuse" ]
+    "texture reflectance" [ "tex_0" ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.0001 ]
+    "float vroughness" [ 0.0001 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0048_Gold_0006"
+    "string type" [ "conductor" ]
+    "rgb reflectance" [ 0.966662793 0.802190051 0.32405055 ]
+    "float uroughness" [ 0.01 ]
+    "float vroughness" [ 0.01 ]
+    "bool remaproughness" [ false ]
+
+MakeNamedMaterial "mat_0049_Ceramic_0008"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 1 1 1 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.0001 ]
+    "float vroughness" [ 0.0001 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0050_Artwork"
+    "string type" [ "diffuse" ]
+    "texture reflectance" [ "tex_2" ]
+
+MakeNamedMaterial "mat_0051_SkirtWood"
+    "string type" [ "coateddiffuse" ]
+    "rgb reflectance" [ 0.684615 0.684615 0.684615 ]
+    "float eta" [ 1.5 ]
+    "float uroughness" [ 0.01 ]
+    "float vroughness" [ 0.01 ]
+    "bool remaproughness" [ false ]
+    "float thickness" [ 0 ]
+    "rgb albedo" [ 0 0 0 ]
+    "float g" [ 0 ]
+    "integer maxdepth" [ 10 ]
+    "integer nsamples" [ 1 ]
+
+MakeNamedMaterial "mat_0052_Walls_0002"
+    "string type" [ "diffuse" ]
+    "rgb reflectance" [ 0.2 0.2 0.2 ]
+
+NamedMaterial "mat_0000_FrostedGlass_0001"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0000_FrostedGlass_0001.ply" ]
+
+NamedMaterial "mat_0001_WhitePlastic_0001"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0001_WhitePlastic_0001.ply" ]
+
+NamedMaterial "mat_0002_WhitePlastic_0002"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0002_WhitePlastic_0002.ply" ]
+
+NamedMaterial "mat_0003_FrostedGlass_0002"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0003_FrostedGlass_0002.ply" ]
+
+NamedMaterial "mat_0004_WhitePlastic_0003"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0004_WhitePlastic_0003.ply" ]
+
+NamedMaterial "mat_0005_WhitePlastic_0004"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0005_WhitePlastic_0004.ply" ]
+
+NamedMaterial "mat_0006_None"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0006_None.ply" ]
+
+NamedMaterial "mat_0007_BlackPaint_0001"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0007_BlackPaint_0001.ply" ]
+
+NamedMaterial "mat_0008_BlackPaint_0002"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0008_BlackPaint_0002.ply" ]
+
+NamedMaterial "mat_0009_Ceramic_0001"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0009_Ceramic_0001.ply" ]
+
+NamedMaterial "mat_0010_Gold_0001"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0010_Gold_0001.ply" ]
+
+NamedMaterial "mat_0011_RoughMetal_0001"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0011_RoughMetal_0001.ply" ]
+
+NamedMaterial "mat_0012_PaintedCeramic_0001"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0012_PaintedCeramic_0001.ply" ]
+
+NamedMaterial "mat_0013_Gold_0002"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0013_Gold_0002.ply" ]
+
+NamedMaterial "mat_0014_Ceramic_0002"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0014_Ceramic_0002.ply" ]
+
+NamedMaterial "mat_0015_Ceramic_0003"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0015_Ceramic_0003.ply" ]
+
+NamedMaterial "mat_0016_Gold_0003"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0016_Gold_0003.ply" ]
+
+NamedMaterial "mat_0017_PaintedCeramic_0002"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0017_PaintedCeramic_0002.ply" ]
+
+NamedMaterial "mat_0018_Gold_0004"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0018_Gold_0004.ply" ]
+
+NamedMaterial "mat_0019_Ceramic_0004"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0019_Ceramic_0004.ply" ]
+
+NamedMaterial "mat_0020_RoughMetal_0002"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0020_RoughMetal_0002.ply" ]
+
+NamedMaterial "mat_0021_Ceramic_0005"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0021_Ceramic_0005.ply" ]
+
+NamedMaterial "mat_0022_WhitePlastic_0005"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0022_WhitePlastic_0005.ply" ]
+
+NamedMaterial "mat_0023_Chrome_0001"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0023_Chrome_0001.ply" ]
+
+NamedMaterial "mat_0024_BlackRubber_0001"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0024_BlackRubber_0001.ply" ]
+
+NamedMaterial "mat_0025_WhitePlastic_0006"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0025_WhitePlastic_0006.ply" ]
+
+NamedMaterial "mat_0026_Chrome_0002"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0026_Chrome_0002.ply" ]
+
+NamedMaterial "mat_0027_BlackRubber_0002"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0027_BlackRubber_0002.ply" ]
+
+NamedMaterial "mat_0028_WhitePlastic_0007"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0028_WhitePlastic_0007.ply" ]
+
+NamedMaterial "mat_0029_Chrome_0003"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0029_Chrome_0003.ply" ]
+
+NamedMaterial "mat_0030_BlackRubber_0003"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0030_BlackRubber_0003.ply" ]
+
+NamedMaterial "mat_0031_WhitePlastic_0008"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0031_WhitePlastic_0008.ply" ]
+
+NamedMaterial "mat_0032_Chrome_0004"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0032_Chrome_0004.ply" ]
+
+NamedMaterial "mat_0033_BlackRubber_0004"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0033_BlackRubber_0004.ply" ]
+
+NamedMaterial "mat_0034_WhitePlastic_0009"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0034_WhitePlastic_0009.ply" ]
+
+NamedMaterial "mat_0035_Chrome_0005"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0035_Chrome_0005.ply" ]
+
+NamedMaterial "mat_0036_BlackRubber_0005"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0036_BlackRubber_0005.ply" ]
+
+NamedMaterial "mat_0037_WhiteMarble"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0037_WhiteMarble.ply" ]
+
+NamedMaterial "mat_0038_FloorTiles"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0038_FloorTiles.ply" ]
+
+NamedMaterial "mat_0039_Walls_0001"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0039_Walls_0001.ply" ]
+
+NamedMaterial "mat_0040_WhitePlastic_0010"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0040_WhitePlastic_0010.ply" ]
+
+NamedMaterial "mat_0041_Chrome_0006"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0041_Chrome_0006.ply" ]
+
+NamedMaterial "mat_0042_BlackRubber_0006"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0042_BlackRubber_0006.ply" ]
+
+NamedMaterial "mat_0043_Ceramic_0006"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0043_Ceramic_0006.ply" ]
+
+NamedMaterial "mat_0044_Ceramic_0007"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0044_Ceramic_0007.ply" ]
+
+NamedMaterial "mat_0045_Gold_0005"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0045_Gold_0005.ply" ]
+
+NamedMaterial "mat_0046_RoughMetal_0003"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0046_RoughMetal_0003.ply" ]
+
+NamedMaterial "mat_0047_PaintedCeramic_0003"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0047_PaintedCeramic_0003.ply" ]
+
+NamedMaterial "mat_0048_Gold_0006"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0048_Gold_0006.ply" ]
+
+NamedMaterial "mat_0049_Ceramic_0008"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0049_Ceramic_0008.ply" ]
+
+NamedMaterial "mat_0050_Artwork"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0050_Artwork.ply" ]
+
+NamedMaterial "mat_0051_SkirtWood"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0051_SkirtWood.ply" ]
+
+NamedMaterial "mat_0052_Walls_0002"
+Shape "plymesh" "string filename" [ "meshes_pbrt/0052_Walls_0002.ply" ]

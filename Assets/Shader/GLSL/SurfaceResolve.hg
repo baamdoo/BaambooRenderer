@@ -7,6 +7,68 @@
 #define MATCLASS_TERRAIN  1u
 
 
+bool FindMaterialTexture(MaterialData material, uint semantic, out MaterialTextureData textureData)
+{
+    textureData.textureID = INVALID_INDEX;
+    textureData.semantic  = semantic;
+    textureData.channel   = MATERIAL_TEXTURE_CHANNEL_RGB;
+    textureData.padding0  = 0u;
+
+    if (material.textureOffset == INVALID_INDEX)
+        return false;
+
+    for (uint bindingIndex = 0u; bindingIndex < material.textureCount; ++bindingIndex)
+    {
+        MaterialTextureData candidate =
+            g_MaterialTextures.materialTextures[material.textureOffset + bindingIndex];
+        if (candidate.semantic == semantic)
+        {
+            textureData = candidate;
+            return candidate.textureID != INVALID_INDEX;
+        }
+    }
+
+    return false;
+}
+
+float SelectMaterialTextureChannel(vec4 texel, uint channel)
+{
+    if (channel == MATERIAL_TEXTURE_CHANNEL_G)
+        return texel.g;
+    if (channel == MATERIAL_TEXTURE_CHANNEL_B)
+        return texel.b;
+    if (channel == MATERIAL_TEXTURE_CHANNEL_A)
+        return texel.a;
+    return texel.r;
+}
+
+vec4 DecodeMaterialTextureSample(vec4 texel, uint channel)
+{
+    if (channel == MATERIAL_TEXTURE_CHANNEL_RGB || channel == MATERIAL_TEXTURE_CHANNEL_RGBA)
+        return texel;
+
+    float value = SelectMaterialTextureChannel(texel, channel);
+    return vec4(value);
+}
+
+bool SampleMaterialTextureGrad(MaterialData material, uint semantic,
+                               vec2 uv, vec2 ddxUV, vec2 ddyUV,
+                               out vec4 sampleValue)
+{
+    MaterialTextureData textureData;
+    if (!FindMaterialTexture(material, semantic, textureData))
+    {
+        sampleValue = vec4(1.0);
+        return false;
+    }
+
+    vec4 texel = textureGrad(
+        g_SceneTextures[nonuniformEXT(textureData.textureID)], uv, ddxUV, ddyUV);
+    sampleValue = DecodeMaterialTextureSample(texel, textureData.channel);
+    return true;
+}
+
+
 vec2 SignNotZero(vec2 v)
 {
     return vec2(v.x >= 0.0 ? 1.0 : -1.0,
@@ -77,11 +139,12 @@ void UVGradient(vec2 ndc, vec2 invViewport,
 
 struct VisTriangle
 {
-    vec3 positionLS[3];
+    vec3 position[3];
     vec2 uv[3];
-    vec3 normalLS[3];
-    vec3 tangentLS[3];
+    vec3 normal[3];
+    vec4 tangent[3];
     mat4 mLocalToWorld;
+    mat4 mWorldToLocal;
     uint materialID;
 };
 
@@ -103,15 +166,16 @@ VisTriangle FetchVisTriangle(uint v0, uint v1)
 
     VisTriangle t;
     t.mLocalToWorld = xf.mLocalToWorld;
+    t.mWorldToLocal = xf.mWorldToLocal;
     t.materialID   = inst.materialID;
     for (uint k = 0u; k < 3u; ++k)
     {
         uint vi   = mesh.vOffset + g_MeshletVertexBuffer.meshletVertices[ml.mvOffset + m.vertexOffset + locals[k]];
         Vertex vv = g_VertexBuffer.vertices[vi];
-        t.positionLS[k] = vec3(vv.posX, vv.posY, vv.posZ);
+        t.position[k] = vec3(vv.posX, vv.posY, vv.posZ);
         t.uv[k]   = vec2(vv.u, vv.v);
-        t.normalLS[k] = vec3(vv.normalX, vv.normalY, vv.normalZ);
-        t.tangentLS[k] = vec3(vv.tangentX, vv.tangentY, vv.tangentZ);
+        t.normal[k] = vec3(vv.normalX, vv.normalY, vv.normalZ);
+        t.tangent[k] = vec4(vv.tangentX, vv.tangentY, vv.tangentZ, vv.tangentW);
     }
     return t;
 }
@@ -134,7 +198,7 @@ ResolvedSurface ResolveMeshSurface(uint v0, uint v1, vec2 pixelCenter, vec2 view
     vec4 c[3];
     for (uint k = 0u; k < 3u; ++k)
     {
-        vec4 wp = t.mLocalToWorld * vec4(t.positionLS[k], 1.0);
+        vec4 wp = t.mLocalToWorld * vec4(t.position[k], 1.0);
         wpos[k] = wp.xyz;
         c[k] = g_Camera.mViewProj * wp;
     }
@@ -145,19 +209,57 @@ ResolvedSurface ResolveMeshSurface(uint v0, uint v1, vec2 pixelCenter, vec2 view
 
     vec3 bary = Barycentrics(ndc, c[0], c[1], c[2]);
 
-    vec2 uv = bary.x * t.uv[0]   + bary.y * t.uv[1]   + bary.z * t.uv[2];
-    vec3 nL = bary.x * t.normalLS[0] + bary.y * t.normalLS[1] + bary.z * t.normalLS[2];
-    vec3 tL = bary.x * t.tangentLS[0] + bary.y * t.tangentLS[1] + bary.z * t.tangentLS[2];
-    mat3 rot = mat3(t.mLocalToWorld);
-    vec3 N = normalize(rot * nL);
-    vec3 T = normalize(rot * tL);
+    vec2 uv = bary.x * t.uv[0] + bary.y * t.uv[1] + bary.z * t.uv[2];
+    vec3 normal = bary.x * t.normal[0] + bary.y * t.normal[1] + bary.z * t.normal[2];
+    vec3 tangent =
+        bary.x * t.tangent[0].xyz +
+        bary.y * t.tangent[1].xyz +
+        bary.z * t.tangent[2].xyz;
+
+    float tangentSign   = t.tangent[0].w < 0.0 ? -1.0 : 1.0;
+    float transformSign = determinant(mat3(t.mLocalToWorld)) < 0.0 ? -1.0 : 1.0;
+    float tangentSignWS = tangentSign * transformSign;
+
+    mat3 normalTransform = transpose(mat3(t.mWorldToLocal));
+
+    vec3 edge01          = t.position[1] - t.position[0];
+    vec3 edge02          = t.position[2] - t.position[0];
+    vec3 geometricNormal = cross(edge01, edge02);
+    vec3 geometricNormalWS = normalTransform * geometricNormal;
+    float geometricNormalWSLen2 = dot(geometricNormalWS, geometricNormalWS);
+    geometricNormalWS = geometricNormalWSLen2 > EPSILON_MIN
+        ? geometricNormalWS * inversesqrt(geometricNormalWSLen2)
+        : vec3(0.0, 1.0, 0.0);
+
+    vec3 shadingNormalWS = normalTransform * normal;
+    float shadingNormalWSLen2 = dot(shadingNormalWS, shadingNormalWS);
+    shadingNormalWS = shadingNormalWSLen2 > EPSILON_MIN
+        ? shadingNormalWS * inversesqrt(shadingNormalWSLen2)
+        : geometricNormalWS;
+    if (dot(shadingNormalWS, geometricNormalWS) < 0.0)
+        shadingNormalWS = -shadingNormalWS;
+
+    vec3 tangentWS = mat3(t.mLocalToWorld) * tangent;
+    tangentWS -= shadingNormalWS * dot(tangentWS, shadingNormalWS);
+    float tangentWSLen2 = dot(tangentWS, tangentWS);
+    if (tangentWSLen2 > EPSILON_MIN)
+    {
+        tangentWS *= inversesqrt(tangentWSLen2);
+    }
+    else
+    {
+        vec3 axis = abs(shadingNormalWS.z) < 0.999
+            ? vec3(0.0, 0.0, 1.0)
+            : vec3(1.0, 0.0, 0.0);
+        tangentWS = normalize(cross(axis, shadingNormalWS));
+    }
 
     vec2 ddxUV, ddyUV;
     UVGradient(ndc, 1.0 / viewport, c[0], c[1], c[2], t.uv[0], t.uv[1], t.uv[2], ddxUV, ddyUV);
 
     ResolvedSurface s;
     s.matClass  = MATCLASS_STANDARD;
-    s.N         = N;
+    s.N         = shadingNormalWS;
     s.roughness = 1.0;
     s.baseColor = vec3(1.0);
     s.metallic  = 0.0;
@@ -168,28 +270,47 @@ ResolvedSurface ResolveMeshSurface(uint v0, uint v1, vec2 pixelCenter, vec2 view
         MaterialData mat = g_MaterialBuffer.materials[t.materialID];
 
         vec3 albedo = vec3(mat.tintR, mat.tintG, mat.tintB);
-        if (mat.albedoID != INVALID_INDEX)
-            albedo *= textureGrad(g_SceneTextures[nonuniformEXT(mat.albedoID)], uv, ddxUV, ddyUV).rgb;
+        vec4 textureSample;
+        if (SampleMaterialTextureGrad(
+                mat, MATERIAL_TEXTURE_SEMANTIC_BASE_COLOR, uv, ddxUV, ddyUV, textureSample))
+        {
+            albedo *= textureSample.rgb;
+        }
 
         float metallic  = mat.metallic;
         float roughness = mat.roughness;
-        if (mat.metallicRoughnessAoID != INVALID_INDEX)
+        if (SampleMaterialTextureGrad(
+                mat, MATERIAL_TEXTURE_SEMANTIC_METALLIC, uv, ddxUV, ddyUV, textureSample))
         {
-            vec3 orm = textureGrad(g_SceneTextures[nonuniformEXT(mat.metallicRoughnessAoID)], uv, ddxUV, ddyUV).rgb;
-            metallic  *= orm.b;
-            roughness *= orm.g;
+            metallic *= textureSample.x;
+        }
+        if (SampleMaterialTextureGrad(
+                mat, MATERIAL_TEXTURE_SEMANTIC_PERCEPTUAL_ROUGHNESS, uv, ddxUV, ddyUV, textureSample))
+        {
+            roughness *= textureSample.x;
         }
 
-        // Tangent-space normal map (production path; skipped when the material has none).
-        if (mat.normalID != INVALID_INDEX)
+        // Tangent-space normal map
+        if (SampleMaterialTextureGrad(
+                mat, MATERIAL_TEXTURE_SEMANTIC_NORMAL, uv, ddxUV, ddyUV, textureSample))
         {
-            vec3 tn  = textureGrad(g_SceneTextures[nonuniformEXT(mat.normalID)], uv, ddxUV, ddyUV).xyz * 2.0 - 1.0;
-            vec3 B   = cross(N, T);
-            mat3 TBN = mat3(T, B, N);
-            N = normalize(TBN * tn);
+            vec3 normalTS = textureSample.xyz * 2.0 - 1.0;
+            float normalTSLen2 = dot(normalTS, normalTS);
+            if (normalTSLen2 > EPSILON_MIN)
+            {
+                normalTS *= inversesqrt(normalTSLen2);
+                if (normalTS.z < 0.0)
+                    normalTS = -normalTS;
+
+                vec3 bitangentWS = tangentSignWS * cross(shadingNormalWS, tangentWS);
+                mat3 TBN = mat3(tangentWS, bitangentWS, shadingNormalWS);
+                shadingNormalWS = TBN * normalTS;
+                if (dot(shadingNormalWS, geometricNormalWS) < 0.0)
+                    shadingNormalWS = -shadingNormalWS;
+            }
         }
 
-        s.N         = N;
+        s.N         = shadingNormalWS;
         s.roughness = roughness;
         s.baseColor = albedo;
         s.metallic  = metallic;
@@ -204,7 +325,7 @@ vec3 DebugVisBary(uint v0, uint v1, vec2 pixelCenter, vec2 viewport)
 
     vec4 c[3];
     for (uint k = 0u; k < 3u; ++k)
-        c[k] = g_Camera.mViewProj * (t.mLocalToWorld * vec4(t.positionLS[k], 1.0));
+        c[k] = g_Camera.mViewProj * (t.mLocalToWorld * vec4(t.position[k], 1.0));
     vec2 ndc = (pixelCenter / viewport) * 2.0 - 1.0;
 
     return Barycentrics(ndc, c[0], c[1], c[2]);
@@ -227,7 +348,7 @@ ResolvedMaterial ResolveMaterial(uint v0, uint v1, vec2 pixelCenter, vec2 viewpo
     vec4 c[3];
     for (uint k = 0u; k < 3u; ++k)
     {
-        vec4 wp = t.mLocalToWorld * vec4(t.positionLS[k], 1.0);
+        vec4 wp = t.mLocalToWorld * vec4(t.position[k], 1.0);
         c[k] = g_Camera.mViewProj * wp;
     }
 
@@ -251,21 +372,33 @@ ResolvedMaterial ResolveMaterial(uint v0, uint v1, vec2 pixelCenter, vec2 viewpo
         MaterialData mat = g_MaterialBuffer.materials[t.materialID];
 
         vec3 albedo = vec3(mat.tintR, mat.tintG, mat.tintB);
-        if (mat.albedoID != INVALID_INDEX)
-            albedo *= textureGrad(g_SceneTextures[nonuniformEXT(mat.albedoID)], uv, ddxUV, ddyUV).rgb;
+        vec4 textureSample;
+        if (SampleMaterialTextureGrad(
+                mat, MATERIAL_TEXTURE_SEMANTIC_BASE_COLOR, uv, ddxUV, ddyUV, textureSample))
+        {
+            albedo *= textureSample.rgb;
+        }
 
         float metallic = mat.metallic;
         float ao       = 1.0;
-        if (mat.metallicRoughnessAoID != INVALID_INDEX)
+        if (SampleMaterialTextureGrad(
+                mat, MATERIAL_TEXTURE_SEMANTIC_METALLIC, uv, ddxUV, ddyUV, textureSample))
         {
-            vec3 orm = textureGrad(g_SceneTextures[nonuniformEXT(mat.metallicRoughnessAoID)], uv, ddxUV, ddyUV).rgb;
-            metallic *= orm.b;
-            ao       *= orm.r;
+            metallic *= textureSample.x;
+        }
+        if (SampleMaterialTextureGrad(
+                mat, MATERIAL_TEXTURE_SEMANTIC_OCCLUSION, uv, ddxUV, ddyUV, textureSample))
+        {
+            ao *= textureSample.x;
         }
 
-        vec3 emissive = vec3(0.0);
-        if (mat.emissiveID != INVALID_INDEX)
-            emissive = textureGrad(g_SceneTextures[nonuniformEXT(mat.emissiveID)], uv, ddxUV, ddyUV).rgb * mat.emissivePower;
+        vec3 emissive = vec3(mat.emissionColorR, mat.emissionColorG, mat.emissionColorB) *
+            mat.emissivePower;
+        if (SampleMaterialTextureGrad(
+                mat, MATERIAL_TEXTURE_SEMANTIC_EMISSION, uv, ddxUV, ddyUV, textureSample))
+        {
+            emissive *= textureSample.rgb;
+        }
 
         m.baseColor = albedo;
         m.metallic  = metallic;

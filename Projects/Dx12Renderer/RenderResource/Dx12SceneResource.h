@@ -40,9 +40,7 @@ struct Dx12SceneResource : public render::SceneResource
 
     Arc< Dx12BottomLevelAS > GetOrCreateBLAS(const std::string& tag, const BufferHandle& vHandle, const BufferHandle& iHandle);
 
-    Arc< Dx12Texture > GetOrLoadTexture(u64 entity, const std::string& filepath, render::eTextureColorSpace colorSpace = render::eTextureColorSpace::Linear);
-    Arc< Dx12Texture > GetTexture(const std::string& filepath);
-
+    Arc< Dx12Texture > GetOrLoadTexture(const std::string& filepath, render::eTextureColorSpace colorSpace = render::eTextureColorSpace::Linear);
     void SetCurrentContextIndex(u32 index) { m_ContextIndex = index; }
 
     const Arc< Dx12RootSignature >& GetSceneRootSignature() const { return m_pRootSignature; }
@@ -51,6 +49,7 @@ struct Dx12SceneResource : public render::SceneResource
     Arc< Dx12StructuredBuffer > GetIndirectBuffer() const;
     Arc< Dx12StructuredBuffer > GetTransformBuffer() const;
     Arc< Dx12StructuredBuffer > GetMaterialBuffer() const;
+    Arc< Dx12StructuredBuffer > GetMaterialTextureBuffer() const;
     Arc< Dx12StructuredBuffer > GetLightBuffer() const;
     Arc< Dx12StructuredBuffer > GetMeshletBuffer() const;
 
@@ -85,6 +84,7 @@ private:
 
         Box< StaticBufferAllocator > pTransformAllocator;
         Box< StaticBufferAllocator > pMaterialAllocator;
+        Box< StaticBufferAllocator > pMaterialTextureAllocator;
         Box< StaticBufferAllocator > pLightAllocator;
 
         Arc< Dx12ConstantBuffer > pCameraBuffer;

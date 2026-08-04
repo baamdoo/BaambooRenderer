@@ -1,0 +1,69 @@
+{
+  "source": "D:\\JS\\Projects\\BaambooRenderer\\Tools\\GalleryScenes\\Extracted\\dining-room\\dining-room",
+  "gallery_import": true,
+  "flat_materials": false,
+  "references": [
+    "mitsuba",
+    "pbrt",
+    "pbrt_aov"
+  ],
+  "camera": {
+    "resolution": [
+      640,
+      360
+    ],
+    "samples": 128,
+    "max_depth": 12,
+    "integrator": "path",
+    "position": [
+      0.587317,
+      2.7623,
+      9.71429
+    ],
+    "target": [
+      0.5742589968547315,
+      2.698436984617378,
+      8.716416759643241
+    ],
+    "up": [
+      -0.0008356257254846388,
+      0.9979586721558744,
+      -0.06385757902184455
+    ],
+    "fov_y": 35.98339777135764
+  },
+  "environment_map": "Generated/gallery_breakfast_room/engine_textures/spaichingen_hill_2k_baamboo.exr",
+  "meshes": 53,
+  "area_lights": 0,
+  "textures": [
+    "Generated/gallery_breakfast_room/engine_textures/Teacup.png",
+    "Generated/gallery_breakfast_room/engine_textures/Tiles.jpg",
+    "Generated/gallery_breakfast_room/engine_textures/picture3.jpg"
+  ],
+  "warnings": [
+    "ArtworkBSDF: twosided wrapper ignored; nested BSDF is used",
+    "BlackPaintBSDF: beckmann distribution mapped to engine GGX",
+    "BlackPaintBSDF: twosided wrapper ignored; nested BSDF is used",
+    "BlackRubberBSDF: twosided wrapper ignored; nested BSDF is used",
+    "CeramicBSDF: beckmann distribution mapped to engine GGX",
+    "CeramicBSDF: twosided wrapper ignored; nested BSDF is used",
+    "ChromeBSDF: conductor eta/k is reduced to normal-incidence F0 for engine material params",
+    "ChromeBSDF: twosided wrapper ignored; nested BSDF is used",
+    "FloorTilesBSDF: twosided wrapper ignored; nested BSDF is used",
+    "FrostedGlassBSDF: twosided wrapper ignored; nested BSDF is used",
+    "GoldBSDF: beckmann distribution mapped to engine GGX",
+    "GoldBSDF: conductor eta/k is reduced to normal-incidence F0 for engine material params",
+    "GoldBSDF: twosided wrapper ignored; nested BSDF is used",
+    "NoneBSDF: twosided wrapper ignored; nested BSDF is used",
+    "PaintedCeramicBSDF: beckmann distribution mapped to engine GGX",
+    "PaintedCeramicBSDF: twosided wrapper ignored; nested BSDF is used",
+    "RoughMetalBSDF: beckmann distribution mapped to engine GGX",
+    "RoughMetalBSDF: conductor eta/k is reduced to normal-incidence F0 for engine material params",
+    "RoughMetalBSDF: twosided wrapper ignored; nested BSDF is used",
+    "SkirtWoodBSDF: twosided wrapper ignored; nested BSDF is used",
+    "WallsBSDF: twosided wrapper ignored; nested BSDF is used",
+    "WhiteMarbleBSDF: twosided wrapper ignored; nested BSDF is used",
+    "WhitePlasticBSDF: beckmann distribution mapped to engine GGX",
+    "WhitePlasticBSDF: twosided wrapper ignored; nested BSDF is used"
+  ]
+}

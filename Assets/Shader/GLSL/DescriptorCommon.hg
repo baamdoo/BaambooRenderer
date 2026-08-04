@@ -76,6 +76,11 @@ layout(set = DESCRIPTORSET_COMMON, binding = 9) readonly buffer MaterialBuffer
     MaterialData materials[];
 } g_MaterialBuffer;
 
+layout(set = DESCRIPTORSET_COMMON, binding = 13) readonly buffer MaterialTextureBuffer
+{
+    MaterialTextureData materialTextures[];
+} g_MaterialTextures;
+
 layout(set = DESCRIPTORSET_COMMON, binding = 100) uniform sampler2D g_SceneTextures[];
 #endif // _MATERIAL
 

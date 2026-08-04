@@ -37,17 +37,28 @@ MaterialRenderView MakeMaterialRenderView(
     view.materialFlags      = material.materialFlags |
         (bFaceNormals ? MATERIAL_FLAG_FACE_NORMALS : 0u);
 
-    view.albedoTex       = material.albedoTex;
-    view.normalTex       = material.normalTex;
-    view.aoTex           = material.aoTex;
-    view.roughnessTex    = material.roughnessTex;
-    view.metallicTex     = material.metallicTex;
-    view.emissionTex     = material.emissionTex;
-    view.clearcoatTex    = material.clearcoatTex;
-    view.sheenTex        = material.sheenTex;
-    view.anisotropyTex   = material.anisotropyTex;
-    view.subsurfaceTex   = material.subsurfaceTex;
-    view.transmissionTex = material.transmissionTex;
+    const auto addTexture = [&view](
+        const std::string& filepath,
+        u32                semantic,
+        u32                channel,
+        u32                colorSpace = eMaterialTextureColorSpace_Linear)
+    {
+        if (!filepath.empty())
+            view.textures.push_back({ filepath, semantic, channel, colorSpace });
+    };
+
+    addTexture(material.albedoTex, eMaterialTextureSemantic_BaseColor, eMaterialTextureChannel_RGB, eMaterialTextureColorSpace_SRGB);
+    addTexture(material.albedoTex, eMaterialTextureSemantic_Opacity, eMaterialTextureChannel_A, eMaterialTextureColorSpace_SRGB);
+    addTexture(material.normalTex, eMaterialTextureSemantic_Normal, eMaterialTextureChannel_RGB);
+    addTexture(material.aoTex, eMaterialTextureSemantic_Occlusion, eMaterialTextureChannel_R);
+    addTexture(material.roughnessTex, eMaterialTextureSemantic_PerceptualRoughness, material.roughnessTexChannel);
+    addTexture(material.metallicTex, eMaterialTextureSemantic_Metallic, material.metallicTexChannel);
+    addTexture(material.emissionTex, eMaterialTextureSemantic_Emission, eMaterialTextureChannel_RGB, eMaterialTextureColorSpace_SRGB);
+    addTexture(material.clearcoatTex, eMaterialTextureSemantic_Clearcoat, eMaterialTextureChannel_R);
+    addTexture(material.sheenTex, eMaterialTextureSemantic_Sheen, eMaterialTextureChannel_RGB, eMaterialTextureColorSpace_SRGB);
+    addTexture(material.anisotropyTex, eMaterialTextureSemantic_Anisotropy, eMaterialTextureChannel_RGB);
+    addTexture(material.subsurfaceTex, eMaterialTextureSemantic_Subsurface, eMaterialTextureChannel_R);
+    addTexture(material.transmissionTex, eMaterialTextureSemantic_Transmission, eMaterialTextureChannel_R);
     return view;
 }
 

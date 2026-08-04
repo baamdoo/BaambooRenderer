@@ -2,6 +2,7 @@
 #define _HLSL_PATHUTILS_HEADER
 
 #include "BxDF.hlsli"
+#include "MaterialTextures.hlsli"
 
 #define PT_MAX_DEPTH_LIMIT 64u
 
@@ -20,18 +21,30 @@
 
 struct SurfacePayload
 {
+    float2 barycentrics;
+    float  dist;
+    uint   hitKind;
+
+    uint instanceID;
+    uint primitiveID;
+};
+
+struct SurfaceData
+{
     float3 normal;
     float  dist;
 
     float3 geometricNormal;
     uint   hitKind;
 
-    float3 tangent;
-    uint   materialID;
+    float4 tangent; // xyz: world-space tangent, w: authored tangent-frame handedness in world space.
 
     float2 uv;
     uint   instanceID;
     uint   primitiveID;
+
+    float2 ddxUV;
+    float2 ddyUV;
 };
 
 struct ShadowPayload
@@ -67,6 +80,18 @@ struct PathBSDFSample
     uint   isDelta;
     uint   attempted;
     float  rrEtaScale;
+};
+
+struct RayCone
+{
+    // Signed half-width. Refraction can place the cone focus ahead of the
+    // current origin, producing a negative radius until that focus is crossed.
+    // Use abs(radius) only when resolving a texture footprint.
+    float radius;
+
+    // Tangent of half the signed full-spread angle. Distance propagation keeps
+    // the orientation through: radius += distance * tanHalfAngle.
+    float tanHalfAngle;
 };
 
 
@@ -110,122 +135,268 @@ float CalculateMISWeight(float prevMarginalPDF, float pdfLight, uint wasDelta)
     return PowerHeuristic(prevMarginalPDF, pdfLight);
 }
 
-float3 ReadBaseColor(MaterialData mat, float2 uv)
+float3 ReadBaseColor(MaterialData mat, float2 uv, float2 ddxUV, float2 ddyUV)
 {
     float3 albedo = float3(mat.tintR, mat.tintG, mat.tintB);
-    if (mat.albedoID != INVALID_INDEX)
+
+    float4 textureValue;
+    uint channel;
+    if (SampleMaterialTextureGrad(
+            mat,
+            MATERIAL_TEXTURE_SEMANTIC_BASE_COLOR,
+            uv,
+            ddxUV,
+            ddyUV,
+            textureValue,
+            channel))
     {
-        Texture2D albedoTex = GetResource(mat.albedoID);
-        albedo *= albedoTex.SampleLevel(g_TrilinearWrapSampler, uv, 0).rgb;
+        albedo *= textureValue.rgb;
     }
 
     return max(albedo, float3(0.0, 0.0, 0.0));
 }
 
-float ReadOpacity(MaterialData mat, float2 uv)
+float ReadOpacityLevel(MaterialData mat, float2 uv)
 {
     float opacity = mat.opacity;
 
-    if (mat.albedoID != INVALID_INDEX)
+    float4 textureValue;
+    uint channel;
+    if (SampleMaterialTextureLevel(
+            mat,
+            MATERIAL_TEXTURE_SEMANTIC_OPACITY,
+            uv,
+            textureValue,
+            channel))
     {
-        Texture2D albedoTex = GetResource(mat.albedoID);
-        opacity *= albedoTex.SampleLevel(g_TrilinearWrapSampler, uv, 0).a;
+        opacity *= SelectMaterialTextureScalar(textureValue, channel);
+    }
+    return saturate(opacity);
+}
+
+
+float ReadOpacity(MaterialData mat, float2 uv, float2 ddxUV, float2 ddyUV)
+{
+    float opacity = mat.opacity;
+
+    float4 textureValue;
+    uint channel;
+    if (SampleMaterialTextureGrad(
+            mat,
+            MATERIAL_TEXTURE_SEMANTIC_OPACITY,
+            uv,
+            ddxUV,
+            ddyUV,
+            textureValue,
+            channel))
+    {
+        opacity *= SelectMaterialTextureScalar(textureValue, channel);
     }
 
     return saturate(opacity);
 }
 
-float ReadRoughness(MaterialData mat, float2 uv)
+float ReadRoughness(MaterialData mat, float2 uv, float2 ddxUV, float2 ddyUV)
 {
     float roughness = mat.roughness;
-    if (mat.metallicRoughnessAoID != INVALID_INDEX)
+
+    float4 textureValue;
+    uint channel;
+    if (SampleMaterialTextureGrad(
+            mat,
+            MATERIAL_TEXTURE_SEMANTIC_PERCEPTUAL_ROUGHNESS,
+            uv,
+            ddxUV,
+            ddyUV,
+            textureValue,
+            channel))
     {
-        Texture2D ormTex = GetResource(mat.metallicRoughnessAoID);
-        roughness *= ormTex.SampleLevel(g_TrilinearWrapSampler, uv, 0).g;
+        roughness *= SelectMaterialTextureScalar(textureValue, channel);
     }
 
     return saturate(roughness);
 }
 
-float ReadMetallic(MaterialData mat, float2 uv)
+float ReadMetallic(MaterialData mat, float2 uv, float2 ddxUV, float2 ddyUV)
 {
     float metallic = mat.metallic;
-    if (mat.metallicRoughnessAoID != INVALID_INDEX)
+
+    float4 textureValue;
+    uint channel;
+    if (SampleMaterialTextureGrad(
+            mat,
+            MATERIAL_TEXTURE_SEMANTIC_METALLIC,
+            uv,
+            ddxUV,
+            ddyUV,
+            textureValue,
+            channel))
     {
-        Texture2D ormTex = GetResource(mat.metallicRoughnessAoID);
-        metallic *= ormTex.SampleLevel(g_TrilinearWrapSampler, uv, 0).b;
+        metallic *= SelectMaterialTextureScalar(textureValue, channel);
     }
 
     return saturate(metallic);
 }
 
-float ReadTransmission(MaterialData mat, float2 uv)
+float ReadOcclusion(MaterialData mat, float2 uv, float2 ddxUV, float2 ddyUV)
+{
+    float occlusion = 1.0;
+
+    float4 textureValue;
+    uint channel;
+    if (SampleMaterialTextureGrad(
+            mat,
+            MATERIAL_TEXTURE_SEMANTIC_OCCLUSION,
+            uv,
+            ddxUV,
+            ddyUV,
+            textureValue,
+            channel))
+    {
+        occlusion *= SelectMaterialTextureScalar(textureValue, channel);
+    }
+
+    return saturate(occlusion);
+}
+
+float ReadTransmission(MaterialData mat, float2 uv, float2 ddxUV, float2 ddyUV)
 {
     float transmission = mat.transmission;
-    if (mat.transmissionID != INVALID_INDEX)
+
+    float4 textureValue;
+    uint channel;
+    if (SampleMaterialTextureGrad(
+            mat,
+            MATERIAL_TEXTURE_SEMANTIC_TRANSMISSION,
+            uv,
+            ddxUV,
+            ddyUV,
+            textureValue,
+            channel))
     {
-        Texture2D transmissionTex = GetResource(mat.transmissionID);
-        transmission *= transmissionTex.SampleLevel(g_TrilinearWrapSampler, uv, 0).r;
+        transmission *= SelectMaterialTextureScalar(textureValue, channel);
     }
 
     return saturate(transmission);
 }
 
-float ReadClearcoat(MaterialData mat, float2 uv)
+float ReadClearcoat(MaterialData mat, float2 uv, float2 ddxUV, float2 ddyUV)
 {
     float clearcoat = mat.clearcoat;
-    if (mat.clearcoatID != INVALID_INDEX)
+
+    float4 textureValue;
+    uint channel;
+    if (SampleMaterialTextureGrad(
+            mat,
+            MATERIAL_TEXTURE_SEMANTIC_CLEARCOAT,
+            uv,
+            ddxUV,
+            ddyUV,
+            textureValue,
+            channel))
     {
-        Texture2D clearcoatTex = GetResource(mat.clearcoatID);
-        clearcoat *= clearcoatTex.SampleLevel(g_TrilinearWrapSampler, uv, 0).r;
+        clearcoat *= SelectMaterialTextureScalar(textureValue, channel);
     }
 
     return saturate(clearcoat);
 }
 
-float ReadAnisotropy(MaterialData mat, float2 uv)
+void ReadAnisotropy(MaterialData mat, float2 uv, float2 ddxUV, float2 ddyUV, out float anisotropy, out float anisotropyRotation)
 {
-    float anisotropy = mat.anisotropy;
-    if (mat.anisotropyID != INVALID_INDEX)
+    anisotropy = saturate(mat.anisotropy);
+
+    float rotationSin, rotationCos;
+    sincos(mat.anisotropyRotation, rotationSin, rotationCos);
+    float2 direction = float2(rotationCos, rotationSin);
+
+    float4 textureValue;
+    uint channel;
+    if (SampleMaterialTextureGrad(
+            mat,
+            MATERIAL_TEXTURE_SEMANTIC_ANISOTROPY,
+            uv,
+            ddxUV,
+            ddyUV,
+            textureValue,
+            channel))
     {
-        Texture2D anisotropyTex = GetResource(mat.anisotropyID);
-        anisotropy *= anisotropyTex.SampleLevel(g_TrilinearWrapSampler, uv, 0).r;
+        float2 textureDirection = textureValue.rg * 2.0 - 1.0;
+        float directionLen2 = dot(textureDirection, textureDirection);
+        textureDirection = directionLen2 > EPSILON_MIN
+            ? textureDirection * rsqrt(directionLen2)
+            : float2(1.0, 0.0);
+
+        direction = float2(
+            textureDirection.x * rotationCos - textureDirection.y * rotationSin,
+            textureDirection.x * rotationSin + textureDirection.y * rotationCos);
+        anisotropy *= textureValue.b;
     }
 
-    return saturate(anisotropy);
+    anisotropy = saturate(anisotropy);
+    anisotropyRotation = atan2(direction.y, direction.x);
 }
 
-float3 ReadEmission(MaterialData mat, float2 uv)
+float3 ReadEmission(MaterialData mat, float2 uv, float2 ddxUV, float2 ddyUV)
 {
-    float3 emission = float3(mat.emissionColorR, mat.emissionColorG, mat.emissionColorB) * mat.emissivePower;
-    if (mat.emissiveID != INVALID_INDEX)
+    float3 emission =
+        float3(mat.emissionColorR, mat.emissionColorG, mat.emissionColorB) *
+        mat.emissivePower;
+
+    float4 textureValue;
+    uint channel;
+    if (SampleMaterialTextureGrad(
+            mat,
+            MATERIAL_TEXTURE_SEMANTIC_EMISSION,
+            uv,
+            ddxUV,
+            ddyUV,
+            textureValue,
+            channel))
     {
-        Texture2D emissiveTex = GetResource(mat.emissiveID);
-        emission *= emissiveTex.SampleLevel(g_TrilinearWrapSampler, uv, 0).rgb;
+        emission *= textureValue.rgb;
     }
 
     return max(emission, float3(0.0, 0.0, 0.0));
 }
 
-float3 ReadShadingNormal(MaterialData mat, float2 uv, float3 shadingNWorld, float3 tangentOS)
+float3 ReadShadingNormal(MaterialData mat, float2 uv, float2 ddxUV, float2 ddyUV, float3 shadingNormalWS, float3 tangentWS, inout float tangentSignWS)
 {
-    if (mat.normalID == INVALID_INDEX)
-        return shadingNWorld;
+    float4 textureValue;
+    uint channel;
+    if (!SampleMaterialTextureGrad(
+            mat,
+            MATERIAL_TEXTURE_SEMANTIC_NORMAL,
+            uv,
+            ddxUV,
+            ddyUV,
+            textureValue,
+            channel))
+    {
+        return shadingNormalWS;
+    }
 
-    Texture2D normalTex = GetResource(mat.normalID);
-    float3 tangentNormal = normalTex.SampleLevel(g_TrilinearWrapSampler, uv, 0).rgb * 2.0 - 1.0;
-    tangentNormal = normalize(tangentNormal);
+    float3 normalTS = normalize(textureValue.rgb * 2.0 - 1.0);
 
-    float3 tangentWorld = mul((float3x3)ObjectToWorld3x4(), tangentOS);
-    tangentWorld -= shadingNWorld * dot(tangentWorld, shadingNWorld);
-    float tangentLen2 = dot(tangentWorld, tangentWorld);
-    if (tangentLen2 <= EPSILON_MIN)
-        return shadingNWorld;
+    float3 projNfromT = shadingNormalWS * dot(tangentWS, shadingNormalWS);
+    tangentWS -= projNfromT; // gram-schmidt
 
-    float3 T = tangentWorld * rsqrt(tangentLen2);
-    float3 B = cross(shadingNWorld, T);
-    float3 mappedNWorld = normalize(tangentNormal.x * T + tangentNormal.y * B + tangentNormal.z * shadingNWorld);
-    return dot(mappedNWorld, shadingNWorld) < 0.0 ? -mappedNWorld : mappedNWorld;
+    float tangentWSLen2 = dot(tangentWS, tangentWS);
+    if (tangentWSLen2 <= EPSILON_MIN)
+        return shadingNormalWS;
+
+    float3 T = tangentWS * rsqrt(tangentWSLen2);
+    float3 B = tangentSignWS * cross(shadingNormalWS, T);
+    float3 normalWS = normalize(
+        normalTS.x * T +
+        normalTS.y * B +
+        normalTS.z * shadingNormalWS);
+    if (dot(normalWS, shadingNormalWS) < 0.0)
+    {
+        normalWS = -normalWS;
+        tangentSignWS = -tangentSignWS;
+    }
+
+    return normalWS;
 }
 float3 OffsetRay(float3 p, float3 n, float3 w)
 {

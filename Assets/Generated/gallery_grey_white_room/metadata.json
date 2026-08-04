@@ -1,0 +1,66 @@
+{
+  "source": "D:\\JS\\Projects\\BaambooRenderer\\Tools\\GalleryScenes\\Extracted\\living-room\\living-room",
+  "gallery_import": true,
+  "flat_materials": false,
+  "references": [
+    "mitsuba",
+    "pbrt",
+    "pbrt_aov"
+  ],
+  "camera": {
+    "resolution": [
+      640,
+      360
+    ],
+    "samples": 128,
+    "max_depth": 12,
+    "integrator": "path",
+    "position": [
+      -5.10518,
+      0.731065,
+      -2.31789
+    ],
+    "target": [
+      -4.143387930505231,
+      0.8054720053763156,
+      -2.0544139809624076
+    ],
+    "up": [
+      -0.07176299682685562,
+      0.9972279559055723,
+      -0.019658999130738052
+    ],
+    "fov_y": 58.71550708558255
+  },
+  "environment_map": "Generated/gallery_grey_white_room/engine_textures/Sky_19_baamboo.exr",
+  "meshes": 65,
+  "area_lights": 0,
+  "textures": [
+    "Generated/gallery_grey_white_room/engine_textures/leaf__LeavesBSDF_masked.png",
+    "Generated/gallery_grey_white_room/engine_textures/picture8.jpg",
+    "Generated/gallery_grey_white_room/engine_textures/wood.jpg",
+    "Generated/gallery_grey_white_room/engine_textures/wood5.jpg"
+  ],
+  "warnings": [
+    "BottleCapBSDF: twosided wrapper ignored; nested BSDF is used",
+    "BranchesBSDF: twosided wrapper ignored; nested BSDF is used",
+    "BrushedStainlessSteelBSDF: conductor eta/k is reduced to normal-incidence F0 for engine material params",
+    "BrushedStainlessSteelBSDF: twosided wrapper ignored; nested BSDF is used",
+    "DirtBSDF: twosided wrapper ignored; nested BSDF is used",
+    "FireplaceGlassBSDF: twosided wrapper ignored; nested BSDF is used",
+    "FloorBSDF: twosided wrapper ignored; nested BSDF is used",
+    "LeavesBSDF: mask wrapper opacity texture baked into albedo alpha",
+    "MattePaintBSDF: twosided wrapper ignored; nested BSDF is used",
+    "MirrorBSDF: conductor eta/k is reduced to normal-incidence F0 for engine material params",
+    "MirrorBSDF: twosided wrapper ignored; nested BSDF is used",
+    "PaintingBSDF: twosided wrapper ignored; nested BSDF is used",
+    "PaintingBackBSDF: twosided wrapper ignored; nested BSDF is used",
+    "PanelingBSDF: twosided wrapper ignored; nested BSDF is used",
+    "PlantPotBSDF: twosided wrapper ignored; nested BSDF is used",
+    "SofaBSDF: twosided wrapper ignored; nested BSDF is used",
+    "SofaLegsBSDF: twosided wrapper ignored; nested BSDF is used",
+    "TableWoodBSDF: twosided wrapper ignored; nested BSDF is used",
+    "TransluscentBSDF: twosided wrapper ignored; nested BSDF is used",
+    "WallsBSDF: twosided wrapper ignored; nested BSDF is used"
+  ]
+}

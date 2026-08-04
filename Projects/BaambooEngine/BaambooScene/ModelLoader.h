@@ -33,10 +33,10 @@ struct MeshData
 	BoundingBox aabb;
 
 	// geometry
-	eVertexFormat vertexFormat = eVertexFormat::P3U2N3T3;
+	eVertexFormat vertexFormat = eVertexFormat::P3U2N3T4;
 
 	std::vector< Vertex >          vertices;
-	std::vector< VertexP3U2N3T3S > skinnedVertices;
+	std::vector< VertexP3U2N3T4S > skinnedVertices;
 
 	std::vector< MeshLODData > lods;
 

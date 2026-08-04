@@ -19,6 +19,8 @@ static const uint LOBE_SLOT_COUNT        = 4u;
 // Keep both rough dielectric branches away from zero without discarding Fresnel importance sampling.
 static const float ROUGH_DIELECTRIC_PROPOSAL_SAFETY_MIX = 0.2;
 
+static const float MAX_RAY_CONE_FULL_ANGLE = 0.5 * PI;
+
 bool IsSmoothConductor(SurfaceMaterial material)
 {
     return !IsPrincipledMaterial(material) &&
@@ -27,6 +29,207 @@ bool IsSmoothConductor(SurfaceMaterial material)
            !HasSheenLobe(material) &&
            saturate(material.metallic) > 1.0 - PT_LOBE_EPS &&
            material.isSmooth != 0u;
+}
+
+bool RefractConeBoundary(float2 incidentDir, float2 normal, float etaInv, out float2 transmittedDir)
+{
+    float NoI = dot(normal, incidentDir);
+    float k = 1.0 - sq(etaInv) * (1.0 - sq(NoI));
+
+    if (k < -EPSILON_MIN)
+    {
+        transmittedDir = incidentDir - normal * NoI;
+        float tangentLenSq = dot(transmittedDir, transmittedDir);
+        if (!IsPathFinite(tangentLenSq) || tangentLenSq <= EPSILON_MIN)
+            return false;
+
+        transmittedDir *= rsqrt(tangentLenSq);
+        return IsPathFinite(transmittedDir.x) && IsPathFinite(transmittedDir.y);
+    }
+    transmittedDir = etaInv * incidentDir - normal * (etaInv * NoI + safeSqrt(max(k, 0.0)));
+
+    float transmittedLenSq = dot(transmittedDir, transmittedDir);
+    if (!IsPathFinite(transmittedLenSq) || transmittedLenSq <= EPSILON_MIN)
+        return false;
+
+    transmittedDir *= rsqrt(transmittedLenSq);
+    return IsPathFinite(transmittedDir.x) && IsPathFinite(transmittedDir.y);
+}
+
+// Reference: https://raw.githubusercontent.com/NVIDIAGameWorks/Falcor/master/Source/Falcor/Rendering/Materials/TexLODHelpers.slang
+bool UpdateTransmissionRayCone(float3 wo, Layered::LayerEvent event, inout RayCone cone)
+{
+    if (!IsPathFinite3(wo) || !IsPathFinite3(event.wi) ||
+        !IsPathFinite(event.eta) || event.eta <= EPSILON_MIN ||
+        !IsPathFinite(cone.radius) || !IsPathFinite(cone.tanHalfAngle))
+    {
+        return false;
+    }
+
+    if (abs(event.eta - 1.0) <= EPSILON_MIN)
+        return true;
+
+    float woLenSq = dot(wo, wo);
+    float wiLenSq = dot(event.wi, event.wi);
+    if (woLenSq <= EPSILON_MIN || wiLenSq <= EPSILON_MIN)
+        return false;
+
+    float3 incidentDir    = -wo * rsqrt(woLenSq);
+    float3 transmittedDir = event.wi * rsqrt(wiLenSq);
+    float3 opticalNormal;
+    if (event.isDelta != 0u)
+    {
+        opticalNormal = wo.z >= 0.0 ? float3(0.0, 0.0, 1.0) : float3(0.0, 0.0, -1.0);
+    }
+    else
+    {
+        bool flipped = wo.z < 0.0;
+        float3 woIncident = flipped ? -wo : wo;
+        float3 wiIncident = flipped ? -event.wi : event.wi;
+
+        float  etaP;
+        float3 whIncident = BxDF::Transmission::HalfVector(woIncident, wiIncident, event.eta, etaP);
+        if (!IsPathFinite3(whIncident) || dot(whIncident, whIncident) <= EPSILON_MIN)
+        {
+            return false;
+        }
+
+        opticalNormal = flipped ? -whIncident : whIncident;
+    }
+
+    float3 tangent      = incidentDir - opticalNormal * dot(opticalNormal, incidentDir);
+    float  tangentLenSq = dot(tangent, tangent);
+
+    float3 xAxis;
+    if (tangentLenSq > EPSILON_MIN)
+    {
+        xAxis = tangent * rsqrt(tangentLenSq);
+    }
+    else
+    {
+        float3 _;
+        BuildSurfaceONB( opticalNormal, xAxis, _);
+    }
+
+    float2 incidentDir2D    = float2(dot(incidentDir, xAxis), dot(incidentDir, opticalNormal));
+    float2 transmittedDir2D = float2(dot(transmittedDir, xAxis), dot(transmittedDir, opticalNormal));
+
+    float incidentLenSq    = dot(incidentDir2D, incidentDir2D);
+    float transmittedLenSq = dot(transmittedDir2D, transmittedDir2D);
+    if (incidentLenSq <= EPSILON_MIN || transmittedLenSq <= EPSILON_MIN)
+        return false;
+
+    incidentDir2D    *= rsqrt(incidentLenSq);
+    transmittedDir2D *= rsqrt(transmittedLenSq);
+
+    float spreadAngle   = 2.0 * atan(cone.tanHalfAngle);
+    float widthSign     = cone.radius > 0.0 ? 1.0 : -1.0;
+    float boundaryAngle = 0.5 * spreadAngle * widthSign;
+
+    float boundarySin;
+    float boundaryCos;
+    sincos(boundaryAngle, boundarySin, boundaryCos);
+
+    float2 incidentUpper = float2(
+        boundaryCos * incidentDir2D.x - boundarySin * incidentDir2D.y,
+        boundarySin * incidentDir2D.x + boundaryCos * incidentDir2D.y);
+    float2 incidentLower = float2(
+        boundaryCos * incidentDir2D.x + boundarySin * incidentDir2D.y,
+       -boundarySin * incidentDir2D.x + boundaryCos * incidentDir2D.y);
+
+    float2 incidentOrtho = float2(-incidentDir2D.y, incidentDir2D.x);
+    float2 upperOrigin =  incidentOrtho * cone.radius;
+    float2 lowerOrigin = -upperOrigin;
+
+    if (abs(incidentUpper.y) <= EPSILON_MIN || abs(incidentLower.y) <= EPSILON_MIN)
+        return false;
+
+    float upperHitX = upperOrigin.x + incidentUpper.x * (-upperOrigin.y / incidentUpper.y);
+    float lowerHitX = lowerOrigin.x + incidentLower.x * (-lowerOrigin.y / incidentLower.y);
+    if (!IsPathFinite(upperHitX) || !IsPathFinite(lowerHitX))
+        return false;
+
+    float normalSign = upperHitX > lowerHitX ? 1.0 : -1.0;
+    float etaIOverT = rcp(event.eta); // LayerEvent stores etaT / etaI.
+    float2 normal2D = float2(0.0, 1.0);
+    float2 refractedUpper;
+    float2 refractedLower;
+    if (!RefractConeBoundary(incidentUpper, normal2D, etaIOverT, refractedUpper) ||
+        !RefractConeBoundary(incidentLower, normal2D, etaIOverT, refractedLower))
+    {
+        return false;
+    }
+
+    float boundaryCross        = refractedUpper.x * refractedLower.y - refractedUpper.y * refractedLower.x;
+    float spreadSign           = boundaryCross * normalSign < 0.0 ? 1.0 : -1.0;
+    float refractedSpreadAngle = atan2(abs(boundaryCross), clamp(dot(refractedUpper, refractedLower), -1.0, 1.0)) * spreadSign;
+
+    float2 transmittedOrtho    = float2(-transmittedDir2D.y, transmittedDir2D.x);
+    float2 refractedUpperOrtho = float2(-refractedUpper.y, refractedUpper.x);
+    float2 refractedLowerOrtho = float2(-refractedLower.y, refractedLower.x);
+
+    float upperDenominator = dot(transmittedOrtho, refractedUpperOrtho);
+    float lowerDenominator = dot(transmittedOrtho, refractedLowerOrtho);
+    if (abs(upperDenominator) <= EPSILON_MIN || abs(lowerDenominator) <= EPSILON_MIN)
+        return false;
+
+    float refractedWidth =
+            (-upperHitX * refractedUpper.y) / upperDenominator + (lowerHitX * refractedLower.y) / lowerDenominator;
+    refractedSpreadAngle = clamp( refractedSpreadAngle, -MAX_RAY_CONE_FULL_ANGLE, MAX_RAY_CONE_FULL_ANGLE);
+
+    RayCone candidate;
+    candidate.radius       = 0.5 * refractedWidth;
+    candidate.tanHalfAngle = tan(0.5 * refractedSpreadAngle);
+    if (!IsPathFinite(candidate.radius) || !IsPathFinite(candidate.tanHalfAngle))
+        return false;
+
+    cone = candidate;
+    return true;
+}
+
+// Reference: https://www.jcgt.org/published/0010/01/01/paper-lowres.pdf
+void UpdateRayCone(SurfaceMaterial sm, float3 wo, Layered::LayerEvent event, float roughnessSpreadScale, inout RayCone cone)
+{
+    if (event.isTransmission != 0u)
+    {
+        RayCone candidate = cone;
+
+        if (!UpdateTransmissionRayCone(wo, event, candidate))
+            return;
+
+        cone = candidate;
+
+        if (event.isDelta != 0u)
+            return;
+    }
+    else if (event.isDelta != 0u)
+        return;
+
+    float roughnessSpread;
+    if (event.lobe == BxDF::LOBE_DIFFUSE)
+    {
+        roughnessSpread = MAX_RAY_CONE_FULL_ANGLE;
+    }
+    else
+    {
+        float alpha = event.lobe == BxDF::LOBE_CLEARCOAT ? GetClearcoatAlpha(sm) : max2(GetAlpha2(sm));
+        if (alpha >= 1.0)
+        {
+            roughnessSpread = MAX_RAY_CONE_FULL_ANGLE;
+        }
+        else
+        {
+            float alphaSq = alpha * alpha;
+            roughnessSpread = safeSqrt(
+                0.5 * alphaSq /
+                max(1.0 - alphaSq, EPSILON_MIN));
+        }
+    }
+
+    float fullAngle = 2.0 * atan(cone.tanHalfAngle);
+    fullAngle = clamp(fullAngle + roughnessSpreadScale * roughnessSpread, -MAX_RAY_CONE_FULL_ANGLE, MAX_RAY_CONE_FULL_ANGLE);
+
+    cone.tanHalfAngle = tan(0.5 * fullAngle);
 }
 
 struct LobeMixture
@@ -88,11 +291,11 @@ LobeMixture ResolveLobeMixture(SurfaceMaterial sm, float eta, float3 wo)
     float metallic     = saturate(sm.metallic);
     float dielectric   = 1.0 - metallic;
     float transmission = saturate(sm.transmission);
-            
+
     float opaqueDielectric = dielectric * (1.0 - transmission);
     float wSheen           = SheenSamplingWeight(sm);
     float wDiffuse         = max(opaqueDielectric, wSheen);
-            
+
     bool isSymmetricDeltaProposal = sm.isSmooth != 0u && dielectric * transmission > 0.0;
     float3 proposalWo = isSymmetricDeltaProposal ? float3(0.0, 0.0, 1.0) : wo;
 
@@ -173,7 +376,7 @@ float3 EvaluateSmoothSpecularWeight(SurfaceMaterial sm, float3 wo, float eta)
 {
     float wConductor  = saturate(sm.metallic);
     float wDielectric = 1.0 - wConductor;
-    
+
     if (!IsPrincipledMaterial(sm))
     {
         float3 f = float3(0.0, 0.0, 0.0);
@@ -192,12 +395,12 @@ float3 EvaluateSmoothSpecularWeight(SurfaceMaterial sm, float3 wo, float eta)
 
     // principled branch
     float cosTheta = saturate(BxDF::AbsCosTheta(wo));
-    
+
     float f0Eta = (eta - 1.0) / (eta + 1.0);
     f0Eta *= f0Eta;
-            
+
     float3 dielectricTint = (f0Eta > 1.0e-6) ? max(sm.specularColor / f0Eta, float3(0.0, 0.0, 0.0)) : float3(1.0, 1.0, 1.0);
-            
+
     float  fd = BxDF::Fresnel::Dielectric(cosTheta, 1.0, eta);
     float3 Fdielectric = float3(fd, fd, fd);
     float3 Fconductor  = BxDF::Fresnel::Schlick(sm.albedo, cosTheta);
@@ -205,7 +408,7 @@ float3 EvaluateSmoothSpecularWeight(SurfaceMaterial sm, float3 wo, float eta)
     return (dielectricTint * wDielectric * Fdielectric + wConductor * Fconductor) * sm.specularStrength;
 }
 
-// 
+//
 float3 EvaluateSpecularBRDF(SurfaceMaterial sm, float3 wo, float3 wi, float eta)
 {
     if (!BxDF::SameHemisphere(wo, wi) || sm.isSmooth != 0u)
@@ -213,9 +416,9 @@ float3 EvaluateSpecularBRDF(SurfaceMaterial sm, float3 wo, float3 wi, float eta)
 
     float wConductor  = saturate(sm.metallic);
     float wDielectric = 1.0 - wConductor;
-            
+
     float2 alpha = GetAlpha2(sm);
-            
+
     if (!IsPrincipledMaterial(sm))
     {
         float3 f = float3(0.0, 0.0, 0.0);
@@ -232,7 +435,7 @@ float3 EvaluateSpecularBRDF(SurfaceMaterial sm, float3 wo, float3 wi, float eta)
 
         return f;
     }
-    
+
     // principled branch
     float3 h = wo + wi;
     float  hLenSq = dot(h, h);
@@ -242,17 +445,17 @@ float3 EvaluateSpecularBRDF(SurfaceMaterial sm, float3 wo, float3 wi, float eta)
 
     float WoH = saturate(dot(wo, h));
     if (WoH <= 0.0)
-        return float3(0.0, 0.0, 0.0);        
-    
+        return float3(0.0, 0.0, 0.0);
+
     float f0Eta = (eta - 1.0) / (eta + 1.0);
     f0Eta *= f0Eta;
 
     float3 dielectricTint = (f0Eta > 1.0e-6) ? max(sm.specularColor / f0Eta, float3(0.0, 0.0, 0.0)) : float3(1.0, 1.0, 1.0);
-            
+
     float  fd = BxDF::Fresnel::Dielectric(WoH, 1.0, eta);
     float3 Fdielectric = float3(fd, fd, fd);
     float3 Fconductor  = BxDF::Fresnel::Schlick(sm.albedo, WoH);
-            
+
     float3 Fprincipled = (dielectricTint * wDielectric * Fdielectric + wConductor * Fconductor) * sm.specularStrength;
     return Fprincipled * BxDF::Reflection::EvaluateBRDF(wo, wi, float3(1.0, 1.0, 1.0), alpha.x, alpha.y);
 }
@@ -262,13 +465,13 @@ float3 EvaluateClearcoatBRDF(SurfaceMaterial sm, float3 wo, float3 wi)
     if (!HasClearcoatLobe(sm) || !BxDF::SameHemisphere(wo, wi))
         return float3(0.0, 0.0, 0.0);
 
-    float3 clearcoatBRDF = BxDF::Clearcoat::EvaluateBRDF(wo, wi, clamp(sm.clearcoatRoughness, 1.0e-3, 1.0));
+    float3 clearcoatBRDF = BxDF::Clearcoat::EvaluateBRDF(wo, wi, GetClearcoatAlpha(sm));
     if (!IsPrincipledMaterial(sm))
         return saturate(sm.clearcoat) * clearcoatBRDF;
 
     float noV = BxDF::AbsCosTheta(wo);
     float noL = BxDF::AbsCosTheta(wi);
-    
+
     // disney-principled clearcoat: BxDF keeps the physical denominator; this adapter matches Disney/Mitsuba.
     float disneyClearcoatScale = 4.0 * noV * noL;
     return (sm.clearcoat * 0.25) * disneyClearcoatScale * clearcoatBRDF;
@@ -286,9 +489,9 @@ PathContribution EvaluateBoundaryLobes(
 {
     Layered::DielectricFrame frame = Layered::MakeDielectricFrame(wo, etaAbove, etaBelow);
 
-    float3 woLayer    = BxDF::RotateXY(frame.wo, -sm.anisotropyRotation);
+    float3 woLayer    = BxDF::RotateXY(frame.wo, -GetAnisotropyRotation(sm));
     float3 wiIncident = frame.bFlipped != 0u ? -wi : wi;
-    float3 wiLayer    = BxDF::RotateXY(wiIncident, -sm.anisotropyRotation);
+    float3 wiLayer    = BxDF::RotateXY(wiIncident, -GetAnisotropyRotation(sm));
 
     PathContribution lobes = ZeroPathContribution();
     lobes.diffuse  = EvaluateDiffuseBRDF(sm, woLayer, wiLayer) + EvaluateSheenBRDF(sm, woLayer, wiLayer);
@@ -314,12 +517,12 @@ float BoundaryMarginalPDF(SurfaceMaterial sm, float3 wo, float3 wi, float etaAbo
 {
     Layered::DielectricFrame frame = Layered::MakeDielectricFrame(wo, etaAbove, etaBelow);
 
-    float3 woLayer    = BxDF::RotateXY(frame.wo, -sm.anisotropyRotation);
+    float3 woLayer    = BxDF::RotateXY(frame.wo, -GetAnisotropyRotation(sm));
     float3 wiIncident = frame.bFlipped != 0u ? -wi : wi;
-    float3 wiLayer    = BxDF::RotateXY(wiIncident, -sm.anisotropyRotation);
+    float3 wiLayer    = BxDF::RotateXY(wiIncident, -GetAnisotropyRotation(sm));
 
     float2 alpha = GetAlpha2(sm);
-            
+
     LobeMixture ls = ResolveLobeMixture(sm, frame.eta, woLayer);
     float pdf = ls.pmf.x * BxDF::Diffuse::EvaluatePDF(woLayer, wiLayer);
 
@@ -327,7 +530,7 @@ float BoundaryMarginalPDF(SurfaceMaterial sm, float3 wo, float3 wi, float etaAbo
         pdf += ls.pmf.y * BxDF::Reflection::EvaluatePDF(woLayer, wiLayer, alpha.x, alpha.y);
 
     if (ls.pmf.z > 0.0)
-        pdf += ls.pmf.z * BxDF::Clearcoat::EvaluatePDF(woLayer, wiLayer, clamp(sm.clearcoatRoughness, 1.0e-3, 1.0));
+        pdf += ls.pmf.z * BxDF::Clearcoat::EvaluatePDF(woLayer, wiLayer, GetClearcoatAlpha(sm));
 
     if (ls.pmf.w > 0.0 && sm.isSmooth == 0u)
         pdf += ls.pmf.w * BxDF::Transmission::EvaluatePDF(woLayer, wiLayer, alpha.x, alpha.y, frame.eta);
@@ -369,7 +572,7 @@ Layered::LayerEvent SampleLayerEvent(SurfaceMaterial sm, float3 wo, float etaAbo
 {
     Layered::LayerEvent event = Layered::InitializeLayerEvent();
     Layered::DielectricFrame frame = Layered::MakeDielectricFrame(wo, etaAbove, etaBelow);
-    float3 woLayer = BxDF::RotateXY(frame.wo, -sm.anisotropyRotation);
+    float3 woLayer = BxDF::RotateXY(frame.wo, -GetAnisotropyRotation(sm));
 
     LobeMixture ls = ResolveLobeMixture(sm, frame.eta, woLayer);
 
@@ -430,8 +633,8 @@ Layered::LayerEvent SampleLayerEvent(SurfaceMaterial sm, float3 wo, float etaAbo
 
         case LOBE_SLOT_CLEARCOAT:
         {
-            float alpha = clamp(sm.clearcoatRoughness, 1.0e-3, 1.0);
-                    
+            float alpha = GetClearcoatAlpha(sm);
+
             bs.wi  = BxDF::Clearcoat::SampleRay(woLayer, alpha, u);
             bs.pdf = BxDF::Clearcoat::EvaluatePDF(woLayer, bs.wi, alpha);
 
@@ -498,7 +701,7 @@ Layered::LayerEvent SampleLayerEvent(SurfaceMaterial sm, float3 wo, float etaAbo
     }
 
     // layer frame -> incident(or transmitted)-side frame
-    float3 wiIncident = BxDF::RotateXY(bs.wi, sm.anisotropyRotation);
+    float3 wiIncident = BxDF::RotateXY(bs.wi, GetAnisotropyRotation(sm));
     event.wi = frame.bFlipped != 0u ? -wiIncident : wiIncident;
     event.isDelta        = bs.isDelta;
     event.isTransmission = BxDF::SameHemisphere(woLayer, bs.wi) ? 0u : 1u;
@@ -517,7 +720,17 @@ Layered::LayerEvent SampleLayerEvent(SurfaceMaterial sm, float3 wo, float etaAbo
     return event;
 }
 
-PathBSDFSample SampleRay(SurfaceMaterial rootMaterial, float2 uv, float3 wo, float etaExterior, uint rrStartDepth, inout RngState rng)
+PathBSDFSample SampleRay(
+        SurfaceMaterial rootMaterial,
+        float2 uv,
+        float2 ddxUV,
+        float2 ddyUV,
+        float3 wo,
+        float etaExterior,
+        uint rrStartDepth,
+        float roughnessSpreadScale,
+        inout RayCone rayCone,
+        inout RngState rng)
 {
     PathBSDFSample s = (PathBSDFSample)0;
     s.attempted  = 1u;
@@ -558,7 +771,7 @@ PathBSDFSample SampleRay(SurfaceMaterial rootMaterial, float2 uv, float3 wo, flo
             if (slab.materialID == INVALID_INDEX)
                 return s;
 
-            sm = LoadSurfaceMaterial(slab.materialID, uv);
+            sm = LoadSurfaceMaterial(slab.materialID, uv, ddxUV, ddyUV, rootMaterial.tangentFrameSign);
         }
 
         float etaAbove = etaExterior;
@@ -573,13 +786,14 @@ PathBSDFSample SampleRay(SurfaceMaterial rootMaterial, float2 uv, float3 wo, flo
         float etaBelow = max(sm.ior, 1.0e-4);
 
         Layered::LayerEvent event = SampleLayerEvent(sm, -w, etaAbove, etaBelow, PT_TRANSPORT_RADIANCE, rng);
-
         if (!Layered::IsLayerEventValid(event))
             return s;
 
         bool crossedBoundary = w.z * event.wi.z > 0.0;
         if (crossedBoundary != (event.isTransmission != 0u))
             return s;
+
+        UpdateRayCone(sm, -w, event, roughnessSpreadScale, rayCone);
 
         w     = event.wi;
         qH   *= event.pdf;
@@ -728,6 +942,8 @@ RngState InitDirectionalQueryRng(
 bool LoadBoundaryData(
     SurfaceMaterial rootMaterial,
     float2 uv,
+    float2 ddxUV,
+    float2 ddyUV,
     float etaExterior,
     int boundary,
     uint layerOffset,
@@ -754,13 +970,13 @@ bool LoadBoundaryData(
     if (belowSlab.materialID == INVALID_INDEX || aboveSlab.materialID == INVALID_INDEX)
         return false;
 
-    material = LoadSurfaceMaterial(belowSlab.materialID, uv);
+    material = LoadSurfaceMaterial(belowSlab.materialID, uv, ddxUV, ddyUV, rootMaterial.tangentFrameSign);
     etaAbove = max(Materials[aboveSlab.materialID].ior, 1.0e-4);
     etaBelow = max(material.ior, 1.0e-4);
     return true;
 }
 
-float3 Evaluate(SurfaceMaterial rootMaterial, float2 uv, float3 wo, float3 wi, float etaExterior, uint querySeed)
+float3 Evaluate(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 ddyUV, float3 wo, float3 wi, float etaExterior, uint querySeed)
 {
     const float3 zero = float3(0.0, 0.0, 0.0);
     if (!IsPathFinite3(wo) || !IsPathFinite3(wi) ||
@@ -786,7 +1002,7 @@ float3 Evaluate(SurfaceMaterial rootMaterial, float2 uv, float3 wo, float3 wi, f
         SurfaceMaterial directMaterial;
         float etaAbove;
         float etaBelow;
-        if (!LoadBoundaryData(rootMaterial, uv, etaExterior, entryBoundary, offset, directMaterial, etaAbove, etaBelow))
+        if (!LoadBoundaryData(rootMaterial, uv, ddxUV, ddyUV, etaExterior, entryBoundary, offset, directMaterial, etaAbove, etaBelow))
             return zero;
 
         PathContribution directLobes = LayerComposite::EvaluateBoundaryLobes(
@@ -849,6 +1065,8 @@ float3 Evaluate(SurfaceMaterial rootMaterial, float2 uv, float3 wo, float3 wi, f
                 if (!LoadBoundaryData(
                         rootMaterial,
                         uv,
+                        ddxUV,
+                        ddyUV,
                         etaExterior,
                         reverseBoundary,
                         offset,
@@ -1026,6 +1244,8 @@ float3 Evaluate(SurfaceMaterial rootMaterial, float2 uv, float3 wo, float3 wi, f
                 if (!LoadBoundaryData(
                         rootMaterial,
                         uv,
+                        ddxUV,
+                        ddyUV,
                         etaExterior,
                         reverseBoundary,
                         offset,
@@ -1134,6 +1354,8 @@ float3 Evaluate(SurfaceMaterial rootMaterial, float2 uv, float3 wo, float3 wi, f
         if (!LoadBoundaryData(
                 rootMaterial,
                 uv,
+                ddxUV,
+                ddyUV,
                 etaExterior,
                 forwardBoundary,
                 offset,
@@ -1238,7 +1460,7 @@ float3 Evaluate(SurfaceMaterial rootMaterial, float2 uv, float3 wo, float3 wi, f
 
     return IsPathFinite3(result) && all(result >= 0.0) ? result : zero;
 }
-float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float3 wo, float3 wi, float etaExterior, uint querySeed)
+float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 ddyUV, float3 wo, float3 wi, float etaExterior, uint querySeed)
 {
     if (!IsPathFinite3(wo) || !IsPathFinite3(wi) ||
         abs(wo.z) <= EPSILON_MIN || abs(wi.z) <= EPSILON_MIN ||
@@ -1268,6 +1490,8 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float3 wo, float3 wi,
         if (!LoadBoundaryData(
                 rootMaterial,
                 uv,
+                ddxUV,
+                ddyUV,
                 etaExterior,
                 probeBoundary,
                 offset,
@@ -1299,7 +1523,7 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float3 wo, float3 wi,
         if (!hasDeltaTransmission)
             break;
 
-        float3 woLayer = BxDF::RotateXY(frame.wo, -probeMaterial.anisotropyRotation);
+        float3 woLayer = BxDF::RotateXY(frame.wo, -GetAnisotropyRotation(probeMaterial));
         float3 wiLayer;
         float etaP;
         if (!BxDF::Transmission::Refract(
@@ -1312,7 +1536,7 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float3 wo, float3 wi,
             break;
         }
 
-        float3 wiIncident = BxDF::RotateXY(wiLayer, probeMaterial.anisotropyRotation);
+        float3 wiIncident = BxDF::RotateXY(wiLayer, GetAnisotropyRotation(probeMaterial));
         probeW = frame.bFlipped != 0u ? -wiIncident : wiIncident;
 
         int nextBoundary = probeBoundary + (probeW.z < 0.0 ? 1 : -1);
@@ -1331,7 +1555,7 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float3 wo, float3 wi,
         SurfaceMaterial directMaterial;
         float etaAbove;
         float etaBelow;
-        if (!LoadBoundaryData(rootMaterial, uv, etaExterior, entryBoundary, offset, directMaterial, etaAbove, etaBelow))
+        if (!LoadBoundaryData(rootMaterial, uv, ddxUV, ddyUV, etaExterior, entryBoundary, offset, directMaterial, etaAbove, etaBelow))
             return 0.0;
 
         result += LayerComposite::BoundaryMarginalPDF(
@@ -1394,6 +1618,8 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float3 wo, float3 wi,
                 if (!LoadBoundaryData(
                         rootMaterial,
                         uv,
+                        ddxUV,
+                        ddyUV,
                         etaExterior,
                         reverseBoundary,
                         offset,
@@ -1552,6 +1778,8 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float3 wo, float3 wi,
                 if (!LoadBoundaryData(
                         rootMaterial,
                         uv,
+                        ddxUV,
+                        ddyUV,
                         etaExterior,
                         reverseBoundary,
                         offset,
@@ -1655,6 +1883,8 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float3 wo, float3 wi,
         if (!LoadBoundaryData(
                 rootMaterial,
                 uv,
+                ddxUV,
+                ddyUV,
                 etaExterior,
                 forwardBoundary,
                 offset,

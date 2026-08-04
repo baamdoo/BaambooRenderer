@@ -159,7 +159,7 @@ PathTracerNode::PathTracerNode(render::RenderDevice& rd)
                   .hitGroupName       = "ShadowHitGroup",
                   .anyHitShaderExport = "AnyHit_ShadowAlpha",
               })
-          .SetMaxPayloadSize(sizeof(float) * 16) // SurfacePayload: 64 bytes; ShadowPayload is smaller.
+          .SetMaxPayloadSize(sizeof(float) * 6) // SurfacePayload: 24 bytes; ShadowPayload is smaller.
           .SetMaxAttributeSize(sizeof(float) * 2)
           .SetMaxRecursionDepth(1)
           .Build();

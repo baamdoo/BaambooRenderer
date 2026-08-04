@@ -69,7 +69,8 @@ ConstantBuffer< DescriptorHeapIndex > g_Transforms : register(b9, space0);
 #endif // _TRANSFORM
 
 #ifdef _MATERIAL
-ConstantBuffer< DescriptorHeapIndex > g_Materials : register(b10, space0);
+ConstantBuffer< DescriptorHeapIndex > g_Materials        : register(b10, space0);
+ConstantBuffer< DescriptorHeapIndex > g_MaterialTextures : register(b14, space0);
 #endif // _MATERIAL
 
 #ifdef _LIGHT

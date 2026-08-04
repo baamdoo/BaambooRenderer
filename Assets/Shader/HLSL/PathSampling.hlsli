@@ -392,6 +392,8 @@ float3 EstimateDirectLighting(
     float3 woWS,
     SurfaceMaterial material,
     float2 materialUV,
+    float2 ddxUV,
+    float2 ddyUV,
     float etaExterior,
     uint directionalQuerySeed,
     bool bUseMIS,
@@ -442,6 +444,8 @@ float3 EstimateDirectLighting(
     float3 f = BxDF::DirectionalComposite::Evaluate(
         material,
         materialUV,
+        ddxUV,
+        ddyUV,
         wo,
         wi,
         etaExterior,
@@ -476,6 +480,8 @@ float3 EstimateDirectLighting(
             float materialMarginalPDF = BxDF::DirectionalComposite::MarginalPDF(
                 material,
                 materialUV,
+                ddxUV,
+                ddyUV,
                 wo,
                 wi,
                 etaExterior,
@@ -500,6 +506,8 @@ float3 EstimateEnvironmentDirectLighting(
     float3 woWS,
     SurfaceMaterial material,
     float2 materialUV,
+    float2 ddxUV,
+    float2 ddyUV,
     float etaExterior,
     uint directionalQuerySeed,
     bool bUseMIS,
@@ -541,6 +549,8 @@ float3 EstimateEnvironmentDirectLighting(
     float3 f = BxDF::DirectionalComposite::Evaluate(
         material,
         materialUV,
+        ddxUV,
+        ddyUV,
         wo,
         wi,
         etaExterior,
@@ -567,6 +577,8 @@ float3 EstimateEnvironmentDirectLighting(
         float materialMarginalPDF = BxDF::DirectionalComposite::MarginalPDF(
             material,
             materialUV,
+            ddxUV,
+            ddyUV,
             wo,
             wi,
             etaExterior,
