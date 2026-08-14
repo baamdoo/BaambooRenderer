@@ -117,7 +117,6 @@ struct DynamicMeshComponent
 struct VoxelTerrainComponent
 {
 	baamboo::VoxelTerrainSettings settings = {};
-	float3 terrainOriginWorld = float3(0.0f);
 };
 
 //-------------------------------------------------------------------------

@@ -35,7 +35,7 @@ uint FlatTexel(uint3 t, uint dim)
 }
 
 // Isosurface vertex on `edge`: position interpolates the two corner samples, normal = density gradient.
-Vertex MakeEdgeVertex(int edge, float cornerVal[8], float3 cornerPos[8], float3 cornerGrad[8])
+VoxelVertex MakeEdgeVertex(int edge, float cornerVal[8], float3 cornerPos[8], float3 cornerGrad[8], float chunkSizeMeter)
 {
     uint2  ec = kEdgeCorners[edge];
     float  v0 = cornerVal[ec.x],  v1 = cornerVal[ec.y];
@@ -48,12 +48,7 @@ Vertex MakeEdgeVertex(int edge, float cornerVal[8], float3 cornerPos[8], float3 
     float  gl2 = dot(g, g);
     float3 n   = (gl2 > 1e-12) ? g * rsqrt(gl2) : float3(0.0, 1.0, 0.0);
 
-    Vertex vert;
-    vert.posX = pos.x; vert.posY = pos.y; vert.posZ = pos.z;
-    vert.u = 0.0; vert.v = 0.0;
-    vert.normalX = n.x; vert.normalY = n.y; vert.normalZ = n.z;
-    vert.tangentX = 0.0; vert.tangentY = 0.0; vert.tangentZ = 0.0; vert.tangentW = 1.0;
-    return vert;
+    return VoxelPackVertex(pos, n, chunkSizeMeter);
 }
 
 [numthreads(4, 4, 4)]
@@ -106,19 +101,21 @@ void main(uint3 cell : SV_DispatchThreadID)
     Counter.InterlockedAdd(0u, triCount, baseTri); // reserve a contiguous triangle range
     Counter.InterlockedAdd(4u, 1u);                // active-cell tally
 
-    if (baseTri + triCount > g_MaxTriangles)
-        return; // slab overflow -> drop
+    const float chunkSize = float(C) * g_VoxelSizeMeter;
 
-    RWStructuredBuffer< Vertex > OutV = GetResource(g_OutVertices.index);
+    RWStructuredBuffer< VoxelVertex > OutV = GetResource(g_OutVertices.index);
     for (uint t = 0u; t < triCount; ++t)
     {
+        if (baseTri + t >= g_MaxTriangles)
+            break;
+
         int eA = TriTable[cubeIndex * 16u + t * 3u + 0u];
         int eB = TriTable[cubeIndex * 16u + t * 3u + 1u];
         int eC = TriTable[cubeIndex * 16u + t * 3u + 2u];
 
         uint v0 = g_VertexSlabBase + (baseTri + t) * 3u;
-        OutV[v0 + 0u] = MakeEdgeVertex(eA, cornerVal, cornerPos, cornerGrad);
-        OutV[v0 + 1u] = MakeEdgeVertex(eC, cornerVal, cornerPos, cornerGrad); // winding order: eA, eC, eB
-        OutV[v0 + 2u] = MakeEdgeVertex(eB, cornerVal, cornerPos, cornerGrad);
+        OutV[v0 + 0u] = MakeEdgeVertex(eA, cornerVal, cornerPos, cornerGrad, chunkSize);
+        OutV[v0 + 1u] = MakeEdgeVertex(eC, cornerVal, cornerPos, cornerGrad, chunkSize); // winding order: eA, eC, eB
+        OutV[v0 + 2u] = MakeEdgeVertex(eB, cornerVal, cornerPos, cornerGrad, chunkSize);
     }
 }

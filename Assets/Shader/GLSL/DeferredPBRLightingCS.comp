@@ -37,7 +37,7 @@ layout(set = 1, binding = 15) uniform usampler2D g_VBuf1;        // visibility p
 layout(set = 1, binding = 16) uniform sampler2D  g_CoreNormal;   // RG16_SNORM signed oct normal
 layout(set = 1, binding = 17) uniform sampler2D  g_CoreMaterial; // R roughness | G matClass | BA spare
 
-layout(set = 1, binding = 19, std140) uniform VoxelChunkDescUBO { VoxelChunkDesc d; } g_VoxelChunkDesc;
+layout(set = 1, binding = 19) readonly buffer VoxelChunkDescBuffer { VoxelChunkDesc g_VoxelChunkDescs[]; };
 
 layout(push_constant) uniform DebugConstants
 {
@@ -79,12 +79,11 @@ void main()
         if (VisIsTerrain(v0))
         {
             // resolve composes the detail normal; core = (base Ng.y, matClass, Lt/5 debug, micro cavity)
-            N         = OctDecode(texelFetch(g_CoreNormal, pixCoords, 0).xy);
+            N = OctDecode(texelFetch(g_CoreNormal, pixCoords, 0).xy);
             vec4 core = texelFetch(g_CoreMaterial, pixCoords, 0);
 
-            VoxelChunkDesc chunk = g_VoxelChunkDesc.d;
+            VoxelChunkDesc chunk = g_VoxelChunkDescs[VisChunkIndex(v0) - VOXEL_CHUNK_INSTANCE_BASE];
 
-            // TODO(you)
             // fallback keeps terrain visible until the material path is ported
             const vec3  surfaceAlbedo = vec3(0.45, 0.38, 0.28);
             const float surfaceRough  = 0.85;
@@ -112,6 +111,31 @@ void main()
                     vec3(0.95, 0.30, 0.25)
                 );
                 albedo = mix(albedo, kLevelTint[min(level, 5u)], 0.8);
+            }
+
+            // chunk tint: distinct color per chunk slot (streaming debug)
+            if ((chunk.debugFlags & 2u) != 0u)
+            {
+                float ci = float(VisChunkIndex(v0) - VOXEL_CHUNK_INSTANCE_BASE);
+                vec3 chunkTint = fract(vec3(0.618034, 0.302775, 0.415573) * ci + vec3(0.15, 0.45, 0.75));
+                albedo = mix(albedo, chunkTint, 0.7);
+            }
+
+            // LOD tint: distinct color per terrain LOD level (ring debug)
+            if ((chunk.debugFlags & 8u) != 0u)
+            {
+                uint lod = chunk.lodAndMask & 0xFFu;
+                const vec3 kLodTint[8] = vec3[8](
+                    vec3(0.30, 0.85, 0.35),
+                    vec3(0.25, 0.55, 0.95),
+                    vec3(0.95, 0.80, 0.25),
+                    vec3(0.90, 0.35, 0.30),
+                    vec3(0.75, 0.35, 0.90),
+                    vec3(0.25, 0.85, 0.80),
+                    vec3(0.95, 0.55, 0.20),
+                    vec3(0.60, 0.60, 0.60)
+                );
+                albedo = mix(albedo, kLodTint[min(lod, 7u)], 0.7);
             }
 
             ao         = 1.0;

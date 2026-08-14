@@ -392,7 +392,9 @@ void VkCommandContext::Impl::CopyBuffer(
 	VkDeviceSize srcOffset)
 {
 	TransitionBarrier(pDstBuffer, { VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT }, dstOffset);
-	TransitionBarrier(pSrcBuffer, { VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT }, srcOffset, true);
+	TransitionBarrier(pSrcBuffer, { VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT }, srcOffset);
+	// queued barriers must land before the copy — a same-state early-out above must not skip the flush
+	FlushBarriers();
 	CopyBuffer(
 		pDstBuffer->vkBuffer(),
 		pSrcBuffer->vkBuffer(),
@@ -415,6 +417,8 @@ void VkCommandContext::Impl::CopyBuffer(const Arc< VulkanTexture >& pDstTexture,
 		pDstTexture,
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		subresourceRange);
+	// queued barriers must land before the copy — a same-state early-out above must not skip the flush
+	FlushBarriers();
 
 	vkCmdCopyBufferToImage(m_vkCommandBuffer, pSrcBuffer->vkBuffer(), pDstTexture->vkImage(),
 		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, static_cast<u32>(regions.size()), regions.data());
@@ -446,6 +450,8 @@ void VkCommandContext::Impl::CopyTexture(const Arc< VulkanTexture >& pDstTexture
 
 	copyRegion.extent = pSrcTexture->Desc().extent;
 
+	// queued barriers must land before the copy — a same-state early-out above must not skip the flush
+	FlushBarriers();
 	vkCmdCopyImage(m_vkCommandBuffer, pSrcTexture->vkImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, pDstTexture->vkImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 }
 
@@ -682,8 +688,15 @@ void VkCommandContext::Impl::TransitionBarrier(
 	if (!pBuffer)
 		return;
 
+	constexpr VkAccessFlags2 kWriteAccessMask =
+		VK_ACCESS_2_SHADER_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT |
+		VK_ACCESS_2_TRANSFER_WRITE_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT |
+		VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+
+	// same-state early-out is only valid for read states: repeated writes to an
+	// identical state still need an explicit WAW ordering barrier
 	const auto& oldState = pBuffer->GetState().GetSubresourceState();
-	if (oldState == newState)
+	if (oldState == newState && !(newState.access & kWriteAccessMask))
 		return;
 
 	VkBufferMemoryBarrier2 barrier = {};
@@ -695,6 +708,19 @@ void VkCommandContext::Impl::TransitionBarrier(
 	barrier.dstStageMask  = newState.stage;
 	barrier.srcAccessMask = oldState.access;
 	barrier.dstAccessMask = newState.access;
+
+	// write-target barriers need a memory dependency on the previous write (WAW) —
+	// single-state tracking loses it once a read transition overwrites the state
+	if (newState.access & kWriteAccessMask)
+	{
+		const BarrierState& lastWrite = pBuffer->GetLastWriteState();
+		if ((oldState.access & kWriteAccessMask) == 0 && (lastWrite.access & kWriteAccessMask) != 0)
+		{
+			barrier.srcStageMask  |= lastWrite.stage;
+			barrier.srcAccessMask |= lastWrite.access;
+		}
+		pBuffer->SetLastWriteState(newState);
+	}
 
 	barrier.buffer = pBuffer->vkBuffer();
 	barrier.offset = offsetInBytes;
@@ -745,6 +771,7 @@ void VkCommandContext::Impl::UAVBarrier(const Arc< VulkanBuffer >& pBuffer, bool
 	barrier.offset              = 0;
 	barrier.size                = VK_WHOLE_SIZE;
 	pBuffer->SetState({ barrier.dstAccessMask, barrier.dstStageMask });
+	pBuffer->SetLastWriteState({ barrier.dstAccessMask, barrier.dstStageMask });
 
 	AddBarrier(barrier, bFlushImmediate);
 }
@@ -1146,7 +1173,7 @@ void VkCommandContext::Impl::DrawMeshTasksIndirect(const Arc< VulkanBuffer >& pA
 	BindShaderResources(VK_PIPELINE_BIND_POINT_GRAPHICS, m_pGraphicsPipeline->vkPipelineLayout());
 
 	m_RenderDevice.Dispatch().cmdDrawMeshTasksIndirect(
-		m_vkCommandBuffer, pArgumentBuffer->vkBuffer(), offsetInBytes, numDraws, strideInBytes);
+		m_vkCommandBuffer, pArgumentBuffer->vkBuffer(), offsetInBytes + offsetof(IndirectCommandData, groupCountX), numDraws, strideInBytes);
 }
 
 void VkCommandContext::Impl::DrawMeshTasksIndirectCount(const Arc< VulkanBuffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< VulkanBuffer >& pCountBuffer, u32 numDraws, u32 strideInBytes)
@@ -1155,7 +1182,7 @@ void VkCommandContext::Impl::DrawMeshTasksIndirectCount(const Arc< VulkanBuffer 
 	BindShaderResources(VK_PIPELINE_BIND_POINT_GRAPHICS, m_pGraphicsPipeline->vkPipelineLayout());
 
 	m_RenderDevice.Dispatch().cmdDrawMeshTasksIndirectCount(
-		m_vkCommandBuffer, pArgumentBuffer->vkBuffer(), offsetInBytes,
+		m_vkCommandBuffer, pArgumentBuffer->vkBuffer(), offsetInBytes + offsetof(IndirectCommandData, groupCountX),
 		pCountBuffer->vkBuffer(), 0, numDraws, strideInBytes);
 }
 

@@ -3,7 +3,7 @@
 
 #define DESCRIPTORSET_COMMON 0
 
-#define INVALID_INDEX 0xffffffff
+#define INVALID_INDEX 0xffffffffu
 #define MATERIAL_FLAG_FACE_NORMALS (1u << 0u)
 #define MATERIAL_FLAG_ALPHA_MASK   (1u << 1u)
 #define MATERIAL_FLAG_ALPHA_BLEND  (1u << 2u)
@@ -141,24 +141,25 @@ struct IndirectCommandData
 //-------------------------------------------------------------------------
 // Voxel terrain chunk
 //-------------------------------------------------------------------------
-// Voxel chunk i lives at instance (VOXEL_CHUNK_INSTANCE_BASE + i) and VoxelChunkCounts[i]
-#define VOXEL_CHUNK_INSTANCE_BASE 0u
+#define VOXEL_CHUNK_INSTANCE_BASE 0u   // Voxel chunk i lives at instance (VOXEL_CHUNK_INSTANCE_BASE + i) and VoxelChunkCounts[i]
+#define VOXEL_CHUNK_MAX_SLOTS     512u
+#define VOXEL_EROSION_APRON       2u   // erosion map apron texels per side (interior = dim - 2*apron)
 
 struct VoxelChunkDesc
 {
     float originX, originY, originZ;
-    uint  vertexOffset;          // slab base into the voxel Vertex pool
+    uint  vOffset;          // page base into the voxel Vertex pool
 
-    uint  meshletVertexOffset;   // slab base into the voxel MeshletVertices pool
-    uint  meshletTriangleOffset; // slab base into the voxel MeshletTriangles pool
-    float chunkSizeMeter;        // world XZ extent
-    uint  diceMaxLevel;          // micro-dicing max subdivision level (0 = off, 1..5)
+    uint  mvOffset;         // page base into the voxel MeshletVertices pool
+    uint  mtOffset;         // page base into the voxel MeshletTriangles pool
+    float chunkSizeMeter;   // world XZ extent
+    uint  diceMaxLevel;     // micro-dicing max subdivision level (0 = off, 1..5)
 
     // Micro-dicing
     float diceRadiusMeter;       // camera-distance band where base tris are diced
     float diceFadeWidthMeter;    // displacement fades to 0 approaching the radius
     float diceDisplacementScale; // bake-band displacement scale (1 = baked detail height)
-    uint  debugFlags;            // bit0 = dice-level tint
+    uint  debugFlags;            // bit0 = dice-level tint, bit1 = chunk tint, bit2 = micro cavity
 
     // Adaptive dicing: subdivision level l(d,e) = log2(K*e / (targetPx*d)).
     float diceTargetPx;          // target sub-edge screen size (px)
@@ -173,14 +174,127 @@ struct VoxelChunkDesc
 
     uint  microOctaves;
     float microSharpness;        // -1 = ridged .. 0 = plain .. +1 = billowed
-    uint  padding2;
-    uint  padding3;
+    uint  pageID;
+    uint  lodAndMask;            // lod u8 | transitionMask u8
+
+    uint mOffset;                // absolute meshlet-pool base of this chunk's page
+    uint erosionSlice;           // erosion detail array slice (independent of pageID)
+    uint flags;                  // bit0 = renderable
+    uint reserved;
 };
 
 struct VoxelChunkCounts
 {
     uint meshletCount;
 };
+
+// 12B voxel vertex: chunk-local position quantized by chunkSize + octahedral normal
+struct VoxelVertex
+{
+    uint posXY;    // pos.x 16b | pos.y 16b
+    uint posZres;  // pos.z 16b | reserved 16b
+    uint octUoctV; // octahedral normal u 16b | octahedral normal v 16b
+};
+
+#ifdef _HLSL
+uint OctEncodePacked(float3 n)
+{
+    float denom = abs(n.x) + abs(n.y) + abs(n.z);
+    if (denom < 1e-6)
+        return 0u;
+
+    float2 oct = n.xy / denom;
+    if (n.z < 0.0)
+        oct = float2((1.0 - abs(oct.y)) * (oct.x >= 0.0 ? 1.0 : -1.0),
+                     (1.0 - abs(oct.x)) * (oct.y >= 0.0 ? 1.0 : -1.0));
+
+    uint2 q = uint2(round((oct * 0.5 + 0.5) * 65535.0));
+    return q.x << 16u | q.y;
+}
+
+float3 OctDecodePacked(uint octN)
+{
+    float2 oct = float2(octN >> 16u, octN & 0xFFFFu) / 65535.0 * 2.0 - 1.0;
+
+    float z = 1.0 - abs(oct.x) - abs(oct.y);
+    if (z < 0.0)
+        oct = float2((1.0 - abs(oct.y)) * (oct.x >= 0.0 ? 1.0 : -1.0),
+                     (1.0 - abs(oct.x)) * (oct.y >= 0.0 ? 1.0 : -1.0));
+
+    return normalize(float3(oct.x, oct.y, z));
+}
+
+VoxelVertex VoxelPackVertex(float3 pos, float3 normal, float chunkSizeMeter)
+{
+    uint3 posQ = uint3(round(saturate(pos / chunkSizeMeter) * 65535.0));
+
+    VoxelVertex v;
+    v.posXY    = posQ.x << 16u | posQ.y;
+    v.posZres  = posQ.z << 16u;
+    v.octUoctV = OctEncodePacked(normal);
+    return v;
+}
+
+float3 VoxelUnpackPos(VoxelVertex v, float chunkSizeMeter)
+{
+    uint3 posQ = uint3(v.posXY >> 16u, v.posXY & 0xFFFFu, v.posZres >> 16u);
+    return float3(posQ) / 65535.0 * chunkSizeMeter;
+}
+
+float3 VoxelUnpackNormal(VoxelVertex v)
+{
+    return OctDecodePacked(v.octUoctV);
+}
+#else
+uint OctEncodePacked(vec3 n)
+{
+    float denom = abs(n.x) + abs(n.y) + abs(n.z);
+    if (denom < 1e-6)
+        return 0u;
+
+    vec2 oct = n.xy / denom;
+    if (n.z < 0.0)
+        oct = vec2((1.0 - abs(oct.y)) * (oct.x >= 0.0 ? 1.0 : -1.0),
+                   (1.0 - abs(oct.x)) * (oct.y >= 0.0 ? 1.0 : -1.0));
+
+    uvec2 q = uvec2(round((oct * 0.5 + 0.5) * 65535.0));
+    return q.x << 16u | q.y;
+}
+
+vec3 OctDecodePacked(uint octN)
+{
+    vec2 oct = vec2(octN >> 16u, octN & 0xFFFFu) / 65535.0 * 2.0 - 1.0;
+
+    float z = 1.0 - abs(oct.x) - abs(oct.y);
+    if (z < 0.0)
+        oct = vec2((1.0 - abs(oct.y)) * (oct.x >= 0.0 ? 1.0 : -1.0),
+                   (1.0 - abs(oct.x)) * (oct.y >= 0.0 ? 1.0 : -1.0));
+
+    return normalize(vec3(oct.x, oct.y, z));
+}
+
+VoxelVertex VoxelPackVertex(vec3 pos, vec3 normal, float chunkSizeMeter)
+{
+    uvec3 posQ = uvec3(round(clamp(pos / chunkSizeMeter, 0.0, 1.0) * 65535.0));
+
+    VoxelVertex v;
+    v.posXY    = posQ.x << 16u | posQ.y;
+    v.posZres  = posQ.z << 16u;
+    v.octUoctV = OctEncodePacked(normal);
+    return v;
+}
+
+vec3 VoxelUnpackPos(VoxelVertex v, float chunkSizeMeter)
+{
+    uvec3 posQ = uvec3(v.posXY >> 16u, v.posXY & 0xFFFFu, v.posZres >> 16u);
+    return vec3(posQ) / 65535.0 * chunkSizeMeter;
+}
+
+vec3 VoxelUnpackNormal(VoxelVertex v)
+{
+    return OctDecodePacked(v.octUoctV);
+}
+#endif
 
 #ifdef _HLSL
 struct CullData

@@ -24,13 +24,10 @@ void main(uint3 dt : SV_DispatchThreadID)
     if (t >= totalTris)
         return;
 
-    StructuredBuffer< Vertex > Verts = GetResource(g_Vertices.index);
+    StructuredBuffer< VoxelVertex > Verts = GetResource(g_Vertices.index);
     float3 c = float3(0.0, 0.0, 0.0);
     [unroll] for (uint k = 0u; k < 3u; ++k)
-    {
-        Vertex vv = Verts[g_VertexSlabBase + t * 3u + k];
-        c += float3(vv.posX, vv.posY, vv.posZ);
-    }
+        c += VoxelUnpackPos(Verts[g_VertexSlabBase + t * 3u + k], g_ChunkSizeMeter);
 
     uint key = VoxelTriSortKey(c / 3.0, g_ChunkSizeMeter);
 

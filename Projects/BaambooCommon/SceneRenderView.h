@@ -197,13 +197,23 @@ struct PostProcessRenderView
 	} tonemap;
 };
 
+struct VoxelChunkView
+{
+	VoxelChunkID id;
+	float3       originWS;
+	u32          mask = 0u; // Transvoxel transition-face mask (bit per face)
+};
+
 struct VoxelTerrainRenderView
 {
-	bool   bValid   = false;
-	u32    revision = 0u;
+	bool   bValid        = false;
+	u32    revision      = 0u;
+	u32    recenterCount = 0u;
 
-	float3 originWorld         = float3(0.0f);
 	float  chunkWorldSizeMeter = 64.0f;
+
+	// Desired set: chunks that should be resident this frame
+	std::vector< VoxelChunkView > chunks;
 
 	VoxelTerrainGenParams genParams = {};
 

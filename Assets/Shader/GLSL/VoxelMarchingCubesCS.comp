@@ -14,7 +14,7 @@ layout(push_constant) uniform McPushConstants
 
 layout(set = 1, binding = 0) readonly buffer DensityFieldBuffer { float  g_DensityField[]; };
 layout(set = 1, binding = 1)          buffer McCounterBuffer    { uint   g_MCCounter[]; };
-layout(set = 1, binding = 2)          buffer OutVertexBuffer    { Vertex g_OutVertices[]; };
+layout(set = 1, binding = 2)          buffer OutVertexBuffer    { VoxelVertex g_OutVertices[]; };
 layout(set = 1, binding = 3) readonly buffer TriTableBuffer     { int    g_TriTable[]; };
 
 const uvec3 kCornerOffset[8] = uvec3[8](
@@ -32,7 +32,7 @@ uint FlatTexel(uvec3 t, uint dim)
 }
 
 // Isosurface vertex on `edge`: position interpolates the two corner samples, normal = density gradient.
-Vertex MakeEdgeVertex(int edge, float cv[8], vec3 cp[8], vec3 cg[8])
+VoxelVertex MakeEdgeVertex(int edge, float cv[8], vec3 cp[8], vec3 cg[8], float chunkSizeMeter)
 {
     uvec2 ec = kEdgeCorners[edge];
     float v0 = cv[ec.x], v1 = cv[ec.y];
@@ -45,12 +45,7 @@ Vertex MakeEdgeVertex(int edge, float cv[8], vec3 cp[8], vec3 cg[8])
     float gl2 = dot(g, g);
     vec3  n   = (gl2 > 1e-12) ? g * inversesqrt(gl2) : vec3(0.0, 1.0, 0.0);
 
-    Vertex vert;
-    vert.posX = pos.x; vert.posY = pos.y; vert.posZ = pos.z;
-    vert.u = 0.0; vert.v = 0.0;
-    vert.normalX = n.x; vert.normalY = n.y; vert.normalZ = n.z;
-    vert.tangentX = 0.0; vert.tangentY = 0.0; vert.tangentZ = 0.0; vert.tangentW = 1.0;
-    return vert;
+    return VoxelPackVertex(pos, n, chunkSizeMeter);
 }
 
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
@@ -100,18 +95,20 @@ void main()
     uint baseTri = atomicAdd(g_MCCounter[0], triCount); // reserve a contiguous triangle range
     atomicAdd(g_MCCounter[1], 1u);                      // active-cell tally
 
-    if (baseTri + triCount > pc.g_MaxTriangles)
-        return; // slab overflow -> drop
+    float chunkSize = float(C) * pc.g_VoxelSizeMeter;
 
     for (uint t = 0u; t < triCount; ++t)
     {
+        if (baseTri + t >= pc.g_MaxTriangles)
+            break;
+
         int eA = g_TriTable[cubeIndex * 16u + t * 3u + 0u];
         int eB = g_TriTable[cubeIndex * 16u + t * 3u + 1u];
         int eC = g_TriTable[cubeIndex * 16u + t * 3u + 2u];
 
         uint v0 = pc.g_VertexSlabBase + (baseTri + t) * 3u;
-        g_OutVertices[v0 + 0u] = MakeEdgeVertex(eA, cornerVal, cornerPos, cornerGrad);
-        g_OutVertices[v0 + 1u] = MakeEdgeVertex(eC, cornerVal, cornerPos, cornerGrad); // winding order: eA, eC, eB
-        g_OutVertices[v0 + 2u] = MakeEdgeVertex(eB, cornerVal, cornerPos, cornerGrad);
+        g_OutVertices[v0 + 0u] = MakeEdgeVertex(eA, cornerVal, cornerPos, cornerGrad, chunkSize);
+        g_OutVertices[v0 + 1u] = MakeEdgeVertex(eC, cornerVal, cornerPos, cornerGrad, chunkSize); // winding order: eA, eC, eB
+        g_OutVertices[v0 + 2u] = MakeEdgeVertex(eB, cornerVal, cornerPos, cornerGrad, chunkSize);
     }
 }

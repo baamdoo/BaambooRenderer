@@ -24,7 +24,7 @@ ConstantBuffer< DescriptorHeapIndex > g_VBuf1                : register(b16, ROO
 ConstantBuffer< DescriptorHeapIndex > g_CoreNormal           : register(b17, ROOT_CONSTANT_SPACE); // RG16_SNORM signed oct normal
 ConstantBuffer< DescriptorHeapIndex > g_CoreMaterial         : register(b18, ROOT_CONSTANT_SPACE); // R roughness (terrain: base Ng.y) | G matClass | B dice-level debug (Lt/5) | A micro cavity
 
-ConstantBuffer< VoxelChunkDesc > g_VoxelChunkDesc : register(b1, space1);
+ConstantBuffer< DescriptorHeapIndex > g_VoxelChunkDescs : register(b19, ROOT_CONSTANT_SPACE);
 
 cbuffer DebugConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
@@ -81,12 +81,12 @@ void main(uint3 tID : SV_DispatchThreadID)
             Texture2D< float4 > CoreMaterial = GetResource(g_CoreMaterial.index);
 
             // resolve composes the detail normal; core = (base Ng.y, matClass, Lt/5 debug, micro cavity)
-            N           = OctDecode(CoreNormal.Load(int3(texCoords, 0)));
+            N = OctDecode(CoreNormal.Load(int3(texCoords, 0)));
             float4 core = CoreMaterial.Load(int3(texCoords, 0));
 
-            VoxelChunkDesc chunk = g_VoxelChunkDesc;
+            StructuredBuffer< VoxelChunkDesc > VoxelChunkDescs = GetResource(g_VoxelChunkDescs.index);
+            VoxelChunkDesc chunk = VoxelChunkDescs[VisChunkIndex(v0) - VOXEL_CHUNK_INSTANCE_BASE];
 
-            // TODO(you)
             // fallback keeps terrain visible until the material path is ported
             const float3 surfaceAlbedo = float3(0.45, 0.38, 0.28);
             const float  surfaceRough  = 0.85;
@@ -113,6 +113,31 @@ void main(uint3 tID : SV_DispatchThreadID)
                     float3(0.95, 0.30, 0.25)
                 };
                 albedo = lerp(albedo, kLevelTint[min(lvl, 5u)], 0.8);
+            }
+
+            // chunk tint: distinct color per chunk slot (streaming debug)
+            if ((chunk.debugFlags & 2u) != 0u)
+            {
+                float ci = float(VisChunkIndex(v0) - VOXEL_CHUNK_INSTANCE_BASE);
+                float3 chunkTint = frac(float3(0.618034, 0.302775, 0.415573) * ci + float3(0.15, 0.45, 0.75));
+                albedo = lerp(albedo, chunkTint, 0.7);
+            }
+
+            // LOD tint: distinct color per terrain LOD level (ring debug)
+            if ((chunk.debugFlags & 8u) != 0u)
+            {
+                uint lod = chunk.lodAndMask & 0xFFu;
+                const float3 kLodTint[8] = {
+                    float3(0.30, 0.85, 0.35),
+                    float3(0.25, 0.55, 0.95),
+                    float3(0.95, 0.80, 0.25),
+                    float3(0.90, 0.35, 0.30),
+                    float3(0.75, 0.35, 0.90),
+                    float3(0.25, 0.85, 0.80),
+                    float3(0.95, 0.55, 0.20),
+                    float3(0.60, 0.60, 0.60)
+                };
+                albedo = lerp(albedo, kLodTint[min(lod, 7u)], 0.7);
             }
 
             ao         = 1.0;

@@ -154,10 +154,11 @@ public:
 //-------------------------------------------------------------------------
 enum class eImageType
 {
-    Texture1D   = 0,
-    Texture2D   = 1,
-    Texture3D   = 2,
-    TextureCube = 3,
+    Texture1D      = 0,
+    Texture2D      = 1,
+    Texture3D      = 2,
+    TextureCube    = 3,
+    Texture2DArray = 4,
 };
 
 enum 

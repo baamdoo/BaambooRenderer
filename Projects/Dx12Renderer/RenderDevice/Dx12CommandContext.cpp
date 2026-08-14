@@ -1086,7 +1086,6 @@ void Dx12CommandContext::Impl::DrawIndexed(u32 indexCount, u32 instanceCount, u3
 
 void Dx12CommandContext::Impl::DrawIndirect(const Arc< Dx12Buffer >& pArgumentBuffer, u64 offsetInBytes, u32 numDraws)
 {
-	UNUSED(offsetInBytes);
 	FlushBarriers();
 
 	auto& sr = static_cast<Dx12SceneResource&>(m_RenderDevice.GetResourceManager().GetSceneResource());
@@ -1094,7 +1093,7 @@ void Dx12CommandContext::Impl::DrawIndirect(const Arc< Dx12Buffer >& pArgumentBu
 		sr.GetSceneD3D12CommandSignature(),
 		numDraws,
 		pArgumentBuffer->GetD3D12Resource(),
-		0,
+		offsetInBytes,
 		nullptr,
 		0
 	);
@@ -1102,7 +1101,6 @@ void Dx12CommandContext::Impl::DrawIndirect(const Arc< Dx12Buffer >& pArgumentBu
 
 void Dx12CommandContext::Impl::DrawIndirectWithCount(const Arc< Dx12Buffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< Dx12Buffer >& pCountBuffer, u32 numDraws)
 {
-	UNUSED(offsetInBytes);
 	FlushBarriers();
 
 	auto& sr = static_cast<Dx12SceneResource&>(m_RenderDevice.GetResourceManager().GetSceneResource());
@@ -1110,7 +1108,7 @@ void Dx12CommandContext::Impl::DrawIndirectWithCount(const Arc< Dx12Buffer >& pA
 		sr.GetSceneD3D12CommandSignature(),
 		numDraws,
 		pArgumentBuffer->GetD3D12Resource(),
-		0,
+		offsetInBytes,
 		pCountBuffer->GetD3D12Resource(),
 		0
 	);
@@ -1653,12 +1651,14 @@ void Dx12CommandContext::DrawIndexed(u32 indexCount, u32 instanceCount, u32 firs
 
 void Dx12CommandContext::DrawMeshTasksIndirect(const Arc< render::Buffer >& pArgumentBuffer, u64 offsetInBytes, u32 numDraws, u32 strideInBytes)
 {
+	assert(strideInBytes == sizeof(IndirectCommandData));
 	UNUSED(strideInBytes);
 	m_Impl->DrawIndirect(StaticCast<Dx12Buffer>(pArgumentBuffer), offsetInBytes, numDraws);
 }
 
 void Dx12CommandContext::DrawMeshTasksIndirectCount(const Arc< render::Buffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< render::Buffer >& pCountBuffer, u32 numDraws, u32 strideInBytes)
 {
+	assert(strideInBytes == sizeof(IndirectCommandData));
 	UNUSED(strideInBytes);
 	m_Impl->DrawIndirectWithCount(StaticCast<Dx12Buffer>(pArgumentBuffer), offsetInBytes, StaticCast<Dx12Buffer>(pCountBuffer), numDraws);
 }

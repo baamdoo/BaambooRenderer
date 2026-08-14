@@ -24,13 +24,14 @@ cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
     uint   g_Phase;
 };
 
-ConstantBuffer< VoxelChunkDesc >      g_VoxelChunkDesc   : register(b0, space1);
-ConstantBuffer< DescriptorHeapIndex > g_ErosionDetailMap : register(b8, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_VoxelChunkDescs  : register(b8, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_ErosionDetailMap : register(b9, ROOT_CONSTANT_SPACE);
 
 static StructuredBuffer< MeshData >      Meshes     = GetResource(g_Meshes.index);
 static StructuredBuffer< InstanceData >  Instances  = GetResource(g_Instances.index);
 static StructuredBuffer< TransformData > Transforms = GetResource(g_Transforms.index);
 
+static StructuredBuffer< VoxelChunkDesc > VoxelChunkDescs = GetResource(g_VoxelChunkDescs.index);
 
 uint hash(uint a)
 {
@@ -133,7 +134,7 @@ groupshared uint     sh_TriangleCount;
 groupshared uint     sh_VertexOffset;
 groupshared uint     sh_TriangleOffset;
 groupshared uint     sh_MaterialID;
-groupshared uint     sh_IsVoxel;    // 1 = voxel chunk instance (geometry from voxel pools, voxel visID)
+groupshared uint     sh_VoxelChunkIndex;
 groupshared uint     sh_Lod;
 groupshared uint     sh_VtxHeapIdx; // bindless heap index of the chosen vertex pool
 groupshared uint     sh_MvHeapIdx;  // ... meshlet-vertex pool
@@ -142,7 +143,7 @@ groupshared uint     sh_MtHeapIdx;  // ... meshlet-triangle pool
 groupshared float4 sh_ClipPos[64];
 
 // Diced-path caches: max 10 base tris per group (budget L1) -> 30 corners.
-groupshared float3 sh_CornerPos[30]; // chunk-local
+groupshared float3 sh_CornerPosWS[30];
 groupshared float3 sh_CornerNrm[30];
 groupshared uint   sh_TriLt[10];     // per-base-tri target level Lt = max(Le) (0 = plain pass-through)
 groupshared uint   sh_TriLe[10];     // per-base-tri edge levels, packed: Le01 | Le12 << 4 | Le20 << 8
@@ -163,10 +164,10 @@ void main(
 
     // COMPACTED dispatch: recover (slot, localGroup) wave-cooperatively — lane t owns slot,
     // a wave prefix sum over per-slot group counts replaces the serial scan.
-    uint t          = GTid.x;
-    uint tLm        = (Payload.LmPacked[t >> 3u] >> ((t % 8u) * 4u)) & 0xFu;
-    uint tTriCount  = (Payload.triCountPacked[t >> 2u] >> ((t % 4u) * 8u)) & 0xFFu;
-    uint tNumGroups = (t < slotCount) ? ((tLm > 0u) ? DiceGroupsForMeshlet(tLm, tTriCount) : 1u) : 0u;
+    uint ti         = GTid.x;
+    uint tLm        = (Payload.LmPacked[ti >> 3u] >> ((ti % 8u) * 4u)) & 0xFu;
+    uint tTriCount  = (Payload.triCountPacked[ti >> 2u] >> ((ti % 4u) * 8u)) & 0xFFu;
+    uint tNumGroups = (ti < slotCount) ? ((tLm > 0u) ? DiceGroupsForMeshlet(tLm, tTriCount) : 1u) : 0u;
     uint tPrefix    = WavePrefixSum(tNumGroups);
 
     bool slotMatch  = (tNumGroups != 0u) && (Gid.x >= tPrefix) && (Gid.x < tPrefix + tNumGroups);
@@ -174,12 +175,11 @@ void main(
     uint localGroup = Gid.x - WaveActiveSum(slotMatch ? tPrefix : 0u); // exactly one matching lane -> its prefix
 
     // k-th set bit of laneBits: the set lane whose compact index among set lanes equals slot
-    bool tSet        = ((laneBits >> t) & 1u) != 0u;
+    bool tSet        = ((laneBits >> ti) & 1u) != 0u;
     bool laneMatch   = tSet && (WavePrefixCountBits(tSet) == slot);
     uint tsLaneIndex = firstbitlow(WaveActiveBallot(laneMatch).x);
 
 	uint mi = Payload.miBaseGroupID + tsLaneIndex; // mesh.mOffset is already baked into the meshlet indices by TaskShader
-    uint ti = GTid.x;
 
     uint slotLm = (Payload.LmPacked[slot >> 3u] >> ((slot & 7u) * 4u)) & 0xFu;
     bool diced  = (Payload.diceMask & (1u << slot)) != 0u;
@@ -196,22 +196,30 @@ void main(
         StructuredBuffer< Meshlet > Meshlets = GetResource(instance.isVoxel ? g_VoxelMeshlets.index : g_MeshStreams.meshlets);
         Meshlet meshlet = Meshlets[mi];
 
-        sh_LocalToWorld   = transform.mLocalToWorld;
-        sh_VOffset        = mesh.vOffset;
-        sh_MvOffset       = mesh.lods[Payload.lodLevel].mvOffset;
-        sh_MtOffset       = mesh.lods[Payload.lodLevel].mtOffset;
-        sh_VertexCount    = meshlet.vertexCount;
-        sh_TriangleCount  = meshlet.triangleCount;
-        sh_VertexOffset   = meshlet.vertexOffset;
-        sh_TriangleOffset = meshlet.triangleOffset;
-		sh_MaterialID     = instance.materialID;
-        sh_IsVoxel        = instance.isVoxel;
-        sh_Lod            = Payload.lodLevel;
-        sh_VtxHeapIdx     = instance.isVoxel ? g_VoxelVertices.index         : g_MeshStreams.vertices;
-        sh_MvHeapIdx      = instance.isVoxel ? g_VoxelMeshletVertices.index  : g_MeshStreams.meshletVertices;
-        sh_MtHeapIdx      = instance.isVoxel ? g_VoxelMeshletTriangles.index : g_MeshStreams.meshletTriangles;
+        sh_LocalToWorld    = transform.mLocalToWorld;
+        sh_VOffset         = mesh.vOffset;
+        sh_MvOffset        = mesh.lods[Payload.lodLevel].mvOffset;
+        sh_MtOffset        = mesh.lods[Payload.lodLevel].mtOffset;
+        sh_VertexCount     = meshlet.vertexCount;
+        sh_TriangleCount   = meshlet.triangleCount;
+        sh_VertexOffset    = meshlet.vertexOffset;
+        sh_TriangleOffset  = meshlet.triangleOffset;
+		sh_MaterialID      = instance.materialID;
+        sh_VoxelChunkIndex = instance.isVoxel ? (instanceID - VOXEL_CHUNK_INSTANCE_BASE) : INVALID_INDEX;
+        sh_Lod             = Payload.lodLevel;
+        sh_VtxHeapIdx      = instance.isVoxel ? g_VoxelVertices.index         : g_MeshStreams.vertices;
+        sh_MvHeapIdx       = instance.isVoxel ? g_VoxelMeshletVertices.index  : g_MeshStreams.meshletVertices;
+        sh_MtHeapIdx       = instance.isVoxel ? g_VoxelMeshletTriangles.index : g_MeshStreams.meshletTriangles;
     }
     GroupMemoryBarrierWithGroupSync();
+
+    bool isVoxel = sh_VoxelChunkIndex != INVALID_INDEX;
+
+    VoxelChunkDesc chunk = (VoxelChunkDesc)0;
+    if (isVoxel)
+        chunk = VoxelChunkDescs[sh_VoxelChunkIndex];
+
+    uint chunkBaseMI = chunk.mOffset;
 
     // num tris handled in this group
     uint T = 1u, child = 0u, triBase = 0u;
@@ -233,28 +241,27 @@ void main(
 
     if (diced && numTris != 0u)
     {
-        StructuredBuffer< Vertex > DVertices        = GetResource(sh_VtxHeapIdx);
-        StructuredBuffer< uint >   DMeshletVertices = GetResource(sh_MvHeapIdx);
+        StructuredBuffer< VoxelVertex > DVertices        = GetResource(sh_VtxHeapIdx);
+        StructuredBuffer< uint >        DMeshletVertices = GetResource(sh_MvHeapIdx);
         for (uint c = ti; c < numTris * 3u; c += 32)
         {
             // base tri t's corner c sits at meshlet-local slot t*3+c
             uint local = (triBase + c / 3u) * 3u + (c % 3u);
             uint vi    = sh_VOffset + DMeshletVertices[sh_MvOffset + sh_VertexOffset + local];
 
-            Vertex vv = DVertices[vi];
-            sh_CornerPos[c] = float3(vv.posX, vv.posY, vv.posZ);
-            sh_CornerNrm[c] = float3(vv.normalX, vv.normalY, vv.normalZ);
+            VoxelVertex vv = DVertices[vi];
+            sh_CornerPosWS[c] = VoxelUnpackPos(vv, chunk.chunkSizeMeter) + float3(chunk.originX, chunk.originY, chunk.originZ);
+            sh_CornerNrm[c] = VoxelUnpackNormal(vv);
         }
         GroupMemoryBarrierWithGroupSync();
 
-        // camera position in chunk-local space
-        float3 cameraPos = g_FrozenCamera.posWORLD - float3(g_VoxelChunkDesc.originX, g_VoxelChunkDesc.originY, g_VoxelChunkDesc.originZ);
+        float3 cameraPosWS = g_FrozenCamera.posWORLD;
         for (uint t = ti; t < numTris; t += 32)
         {
             uint b   = t * 3u;
-            uint le0 = DiceEdgeLevel(sh_CornerPos[b + 0u], sh_CornerPos[b + 1u], cameraPos, g_VoxelChunkDesc);
-            uint le1 = DiceEdgeLevel(sh_CornerPos[b + 1u], sh_CornerPos[b + 2u], cameraPos, g_VoxelChunkDesc);
-            uint le2 = DiceEdgeLevel(sh_CornerPos[b + 2u], sh_CornerPos[b + 0u], cameraPos, g_VoxelChunkDesc);
+            uint le0 = DiceEdgeLevel(sh_CornerPosWS[b + 0u], sh_CornerPosWS[b + 1u], cameraPosWS, chunk);
+            uint le1 = DiceEdgeLevel(sh_CornerPosWS[b + 1u], sh_CornerPosWS[b + 2u], cameraPosWS, chunk);
+            uint le2 = DiceEdgeLevel(sh_CornerPosWS[b + 2u], sh_CornerPosWS[b + 0u], cameraPosWS, chunk);
 
             sh_TriLe[t] = le0 | (le1 << 4u) | (le2 << 8u);
             sh_TriLt[t] = max3(le0, le1, le2);
@@ -309,7 +316,7 @@ void main(
 
     if (diced)
     {
-        Texture2D< float4 > ErosionMap = GetResource(g_ErosionDetailMap.index);
+        Texture2DArray< float4 > ErosionMap = GetResource(g_ErosionDetailMap.index);
 
         if (hier)
         {
@@ -324,19 +331,16 @@ void main(
             {
                 uint3 coord = DiceHierCoord(cc0, cc1, cc2, DiceSubVertexCoordInt(v, 3u));
 
-                float3 pos, normal;
+                float3 posWS, normal;
                 DiceSubVertex(coord, Lt, le,
-                              sh_CornerPos[0], sh_CornerPos[1], sh_CornerPos[2],
+                              sh_CornerPosWS[0], sh_CornerPosWS[1], sh_CornerPosWS[2],
                               sh_CornerNrm[0], sh_CornerNrm[1], sh_CornerNrm[2],
-                              pos, normal);
-                float3 posWS = mul(sh_LocalToWorld, float4(pos, 1.0)).xyz;
-                posWS = DisplaceVoxelDice(posWS, normal.y, g_FrozenCamera.posWORLD,
-                                          g_VoxelChunkDesc, ErosionMap, g_LinearClampSampler);
+                              posWS, normal);
+                posWS = DisplaceVoxelDice(posWS, normal.y, g_FrozenCamera.posWORLD, chunk, ErosionMap, g_LinearClampSampler);
 
                 vertices[v].position = mul(g_Camera.mViewProj, float4(posWS, 1.0));
 #if TEST_MODE == 1
                 vertices[v].color    = float4(normalize(normal) * 0.5 + 0.5, 1.0);
-#else
 #endif
             }
 
@@ -346,7 +350,7 @@ void main(
 
                 primAttrs[p].cullPrimitive = false;
                 primAttrs[p].visID0 = PackVisID0Voxel(g_DrawID & 0x00FFFFFFu);
-                primAttrs[p].visID1 = PackVisID1Voxel(mi, triBase, child * 64u + p + 1u);
+                primAttrs[p].visID1 = PackVisID1Voxel(mi - chunkBaseMI, triBase, child * 64u + p + 1u);
             }
 
             return;
@@ -367,25 +371,23 @@ void main(
             uint lt    = sh_TriLt[t];
             uint local = v - vStart;
 
-            float3 pos, normal;
+            float3 posWS, normal;
             if (lt != 0u)
             {
                 uint3 le = uint3(sh_TriLe[t] & 0xFu, (sh_TriLe[t] >> 4u) & 0xFu, (sh_TriLe[t] >> 8u) & 0xFu);
                 DiceSubVertex(DiceSubVertexCoordInt(local, lt), lt, le,
-                              sh_CornerPos[t * 3u + 0u], sh_CornerPos[t * 3u + 1u], sh_CornerPos[t * 3u + 2u],
+                              sh_CornerPosWS[t * 3u + 0u], sh_CornerPosWS[t * 3u + 1u], sh_CornerPosWS[t * 3u + 2u],
                               sh_CornerNrm[t * 3u + 0u], sh_CornerNrm[t * 3u + 1u], sh_CornerNrm[t * 3u + 2u], 
-                              pos, normal);
+                              posWS, normal);
             }
             else
             {
-                pos    = sh_CornerPos[t * 3u + local];
+                posWS  = sh_CornerPosWS[t * 3u + local];
                 normal = sh_CornerNrm[t * 3u + local];
             }
 
-            float3 posWS = mul(sh_LocalToWorld, float4(pos, 1.0)).xyz;
             if (lt != 0u)
-                posWS = DisplaceVoxelDice(posWS, normal.y, g_FrozenCamera.posWORLD,
-                                          g_VoxelChunkDesc, ErosionMap, g_LinearClampSampler);
+                posWS = DisplaceVoxelDice(posWS, normal.y, g_FrozenCamera.posWORLD, chunk, ErosionMap, g_LinearClampSampler);
 
             vertices[v].position = mul(g_Camera.mViewProj, float4(posWS, 1.0));
 #if TEST_MODE == 1
@@ -414,12 +416,12 @@ void main(
                 uint3 sub = DiceSubTriVerts(st, lt);
 
                 triangles[p] = vStart + sub;
-                primAttrs[p].visID1 = PackVisID1Voxel(mi, triBase + t, st + 1u);
+                primAttrs[p].visID1 = PackVisID1Voxel(mi - chunkBaseMI, triBase + t, st + 1u);
             }
             else
             {
                 triangles[p] = uint3(vStart, vStart + 1u, vStart + 2u);
-                primAttrs[p].visID1 = PackVisID1Voxel(mi, triBase + t, 0u); // sentinel 0 = undiced base triangle
+                primAttrs[p].visID1 = PackVisID1Voxel(mi - chunkBaseMI, triBase + t, 0u); // sentinel 0 = undiced base triangle
             }
             primAttrs[p].cullPrimitive = false;
             primAttrs[p].visID0 = PackVisID0Voxel(g_DrawID & 0x00FFFFFFu);
@@ -428,25 +430,38 @@ void main(
         return;
     }
 
-    StructuredBuffer< Vertex > Vertices        = GetResource(sh_VtxHeapIdx);
-    StructuredBuffer< uint >   MeshletVertices = GetResource(sh_MvHeapIdx);
+    StructuredBuffer< Vertex >      Vertices      = GetResource(sh_VtxHeapIdx);
+    StructuredBuffer< VoxelVertex > VoxelVertices = GetResource(sh_VtxHeapIdx);
+    StructuredBuffer< uint >        MeshletVertices = GetResource(sh_MvHeapIdx);
 
     for (uint i = ti; i < sh_VertexCount; i += 32)
     {
         uint vi = sh_VOffset + MeshletVertices[sh_MvOffset + sh_VertexOffset + i];
 
-        Vertex vertex = Vertices[vi];
+        float3 pos, nrm;
+        if (isVoxel)
+        {
+            VoxelVertex vertex = VoxelVertices[vi];
+            pos = VoxelUnpackPos(vertex, chunk.chunkSizeMeter);
+            nrm = VoxelUnpackNormal(vertex);
+        }
+        else
+        {
+            Vertex vertex = Vertices[vi];
+            pos = float3(vertex.posX, vertex.posY, vertex.posZ);
+            nrm = float3(vertex.normalX, vertex.normalY, vertex.normalZ);
+        }
 
-        float3 position = float3(vertex.posX, vertex.posY, vertex.posZ);
-        float4 posWS    = mul(sh_LocalToWorld, float4(position, 1.0));
-
-        float4 posCS = mul(g_Camera.mViewProj, posWS);
+        float3 posWS = isVoxel
+            ? pos + float3(chunk.originX, chunk.originY, chunk.originZ)
+            : mul(sh_LocalToWorld, float4(pos, 1.0)).xyz;
+        float4 posCS = mul(g_Camera.mViewProj, float4(posWS, 1.0));
 
         sh_ClipPos[i] = posCS;
 
         vertices[i].position = posCS;
 #if TEST_MODE == 1
-        vertices[i].color    = float4(float3(vertex.normalX, vertex.normalY, vertex.normalZ) * 0.5 + 0.5, 1.0);
+        vertices[i].color = float4(nrm * 0.5 + 0.5, 1.0);
 #else
 #endif
     }
@@ -471,13 +486,9 @@ void main(
         float4 cc = sh_ClipPos[t2];
 
         // TODO: LOD streaming and culling on voxels
-        primAttrs[i].cullPrimitive = (sh_IsVoxel != 0u) ? false : TriangleCull(ca, cb, cc);
+        primAttrs[i].cullPrimitive = isVoxel ? false : TriangleCull(ca, cb, cc);
 
-        primAttrs[i].visID0 = (sh_IsVoxel != 0u)
-            ? PackVisID0Voxel(g_DrawID & 0x00FFFFFFu)
-            : PackVisID0Mesh(g_DrawID & 0x00FFFFFFu, sh_Lod, 0u);
-        primAttrs[i].visID1 = (sh_IsVoxel != 0u)
-            ? PackVisID1Voxel(mi, i, 0u) // sentinel 0 = undiced base triangle
-            : PackVisID1(mi, i);
+        primAttrs[i].visID0 = isVoxel ? PackVisID0Voxel(g_DrawID & 0x00FFFFFFu) : PackVisID0Mesh(g_DrawID & 0x00FFFFFFu, sh_Lod, 0u);
+        primAttrs[i].visID1 = isVoxel ? PackVisID1Voxel(mi - chunkBaseMI, i, 0u) : PackVisID1(mi, i);
     }
 }

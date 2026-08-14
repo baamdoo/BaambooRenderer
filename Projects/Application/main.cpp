@@ -69,14 +69,14 @@ int main(int argc, char** argv)
 		return app.Run();
 	}
 
-	eRendererAPI api = eRendererAPI::D3D12;
-	//eRendererAPI api = eRendererAPI::Vulkan;
+	//eRendererAPI api = eRendererAPI::D3D12;
+	eRendererAPI api = eRendererAPI::Vulkan;
 
 	ExampleApp app = {};
 	//BistroApp app = {};
 	//LightingApp app = {};
 	//RayTracingApp app = {};
-	//TerrainApp app = {};
+	TerrainApp app = {};
 	try
 	{
 		app.Initialize(api);

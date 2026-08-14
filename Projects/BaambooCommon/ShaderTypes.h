@@ -37,8 +37,16 @@ struct InstanceData
     u32 isVoxel;
 };
 
-// Voxel chunk i lives at instance (kVoxelChunkInstanceBase + i) and VoxelChunkCounts[i]
 constexpr u32 kVoxelChunkInstanceBase = 0u;
+constexpr u32 kMaxVoxelChunkSlots     = 512u; // Reserved voxel instance slots (= max concurrent resident chunks)
+
+struct VoxelChunkID
+{
+    int3 coord = int3(0);
+    u32  lod   = 0u;
+};
+constexpr u64 VoxelChunkKey(int3 coords, u32 lod) { return (static_cast<u64>(lod & 0xFFFF) << 48u) | (static_cast<u64>(coords.x & 0xFFFF) << 32u) | (static_cast<u64>(coords.y & 0xFFFF) << 16u) | static_cast<u64>(coords.z & 0xFFFF); }
+constexpr u64 VoxelChunkKey(VoxelChunkID id) { return VoxelChunkKey(id.coord, id.lod); }
 
 struct IndirectCommandData
 {
@@ -421,10 +429,10 @@ struct CloudShadowData
 struct VoxelChunkDesc
 {
     float3 originWS;
-    u32    vertexOffset;
+    u32    vOffset;
 
-    u32   meshletVertexOffset;
-    u32   meshletTriangleOffset;
+    u32   mvOffset;
+    u32   mtOffset;
     float chunkSizeMeter;
     u32   diceMaxLevel;          // micro-dicing max subdivision level (0 = off, 1..5)
 
@@ -447,10 +455,15 @@ struct VoxelChunkDesc
 
     u32   microOctaves;
     float microSharpness; // -1 = ridged .. 0 = plain .. +1 = billowed
-    u32   padding2;
-    u32   padding3;
+    u32   pageID;
+    u32   lodAndMask;     // lod u8 | transitionMask u8
+
+    u32 mOffset;          // absolute meshlet-pool base of this chunk's page
+    u32 erosionSlice;     // erosion detail array slice (independent of pageID)
+    u32 flags;            // bit0 = renderable
+    u32 reserved;
 };
-static_assert(sizeof(VoxelChunkDesc) == 96);
+static_assert(sizeof(VoxelChunkDesc) == 112);
 
 struct VoxelChunkCounts
 {
@@ -458,13 +471,24 @@ struct VoxelChunkCounts
 };
 static_assert(sizeof(VoxelChunkCounts) == 4);
 
+// 12B voxel vertex: chunk-local position quantized by chunkSize + octahedral normal
+struct VoxelVertex
+{
+    u32 posXY;    // pos.x 16b | pos.y 16b
+    u32 posZres;  // pos.z 16b | reserved 16b
+    u32 octUoctV; // octahedral normal u 16b | v 16b
+};
+static_assert(sizeof(VoxelVertex) == 12);
+
 // =========================================================================
 // Voxel Terrain Generation Params
 // =========================================================================
 struct VoxelTerrainGenParams
 {
-    float3 chunkOriginWS;
-    float  voxelSizeMeter;
+    i32   chunkCoordX;
+    i32   chunkCoordY;
+    i32   chunkCoordZ;
+    float voxelSizeMeter;
 
     u32 cellsPerAxis;
     u32 samplesPerAxis;
@@ -483,7 +507,7 @@ struct VoxelTerrainGenParams
 
     float redistributionExp;
     float ridgedBlend;
-    float surfaceLevelRatio;
+    float surfaceBaseYMeter;
     float erosionScale;
 
     float erosionStrength;
@@ -496,9 +520,9 @@ struct VoxelTerrainGenParams
     float erosionNormalization;
     float erosionSlopeScale;
 
-    u32 erosionOctaves;
-    u32 padding0;
-    u32 padding1;
-    u32 padding2;
+    u32   erosionOctaves;
+    float geoMinWavelengthMeter;
+    u32   padding1;
+    u32   padding2;
 };
 static_assert(sizeof(VoxelTerrainGenParams) == 128);

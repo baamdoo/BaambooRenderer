@@ -5,7 +5,8 @@
 
 layout(push_constant) uniform PushConstants
 {
-    uint g_VoxelMeshID;
+    uint g_VoxelMeshBaseID;
+    uint g_NumVoxelSlots;
 };
 
 layout(set = 1, binding = 0) readonly buffer VoxelCountsBuffer
@@ -18,8 +19,30 @@ layout(set = 1, binding = 1) buffer MeshDataPatchBuffer
     MeshData g_MeshData[];
 };
 
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout(set = 1, binding = 2) readonly buffer VoxelChunkDescBuffer
+{
+    VoxelChunkDesc g_VoxelChunkDescs[];
+};
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 void main()
 {
-    g_MeshData[g_VoxelMeshID].lods[0].mCount = g_VoxelCounts[VOXEL_CHUNK_INSTANCE_BASE].meshletCount;
+    uint ti = gl_GlobalInvocationID.x;
+    if (ti >= g_NumVoxelSlots)
+        return;
+
+    VoxelChunkDesc chunk = g_VoxelChunkDescs[ti];
+
+    vec3  originWS          = vec3(chunk.originX, chunk.originY, chunk.originZ);
+    float halfLengthPerAxis = 0.5 * chunk.chunkSizeMeter;
+
+    g_MeshData[g_VoxelMeshBaseID + ti].vOffset          = chunk.vOffset;
+    g_MeshData[g_VoxelMeshBaseID + ti].radius           = halfLengthPerAxis * 1.7320508; // half-diagonal of a cube = 0.5 * sqrt(3) * size
+    g_MeshData[g_VoxelMeshBaseID + ti].centerX          = originWS.x + halfLengthPerAxis;
+    g_MeshData[g_VoxelMeshBaseID + ti].centerY          = originWS.y + halfLengthPerAxis;
+    g_MeshData[g_VoxelMeshBaseID + ti].centerZ          = originWS.z + halfLengthPerAxis;
+    g_MeshData[g_VoxelMeshBaseID + ti].lods[0].mCount   = (chunk.pageID != INVALID_INDEX && (chunk.flags & 1u) != 0u) ? g_VoxelCounts[ti].meshletCount : 0u;
+    g_MeshData[g_VoxelMeshBaseID + ti].lods[0].mOffset  = chunk.mOffset;
+    g_MeshData[g_VoxelMeshBaseID + ti].lods[0].mvOffset = chunk.mvOffset;
+    g_MeshData[g_VoxelMeshBaseID + ti].lods[0].mtOffset = chunk.mtOffset;
 }

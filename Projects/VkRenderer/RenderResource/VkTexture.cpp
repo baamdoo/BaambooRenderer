@@ -63,7 +63,8 @@ VkImageCreateInfo GetVkImageCreateInfo(const render::Texture::CreationInfo& info
 	VkImageCreateInfo desc = {};
 	desc.flags         = info.imageType == eImageType::TextureCube ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
 	desc.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-	desc.imageType     = info.imageType == eImageType::TextureCube ? VK_IMAGE_TYPE_2D : static_cast<VkImageType>(info.imageType);
+	desc.imageType     = (info.imageType == eImageType::TextureCube || info.imageType == eImageType::Texture2DArray) ?
+		VK_IMAGE_TYPE_2D : static_cast<VkImageType>(info.imageType);
 	desc.format        = VK_FORMAT(info.format);
 	desc.extent        = { info.resolution.x, info.resolution.y, info.resolution.z };
 	desc.mipLevels     = info.mipLevels > 0 ? info.mipLevels :
@@ -146,18 +147,15 @@ VkImageViewCreateInfo VulkanTexture::GetViewDesc(const VkImageCreateInfo& imageI
 	}
 	case VK_IMAGE_TYPE_2D:
 	{
-		if (imageInfo.arrayLayers > 1)
+		if (m_CreationInfo.imageType == eImageType::TextureCube && imageInfo.arrayLayers > 1)
 		{
-			if (m_CreationInfo.imageType == eImageType::TextureCube)
-			{
-				imageViewInfo.viewType                    = VK_IMAGE_VIEW_TYPE_CUBE;
-				imageViewInfo.subresourceRange.layerCount = 6;
-			}
-			else
-			{
-				imageViewInfo.viewType                    = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
-				imageViewInfo.subresourceRange.layerCount = imageInfo.arrayLayers;
-			}
+			imageViewInfo.viewType                    = VK_IMAGE_VIEW_TYPE_CUBE;
+			imageViewInfo.subresourceRange.layerCount = 6;
+		}
+		else if (imageInfo.arrayLayers > 1 || m_CreationInfo.imageType == eImageType::Texture2DArray)
+		{
+			imageViewInfo.viewType                    = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+			imageViewInfo.subresourceRange.layerCount = imageInfo.arrayLayers;
 		}
 		else
 		{

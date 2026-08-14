@@ -8,12 +8,17 @@ layout(set = 1, binding = 0, std140) uniform VoxelGenParamsUBO
     VoxelTerrainGenParams gp;
 } g_VoxelGenParams;
 
-layout(set = 1, binding = 1, rgba16f) writeonly uniform image2D g_OutErosionMap;
+layout(set = 1, binding = 1, rgba16f) writeonly uniform image2DArray g_OutErosionMap;
+
+layout(push_constant) uniform PushConstants
+{
+    uint g_ErosionSlice; // erosion map array slice of the chunk being baked
+};
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 void main()
 {
-    ivec2 mapSize = imageSize(g_OutErosionMap);
+    ivec3 mapSize = imageSize(g_OutErosionMap);
 
     uvec2 tID     = gl_GlobalInvocationID.xy;
     if (tID.x >= uint(mapSize.x) || tID.y >= uint(mapSize.y))
@@ -21,9 +26,10 @@ void main()
 
     VoxelTerrainGenParams gp = g_VoxelGenParams.gp;
 
+    vec3  originWS  = VoxelChunkOriginWS(gp);
     float chunkSize = float(gp.cellsPerAxis) * gp.voxelSizeMeter;
-    vec2  uv = (vec2(tID) + 0.5) / float(mapSize.x);
-    vec2  xz = vec2(gp.originX, gp.originZ) + uv * chunkSize;
+    float inner     = float(mapSize.x) - 2.0 * float(VOXEL_EROSION_APRON);
+    vec2  xz = originWS.xz + ((vec2(tID) + 0.5 - float(VOXEL_EROSION_APRON)) / inner) * chunkSize;
 
     vec3  hs  = VoxelTerrainHeight01Deriv(gp, xz);
     float amp = max(gp.mountainAmplitude, 1e-4);
@@ -37,15 +43,15 @@ void main()
         vec2  g   = VoxelTerrainCoarseGrad(gp, xz, 0.25 * gp.erosionScale * gp.erosionCellScale);
         vec3  has = vec3(hs.x * amp, g * amp * gp.erosionSlopeScale);
 
-        float geoMinWL = VoxelErosionGeoMinWavelength(gp);   // geometry band
-        float outMinWL = 4.0 * chunkSize / float(mapSize.x); // bake texel Nyquist (2x margin)
-        d = VoxelErosionFilterEx(gp, xz, has, fadeTarget, geoMinWL, min(outMinWL, geoMinWL), ridge, geoDelta);
+        float geoMinWavelength = gp.geoMinWavelengthMeter; // geometry band
+        float outMinWavelength = 4.0 * chunkSize / inner;  // bake texel Nyquist (2x margin)
+        d = VoxelErosionFilterEx(gp, xz, has, fadeTarget, geoMinWavelength, min(outMinWavelength, geoMinWavelength), ridge, geoDelta);
     }
 
     float h01Geo       = clamp(hs.x + geoDelta.x / amp, 0.0, 1.0);
     float h01Full      = clamp(hs.x + d.x / amp, 0.0, 1.0);
     float detailHeight = (h01Full - h01Geo) * amp; // height delta (m) beyond the geometry band
-    float surfaceY     = gp.originY + gp.surfaceLevelRatio * chunkSize + (h01Geo - 0.5) * gp.mountainAmplitude;
+    float surfaceY     = gp.surfaceBaseYMeter + (h01Geo - 0.5) * gp.mountainAmplitude;
 
-    imageStore(g_OutErosionMap, ivec2(tID), vec4(detailHeight, ridge, surfaceY, 0.0));
+    imageStore(g_OutErosionMap, ivec3(ivec2(tID), int(g_ErosionSlice)), vec4(detailHeight, ridge, surfaceY, 0.0));
 }

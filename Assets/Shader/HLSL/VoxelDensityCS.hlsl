@@ -15,8 +15,8 @@ void main(uint3 tID : SV_DispatchThreadID)
     if (tID.x >= dim || tID.y >= dim || tID.z >= dim)
         return;
 
-    float3 worldPos = VoxelTexelToWorld(gp, tID);
-    float  density  = VoxelTerrainDensity(gp, worldPos);
+    float3 posWS   = VoxelTexelToWorld(gp, tID);
+    float  density = VoxelTerrainDensity(gp, posWS);
 
     RWTexture3D< float >        OutDensity = GetResource(g_OutDensityTex.index);
     RWStructuredBuffer< float > OutDebug   = GetResource(g_OutDensityDebug.index);

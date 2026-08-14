@@ -32,7 +32,8 @@ cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
 ConstantBuffer< DescriptorHeapIndex > g_HiZTexture              : register(b1, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_MeshletVisibilityBuffer : register(b2, ROOT_CONSTANT_SPACE);
 
-ConstantBuffer< VoxelChunkDesc >      g_VoxelChunkDesc          : register(b0, space1);
+ConstantBuffer< DescriptorHeapIndex > g_VoxelChunkDescs         : register(b8, ROOT_CONSTANT_SPACE);
+static StructuredBuffer< VoxelChunkDesc > VoxelChunkDescs = GetResource(g_VoxelChunkDescs.index);
 
 #if PROFILING_LEVEL >= 1
 ConstantBuffer< DescriptorHeapIndex > g_MeshletStats            : register(b3, ROOT_CONSTANT_SPACE);
@@ -74,7 +75,7 @@ groupshared uint     sh_VisOffset;
 groupshared uint     sh_Lod;
 groupshared uint     sh_MeshletOffset;
 groupshared uint     sh_MeshletCount;
-groupshared uint     sh_IsVoxel;
+groupshared uint     sh_VoxelChunkIndex;
 
 [numthreads(32, 1, 1)]
 void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
@@ -94,16 +95,20 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
         float scaleZ = length(transform.mLocalToWorld[2].xyz);
         float maxScale = max(scaleX, max(scaleY, scaleZ));
 
-        sh_LocalToWorld  = transform.mLocalToWorld;
-        sh_WorldToLocal  = transform.mWorldToLocal;
-        sh_MaxScale      = maxScale;
-        sh_VisOffset     = instance.visOffset;
-        sh_Lod           = lod;
-        sh_MeshletOffset = mesh.lods[lod].mOffset;
-        sh_MeshletCount  = mesh.lods[lod].mCount;
-        sh_IsVoxel       = instance.isVoxel;
+        sh_LocalToWorld    = transform.mLocalToWorld;
+        sh_WorldToLocal    = transform.mWorldToLocal;
+        sh_MaxScale        = maxScale;
+        sh_VisOffset       = instance.visOffset;
+        sh_Lod             = lod;
+        sh_MeshletOffset   = mesh.lods[lod].mOffset;
+        sh_MeshletCount    = mesh.lods[lod].mCount;
+        sh_VoxelChunkIndex = instance.isVoxel ? (instanceID - VOXEL_CHUNK_INSTANCE_BASE) : INVALID_INDEX;
     }
     GroupMemoryBarrierWithGroupSync();
+
+    VoxelChunkDesc chunk = (VoxelChunkDesc)0;
+    if (sh_VoxelChunkIndex != INVALID_INDEX)
+        chunk = VoxelChunkDescs[sh_VoxelChunkIndex];
 
     uint localMeshletIdx = Gid.x;
     uint mi              = localMeshletIdx + sh_MeshletOffset;
@@ -121,12 +126,12 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
     uint dbgTriCount = 0u; // triangleCount of THIS thread's meshlet, only when accept
 #endif
 
-    if (bValid && sh_IsVoxel != 0u)
+    if (bValid && sh_VoxelChunkIndex != INVALID_INDEX)
     {
         StructuredBuffer< Meshlet > VoxelMeshlets = GetResource(g_VoxelMeshlets.index);
         Meshlet meshlet = VoxelMeshlets[mi];
 
-        float3 centerWS = mul(sh_LocalToWorld, float4(meshlet.centerX, meshlet.centerY, meshlet.centerZ, 1.0)).xyz;
+        float3 centerWS = float3(meshlet.centerX, meshlet.centerY, meshlet.centerZ) + float3(chunk.originX, chunk.originY, chunk.originZ);
         float  radiusWS = meshlet.radius * sh_MaxScale;
 
         accept = true;
@@ -135,9 +140,12 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
         if ((g_CullData.cullFlags & CULL_FLAG_MESHLET_FRUSTUM) != 0u)
             accept = !IsFrustumCulled(g_CullData.frustum, centerWS, radiusWS);
 
-        if (accept && g_VoxelChunkDesc.diceMaxLevel != 0u)
+        if (g_Phase == PHASE2_CULL)
+            accept = false;
+
+        if (accept && chunk.diceMaxLevel != 0u)
         {
-            slotLm       = DiceMeshletBudgetLevel(centerWS, radiusWS, g_FrozenCamera.posWORLD, g_VoxelChunkDesc);
+            slotLm       = DiceMeshletBudgetLevel(centerWS, radiusWS, g_FrozenCamera.posWORLD, chunk);
             slotTriCount = meshlet.triangleCount;
         }
     }

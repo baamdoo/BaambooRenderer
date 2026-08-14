@@ -191,26 +191,32 @@ void CullingNode::PatchVoxelMeshData(render::CommandContext& context, const Scen
 	auto& sr = rm.GetSceneResource();
 
 	auto pVoxelCounts = g_FrameData.pVoxelChunkCounts.lock();
+	auto pVoxelDescs  = g_FrameData.pVoxelChunkDescs.lock();
 	auto pMeshData    = sr.GetMeshDataBuffer();
-	if (!pVoxelCounts || !pMeshData)
+	if (!pVoxelCounts || !pVoxelDescs || !pMeshData)
 		return;
+
+	BAAMBOO_GPU_SCOPE(context, "VoxelMeshDataPatch");
 
 	context.SetRenderPipeline(m_pVoxelMeshDataPatchPSO.get());
 
 	context.TransitionBufferToRead(pVoxelCounts, ePipelineStage::ComputeShader);
+	context.TransitionBufferToRead(pVoxelDescs, ePipelineStage::ComputeShader);
 	context.TransitionBufferToWrite(pMeshData, ePipelineStage::ComputeShader);
 
-	// The voxel MeshData was appended after the static meshes, so its index == static mesh count.
+	// Voxel MeshData rows were appended after the static meshes, so the base row == static mesh count.
 	struct
 	{
-		u32 voxelMeshID;
-	} constant = { (u32)renderView.meshes.size() };
+		u32 voxelMeshBaseID;
+		u32 numVoxelSlots; // registered voxel MeshData rows
+	} constant = { (u32)renderView.meshes.size(), kMaxVoxelChunkSlots };
 	context.SetComputeConstants(sizeof(constant), &constant);
 
 	context.StageDescriptor("g_VoxelCounts", pVoxelCounts);
+	context.StageDescriptor("g_VoxelChunkDescs", pVoxelDescs);
 	context.StageDescriptor("g_MeshData", pMeshData);
 
-	context.Dispatch(1, 1, 1);
+	context.Dispatch((kMaxVoxelChunkSlots + 63u) / 64u, 1, 1);
 
 	context.TransitionBufferToRead(pMeshData, ePipelineStage::AllShader);
 }

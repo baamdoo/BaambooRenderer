@@ -213,10 +213,9 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
     }
     if (sceneView.voxelTerrain.bValid)
     {
-        const float3& originWS = sceneView.voxelTerrain.originWorld;
         TransformData voxelTransform = {};
-        voxelTransform.mLocalToWorld = mat4(1.0f); voxelTransform.mLocalToWorld[3] = float4( originWS, 1.0f);
-        voxelTransform.mWorldToLocal = mat4(1.0f); voxelTransform.mWorldToLocal[3] = float4(-originWS, 1.0f);
+        voxelTransform.mLocalToWorld = mat4(1.0f);
+        voxelTransform.mWorldToLocal = mat4(1.0f);
         transforms.push_back(voxelTransform);
     }
     UpdateFrameBuffer(ctx, transforms.data(), (u32)transforms.size(), sizeof(TransformData), *m_FrameData[m_ContextIndex].pTransformAllocator, BarrierStates::ShaderResource);
@@ -323,19 +322,20 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
     }
     if (sceneView.voxelTerrain.bValid)
     {
-        const float half = sceneView.voxelTerrain.chunkWorldSizeMeter * 0.5f; // origin is applied by the voxel transform, not here
+        const float half = sceneView.voxelTerrain.chunkWorldSizeMeter * 0.5f;
 
         MeshData voxelMesh = {};
         voxelMesh.vOffset = 0;
         voxelMesh.maxLOD  = 0;
-        voxelMesh.center  = float3(half);      // chunk-local
+        voxelMesh.center  = float3(half);      // chunk-local until the patch CS writes world center/radius per slot
         voxelMesh.radius  = half * 1.7320508f; // cube half-diagonal
-        // these fields will be filled by the voxel patch CS
+        // offsets/counts are filled by the voxel patch CS
         voxelMesh.lods[0].mCount   = 0;
         voxelMesh.lods[0].mOffset  = 0;
         voxelMesh.lods[0].mvOffset = 0;
         voxelMesh.lods[0].mtOffset = 0;
-        meshes.push_back(voxelMesh);
+        for (u32 i = 0; i < kMaxVoxelChunkSlots; ++i)
+            meshes.push_back(voxelMesh);
     }
     UpdateFrameBuffer(ctx, meshes.data(), (u32)meshes.size(), sizeof(MeshData), *m_FrameData[m_ContextIndex].pMeshDataAllocator, BarrierStates::ShaderResource);
     
@@ -349,6 +349,8 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
         m_pMeshletVertexAllocator->Resize(mvTotalCount * 2);
     if (m_pMeshletTriangleAllocator->GetElementCount() < mtTotalCount) 
         m_pMeshletTriangleAllocator->Resize(mtTotalCount * 2);
+
+    const u32 numVoxelSlots = sceneView.voxelTerrain.bValid ? kMaxVoxelChunkSlots : 0u;
 
     u32 instID = 0;
     std::vector< InstanceData > instances;
@@ -403,7 +405,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
                 inst.transform[1][0] = m[0][1]; inst.transform[1][1] = m[1][1]; inst.transform[1][2] = m[2][1]; inst.transform[1][3] = m[3][1];
                 inst.transform[2][0] = m[0][2]; inst.transform[2][1] = m[1][2]; inst.transform[2][2] = m[2][2]; inst.transform[2][3] = m[3][2];
 
-                inst.instanceID                          = instID++;
+                inst.instanceID                          = instID++ + numVoxelSlots; // voxel slots sit ahead of the statics
                 inst.pBLAS                               = blasIter->second.get();
                 inst.instanceContributionToHitGroupIndex = 0;
 
@@ -411,16 +413,22 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
             }
         }
     }
-    // Voxel chunk: prepend it at the head of instance buffer
+    // Voxel chunk slots: prepend at the head of instance buffer (i-th chunk lives at instance base+i)
     if (sceneView.voxelTerrain.bValid)
     {
-        InstanceData voxelInstance = {};
-        voxelInstance.meshID      = (u32)sceneView.meshes.size();      // the appended voxel MeshData
-        voxelInstance.transformID = (u32)sceneView.transforms.size();  // the appended voxel TransformData
-        voxelInstance.materialID  = kInvalidIndex;
-        voxelInstance.visOffset   = 0;                                 // unused: voxel skips per-meshlet cull
-        voxelInstance.isVoxel     = 1;
-        instances.insert(instances.begin() + kVoxelChunkInstanceBase, voxelInstance); // instanceID == chunkID
+        const u32 voxelMeshBase    = (u32)sceneView.meshes.size();
+        const u32 voxelTransformID = (u32)sceneView.transforms.size();
+
+        std::vector< InstanceData > voxelInstances(kMaxVoxelChunkSlots);
+        for (u32 i = 0; i < kMaxVoxelChunkSlots; ++i)
+        {
+            voxelInstances[i].meshID      = voxelMeshBase + i;
+            voxelInstances[i].transformID = voxelTransformID;
+            voxelInstances[i].materialID  = kInvalidIndex;
+            voxelInstances[i].visOffset   = 0; // unused: voxel skips per-meshlet cull
+            voxelInstances[i].isVoxel     = 1;
+        }
+        instances.insert(instances.begin() + kVoxelChunkInstanceBase, voxelInstances.begin(), voxelInstances.end());
     }
     m_NumInstances = (u32)instances.size();
 

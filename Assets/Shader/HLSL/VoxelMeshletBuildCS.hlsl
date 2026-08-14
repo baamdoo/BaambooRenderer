@@ -2,13 +2,14 @@
 
 cbuffer MeshletBuildPushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
-    uint g_ChunkID;
-    uint g_MeshletSlabBase;
-    uint g_TrianglesPerMeshlet;    // 3*K <= mesh shader max vertices
-    uint g_MaxMeshlets;
-    uint g_MaxTriangles;
-    uint g_VertexSlabBase;
-    uint g_MeshletVertexSlabBase;
+    uint  g_ChunkID;
+    uint  g_MeshletSlabBase;
+    uint  g_TrianglesPerMeshlet;   // 3*K <= mesh shader max vertices
+    uint  g_MaxMeshlets;
+    uint  g_MaxTriangles;
+    uint  g_VertexSlabBase;
+    uint  g_MeshletVertexSlabBase;
+    float g_ChunkSizeMeter;
 };
 
 ConstantBuffer< DescriptorHeapIndex > g_MCCounter    : register(b1, ROOT_CONSTANT_SPACE);
@@ -43,15 +44,14 @@ void main(uint3 dt : SV_DispatchThreadID)
     uint triCount = min(K, totalTris - triBase);
 
     // AABB over meshlet verts, read through the sorted meshlet-vertex indirection (vertex pool stays in MC order)
-    StructuredBuffer< Vertex > Verts        = GetResource(g_Vertices.index);
-    StructuredBuffer< uint >   MeshletVerts = GetResource(g_MeshletVerts.index);
+    StructuredBuffer< VoxelVertex > Verts        = GetResource(g_Vertices.index);
+    StructuredBuffer< uint >        MeshletVerts = GetResource(g_MeshletVerts.index);
     float3 bmin = float3(1e30, 1e30, 1e30);
     float3 bmax = float3(-1e30, -1e30, -1e30);
     for (uint v = 0u; v < triCount * 3u; ++v)
     {
         uint   vLocal = MeshletVerts[g_MeshletVertexSlabBase + triBase * 3u + v];
-        Vertex vv     = Verts[g_VertexSlabBase + vLocal];
-        float3 p  = float3(vv.posX, vv.posY, vv.posZ);
+        float3 p = VoxelUnpackPos(Verts[g_VertexSlabBase + vLocal], g_ChunkSizeMeter);
         bmin = min(bmin, p);
         bmax = max(bmax, p);
     }

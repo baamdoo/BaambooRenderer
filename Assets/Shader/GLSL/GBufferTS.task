@@ -56,7 +56,7 @@ layout(set = 1, binding = 3) buffer MeshletStatsBuffer
 #endif // PROFILING_LEVEL >= 1
 
 layout(set = 1, binding = 5) readonly buffer GBufVoxelMeshletBuffer { Meshlet g_VoxelMeshlets[]; };
-layout(set = 1, binding = 8, std140) uniform VoxelChunkDescUBO { VoxelChunkDesc d; } g_VoxelChunkDesc;
+layout(set = 1, binding = 8) readonly buffer VoxelChunkDescBuffer { VoxelChunkDesc g_VoxelChunkDescs[]; };
 
 
 struct TaskPayload
@@ -80,7 +80,7 @@ shared uint  sh_Lod;
 shared uint  sh_MeshletOffset;
 shared uint  sh_MeshletCount;
 shared uint  sh_DrawID;
-shared uint  sh_IsVoxel;
+shared uint  sh_VoxelChunkIndex; // INVALID_INDEX = non-voxel instance
 
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 void main()
@@ -108,9 +108,13 @@ void main()
 		sh_MeshletOffset = mesh.lods[lod].mOffset;
 		sh_MeshletCount  = mesh.lods[lod].mCount;
 		sh_DrawID        = drawID;
-		sh_IsVoxel       = instance.isVoxel;
+		sh_VoxelChunkIndex = (instance.isVoxel != 0u) ? (drawID - VOXEL_CHUNK_INSTANCE_BASE) : INVALID_INDEX;
 	}
 	barrier();
+
+	VoxelChunkDesc chunk;
+	if (sh_VoxelChunkIndex != INVALID_INDEX)
+		chunk = g_VoxelChunkDescs[sh_VoxelChunkIndex];
 
 	uint ti = gl_LocalInvocationID.x;
 	uint localMeshletIdx = gl_GlobalInvocationID.x;
@@ -129,11 +133,11 @@ void main()
 	uint dbgTriCount = 0u; // triangleCount of THIS thread's meshlet, only when accept
 #endif
 
-	if (bValid && sh_IsVoxel != 0u)
+	if (bValid && sh_VoxelChunkIndex != INVALID_INDEX)
 	{
 		Meshlet meshlet = g_VoxelMeshlets[mi];
 
-		vec3  centerWS = (sh_LocalToWorld * vec4(meshlet.centerX, meshlet.centerY, meshlet.centerZ, 1.0)).xyz;
+		vec3  centerWS = vec3(meshlet.centerX, meshlet.centerY, meshlet.centerZ) + vec3(chunk.originX, chunk.originY, chunk.originZ);
 		float radiusWS = meshlet.radius * sh_MaxScale;
 
 		accept = true;
@@ -142,9 +146,12 @@ void main()
 		if ((g_CullData.cullFlags & CULL_FLAG_MESHLET_FRUSTUM) != 0u)
 			accept = !IsFrustumCulled(g_CullData.frustum, centerWS, radiusWS);
 
-		if (accept && g_VoxelChunkDesc.d.diceMaxLevel != 0u)
+		if (g_Push.phase == PHASE2_CULL)
+			accept = false;
+
+		if (accept && chunk.diceMaxLevel != 0u)
 		{
-			slotLm       = DiceMeshletBudgetLevel(centerWS, radiusWS, g_FrozenCamera.posWORLD, g_VoxelChunkDesc.d);
+			slotLm       = DiceMeshletBudgetLevel(centerWS, radiusWS, g_FrozenCamera.posWORLD, chunk);
 			slotTriCount = meshlet.triangleCount;
 		}
 	}

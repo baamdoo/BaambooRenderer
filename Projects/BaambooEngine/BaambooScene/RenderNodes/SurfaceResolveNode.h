@@ -25,6 +25,7 @@ private:
 	Arc< render::Buffer > m_pVoxelMeshletFallback;
 	Arc< render::Buffer > m_pVoxelMeshletVertexFallback;
 	Arc< render::Buffer > m_pVoxelMeshletTriangleFallback;
+	Arc< render::Buffer > m_pVoxelChunkDescFallback;
 
 	Arc< render::Texture > m_pErosionDetailFallback;
 

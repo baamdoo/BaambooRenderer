@@ -3,23 +3,29 @@
 
 ConstantBuffer< VoxelTerrainGenParams > g_VoxelGenParams : register(b0, space1);
 
+cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
+{
+    uint g_ErosionSlice; // erosion map array slice of the chunk being baked
+};
+
 ConstantBuffer< DescriptorHeapIndex > g_OutErosionMap : register(b1, ROOT_CONSTANT_SPACE);
 
 [numthreads(8, 8, 1)]
 void main(uint3 tID : SV_DispatchThreadID)
 {
-    RWTexture2D< float4 > OutMap = GetResource(g_OutErosionMap.index);
+    RWTexture2DArray< float4 > OutMap = GetResource(g_OutErosionMap.index);
 
-    uint mapW, mapH;
-    OutMap.GetDimensions(mapW, mapH);
+    uint mapW, mapH, mapSlices;
+    OutMap.GetDimensions(mapW, mapH, mapSlices);
     if (tID.x >= mapW || tID.y >= mapH)
         return;
 
     VoxelTerrainGenParams gp = g_VoxelGenParams;
 
+    float3 originWS  = VoxelChunkOriginWS(gp);
     float  chunkSize = float(gp.cellsPerAxis) * gp.voxelSizeMeter;
-    float2 uv = (float2(tID.xy) + 0.5) / float(mapW);
-    float2 xz = float2(gp.originX, gp.originZ) + uv * chunkSize;
+    float  inner     = float(mapW) - 2.0 * float(VOXEL_EROSION_APRON);
+    float2 xz = originWS.xz + ((float2(tID.xy) + 0.5 - float(VOXEL_EROSION_APRON)) / inner) * chunkSize;
 
     float3 hs  = VoxelTerrainHeight01Deriv(gp, xz);
     float  amp = max(gp.mountainAmplitude, 1e-4);
@@ -33,16 +39,16 @@ void main(uint3 tID : SV_DispatchThreadID)
         float2 g   = VoxelTerrainCoarseGrad(gp, xz, 0.25 * gp.erosionScale * gp.erosionCellScale);
         float3 has = float3(hs.x * amp, g * amp * gp.erosionSlopeScale);
 
-        float geoMinWL = VoxelErosionGeoMinWavelength(gp);     // geometry band
-        float outMinWL = 4.0 * chunkSize / float(mapW);        // bake texel Nyquist (2x margin)
-        d = VoxelErosionFilterEx(gp, xz, has, fadeTarget, geoMinWL, min(outMinWL, geoMinWL), ridge, geoDelta);
+        float geoMinWavelength = gp.geoMinWavelengthMeter; // geometry band
+        float outMinWavelength = 4.0 * chunkSize / inner;  // bake texel Nyquist (2x margin)
+        d = VoxelErosionFilterEx(gp, xz, has, fadeTarget, geoMinWavelength, min(outMinWavelength, geoMinWavelength), ridge, geoDelta);
     }
 
     // detail = full-band minus geometry-band height, both measured on the clamped surface
-    float  h01Geo       = saturate(hs.x + geoDelta.x / amp);
-    float  h01Full      = saturate(hs.x + d.x / amp);
-    float  detailHeight = (h01Full - h01Geo) * amp; // height delta (m) beyond the geometry band
-    float  surfaceY     = gp.originY + gp.surfaceLevelRatio * chunkSize + (h01Geo - 0.5) * gp.mountainAmplitude;
+    float h01Geo       = saturate(hs.x + geoDelta.x / amp);
+    float h01Full      = saturate(hs.x + d.x / amp);
+    float detailHeight = (h01Full - h01Geo) * amp; // height delta (m) beyond the geometry band
+    float surfaceY     = gp.surfaceBaseYMeter + (h01Geo - 0.5) * gp.mountainAmplitude;
 
-    OutMap[tID.xy] = float4(detailHeight, ridge, surfaceY, 0.0);
+    OutMap[uint3(tID.xy, g_ErosionSlice)] = float4(detailHeight, ridge, surfaceY, 0.0);
 }

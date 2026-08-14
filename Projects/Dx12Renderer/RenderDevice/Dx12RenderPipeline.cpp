@@ -437,7 +437,8 @@ void Dx12GraphicsPipeline::ParseRootParameters(const Dx12Shader::ShaderReflectio
 
                 auto rootIndex = m_pRootSignature->GetRootIndex(type, space, descriptor.baseRegister);
 
-                m_ResourceBindingMap.emplace(descriptor.name, rootIndex);
+                auto [it, bInserted] = m_ResourceBindingMap.emplace(descriptor.name, rootIndex);
+                assert((bInserted || it->second == rootIndex) && "resource bound to different registers across stages -- unify the register");
                 break;
             }
             case D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER:
@@ -500,7 +501,8 @@ void Dx12ComputePipeline::ParseRootParameters(const Dx12Shader::ShaderReflection
 
                 auto rootIndex = m_pRootSignature->GetRootIndex(type, space, descriptor.baseRegister);
 
-                m_ResourceBindingMap.emplace(descriptor.name, rootIndex);
+                auto [it, bInserted] = m_ResourceBindingMap.emplace(descriptor.name, rootIndex);
+                assert((bInserted || it->second == rootIndex) && "resource bound to different registers across stages -- unify the register");
                 break;
             }
             case D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER:

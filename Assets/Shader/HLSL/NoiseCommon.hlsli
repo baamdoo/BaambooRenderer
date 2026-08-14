@@ -491,8 +491,10 @@ float perlinNoise2DNT(float2 p, uint seed)
 // Value noise with analytic derivatives (iq "noised"). Returns (value in [-1,1], d/dx, d/dy).
 float valueNoiseHash2D(float2 p)
 {
-    p = 50.0 * frac(p * 0.3183099 + float2(0.71, 0.113));
-    return -1.0 + 2.0 * frac(p.x * p.y * (p.x + p.y));
+    uint2 ip = uint2(int2(p));
+
+    uint h = hash2D(ip, 0x9E3779B9u);
+    return -1.0 + 2.0 * (float(h) * (1.0 / 4294967296.0));
 }
 
 float3 valueNoiseDeriv2D(float2 p)

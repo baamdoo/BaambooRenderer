@@ -5,12 +5,14 @@
 #include "../Common.bsh"
 #include "NoiseCommon.hg"
 
+#define VOXEL_WORLD_FLOOR_Y_METER 0.0
+
 // ---- Gen params + base noise ---------------------------------------------------
 
 // SDF generation parameters (solid < 0, air > 0).
 struct VoxelTerrainGenParams
 {
-    float originX, originY, originZ;
+    int   chunkCoordX, chunkCoordY, chunkCoordZ;
     float voxelSizeMeter;
 
     uint  cellsPerAxis;
@@ -30,7 +32,7 @@ struct VoxelTerrainGenParams
 
     float redistributionExp;   // pow(value, exp) height reshape (1 = off)
     float ridgedBlend;         // 0 = smooth fBm, 1 = ridged
-    float surfaceLevelRatio;   // base surface height as chunk fraction (0..1)
+    float surfaceBaseYMeter;   // base surface height (m), world-absolute
     float erosionScale;
 
     float erosionStrength;
@@ -44,22 +46,36 @@ struct VoxelTerrainGenParams
     float erosionSlopeScale;
 
     uint  erosionOctaves;      // 0 = erosion off
-    uint  padding0;
+    float geoMinWavelengthMeter; // density band floor (m), LOD-independent
     uint  padding1;
     uint  padding2;
 };
 
+vec3 VoxelChunkOriginWS(VoxelTerrainGenParams gp)
+{
+    return vec3(ivec3(gp.chunkCoordX, gp.chunkCoordY, gp.chunkCoordZ) * int(gp.cellsPerAxis)) * gp.voxelSizeMeter;
+}
+
 vec3 VoxelTexelToWorld(VoxelTerrainGenParams gp, uvec3 texel)
 {
-    vec3 origin     = vec3(gp.originX, gp.originY, gp.originZ);
-    vec3 localIndex = vec3(ivec3(texel) - int(gp.apron));
-    return origin + localIndex * gp.voxelSizeMeter;
+    ivec3 originIndex = ivec3(gp.chunkCoordX, gp.chunkCoordY, gp.chunkCoordZ) * int(gp.cellsPerAxis);
+    ivec3 localIndex  = ivec3(texel) - int(gp.apron);
+    return vec3(originIndex + localIndex) * gp.voxelSizeMeter;
 }
 
 // Fixed 2D rotation (cos=0.8, sin=0.6) then scale
 vec2 VoxelRotScale(vec2 p, float s)
 {
     return vec2(0.8 * p.x - 0.6 * p.y, 0.6 * p.x + 0.8 * p.y) * s;
+}
+
+// World XZ -> erosion array UV: interior texels span the chunk, apron texels overlap the neighbors
+vec3 VoxelErosionUV(VoxelChunkDesc chunk, vec2 xzWS, float mapDim)
+{
+    float inner = mapDim - 2.0 * float(VOXEL_EROSION_APRON);
+    vec2  uv01  = (xzWS - vec2(chunk.originX, chunk.originZ)) / max(chunk.chunkSizeMeter, 1e-3);
+    vec2  uv    = (uv01 * inner + float(VOXEL_EROSION_APRON)) / mapDim;
+    return vec3(uv, float(chunk.erosionSlice));
 }
 
 // Plain fBm
@@ -158,10 +174,8 @@ vec2 VoxelTerrainCoarseGrad(VoxelTerrainGenParams gp, vec2 xz, float spacing)
 
 vec2 VoxelErosionHash2(vec2 x, uint seed)
 {
-    const vec2 k = vec2(0.3183099, 0.3678794); // (1/PI, e^-1)
-    x = (x + float(seed) * vec2(0.06711056, 0.00583715)) * k + k.yx;
-    float t = fract(x.x * x.y * (x.x + x.y));
-    return -1.0 + 2.0 * fract(16.0 * k * t);
+    uint h = hash2D(uvec2(ivec2(x)), seed);
+    return -1.0 + 2.0 * vec2(h & 0xFFFFu, h >> 16u) / 65535.0;
 }
 float VoxelEaseOut(float t)             { float v = 1.0 - clamp(t, 0.0, 1.0); return 1.0 - v * v; }
 float VoxelPowInv(float t, float power) { return 1.0 - pow(1.0 - clamp(t, 0.0, 1.0), power); }
@@ -310,18 +324,11 @@ vec4 VoxelErosionFilterEx(VoxelTerrainGenParams gp, vec2 p, vec3 heightAndSlope,
     return vec4(heightAndSlope - inputHeightAndSlope, magnitude);
 }
 
-// Geometry band limit = 2 * voxelSize (grid Nyquist).
-float VoxelErosionGeoMinWavelength(VoxelTerrainGenParams gp)
-{
-    return 2.0 * gp.voxelSizeMeter;
-}
-
 // Geometry-band wrapper: evaluates down to the geometry wavelength only.
 vec4 VoxelErosionFilter(VoxelTerrainGenParams gp, vec2 p, vec3 heightAndSlope, float fadeTarget, out float ridgeMap)
 {
-    float minWavelength = VoxelErosionGeoMinWavelength(gp);
-    vec3  geoUnused;
-    return VoxelErosionFilterEx(gp, p, heightAndSlope, fadeTarget, minWavelength, minWavelength, ridgeMap, geoUnused);
+    vec3 geoUnused;
+    return VoxelErosionFilterEx(gp, p, heightAndSlope, fadeTarget, gp.geoMinWavelengthMeter, gp.geoMinWavelengthMeter, ridgeMap, geoUnused);
 }
 
 // Base height + erosion delta; filter works in meters, h01 <-> m converted here.
@@ -345,24 +352,18 @@ float VoxelTerrainErodedHeight01(VoxelTerrainGenParams gp, vec2 xz)
     return clamp(hs.x + d.x / amp, 0.0, 1.0); // delta meters -> h01
 }
 
-// Density at a world position (SDF: solid < 0, air > 0). Procedural terrain surface
-// (box base displaced by noise), intersected with the chunk cube to stay closed.
+// Density at a world position (SDF: solid < 0, air > 0)
 float VoxelTerrainDensity(VoxelTerrainGenParams gp, vec3 worldPos)
 {
     float chunkSize = float(gp.cellsPerAxis) * gp.voxelSizeMeter;
-    vec3  origin    = vec3(gp.originX, gp.originY, gp.originZ);
+    vec3  origin    = VoxelChunkOriginWS(gp);
 
-    float h01      = VoxelTerrainErodedHeight01(gp, worldPos.xz);
-    float baseY    = origin.y + gp.surfaceLevelRatio * chunkSize;
-    float surfaceY = baseY + (h01 - 0.5) * gp.mountainAmplitude;
+    float h01        = VoxelTerrainErodedHeight01(gp, worldPos.xz);
+    float surfaceY   = gp.surfaceBaseYMeter + (h01 - 0.5) * gp.mountainAmplitude;
     float surfaceSDF = worldPos.y - surfaceY; // solid (<0) below the surface
 
-    // chunk cube bound (full extent) so a single chunk is a closed solid
-    vec3  center = origin + 0.5 * chunkSize;
-    vec3  q      = abs(worldPos - center) - 0.5 * chunkSize;
-    float cubeSDF = length(max(q, vec3(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
-
-    return max(surfaceSDF, cubeSDF); // intersection: below surface AND inside chunk
+    float pageSDF = VOXEL_WORLD_FLOOR_Y_METER - worldPos.y;
+    return max(surfaceSDF, pageSDF); // intersection: below surface AND above the world floor
 }
 
 
@@ -605,10 +606,13 @@ vec3 VoxelMicroHeightDeriv(vec2 xzWS, float lv, DiceMicroParams mp)
 }
 
 vec3 DisplaceVoxelDice(vec3 posWS, float baseNy, vec3 camPosWS, VoxelChunkDesc chunk,
-                       sampler2D erosionMap)
+                       sampler2DArray erosionMap)
 {
-    vec2 uv      = (posWS.xz - vec2(chunk.originX, chunk.originZ)) / max(chunk.chunkSizeMeter, 1e-3);
-    vec4 erosion = textureLod(erosionMap, uv, 0.0); // R detail height (m) | G ridgeMap | B surfaceY | A unused
+    if (chunk.erosionSlice == INVALID_INDEX)
+        return posWS; // coarse-LOD chunks carry no erosion slice
+
+    float mapDim  = float(textureSize(erosionMap, 0).x);
+    vec4  erosion = textureLod(erosionMap, VoxelErosionUV(chunk, posWS.xz, mapDim), 0.0); // R detail height (m) | G ridgeMap | B surfaceY | A unused
 
     float dCam      = length(posWS - camPosWS);
     float wDist     = clamp((chunk.diceRadiusMeter - dCam) / chunk.diceFadeWidthMeter, 0.0, 1.0);

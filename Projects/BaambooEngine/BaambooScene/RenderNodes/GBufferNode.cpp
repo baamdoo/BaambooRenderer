@@ -89,9 +89,11 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 	m_pVoxelMeshletFallback         = MakeFallback("GBufferPass::VoxelMeshletFallback", sizeof(Meshlet));
 	m_pVoxelMeshletVertexFallback   = MakeFallback("GBufferPass::VoxelMeshletVertexFallback", sizeof(u32));
 	m_pVoxelMeshletTriangleFallback = MakeFallback("GBufferPass::VoxelMeshletTriangleFallback", sizeof(u32));
+	m_pVoxelChunkDescFallback       = MakeFallback("GBufferPass::VoxelChunkDescFallback", sizeof(VoxelChunkDesc));
 
 	m_pErosionDetailFallback = Texture::Create(rd, "GBufferPass::ErosionDetailFallback",
 		{
+			.imageType  = eImageType::Texture2DArray, // must match the Texture2DArray shader declaration
 			.resolution = uint3(1, 1, 1),
 			.format     = eFormat::RGBA16_FLOAT,
 			.imageUsage = eTextureUsage_Sample,
@@ -130,12 +132,16 @@ void GBufferNode::DrawGBufferImpl(render::CommandContext& context, Arc< render::
 {
 	using namespace render;
 
+	BAAMBOO_GPU_SCOPE(context,
+		cullOutputs.phase == CullingNode::kPhase2Cull ? "GBuffer.Phase2" : "GBuffer.Phase1");
+
 	const bool bHasInstances = cullOutputs.numInstances > 0;
 
 	auto pVoxVerts    = g_FrameData.pVoxelVertices.lock();
 	auto pVoxMeshlets = g_FrameData.pVoxelMeshlets.lock();
 	auto pVoxMv       = g_FrameData.pVoxelMeshletVertices.lock();
 	auto pVoxMt       = g_FrameData.pVoxelMeshletTriangles.lock();
+	auto pVoxDescs    = g_FrameData.pVoxelChunkDescs.lock();
 	auto pErosion     = g_FrameData.pVoxelErosionDetail.lock();
 
 	if (bHasInstances)
@@ -150,6 +156,7 @@ void GBufferNode::DrawGBufferImpl(render::CommandContext& context, Arc< render::
 		if (pVoxMeshlets) context.TransitionBufferToRead(pVoxMeshlets, ePipelineStage::TaskShader | ePipelineStage::MeshShader);
 		if (pVoxMv)       context.TransitionBufferToRead(pVoxMv,       ePipelineStage::TaskShader | ePipelineStage::MeshShader);
 		if (pVoxMt)       context.TransitionBufferToRead(pVoxMt,       ePipelineStage::TaskShader | ePipelineStage::MeshShader);
+		if (pVoxDescs)    context.TransitionBufferToRead(pVoxDescs,    ePipelineStage::TaskShader | ePipelineStage::MeshShader);
 
 		context.TransitionTextureToRead(pErosion ? pErosion : m_pErosionDetailFallback, ePipelineStage::MeshShader);
 
@@ -191,12 +198,12 @@ void GBufferNode::DrawGBufferImpl(render::CommandContext& context, Arc< render::
 		context.StageDescriptor("g_VoxelMeshletVertices",  pVoxMv       ? pVoxMv       : m_pVoxelMeshletVertexFallback);
 		context.StageDescriptor("g_VoxelMeshletTriangles", pVoxMt       ? pVoxMt       : m_pVoxelMeshletTriangleFallback);
 
-		context.SetGraphicsDynamicUniformBuffer("g_VoxelChunkDesc", g_FrameData.voxelChunkDesc);
+		context.StageDescriptor("g_VoxelChunkDescs", pVoxDescs ? pVoxDescs : m_pVoxelChunkDescFallback);
 		context.StageDescriptor("g_ErosionDetailMap", pErosion ? pErosion : m_pErosionDetailFallback, g_FrameData.pLinearClamp);
 
 		context.DrawMeshTasksIndirectCount(
 			cullOutputs.pIndirectCommands,
-			offsetof(IndirectCommandData, groupCountX),
+			0,
 			cullOutputs.pDrawCount,
 			cullOutputs.numInstances,
 			sizeof(IndirectCommandData)

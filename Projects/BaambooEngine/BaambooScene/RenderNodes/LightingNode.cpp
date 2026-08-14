@@ -249,6 +249,13 @@ LightingNode::LightingNode(render::RenderDevice& rd)
 			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest,
 		});
 
+	m_pVoxelChunkDescFallback = Buffer::Create(rd, "LightingPass::VoxelChunkDescFallback",
+		{
+			.count              = 1,
+			.elementSizeInBytes = sizeof(VoxelChunkDesc),
+			.bufferUsage        = eBufferUsage_Storage,
+		});
+
 	m_pLightingPSO = ComputePipeline::Create(m_RenderDevice, "LightingPSO");
 	m_pLightingPSO->SetComputeShader(
 		Shader::Create(m_RenderDevice, "DeferredPBRLightingCS",
@@ -268,7 +275,10 @@ void LightingNode::Apply(render::CommandContext& context, const SceneRenderView&
 	u32 debugView = renderView.debugFlags.surfaceDebugView;
 	context.SetComputeConstants(sizeof(u32), &debugView);
 
-	context.SetComputeDynamicUniformBuffer("g_VoxelChunkDesc", g_FrameData.voxelChunkDesc);
+	auto pVoxDescs = g_FrameData.pVoxelChunkDescs.lock();
+	if (pVoxDescs)
+		context.TransitionBufferToRead(pVoxDescs, ePipelineStage::ComputeShader);
+	context.StageDescriptor("g_VoxelChunkDescs", pVoxDescs ? pVoxDescs : m_pVoxelChunkDescFallback);
 
 	assert(g_FrameData.pDepth);
 	assert(

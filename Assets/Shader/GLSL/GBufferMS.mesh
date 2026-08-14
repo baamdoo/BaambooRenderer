@@ -24,13 +24,13 @@ layout(push_constant) uniform PushConstants
     uint phase;
 } g_Push;
 
-layout(set = 1, binding = 4) readonly buffer GBufVoxelVertexBuffer          { Vertex  g_VoxelVertices[]; };
+layout(set = 1, binding = 4) readonly buffer GBufVoxelVertexBuffer          { VoxelVertex g_VoxelVertices[]; };
 layout(set = 1, binding = 5) readonly buffer GBufVoxelMeshletBuffer         { Meshlet g_VoxelMeshlets[]; };
 layout(set = 1, binding = 6) readonly buffer GBufVoxelMeshletVertexBuffer   { uint    g_VoxelMeshletVertices[]; };
 layout(set = 1, binding = 7) readonly buffer GBufVoxelMeshletTriangleBuffer { uint    g_VoxelMeshletTriangles[]; };
 
-layout(set = 1, binding = 8, std140) uniform VoxelChunkDescUBO { VoxelChunkDesc d; } g_VoxelChunkDesc;
-layout(set = 1, binding = 9) uniform sampler2D g_ErosionDetailMap;
+layout(set = 1, binding = 8) readonly buffer VoxelChunkDescBuffer { VoxelChunkDesc g_VoxelChunkDescs[]; };
+layout(set = 1, binding = 9) uniform sampler2DArray g_ErosionDetailMap;
 
 
 uint hash(uint a)
@@ -120,9 +120,9 @@ shared uint sh_TriangleCount;
 shared uint sh_VertexOffset;
 shared uint sh_TriangleOffset;
 shared uint sh_MaterialID;
-shared uint sh_IsVoxel; // 1 = voxel chunk instance (geometry from voxel pools, voxel visID)
+shared uint sh_VoxelChunkIndex; // voxel chunk slot (INVALID_INDEX = non-voxel instance)
 
-shared vec3 sh_CornerPos[30];
+shared vec3 sh_CornerPosWS[30];
 shared vec3 sh_CornerNrm[30];
 shared uint sh_TriLt[10]; // per-base-tri target level
 shared uint sh_TriLe[10]; // per-base-tri edge levels
@@ -174,10 +174,16 @@ void main()
 		sh_TriangleCount  = meshlet.triangleCount;
 		sh_VertexOffset   = meshlet.vertexOffset;
 		sh_TriangleOffset = meshlet.triangleOffset;
-		sh_MaterialID     = instance.materialID;
-		sh_IsVoxel        = instance.isVoxel;
+		sh_MaterialID      = instance.materialID;
+		sh_VoxelChunkIndex = (instance.isVoxel != 0u) ? (Payload.drawID - VOXEL_CHUNK_INSTANCE_BASE) : INVALID_INDEX;
 	}
 	barrier();
+
+	bool isVoxel = sh_VoxelChunkIndex != INVALID_INDEX;
+	VoxelChunkDesc chunk;
+	if (isVoxel)
+		chunk = g_VoxelChunkDescs[sh_VoxelChunkIndex];
+	uint chunkBaseMI = isVoxel ? chunk.mOffset : 0u;
 
 	uint T = 1u, child = 0u, triBase = 0u;
 	if (diced)
@@ -204,20 +210,19 @@ void main()
 			uint local = (triBase + c / 3u) * 3u + (c % 3u);
 			uint vi    = sh_VOffset + g_VoxelMeshletVertices[sh_VertexOffset + sh_MvOffset + local];
 
-			Vertex vv = g_VoxelVertices[vi];
-			sh_CornerPos[c] = vec3(vv.posX, vv.posY, vv.posZ);
-			sh_CornerNrm[c] = vec3(vv.normalX, vv.normalY, vv.normalZ);
+			VoxelVertex vv = g_VoxelVertices[vi];
+			sh_CornerPosWS[c] = VoxelUnpackPos(vv, chunk.chunkSizeMeter) + vec3(chunk.originX, chunk.originY, chunk.originZ);
+			sh_CornerNrm[c] = VoxelUnpackNormal(vv);
 		}
 		barrier();
 
-		// camera position in chunk-local space
-		vec3 cameraPos = g_FrozenCamera.posWORLD - vec3(g_VoxelChunkDesc.d.originX, g_VoxelChunkDesc.d.originY, g_VoxelChunkDesc.d.originZ);
+		vec3 cameraPosWS = g_FrozenCamera.posWORLD;
 		for (uint t = ti; t < numTris; t += gl_WorkGroupSize.x)
 		{
 			uint b   = t * 3u;
-			uint le0 = DiceEdgeLevel(sh_CornerPos[b + 0u], sh_CornerPos[b + 1u], cameraPos, g_VoxelChunkDesc.d);
-			uint le1 = DiceEdgeLevel(sh_CornerPos[b + 1u], sh_CornerPos[b + 2u], cameraPos, g_VoxelChunkDesc.d);
-			uint le2 = DiceEdgeLevel(sh_CornerPos[b + 2u], sh_CornerPos[b + 0u], cameraPos, g_VoxelChunkDesc.d);
+			uint le0 = DiceEdgeLevel(sh_CornerPosWS[b + 0u], sh_CornerPosWS[b + 1u], cameraPosWS, chunk);
+			uint le1 = DiceEdgeLevel(sh_CornerPosWS[b + 1u], sh_CornerPosWS[b + 2u], cameraPosWS, chunk);
+			uint le2 = DiceEdgeLevel(sh_CornerPosWS[b + 2u], sh_CornerPosWS[b + 0u], cameraPosWS, chunk);
 
 			sh_TriLe[t] = le0 | (le1 << 4u) | (le2 << 8u);
 			sh_TriLt[t] = max(le0, max(le1, le2));
@@ -285,15 +290,14 @@ void main()
 			{
 				uvec3 coord = DiceHierCoord(cc0, cc1, cc2, DiceSubVertexCoordInt(v, 3u));
 
-				vec3 posL, nrmL;
+				vec3 posWS, nrmL;
 				DiceSubVertex(coord, Lt, le,
-				              sh_CornerPos[0], sh_CornerPos[1], sh_CornerPos[2],
+				              sh_CornerPosWS[0], sh_CornerPosWS[1], sh_CornerPosWS[2],
 				              sh_CornerNrm[0], sh_CornerNrm[1], sh_CornerNrm[2],
-				              posL, nrmL);
+				              posWS, nrmL);
 
-				vec3 posWS = (sh_LocalToWorld * vec4(posL, 1.0)).xyz;
 				posWS = DisplaceVoxelDice(posWS, nrmL.y, g_FrozenCamera.posWORLD,
-				                          g_VoxelChunkDesc.d, g_ErosionDetailMap);
+				                          chunk, g_ErosionDetailMap);
 
 				gl_MeshVerticesEXT[v].gl_Position = g_Camera.mViewProj * vec4(posWS, 1.0);
 			}
@@ -304,7 +308,7 @@ void main()
 
 				gl_MeshPrimitivesEXT[p].gl_CullPrimitiveEXT = false;
 				outVisID0[p] = PackVisID0Voxel(Payload.drawID);
-				outVisID1[p] = PackVisID1Voxel(mi, triBase, child * 64u + p + 1u);
+				outVisID1[p] = PackVisID1Voxel(mi - chunkBaseMI, triBase, child * 64u + p + 1u);
 			}
 
 			return;
@@ -325,24 +329,23 @@ void main()
 			uint lt    = sh_TriLt[t];
 			uint local = v - vStart;
 
-			vec3 pos, normal;
+			vec3 posWS, normal;
 			if (lt != 0u)
 			{
 				uvec3 le = uvec3(sh_TriLe[t] & 0xFu, (sh_TriLe[t] >> 4u) & 0xFu, (sh_TriLe[t] >> 8u) & 0xFu);
 				DiceSubVertex(DiceSubVertexCoordInt(local, lt), lt, le,
-				              sh_CornerPos[t * 3u + 0u], sh_CornerPos[t * 3u + 1u], sh_CornerPos[t * 3u + 2u],
+				              sh_CornerPosWS[t * 3u + 0u], sh_CornerPosWS[t * 3u + 1u], sh_CornerPosWS[t * 3u + 2u],
 				              sh_CornerNrm[t * 3u + 0u], sh_CornerNrm[t * 3u + 1u], sh_CornerNrm[t * 3u + 2u],
-				              pos, normal);
+				              posWS, normal);
 			}
 			else
 			{
-				pos    = sh_CornerPos[t * 3u + local];
+				posWS  = sh_CornerPosWS[t * 3u + local];
 				normal = sh_CornerNrm[t * 3u + local];
 			}
 
-			vec3 posWS = (sh_LocalToWorld * vec4(pos, 1.0)).xyz;
 			if (lt != 0u)
-				posWS = DisplaceVoxelDice(posWS, normal.y, g_FrozenCamera.posWORLD, g_VoxelChunkDesc.d, g_ErosionDetailMap);
+				posWS = DisplaceVoxelDice(posWS, normal.y, g_FrozenCamera.posWORLD, chunk, g_ErosionDetailMap);
 
 			gl_MeshVerticesEXT[v].gl_Position = g_Camera.mViewProj * vec4(posWS, 1.0);
 		}
@@ -366,12 +369,12 @@ void main()
 				uint  st  = p - pStart;
 				uvec3 sub = DiceSubTriVerts(st, lt);
 				gl_PrimitiveTriangleIndicesEXT[p] = uvec3(vStart) + sub;
-				outVisID1[p] = PackVisID1Voxel(mi, triBase + t, st + 1u);
+				outVisID1[p] = PackVisID1Voxel(mi - chunkBaseMI, triBase + t, st + 1u);
 			}
 			else
 			{
 				gl_PrimitiveTriangleIndicesEXT[p] = uvec3(vStart, vStart + 1u, vStart + 2u);
-				outVisID1[p] = PackVisID1Voxel(mi, triBase + t, 0u); // sentinel 0 = undiced base triangle
+				outVisID1[p] = PackVisID1Voxel(mi - chunkBaseMI, triBase + t, 0u); // sentinel 0 = undiced base triangle
 			}
 			gl_MeshPrimitivesEXT[p].gl_CullPrimitiveEXT = false;
 			outVisID0[p] = PackVisID0Voxel(Payload.drawID);
@@ -382,13 +385,22 @@ void main()
 
 	for (uint i = ti; i < sh_VertexCount; i += gl_WorkGroupSize.x)
 	{
-		uint vi = (sh_IsVoxel != 0u)
-			? g_VoxelMeshletVertices[sh_VertexOffset + sh_MvOffset + i]
-			: g_MeshletVertexBuffer.meshletVertices[sh_VertexOffset + sh_MvOffset + i];
+		vec3 position;
+		if (isVoxel)
+		{
+			uint vi  = g_VoxelMeshletVertices[sh_VertexOffset + sh_MvOffset + i];
+			position = VoxelUnpackPos(g_VoxelVertices[vi + sh_VOffset], chunk.chunkSizeMeter);
+		}
+		else
+		{
+			uint vi = g_MeshletVertexBuffer.meshletVertices[sh_VertexOffset + sh_MvOffset + i];
+			Vertex vertex = g_VertexBuffer.vertices[vi + sh_VOffset];
+			position = vec3(vertex.posX, vertex.posY, vertex.posZ);
+		}
 
-		Vertex vertex   = (sh_IsVoxel != 0u) ? g_VoxelVertices[vi + sh_VOffset] : g_VertexBuffer.vertices[vi + sh_VOffset];
-		vec3  position  = vec3(vertex.posX, vertex.posY, vertex.posZ);
-		vec4  posWORLD  = sh_LocalToWorld * vec4(position, 1.0);
+		vec4 posWORLD = isVoxel
+			? vec4(position + vec3(chunk.originX, chunk.originY, chunk.originZ), 1.0)
+			: sh_LocalToWorld * vec4(position, 1.0);
 
 		gl_MeshVerticesEXT[i].gl_Position = g_Camera.mViewProj * posWORLD;
 	}
@@ -399,7 +411,7 @@ void main()
 	uint baseTriOffset = sh_TriangleOffset + sh_MtOffset;
 	for (uint i = ti; i < sh_TriangleCount; i += gl_WorkGroupSize.x)
 	{
-		uint tPacked3 = (sh_IsVoxel != 0u)
+		uint tPacked3 = isVoxel
 			? g_VoxelMeshletTriangles[baseTriOffset + i]
 			: g_MeshletTriangleBuffer.meshletTriangles[baseTriOffset + i];
 
@@ -414,13 +426,13 @@ void main()
 		vec4 cc = gl_MeshVerticesEXT[t2].gl_Position;
 
 		// TODO: LOD streaming and culling on voxels
-		gl_MeshPrimitivesEXT[i].gl_CullPrimitiveEXT = (sh_IsVoxel != 0u) ? false : TriangleCull(ca, cb, cc);
+		gl_MeshPrimitivesEXT[i].gl_CullPrimitiveEXT = isVoxel ? false : TriangleCull(ca, cb, cc);
 
-		outVisID0[i] = (sh_IsVoxel != 0u)
+		outVisID0[i] = isVoxel
 			? PackVisID0Voxel(Payload.drawID)
 			: PackVisID0Mesh(Payload.drawID, Payload.lodLevel, 0u);
-		outVisID1[i] = (sh_IsVoxel != 0u)
-			? PackVisID1Voxel(mi, i, 0u) // sentinel 0 = undiced base triangle
+		outVisID1[i] = isVoxel
+			? PackVisID1Voxel(mi - chunkBaseMI, i, 0u) // sentinel 0 = undiced base triangle
 			: PackVisID1(mi, i);
 	}
 }

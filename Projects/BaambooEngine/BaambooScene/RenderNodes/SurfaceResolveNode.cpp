@@ -55,9 +55,11 @@ SurfaceResolveNode::SurfaceResolveNode(render::RenderDevice& rd)
 	m_pVoxelMeshletFallback         = MakeFallback("SurfaceResolvePass::VoxelMeshletFallback", sizeof(Meshlet));
 	m_pVoxelMeshletVertexFallback   = MakeFallback("SurfaceResolvePass::VoxelMeshletVertexFallback", sizeof(u32));
 	m_pVoxelMeshletTriangleFallback = MakeFallback("SurfaceResolvePass::VoxelMeshletTriangleFallback", sizeof(u32));
+	m_pVoxelChunkDescFallback       = MakeFallback("SurfaceResolvePass::VoxelChunkDescFallback", sizeof(VoxelChunkDesc));
 
 	m_pErosionDetailFallback = Texture::Create(rd, "SurfaceResolvePass::ErosionDetailFallback",
 		{
+			.imageType  = eImageType::Texture2DArray, // must match the Texture2DArray shader declaration
 			.resolution = uint3(1, 1, 1),
 			.format     = eFormat::RGBA16_FLOAT,
 			.imageUsage = eTextureUsage_Sample,
@@ -106,13 +108,15 @@ void SurfaceResolveNode::Apply(render::CommandContext& context, const SceneRende
 	auto pVoxMeshlets = g_FrameData.pVoxelMeshlets.lock();
 	auto pVoxMv       = g_FrameData.pVoxelMeshletVertices.lock();
 	auto pVoxMt       = g_FrameData.pVoxelMeshletTriangles.lock();
+	auto pVoxDescs    = g_FrameData.pVoxelChunkDescs.lock();
 
 	if (pVoxVerts)    context.TransitionBufferToRead(pVoxVerts,    ePipelineStage::ComputeShader);
 	if (pVoxMeshlets) context.TransitionBufferToRead(pVoxMeshlets, ePipelineStage::ComputeShader);
 	if (pVoxMv)       context.TransitionBufferToRead(pVoxMv,       ePipelineStage::ComputeShader);
 	if (pVoxMt)       context.TransitionBufferToRead(pVoxMt,       ePipelineStage::ComputeShader);
+	if (pVoxDescs)    context.TransitionBufferToRead(pVoxDescs,    ePipelineStage::ComputeShader);
 
-	context.SetComputeDynamicUniformBuffer("g_VoxelChunkDesc", g_FrameData.voxelChunkDesc);
+	context.StageDescriptor("g_VoxelChunkDescs",       pVoxDescs    ? pVoxDescs    : m_pVoxelChunkDescFallback);
 	context.StageDescriptor("g_VoxelVertices",         pVoxVerts    ? pVoxVerts    : m_pVoxelVertexFallback);
 	context.StageDescriptor("g_VoxelMeshlets",         pVoxMeshlets ? pVoxMeshlets : m_pVoxelMeshletFallback);
 	context.StageDescriptor("g_VoxelMeshletVertices",  pVoxMv       ? pVoxMv       : m_pVoxelMeshletVertexFallback);

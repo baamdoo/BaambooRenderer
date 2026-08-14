@@ -181,12 +181,16 @@ void TerrainApp::DrawUI()
 			auto& terrain = m_VoxelTerrainRootEntity.GetComponent< VoxelTerrainComponent >();
 			bool bRebuildChunk = false;
 
-			ImGui::DragFloat3("Terrain Origin", glm::value_ptr(terrain.terrainOriginWorld), 0.5f, 0.0f, 0.0f, "%.2f m");
-			if (ImGui::IsItemDeactivatedAfterEdit())
-				bRebuildChunk = true;
-
 			if (ImGui::Button("Rebuild"))
 				bRebuildChunk = true;
+			ImGui::SameLine();
+			if (ImGui::Button("Reset Defaults"))
+			{
+				const auto dice = terrain.settings.dice;
+				terrain.settings = {};
+				terrain.settings.dice = dice;
+				bRebuildChunk = true;
+			}
 
 			if (ImGui::CollapsingHeader("Procedural Surface", ImGuiTreeNodeFlags_DefaultOpen))
 			{
@@ -195,21 +199,21 @@ void TerrainApp::DrawUI()
 				int seed    = (int)gs.seed;
 
 				// Rebuild on change.
-				bRebuildChunk |= ImGui::SliderFloat("Detail Weight",  &gs.detailWeight,      0.0f, 4.0f,  "%.2f");
-				bRebuildChunk |= ImGui::SliderFloat("Ridged Blend",   &gs.ridgedBlend,       0.0f, 1.0f,  "%.2f");
-				bRebuildChunk |= ImGui::SliderFloat("Redistribution", &gs.redistributionExp, 0.2f, 4.0f,  "%.2f");
-				bRebuildChunk |= ImGui::SliderInt  ("Octaves",        &octaves,              1,    8           );
-				bRebuildChunk |= ImGui::SliderFloat("Frequency",      &gs.frequency,         0.005f, 0.2f, "%.4f");
-				bRebuildChunk |= ImGui::SliderFloat("Lacunarity",     &gs.lacunarity,        1.5f, 3.0f,  "%.2f");
-				bRebuildChunk |= ImGui::SliderFloat("Gain",           &gs.gain,              0.2f, 0.8f,  "%.2f");
-				bRebuildChunk |= ImGui::SliderFloat("Warp Strength",  &gs.warpStrength,      0.0f, 3.0f,  "%.2f");
-				bRebuildChunk |= ImGui::SliderFloat("Warp Frequency", &gs.warpFrequency,     0.005f, 0.1f, "%.4f");
-				bRebuildChunk |= ImGui::SliderFloat("Amplitude (m)",  &gs.mountainAmplitude, 0.0f, 64.0f, "%.1f");
-				bRebuildChunk |= ImGui::SliderFloat("Surface Level",  &gs.surfaceLevelRatio,  0.0f, 1.0f,  "%.2f");
+				bRebuildChunk |= ImGui::SliderFloat("Detail Weight",  &gs.detailWeight,      0.0f,   4.0f,  "%.2f");
+				bRebuildChunk |= ImGui::SliderFloat("Ridged Blend",   &gs.ridgedBlend,       0.0f,   1.0f,  "%.2f");
+				bRebuildChunk |= ImGui::SliderFloat("Redistribution", &gs.redistributionExp, 0.2f,   4.0f,  "%.2f");
+				bRebuildChunk |= ImGui::SliderInt  ("Octaves",        &octaves,              0,      8);
+				bRebuildChunk |= ImGui::SliderFloat("Frequency",      &gs.frequency,         0.005f, 0.2f,  "%.4f");
+				bRebuildChunk |= ImGui::SliderFloat("Lacunarity",     &gs.lacunarity,        1.5f,   3.0f,  "%.2f");
+				bRebuildChunk |= ImGui::SliderFloat("Gain",           &gs.gain,              0.2f,   0.8f,  "%.2f");
+				bRebuildChunk |= ImGui::SliderFloat("Warp Strength",  &gs.warpStrength,      0.0f,   3.0f,  "%.2f");
+				bRebuildChunk |= ImGui::SliderFloat("Warp Frequency", &gs.warpFrequency,     0.005f, 0.1f,  "%.4f");
+				bRebuildChunk |= ImGui::SliderFloat("Amplitude (m)",  &gs.mountainAmplitude, 0.0f,   64.0f, "%.1f");
+				bRebuildChunk |= ImGui::SliderFloat("Surface Level (m)", &gs.surfaceBaseYMeter, 0.0f, 64.0f, "%.1f");
 				bRebuildChunk |= ImGui::InputInt   ("Seed",           &seed);
 
-				gs.octaves = (u32)(octaves < 1 ? 1 : octaves);
-				gs.seed    = (u32)(seed    < 0 ? 0 : seed);
+				gs.octaves = octaves;
+				gs.seed    = (u32)(seed < 0 ? 0 : seed);
 			}
 
 			if (ImGui::CollapsingHeader("Erosion", ImGuiTreeNodeFlags_DefaultOpen))
@@ -248,6 +252,14 @@ void TerrainApp::DrawUI()
 				if (ImGui::Checkbox("Level Tint", &bLevelTint))
 					dice.debugFlags = bLevelTint ? (dice.debugFlags | 1u) : (dice.debugFlags & ~1u);
 
+				bool bChunkTint = (dice.debugFlags & 2u) != 0u;
+				if (ImGui::Checkbox("Chunk Tint", &bChunkTint))
+					dice.debugFlags = bChunkTint ? (dice.debugFlags | 2u) : (dice.debugFlags & ~2u);
+
+				bool bLodTint = (dice.debugFlags & 8u) != 0u;
+				if (ImGui::Checkbox("LOD Tint", &bLodTint))
+					dice.debugFlags = bLodTint ? (dice.debugFlags | 8u) : (dice.debugFlags & ~8u);
+
 				int microOctaves = (int)dice.microOctaves;
 				ImGui::SliderFloat("Micro Amp (m)",      &dice.microAmplitudeMeter,        0.0f,  0.10f, "%.3f");
 				ImGui::SliderFloat("Micro Base WL (m)",  &dice.microBaseWaveLengthMeter,     0.05f, 1.0f,  "%.2f");
@@ -263,6 +275,15 @@ void TerrainApp::DrawUI()
 
 				dice.maxLevel     = (u32)(diceMaxLevel < 0 ? 0 : diceMaxLevel);
 				dice.microOctaves = (u32)(microOctaves < 0 ? 0 : microOctaves);
+			}
+
+			if (ImGui::CollapsingHeader("Streaming", ImGuiTreeNodeFlags_DefaultOpen))
+			{
+				auto& gs = terrain.settings;
+				int maxLodLevel = (int)gs.maxLodLevel;
+
+				ImGui::SliderInt("Max LOD Level", &maxLodLevel, 0, 7);
+				gs.maxLodLevel = (u32)maxLodLevel;
 			}
 
 			if (bRebuildChunk)
@@ -376,10 +397,10 @@ void TerrainApp::ConfigureRenderGraph()
 void TerrainApp::ConfigureSceneObjects()
 {
 	m_VoxelTerrainRootEntity = m_pScene->CreateEntity(kVoxelTerrainRootTag);
-	auto& terrain = m_VoxelTerrainRootEntity.AttachComponent< VoxelTerrainComponent >();
+	m_VoxelTerrainRootEntity.AttachComponent< VoxelTerrainComponent >();
 	{
 		auto& transform = m_VoxelTerrainRootEntity.GetComponent< TransformComponent >();
-		transform.transform.position = terrain.terrainOriginWorld;
+		transform.transform.position = float3(0.0f);
 		transform.transform.rotation = float3(0.0f);
 		transform.transform.scale = float3(1.0f);
 		transform.transform.Update();

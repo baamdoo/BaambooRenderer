@@ -5,19 +5,20 @@
 
 layout(push_constant) uniform MeshletBuildPushConstants
 {
-    uint g_ChunkID;
-    uint g_MeshletSlabBase;
-    uint g_TrianglesPerMeshlet;   // 3*K <= mesh shader max vertices
-    uint g_MaxMeshlets;
-    uint g_MaxTriangles;
-    uint g_VertexSlabBase;
-    uint g_MeshletVertexSlabBase;
+    uint  g_ChunkID;
+    uint  g_MeshletSlabBase;
+    uint  g_TrianglesPerMeshlet;  // 3*K <= mesh shader max vertices
+    uint  g_MaxMeshlets;
+    uint  g_MaxTriangles;
+    uint  g_VertexSlabBase;
+    uint  g_MeshletVertexSlabBase;
+    float g_ChunkSizeMeter;
 } pc;
 
 layout(set = 1, binding = 0) buffer McCounterBuffer  { uint g_MCCounter[]; };
 layout(set = 1, binding = 1) buffer OutMeshletBuffer { Meshlet g_OutMeshlets[]; };
 layout(set = 1, binding = 2) buffer OutCountsBuffer  { VoxelChunkCounts g_OutCounts[]; };
-layout(set = 1, binding = 3) readonly buffer VertexPoolBuffer { Vertex g_Vertices[]; };
+layout(set = 1, binding = 3) readonly buffer VertexPoolBuffer { VoxelVertex g_Vertices[]; };
 layout(set = 1, binding = 4) readonly buffer MeshletVertexIndexBuffer { uint g_MeshletVerts[]; };
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
@@ -49,8 +50,7 @@ void main()
     for (uint v = 0u; v < triCount * 3u; ++v)
     {
         uint vLocal = g_MeshletVerts[pc.g_MeshletVertexSlabBase + triBase * 3u + v];
-        uint vi     = pc.g_VertexSlabBase + vLocal;
-        vec3 p  = vec3(g_Vertices[vi].posX, g_Vertices[vi].posY, g_Vertices[vi].posZ);
+        vec3 p = VoxelUnpackPos(g_Vertices[pc.g_VertexSlabBase + vLocal], pc.g_ChunkSizeMeter);
         bmin = min(bmin, p);
         bmax = max(bmax, p);
     }

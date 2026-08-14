@@ -2,6 +2,7 @@
 #include "MathTypes.h"
 #include "Primitives.h"
 #include "EngineTypes.h"
+#include "ShaderTypes.h"
 
 namespace baamboo
 {
@@ -9,10 +10,58 @@ namespace baamboo
 // GPU density volume apron (extra samples each side)
 constexpr u32 kVoxelDensityApron = 2u;
 
-constexpr float kDefaultVoxelChunkWorldSizeMeter = 128.0f;
-constexpr u32   kDefaultVoxelCellsPerAxis        = 256u;
+constexpr float kDefaultVoxelChunkWorldSizeMeter = 64.0f;
+constexpr u32   kDefaultVoxelCellsPerAxis        = 128u;
 constexpr u32   kDefaultVoxelSamplesPerAxis      = kDefaultVoxelCellsPerAxis + 1u;
 constexpr float kDefaultVoxelSizeMeter           = kDefaultVoxelChunkWorldSizeMeter / (float)kDefaultVoxelCellsPerAxis;
+
+// Erosion detail slice pool
+constexpr u32 kMaxVoxelErosionSlices = 58u;
+
+// Absolute terrain floor plane (below it is always air)
+constexpr float kVoxelWorldFloorYMeter = 0.0f;
+
+// Page size-classes: per-page triangle capacity + page count
+struct VoxelPageClass
+{
+    u32 triCapacity;
+    u32 pageCount;
+};
+constexpr VoxelPageClass kVoxelPageClasses[] =
+{
+    {  72000u,   2u }, // S
+    { 100800u,   2u }, // M
+    { 210000u, 170u }, // L
+    { 393216u,   2u }, // XL
+};
+constexpr u32   kVoxelPageClassCount               = 4u;
+constexpr u32   kVoxelInitialClassId               = 2u;
+constexpr float kVoxelPageClassTriangleReserveRate = 1.25f; 
+
+// pageID = classId(8b) << 24 | pageIdx(24b)
+constexpr u32 MakeVoxelPageID(u32 classId, u32 idx) { return (classId << 24u) | idx; }
+constexpr u32 VoxelPageClassId(u32 pageID)          { return pageID >> 24u; }
+constexpr u32 VoxelPageIdx(u32 pageID)              { return pageID & 0x00FFFFFFu; }
+
+// Per-class capacities: v = 3t, mv = 4t, mt = 4t/3, meshlets = t/12
+constexpr u32 VoxelClassTriCap(u32 c)           { return kVoxelPageClasses[c].triCapacity; }
+constexpr u32 VoxelClassPageCount(u32 c)        { return kVoxelPageClasses[c].pageCount; }
+constexpr u32 VoxelClassVertexCap(u32 c)        { return VoxelClassTriCap(c) * 3u; }
+constexpr u32 VoxelClassMeshletVertexCap(u32 c) { return VoxelClassTriCap(c) * 4u; }
+constexpr u32 VoxelClassMeshletTriCap(u32 c)    { return VoxelClassTriCap(c) * 4u / 3u; }
+constexpr u32 VoxelClassMeshletCap(u32 c)       { return VoxelClassTriCap(c) / 12u; }
+
+// Pool bases: classes packed back-to-back, page idx strided by the class capacity
+constexpr u32 VoxelClassPageBase(u32 c)         { u32 s = 0u; for (u32 i = 0u; i < c; ++i) s += VoxelClassPageCount(i); return s; }
+constexpr u32 VoxelTotalPages()                 { return VoxelClassPageBase(kVoxelPageClassCount); }
+constexpr u32 VoxelClassVertexBase(u32 c)       { u32 s = 0u; for (u32 i = 0u; i < c; ++i) s += VoxelClassPageCount(i) * VoxelClassVertexCap(i); return s; }
+constexpr u32 VoxelClassMeshletVertexBase(u32 c){ u32 s = 0u; for (u32 i = 0u; i < c; ++i) s += VoxelClassPageCount(i) * VoxelClassMeshletVertexCap(i); return s; }
+constexpr u32 VoxelClassMeshletTriBase(u32 c)   { u32 s = 0u; for (u32 i = 0u; i < c; ++i) s += VoxelClassPageCount(i) * VoxelClassMeshletTriCap(i); return s; }
+constexpr u32 VoxelClassMeshletBase(u32 c)      { u32 s = 0u; for (u32 i = 0u; i < c; ++i) s += VoxelClassPageCount(i) * VoxelClassMeshletCap(i); return s; }
+constexpr u32 VoxelTotalVertexPool()            { return VoxelClassVertexBase(kVoxelPageClassCount); }
+constexpr u32 VoxelTotalMeshletVertexPool()     { return VoxelClassMeshletVertexBase(kVoxelPageClassCount); }
+constexpr u32 VoxelTotalMeshletTriPool()        { return VoxelClassMeshletTriBase(kVoxelPageClassCount); }
+constexpr u32 VoxelTotalMeshletPool()           { return VoxelClassMeshletBase(kVoxelPageClassCount); }
 
 struct VoxelTerrainSettings
 {
@@ -20,6 +69,8 @@ struct VoxelTerrainSettings
     u32   cellsPerAxis        = kDefaultVoxelCellsPerAxis;
     u32   samplesPerAxis      = kDefaultVoxelSamplesPerAxis;
     float voxelSizeMeter      = kDefaultVoxelSizeMeter;
+
+    u32 maxLodLevel = 3u;
 
     // Procedural surface
     u32   seed              = 1337u;
@@ -33,7 +84,7 @@ struct VoxelTerrainSettings
     float detailWeight      = 1.0f;
     float redistributionExp = 1.0f;
     float ridgedBlend       = 0.0f;
-    float surfaceLevelRatio = 0.5f;   // base surface height as chunk fraction (0..1)
+    float surfaceBaseYMeter = 32.0f;  // base surface height (m), world-absolute
 
     // Erosion
     float erosionScale         = 32.0f; // largest gully wavelength (m)

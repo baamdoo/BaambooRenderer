@@ -68,7 +68,7 @@ struct FrameData
 	Weak< render::Texture > pCoreMaterial;
 
 	// Voxel chunks
-	VoxelChunkDesc voxelChunkDesc;
+	Weak< render::Buffer >  pVoxelChunkDescs; // CPU-written
 	Weak< render::Buffer >  pVoxelChunkCounts;
 	Weak< render::Buffer >  pVoxelVertices;
 	Weak< render::Buffer >  pVoxelMeshlets;

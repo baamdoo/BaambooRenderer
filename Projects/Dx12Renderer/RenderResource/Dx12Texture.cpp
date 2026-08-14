@@ -244,7 +244,7 @@ D3D12_SHADER_RESOURCE_VIEW_DESC GetSRVDesc(const D3D12_RESOURCE_DESC& resDesc, r
         }
         else
         {
-            if (resDesc.DepthOrArraySize > 1)
+            if (resDesc.DepthOrArraySize > 1 || imageType == render::eImageType::Texture2DArray)
             {
                 srvDesc.ViewDimension                  = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
                 srvDesc.Texture2DArray.MipLevels       = mipLevels;
@@ -274,7 +274,7 @@ D3D12_SHADER_RESOURCE_VIEW_DESC GetSRVDesc(const D3D12_RESOURCE_DESC& resDesc, r
     return srvDesc;
 }
 
-D3D12_UNORDERED_ACCESS_VIEW_DESC GetUAVDesc(const D3D12_RESOURCE_DESC& resDesc, u32 mipSlice, u32 arraySlice = 0, u32 planeSlice = 0)
+D3D12_UNORDERED_ACCESS_VIEW_DESC GetUAVDesc(const D3D12_RESOURCE_DESC& resDesc, render::eImageType imageType, u32 mipSlice, u32 arraySlice = 0, u32 planeSlice = 0)
 {
     D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
     uavDesc.Format = resDesc.Format;
@@ -296,7 +296,7 @@ D3D12_UNORDERED_ACCESS_VIEW_DESC GetUAVDesc(const D3D12_RESOURCE_DESC& resDesc, 
         }
         break;
     case D3D12_RESOURCE_DIMENSION_TEXTURE2D:
-        if (resDesc.DepthOrArraySize > 1)
+        if (resDesc.DepthOrArraySize > 1 || imageType == render::eImageType::Texture2DArray)
         {
             uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY;
             uavDesc.Texture2DArray.ArraySize = resDesc.DepthOrArraySize - arraySlice;
@@ -524,7 +524,7 @@ void Dx12Texture::CreateViews()
                 rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, desc.MipLevels);
             for (int i = 0; i < desc.MipLevels; ++i)
             {
-                auto uavDesc = GetUAVDesc(desc, i);
+                auto uavDesc = GetUAVDesc(desc, m_CreationInfo.imageType, i);
                 d3d12Device->CreateUnorderedAccessView(m_d3d12Resource, nullptr, &uavDesc, m_UnorderedAccessView.GetCPUHandle(i));
             }
         }

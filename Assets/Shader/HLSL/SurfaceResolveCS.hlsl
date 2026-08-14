@@ -17,7 +17,7 @@ ConstantBuffer< DescriptorHeapIndex > g_VBuf1          : register(b2, ROOT_CONST
 ConstantBuffer< DescriptorHeapIndex > g_CoreNormal     : register(b3, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_CoreMaterial   : register(b4, ROOT_CONSTANT_SPACE);
 
-ConstantBuffer< VoxelChunkDesc >      g_VoxelChunkDesc        : register(b0, space1);
+ConstantBuffer< DescriptorHeapIndex > g_VoxelChunkDescs       : register(b11, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_ErosionDetailMap      : register(b5, ROOT_CONSTANT_SPACE);
 
 static float s_DebugDiceLevel = 0.0;
@@ -31,49 +31,49 @@ ConstantBuffer< DescriptorHeapIndex > g_Velocity              : register(b10, RO
 
 ResolvedSurface ResolveVoxelSurface(uint v0, uint v1, float2 pixelCenter, float2 viewport)
 {
-    StructuredBuffer< Vertex >  Vertices         = GetResource(g_VoxelVertices.index);
+    StructuredBuffer< VoxelVertex > Vertices     = GetResource(g_VoxelVertices.index);
     StructuredBuffer< Meshlet > Meshlets         = GetResource(g_VoxelMeshlets.index);
     StructuredBuffer< uint >    MeshletVertices  = GetResource(g_VoxelMeshletVertices.index);
     StructuredBuffer< uint >    MeshletTriangles = GetResource(g_VoxelMeshletTriangles.index);
 
-    uint meshletIdx  = VisVoxelMeshletIndex(v1); // absolute voxel meshlet-pool index (task shader baked the offset)
+    StructuredBuffer< VoxelChunkDesc > VoxelChunkDescs = GetResource(g_VoxelChunkDescs.index);
+    VoxelChunkDesc chunk = VoxelChunkDescs[VisChunkIndex(v0) - VOXEL_CHUNK_INSTANCE_BASE];
+
+    uint meshletIdx  = chunk.mOffset + VisVoxelMeshletIndex(v1); // page-relative voxel meshlet-pool index
     uint triLocal    = VisVoxelTriLocal(v1);
     uint subTriPlus1 = VisVoxelSubTriPlus1(v1);  // 0 = undiced base triangle
 
-    VoxelChunkDesc chunk   = g_VoxelChunkDesc; // TODO: multi-chunk voxels
-    Meshlet        meshlet = Meshlets[meshletIdx];
+    Meshlet meshlet = Meshlets[meshletIdx];
 
-    uint tPacked3  = MeshletTriangles[chunk.meshletTriangleOffset + meshlet.triangleOffset + triLocal];
+    uint tPacked3  = MeshletTriangles[chunk.mtOffset + meshlet.triangleOffset + triLocal];
     uint locals[3] = { tPacked3 & 0xFF, (tPacked3 >> 8) & 0xFF, (tPacked3 >> 16) & 0xFF };
 
     float3 originWS = float3(chunk.originX, chunk.originY, chunk.originZ);
 
-    float3 pos[3]; // chunk-local
     float3 posWS[3];
-    float3 nrm[3];
+    float3 normal[3];
     [unroll] for (uint k = 0; k < 3; ++k)
     {
-        uint vi = chunk.vertexOffset + MeshletVertices[chunk.meshletVertexOffset + meshlet.vertexOffset + locals[k]];
+        uint vi = chunk.vOffset + MeshletVertices[chunk.mvOffset + meshlet.vertexOffset + locals[k]];
 
-        Vertex vv = Vertices[vi];
-        pos[k]   = float3(vv.posX, vv.posY, vv.posZ);
-        posWS[k] = originWS + pos[k];
-        nrm[k]   = float3(vv.normalX, vv.normalY, vv.normalZ);
+        VoxelVertex vv = Vertices[vi];
+        posWS[k]  = VoxelUnpackPos(vv, chunk.chunkSizeMeter) + originWS;
+        normal[k] = VoxelUnpackNormal(vv);
     }
 
     if (subTriPlus1 != 0u && chunk.diceMaxLevel != 0u)
     {
-        float3 cameraPos = g_FrozenCamera.posWORLD - float3(chunk.originX, chunk.originY, chunk.originZ);
+        float3 cameraPosWS = g_FrozenCamera.posWORLD;
 
-        uint   le0  = DiceEdgeLevel(pos[0], pos[1], cameraPos, chunk);
-        uint   le1  = DiceEdgeLevel(pos[1], pos[2], cameraPos, chunk);
-        uint   le2  = DiceEdgeLevel(pos[2], pos[0], cameraPos, chunk);
-        uint   Lt   = max(le0, max(le1, le2));
+        uint le0  = DiceEdgeLevel(posWS[0], posWS[1], cameraPosWS, chunk);
+        uint le1  = DiceEdgeLevel(posWS[1], posWS[2], cameraPosWS, chunk);
+        uint le2  = DiceEdgeLevel(posWS[2], posWS[0], cameraPosWS, chunk);
+        uint Lt   = max(le0, max(le1, le2));
         s_DebugDiceLevel = (float)Lt / 5.0;
 
         if (Lt != 0u)
         {
-            Texture2D< float4 > ErosionMap = GetResource(g_ErosionDetailMap.index);
+            Texture2DArray< float4 > ErosionMap = GetResource(g_ErosionDetailMap.index);
 
             uint  subIdx = subTriPlus1 - 1u;
             uint3 le     = uint3(le0, le1, le2);
@@ -96,20 +96,20 @@ ResolvedSurface ResolveVoxelSurface(uint v0, uint v1, float2 pixelCenter, float2
                     coords[k] = DiceHierCoord(cc0, cc1, cc2, DiceSubVertexCoordInt(sub[k], 3u));
             }
 
-            // stage sub-corner normals, assign after the loop
+            // stage corners and sub-corner normals: posWS is both lerp input and output
+            float3 cornerWS[3] = { posWS[0], posWS[1], posWS[2] };
             float3 subNrm[3];
             [unroll] for (uint k = 0; k < 3; ++k)
             {
-                float3 subL, subN;
-                DiceSubVertex(coords[k], Lt, le, pos[0], pos[1], pos[2], nrm[0], nrm[1], nrm[2], subL, subN);
+                float3 subWS, subN;
+                DiceSubVertex(coords[k], Lt, le, cornerWS[0], cornerWS[1], cornerWS[2], normal[0], normal[1], normal[2], subWS, subN);
 
-                posWS[k]  = DisplaceVoxelDice(originWS + subL, subN.y, g_FrozenCamera.posWORLD,
-                                              chunk, ErosionMap, g_LinearClampSampler);
+                posWS[k]  = DisplaceVoxelDice(subWS, subN.y, g_FrozenCamera.posWORLD, chunk, ErosionMap, g_LinearClampSampler);
                 subNrm[k] = subN;
             }
-            nrm[0] = subNrm[0];
-            nrm[1] = subNrm[1];
-            nrm[2] = subNrm[2];
+            normal[0] = subNrm[0];
+            normal[1] = subNrm[1];
+            normal[2] = subNrm[2];
         }
     }
 
@@ -121,27 +121,29 @@ ResolvedSurface ResolveVoxelSurface(uint v0, uint v1, float2 pixelCenter, float2
     ndc.y = -ndc.y; // NDC y-up vs pixel y-down
 
     float3 bary = Barycentrics(ndc, c[0], c[1], c[2]);
-    float3 N    = normalize(bary.x * nrm[0] + bary.y * nrm[1] + bary.z * nrm[2]);
+    float3 N    = normalize(bary.x * normal[0] + bary.y * normal[1] + bary.z * normal[2]);
 
     float baseNy = saturate(N.y);
 
     float3 pWS = bary.x * posWS[0] + bary.y * posWS[1] + bary.z * posWS[2];
 
-    // Detail normal (bake slope tier + geometry-locked micro band)
+    // Detail normal (bake slope tier + geometry-locked micro band); coarse-LOD chunks carry no erosion slice
+    if (chunk.erosionSlice != INVALID_INDEX)
     {
-        Texture2D< float4 > ErosionMap = GetResource(g_ErosionDetailMap.index);
+        Texture2DArray< float4 > ErosionMap = GetResource(g_ErosionDetailMap.index);
 
-        float2 eroUV = (pWS.xz - float2(chunk.originX, chunk.originZ)) / max(chunk.chunkSizeMeter, 1e-3);
+        uint mapW, mapH, mapSlices;
+        ErosionMap.GetDimensions(mapW, mapH, mapSlices);
+
+        float3 eroUV = VoxelErosionUV(chunk, pWS.xz, (float)mapW);
         float4 ero   = ErosionMap.SampleLevel(g_LinearClampSampler, eroUV, 0.0);
 
-        uint mapW, mapH;
-        ErosionMap.GetDimensions(mapW, mapH);
         float texelUV = 1.0 / (float)mapW;
-        float texelM  = max(chunk.chunkSizeMeter, 1e-3) * texelUV;
-        float hE = ErosionMap.SampleLevel(g_LinearClampSampler, eroUV + float2(texelUV, 0.0), 0.0).r;
-        float hW = ErosionMap.SampleLevel(g_LinearClampSampler, eroUV - float2(texelUV, 0.0), 0.0).r;
-        float hN = ErosionMap.SampleLevel(g_LinearClampSampler, eroUV + float2(0.0, texelUV), 0.0).r;
-        float hS = ErosionMap.SampleLevel(g_LinearClampSampler, eroUV - float2(0.0, texelUV), 0.0).r;
+        float texelM  = max(chunk.chunkSizeMeter, 1e-3) / ((float)mapW - 2.0 * float(VOXEL_EROSION_APRON)); // world pitch per texel
+        float hE = ErosionMap.SampleLevel(g_LinearClampSampler, eroUV + float3(texelUV, 0.0, 0.0), 0.0).r;
+        float hW = ErosionMap.SampleLevel(g_LinearClampSampler, eroUV - float3(texelUV, 0.0, 0.0), 0.0).r;
+        float hN = ErosionMap.SampleLevel(g_LinearClampSampler, eroUV + float3(0.0, texelUV, 0.0), 0.0).r;
+        float hS = ErosionMap.SampleLevel(g_LinearClampSampler, eroUV - float3(0.0, texelUV, 0.0), 0.0).r;
 
         // heightfield gate: only surfaces on the baked height receive erosion detail
         float  hfMask = saturate(1.0 - abs(pWS.y - ero.b) * 0.5);

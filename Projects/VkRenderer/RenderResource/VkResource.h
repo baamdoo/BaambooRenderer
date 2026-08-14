@@ -95,6 +95,13 @@ public:
 	[[nodiscard]]
 	inline const ResourceState& GetState() const { return m_CurrentState; }
 
+	void SetLastWriteState(const BarrierState& state) { m_LastWriteState = state; }
+	[[nodiscard]]
+	inline const BarrierState& GetLastWriteState() const { return m_LastWriteState; }
+
+	[[nodiscard]]
+	inline const std::string& Name() const { return m_Name; }
+
 protected:
 	void SetDeviceObjectName(u64 handle, VkObjectType type)
 	{
@@ -108,6 +115,8 @@ protected:
 	VmaAllocationInfo m_AllocationInfo = {};
 
 	ResourceState m_CurrentState = {};
+	// most recent write scope; survives read transitions that overwrite m_CurrentState (WAW chaining)
+	BarrierState  m_LastWriteState = {};
 };
 
 }
