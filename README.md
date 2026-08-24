@@ -97,7 +97,7 @@ Iterative progressive path tracer (**NEE + power-heuristic MIS**, Russian roulet
 <p align="center"><i>Material test box (conductor · rough dielectric · principled) — engine vs Mitsuba 3 / PBRT-v4</i></p>
 
 <img src="Media/PT_killeroo.png" width="100%" alt="Material test box — engine render vs guo references with absolute-difference maps">
-<p align="center"><i>4-layered material killeroo — engine vs Mitsuba 3 / PBRT-v4</i></p>
+<p align="center"><i>4-layered material killeroo — engine vs guo</i></p>
 
 ### Post-Processing
 
