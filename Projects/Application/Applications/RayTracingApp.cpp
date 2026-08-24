@@ -36,7 +36,7 @@ struct PathTracerScenePreset
 constexpr std::array< PathTracerScenePreset, 4 > kPathTracerScenePresets = {{
 	{ "Shader Ball (Layered)", "usd_shaderball_n2", "Default N=2 layered-material preview." },
 	{ "Cornell Box (Baseline)", "cornell_box", "Fast canonical lighting and transport baseline." },
-	{ "Grey Gallery (Reference)", "gallery_grey_white_room_n1", "Complex interior, alpha coverage, and firefly regression scene." },
+	{ "Grey Gallery (Layered Reference)", "gallery_grey_white_room", "Physically layered rough-plastic reference scene." },
 	{ "Breakfast Gallery (Materials)", "gallery_breakfast_room_n1", "Production-style textured material showcase." },
 }};
 
@@ -210,6 +210,8 @@ baamboo::MaterialLayer ParseGalleryMaterialLayer(
 		// Legacy generated manifests encoded MASK solely through a positive cutoff.
 		material.materialFlags |= baamboo::eMaterialFlag_AlphaMask;
 	}
+	if (auto it = values.find("relativeIORInterface"); it != values.end() && it->second == "1")
+		material.materialFlags |= baamboo::eMaterialFlag_RelativeIORInterface;
 	if (auto it = values.find("albedoTex"); it != values.end())
 		material.albedoTex = AssetRelativeToString(it->second);
 	layer.thickness = ParseFloat(values, "thickness", layer.thickness);
@@ -355,7 +357,10 @@ bool IsSupportedPathTracerScene(std::string_view sceneName)
 		sceneName == "cornell_transform_model" || IsEnvironmentMapTestScene(sceneName) || sceneName == "dining_room" || IsComplexRoomTestScene(sceneName) ||
 		sceneName == "cornell_box_conductor" || sceneName == "cornell_box_conductor_smooth" || sceneName == "cornell_anisotropic_conductor" ||
 		sceneName == "cornell_box_mixed_metallic" || sceneName == "cornell_box_opaque_dielectric" || sceneName == "cornell_box_mixed_transmission" ||
-		sceneName == "cornell_box_dielectric" || sceneName == "cornell_box_dielectric_smooth" ||
+		sceneName == "cornell_box_dielectric" || sceneName == "cornell_box_dielectric_smooth" || sceneName == "cornell_box_dielectric_thin" ||
+		sceneName == "module5d3_water_glass" || sceneName == "module5d3_water_bubble" ||
+		sceneName == "module5d3_camera_inside_water" || sceneName == "module5d3_tir" || sceneName == "module5d3_thin_neutrality" ||
+		sceneName == "module5d3_non_lifo_overlap" ||
 		(IsPrincipledMaterialTestScene(sceneName) || IsPhase0MaterialValidationScene(sceneName)) ||
 		IsNLayerValidationScene(sceneName) || IsShaderBallLayerScene(sceneName) || IsGalleryScene(sceneName);
 }
@@ -375,7 +380,12 @@ void RayTracingApp::ConfigureCamera()
 	m_CameraController.Reset();
 
 	float cameraFovY = IsEnvironmentMapTestScene(m_PathTracerReferenceScene) ? 45.0f : 40.0f;
-	if (IsGalleryScene(m_PathTracerReferenceScene))
+	if (m_PathTracerReferenceScene == "module5d3_tir")
+	{
+		m_CameraController.SetLookAt(float3(0.72f, 1.0f, 0.0f), float3(0.72f, 1.0f, -1.0f));
+		cameraFovY = 20.0f;
+	}
+	else if (IsGalleryScene(m_PathTracerReferenceScene))
 	{
 		const auto gallery = LoadGallerySceneManifest(m_PathTracerReferenceScene);
 		if (gallery.bValid)
@@ -791,6 +801,18 @@ void RayTracingApp::ConfigureRenderGraph()
 		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 8u, 2048u, 12u);
 	else if (m_PathTracerReferenceScene == "cornell_box_dielectric_smooth")
 		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 8u, 4096u, 16u);
+	else if (m_PathTracerReferenceScene == "module5d3_water_glass" || m_PathTracerReferenceScene == "module5d3_water_bubble")
+		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 8u, 4096u, 16u);
+	else if (m_PathTracerReferenceScene == "module5d3_camera_inside_water")
+		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 8u, 1024u, 12u);
+	else if (m_PathTracerReferenceScene == "module5d3_tir")
+		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 1u, 128u, 4u);
+	else if (m_PathTracerReferenceScene == "module5d3_thin_neutrality")
+		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 8u, 4096u, 12u);
+	else if (m_PathTracerReferenceScene == "module5d3_non_lifo_overlap")
+		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(2.0f, 0.5f, 0.125f), 1u, 16u, 8u);
+	else if (m_PathTracerReferenceScene == "cornell_box_dielectric_thin")
+		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 1u, 128u, 8u);
 	else
 		pPathTracerNode->ConfigureReferenceScene("cornell_box", float3(0.0f), 1u, 128u);
 
@@ -823,7 +845,10 @@ void RayTracingApp::ConfigureSceneObjects()
 		descriptor.bGenerateMeshlets = false;
 		descriptor.numLODs           = 1;
 
-		const fs::path meshDir = ASSET_PATH / "Generated" / m_PathTracerReferenceScene / "meshes";
+		const fs::path meshDirSource = m_PathTracerReferenceScene == "cornell_box_dielectric_thin"
+			? "cornell_box_dielectric_smooth"
+			: m_PathTracerReferenceScene;
+		const fs::path meshDir = ASSET_PATH / "Generated" / meshDirSource / "meshes";
 
 		const float3 white = float3(0.725f, 0.71f, 0.68f);
 		const float3 red   = float3(0.63f, 0.065f, 0.05f);
@@ -1053,6 +1078,35 @@ void RayTracingApp::ConfigureSceneObjects()
 			return entity;
 		};
 
+		if (m_PathTracerReferenceScene == "module5d3_non_lifo_overlap")
+		{
+			const auto loadIdentityBoundary = [&](const char* file, const float3& position, f32 scale)
+			{
+				const fs::path boundaryPath = meshDir / file;
+				auto boundaryEntity = m_pScene->ImportModel(boundaryPath, descriptor);
+				auto& boundaryTransform = boundaryEntity.GetComponent< TransformComponent >();
+				boundaryTransform.transform.position = position;
+				boundaryTransform.transform.scale    = float3(scale);
+				m_pScene->Registry().patch< TransformComponent >(boundaryEntity.ID(), [](auto&) {});
+				forEachMaterialByMeshPath(boundaryPath, [](baamboo::MaterialData& mat, MaterialComponent&)
+				{
+					mat.tint             = float4(1.0f);
+					mat.metallic         = 0.0f;
+					mat.roughness        = 0.0f;
+					mat.ior              = 1.0f;
+					mat.transmission     = 1.0f;
+					mat.specularColor    = float3(1.0f);
+					mat.specularStrength = 1.0f;
+				});
+			};
+
+			loadIdentityBoundary("valid_shell.ply", float3(0.60f, 1.0f, 0.0f), 0.42f);
+			loadIdentityBoundary("invalid_front.ply", float3(-0.60f, 1.0f, 0.18f), 0.42f);
+			loadIdentityBoundary("invalid_rear.ply", float3(-0.60f, 1.0f, -0.18f), 0.42f);
+
+			createPostProcessVolume();
+			return;
+		}
 		if (m_PathTracerReferenceScene == "ray_cone_mip_ladder")
 		{
 			const fs::path mipLadderPath =
@@ -1538,9 +1592,169 @@ void RayTracingApp::ConfigureSceneObjects()
 				}
 			}
 		}
+		else if (m_PathTracerReferenceScene == "module5d3_water_glass")
+		{
+			const fs::path waterPath = meshDir / "water_shell.ply";
+			auto waterEntity = m_pScene->ImportModel(waterPath, descriptor);
+			auto& waterTransform = waterEntity.GetComponent< TransformComponent >();
+			waterTransform.transform.position = float3(-0.08f, 0.60f, 0.0f);
+			waterTransform.transform.scale    = float3(0.55f);
+			m_pScene->Registry().patch< TransformComponent >(waterEntity.ID(), [](auto&) {});
+			forEachMaterialByMeshPath(waterPath, [](baamboo::MaterialData& mat, MaterialComponent&)
+			{
+				mat.tint             = float4(1.0f);
+				mat.metallic         = 0.0f;
+				mat.roughness        = 0.0f;
+				mat.ior              = 1.333f;
+				mat.transmission     = 1.0f;
+				mat.specularColor    = float3(1.0f);
+				mat.specularStrength = 1.0f;
+			});
+
+			const fs::path glassPath = meshDir / "glass_core.ply";
+			auto glassEntity = m_pScene->ImportModel(glassPath, descriptor);
+			auto& glassTransform = glassEntity.GetComponent< TransformComponent >();
+			glassTransform.transform.position = float3(0.0f, 0.82f, 0.0f);
+			glassTransform.transform.scale    = float3(0.25f);
+			m_pScene->Registry().patch< TransformComponent >(glassEntity.ID(), [](auto&) {});
+			forEachMaterialByMeshPath(glassPath, [](baamboo::MaterialData& mat, MaterialComponent&)
+			{
+				mat.tint             = float4(1.0f);
+				mat.metallic         = 0.0f;
+				mat.roughness        = 0.0f;
+				mat.ior              = 1.5f;
+				mat.transmission     = 1.0f;
+				mat.specularColor    = float3(1.0f);
+				mat.specularStrength = 1.0f;
+			});
+		}
+		else if (m_PathTracerReferenceScene == "module5d3_water_bubble")
+		{
+			const fs::path waterPath = meshDir / "water_shell.ply";
+			auto waterEntity = m_pScene->ImportModel(waterPath, descriptor);
+			auto& waterTransform = waterEntity.GetComponent< TransformComponent >();
+			waterTransform.transform.position = float3(-0.08f, 0.60f, 0.0f);
+			waterTransform.transform.scale    = float3(0.55f);
+			m_pScene->Registry().patch< TransformComponent >(waterEntity.ID(), [](auto&) {});
+			forEachMaterialByMeshPath(waterPath, [](baamboo::MaterialData& mat, MaterialComponent&)
+			{
+				mat.tint             = float4(1.0f);
+				mat.metallic         = 0.0f;
+				mat.roughness        = 0.0f;
+				mat.ior              = 1.333f;
+				mat.transmission     = 1.0f;
+				mat.specularColor    = float3(1.0f);
+				mat.specularStrength = 1.0f;
+			});
+
+			const fs::path bubblePath = meshDir / "air_bubble.ply";
+			auto bubbleEntity = m_pScene->ImportModel(bubblePath, descriptor);
+			auto& bubbleTransform = bubbleEntity.GetComponent< TransformComponent >();
+			bubbleTransform.transform.position = float3(0.0f, 0.82f, 0.0f);
+			bubbleTransform.transform.scale    = float3(0.25f);
+			m_pScene->Registry().patch< TransformComponent >(bubbleEntity.ID(), [](auto&) {});
+			forEachMaterialByMeshPath(bubblePath, [](baamboo::MaterialData& mat, MaterialComponent&)
+			{
+				mat.tint             = float4(1.0f);
+				mat.metallic         = 0.0f;
+				mat.roughness        = 0.0f;
+				mat.ior              = 1.0f;
+				mat.transmission     = 1.0f;
+				mat.specularColor    = float3(1.0f);
+				mat.specularStrength = 1.0f;
+			});
+		}
+		else if (m_PathTracerReferenceScene == "module5d3_camera_inside_water")
+		{
+			const fs::path waterPath = meshDir / "camera_water_shell.ply";
+			auto waterEntity = m_pScene->ImportModel(waterPath, descriptor);
+			auto& waterTransform = waterEntity.GetComponent< TransformComponent >();
+			waterTransform.transform.position = float3(0.0f, 1.0f, 3.5f);
+			waterTransform.transform.scale    = float3(0.5f);
+			m_pScene->Registry().patch< TransformComponent >(waterEntity.ID(), [](auto&) {});
+			forEachMaterialByMeshPath(waterPath, [](baamboo::MaterialData& mat, MaterialComponent&)
+			{
+				mat.tint             = float4(1.0f);
+				mat.metallic         = 0.0f;
+				mat.roughness        = 0.0f;
+				mat.ior              = 1.333f;
+				mat.transmission     = 1.0f;
+				mat.specularColor    = float3(1.0f);
+				mat.specularStrength = 1.0f;
+			});
+		}
+		else if (m_PathTracerReferenceScene == "module5d3_tir")
+		{
+			const fs::path glassPath = meshDir / "tir_glass_shell.ply";
+			auto glassEntity = m_pScene->ImportModel(glassPath, descriptor);
+			auto& glassTransform = glassEntity.GetComponent< TransformComponent >();
+			glassTransform.transform.position = float3(0.0f, 1.0f, 0.0f);
+			glassTransform.transform.scale    = float3(0.9f);
+			m_pScene->Registry().patch< TransformComponent >(glassEntity.ID(), [](auto&) {});
+			forEachMaterialByMeshPath(glassPath, [](baamboo::MaterialData& mat, MaterialComponent&)
+			{
+				mat.tint             = float4(1.0f);
+				mat.metallic         = 0.0f;
+				mat.roughness        = 0.0f;
+				mat.ior              = 1.5f;
+				mat.transmission     = 1.0f;
+				mat.specularColor    = float3(1.0f);
+				mat.specularStrength = 1.0f;
+			});
+
+			const fs::path targetPath = meshDir / "tir_target.ply";
+			auto targetEntity = m_pScene->ImportModel(targetPath, descriptor);
+			UNUSED(targetEntity);
+			forEachMaterialByMeshPath(targetPath, [](baamboo::MaterialData& mat, MaterialComponent&)
+			{
+				mat.tint             = float4(0.0f, 0.0f, 0.0f, 1.0f);
+				mat.metallic         = 0.0f;
+				mat.roughness        = 1.0f;
+				mat.ior              = 1.0f;
+				mat.transmission     = 0.0f;
+				mat.specularColor    = float3(0.0f);
+				mat.specularStrength = 0.0f;
+				mat.emissionColor    = float3(2.0f, 0.5f, 0.125f);
+				mat.emissivePower    = 1.0f;
+			});
+		}
+		else if (m_PathTracerReferenceScene == "module5d3_thin_neutrality")
+		{
+			const fs::path sheetPath = meshDir / "thin_sheet.ply";
+			auto sheetEntity = m_pScene->ImportModel(sheetPath, descriptor);
+			UNUSED(sheetEntity);
+			forEachMaterialByMeshPath(sheetPath, [](baamboo::MaterialData& mat, MaterialComponent&)
+			{
+				mat.tint             = float4(1.0f);
+				mat.metallic         = 0.0f;
+				mat.roughness        = 0.0f;
+				mat.ior              = 1.5f;
+				mat.transmission     = 1.0f;
+				mat.specularColor    = float3(1.0f);
+				mat.specularStrength = 1.0f;
+				mat.materialFlags   |= baamboo::eMaterialFlag_ThinWalled;
+			});
+
+			const fs::path sentryPath = meshDir / "solid_glass_sentry.ply";
+			auto sentryEntity = m_pScene->ImportModel(sentryPath, descriptor);
+			auto& sentryTransform = sentryEntity.GetComponent< TransformComponent >();
+			sentryTransform.transform.position = float3(0.0f, 0.40f, 0.0f);
+			sentryTransform.transform.scale    = float3(0.40f);
+			m_pScene->Registry().patch< TransformComponent >(sentryEntity.ID(), [](auto&) {});
+			forEachMaterialByMeshPath(sentryPath, [](baamboo::MaterialData& mat, MaterialComponent&)
+			{
+				mat.tint             = float4(1.0f);
+				mat.metallic         = 0.0f;
+				mat.roughness        = 0.0f;
+				mat.ior              = 1.5f;
+				mat.transmission     = 1.0f;
+				mat.specularColor    = float3(1.0f);
+				mat.specularStrength = 1.0f;
+			});
+		}
 		else if (m_PathTracerReferenceScene == "cornell_box_conductor" || m_PathTracerReferenceScene == "cornell_box_conductor_smooth" ||
 			m_PathTracerReferenceScene == "cornell_box_mixed_metallic" || m_PathTracerReferenceScene == "cornell_box_opaque_dielectric" || m_PathTracerReferenceScene == "cornell_box_mixed_transmission" || m_PathTracerReferenceScene == "cornell_directional_light" || m_PathTracerReferenceScene == "cornell_disk_light" || m_PathTracerReferenceScene == "cornell_spot_light" || m_PathTracerReferenceScene == "cornell_tube_light" || m_PathTracerReferenceScene == "cornell_many_lights" ||
-			m_PathTracerReferenceScene == "cornell_box_dielectric" || m_PathTracerReferenceScene == "cornell_box_dielectric_smooth" ||
+			m_PathTracerReferenceScene == "cornell_box_dielectric" || m_PathTracerReferenceScene == "cornell_box_dielectric_smooth" || m_PathTracerReferenceScene == "cornell_box_dielectric_thin" ||
 			IsPrincipledMaterialTestScene(m_PathTracerReferenceScene) ||
 			m_PathTracerReferenceScene == "cornell_emissive_reflective" ||
 			IsNLayerValidationScene(m_PathTracerReferenceScene))
@@ -1697,7 +1911,7 @@ void RayTracingApp::ConfigureSceneObjects()
 					mat.ior              = 1.5f;
 					mat.transmission     = 0.5f;
 					mat.specularColor    = float3(1.0f);
-					mat.specularStrength = 1.0f;
+					mat.specularStrength = 0.5f;
 				});
 			}
 			else if (IsPrincipledMaterialTestScene(m_PathTracerReferenceScene))
@@ -1782,6 +1996,20 @@ void RayTracingApp::ConfigureSceneObjects()
 					mat.sheenColor         = sheenColor;
 					mat.sheenRoughness     = roughness;
 					mat.materialType       = kPathTracerPrincipledMaterialType;
+				});
+			}
+			else if (m_PathTracerReferenceScene == "cornell_box_dielectric_thin")
+			{
+				forEachMaterialByMeshPath(spherePath, [](baamboo::MaterialData& mat, MaterialComponent&)
+				{
+					mat.tint             = float4(1.0f);
+					mat.metallic         = 0.0f;
+					mat.roughness        = 0.0f;
+					mat.ior              = 1.5f;
+					mat.transmission     = 1.0f;
+					mat.specularColor    = float3(1.0f);
+					mat.specularStrength = 1.0f;
+					mat.materialFlags   |= baamboo::eMaterialFlag_ThinWalled;
 				});
 			}
 			else

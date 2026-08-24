@@ -38,6 +38,184 @@ uint ClassifyValidationBSDF(SurfaceMaterial material)
 }
 
 
+static const uint PT_VALIDATION_STAT_CONTINUATION_TOTAL          = 0u;
+static const uint PT_VALIDATION_STAT_CONTINUATION_ZERO           = 1u;
+static const uint PT_VALIDATION_STAT_CONTINUATION_NEAR_ZERO      = 2u;
+static const uint PT_VALIDATION_STAT_FINITE_NEE_TOTAL            = 3u;
+static const uint PT_VALIDATION_STAT_FINITE_NEE_ZERO             = 4u;
+static const uint PT_VALIDATION_STAT_FINITE_NEE_NEAR_ZERO        = 5u;
+static const uint PT_VALIDATION_STAT_ENVIRONMENT_NEE_TOTAL       = 6u;
+static const uint PT_VALIDATION_STAT_ENVIRONMENT_NEE_ZERO        = 7u;
+static const uint PT_VALIDATION_STAT_ENVIRONMENT_NEE_NEAR_ZERO   = 8u;
+static const uint PT_VALIDATION_STAT_NO_CONTINUOUS_PROPOSAL      = 9u;
+static const uint PT_VALIDATION_STAT_SINGLE_LAYER_ZERO           = 10u;
+static const uint PT_VALIDATION_STAT_NLAYER_ZERO_CANDIDATE       = 11u;
+static const uint PT_VALIDATION_STAT_NLAYER_RETRY_ANY_POSITIVE   = 12u;
+static const uint PT_VALIDATION_STAT_NLAYER_RETRY_ALL_ZERO       = 13u;
+static const uint PT_VALIDATION_STAT_NONFINITE                   = 14u;
+static const uint PT_VALIDATION_STAT_NLAYER_POSITIVE             = 15u;
+static const uint PT_VALIDATION_STAT_SAMPLE_HISTORY_BASE         = 16u;
+static const uint PT_VALIDATION_STAT_EVALUATE_HISTORY_BASE       = 23u;
+static const uint PT_VALIDATION_STAT_PDF_HISTORY_BASE            = 30u;
+static const uint PT_VALIDATION_STAT_SAMPLE_FORWARD_SUM          = 37u;
+static const uint PT_VALIDATION_STAT_EVALUATE_FORWARD_SUM        = 38u;
+static const uint PT_VALIDATION_STAT_EVALUATE_REVERSE_CONT_SUM   = 39u;
+static const uint PT_VALIDATION_STAT_EVALUATE_REVERSE_DELTA_SUM  = 40u;
+static const uint PT_VALIDATION_STAT_PDF_SUPPORT_PROBE_SUM       = 41u;
+static const uint PT_VALIDATION_STAT_PDF_FORWARD_SUM             = 42u;
+static const uint PT_VALIDATION_STAT_PDF_REVERSE_CONT_SUM        = 43u;
+static const uint PT_VALIDATION_STAT_PDF_REVERSE_DELTA_SUM       = 44u;
+static const uint PT_VALIDATION_STAT_SAMPLE_MAX_TOTAL            = 45u;
+static const uint PT_VALIDATION_STAT_EVALUATE_MAX_TOTAL          = 46u;
+static const uint PT_VALIDATION_STAT_PDF_MAX_TOTAL               = 47u;
+static const uint PT_VALIDATION_STAT_COUNTER_OVERFLOW            = 48u;
+static const uint PT_VALIDATION_STAT_COUNT                       = 49u;
+
+static const uint PT_VALIDATION_QUERY_CONTINUATION    = 0u;
+static const uint PT_VALIDATION_QUERY_FINITE_NEE      = 1u;
+static const uint PT_VALIDATION_QUERY_ENVIRONMENT_NEE = 2u;
+
+static const uint PT_VALIDATION_WALKER_SAMPLE   = 0u;
+static const uint PT_VALIDATION_WALKER_EVALUATE = 1u;
+static const uint PT_VALIDATION_WALKER_PDF      = 2u;
+
+static const uint PT_VALIDATION_RETRY_NOT_APPLICABLE = 0u;
+static const uint PT_VALIDATION_RETRY_ANY_POSITIVE   = 1u;
+static const uint PT_VALIDATION_RETRY_ALL_ZERO       = 2u;
+
+static const float PT_VALIDATION_NEAR_ZERO_PDF = 1.0 / 1048576.0;
+
+void RecordValidationEventSum(RWStructuredBuffer< uint > Stats, uint index, uint value)
+{
+    uint oldValue;
+    InterlockedAdd(Stats[index], value, oldValue);
+    if (value > 0u && oldValue > 0xffffffffu - value)
+        InterlockedMax(Stats[PT_VALIDATION_STAT_COUNTER_OVERFLOW], 1u);
+}
+
+void RecordValidationWalkerAudit(uint walkerKind, uint layerCount, BxDF::LayerWalkerAudit audit)
+{
+    if (layerCount <= 1u)
+        return;
+
+    RWStructuredBuffer< uint > Stats = GetResource(g_PathValidationStats.index);
+    uint totalEvents = audit.supportProbeEvents + audit.forwardEvents +
+        audit.reverseContinuousEvents + audit.reverseDeltaEvents;
+
+    uint histogramBase = walkerKind == PT_VALIDATION_WALKER_SAMPLE
+        ? PT_VALIDATION_STAT_SAMPLE_HISTORY_BASE
+        : (walkerKind == PT_VALIDATION_WALKER_EVALUATE
+            ? PT_VALIDATION_STAT_EVALUATE_HISTORY_BASE
+            : PT_VALIDATION_STAT_PDF_HISTORY_BASE);
+    uint maxIndex = walkerKind == PT_VALIDATION_WALKER_SAMPLE
+        ? PT_VALIDATION_STAT_SAMPLE_MAX_TOTAL
+        : (walkerKind == PT_VALIDATION_WALKER_EVALUATE
+            ? PT_VALIDATION_STAT_EVALUATE_MAX_TOTAL
+            : PT_VALIDATION_STAT_PDF_MAX_TOTAL);
+
+    uint historyBin = totalEvents <= 3u ? 0u :
+        (totalEvents <= 7u ? 1u :
+        (totalEvents <= 15u ? 2u :
+        (totalEvents <= 31u ? 3u :
+        (totalEvents <= 63u ? 4u :
+        (totalEvents <= 127u ? 5u : 6u)))));
+    InterlockedAdd(Stats[histogramBase + historyBin], 1u);
+    InterlockedMax(Stats[maxIndex], totalEvents);
+
+    if (walkerKind == PT_VALIDATION_WALKER_SAMPLE)
+    {
+        RecordValidationEventSum(Stats, PT_VALIDATION_STAT_SAMPLE_FORWARD_SUM, audit.forwardEvents);
+    }
+    else if (walkerKind == PT_VALIDATION_WALKER_EVALUATE)
+    {
+        RecordValidationEventSum(Stats, PT_VALIDATION_STAT_EVALUATE_FORWARD_SUM, audit.forwardEvents);
+        RecordValidationEventSum(Stats, PT_VALIDATION_STAT_EVALUATE_REVERSE_CONT_SUM, audit.reverseContinuousEvents);
+        RecordValidationEventSum(Stats, PT_VALIDATION_STAT_EVALUATE_REVERSE_DELTA_SUM, audit.reverseDeltaEvents);
+    }
+    else
+    {
+        RecordValidationEventSum(Stats, PT_VALIDATION_STAT_PDF_SUPPORT_PROBE_SUM, audit.supportProbeEvents);
+        RecordValidationEventSum(Stats, PT_VALIDATION_STAT_PDF_FORWARD_SUM, audit.forwardEvents);
+        RecordValidationEventSum(Stats, PT_VALIDATION_STAT_PDF_REVERSE_CONT_SUM, audit.reverseContinuousEvents);
+        RecordValidationEventSum(Stats, PT_VALIDATION_STAT_PDF_REVERSE_DELTA_SUM, audit.reverseDeltaEvents);
+    }
+}
+
+uint DiagnoseValidationMarginalPDFZero(
+    SurfaceMaterial rootMaterial,
+    float2 uv,
+    float2 ddxUV,
+    float2 ddyUV,
+    float3 wo,
+    float3 wi,
+    BoundaryMediumPair boundaryPair,
+    uint querySeed,
+    BxDF::MarginalPDFAudit audit)
+{
+    if (audit.state != BxDF::PT_MARGINAL_STATE_NLAYER_ZERO_CANDIDATE)
+        return PT_VALIDATION_RETRY_NOT_APPLICABLE;
+
+    bool anyPositive = false;
+    [loop]
+    for (uint retry = 0u; retry < 3u; ++retry)
+    {
+        uint retrySalt = retry == 0u ? 0xA511E9B3u : (retry == 1u ? 0x63D83595u : 0xB5297A4Du);
+        BxDF::MarginalPDFAudit retryAudit;
+        float retryPDF = BxDF::DirectionalComposite::MarginalPDF(
+            rootMaterial,
+            uv,
+            ddxUV,
+            ddyUV,
+            wo,
+            wi,
+            boundaryPair,
+            PCGHash(querySeed ^ retrySalt),
+            retryAudit);
+        anyPositive = anyPositive || retryPDF > 0.0;
+    }
+    return anyPositive ? PT_VALIDATION_RETRY_ANY_POSITIVE : PT_VALIDATION_RETRY_ALL_ZERO;
+}
+
+void RecordValidationMarginalPDF(
+    uint queryKind,
+    uint layerCount,
+    float pdf,
+    BxDF::MarginalPDFAudit audit,
+    uint retryClassification)
+{
+    RWStructuredBuffer< uint > Stats = GetResource(g_PathValidationStats.index);
+    uint queryBase = queryKind == PT_VALIDATION_QUERY_CONTINUATION
+        ? PT_VALIDATION_STAT_CONTINUATION_TOTAL
+        : (queryKind == PT_VALIDATION_QUERY_FINITE_NEE
+            ? PT_VALIDATION_STAT_FINITE_NEE_TOTAL
+            : PT_VALIDATION_STAT_ENVIRONMENT_NEE_TOTAL);
+
+    InterlockedAdd(Stats[queryBase], 1u);
+    if (pdf <= 0.0)
+        InterlockedAdd(Stats[queryBase + 1u], 1u);
+    else if (pdf <= PT_VALIDATION_NEAR_ZERO_PDF)
+        InterlockedAdd(Stats[queryBase + 2u], 1u);
+
+    if (audit.state == BxDF::PT_MARGINAL_STATE_NO_CONTINUOUS_PROPOSAL)
+        InterlockedAdd(Stats[PT_VALIDATION_STAT_NO_CONTINUOUS_PROPOSAL], 1u);
+    else if (audit.state == BxDF::PT_MARGINAL_STATE_SINGLE_LAYER && pdf <= 0.0)
+        InterlockedAdd(Stats[PT_VALIDATION_STAT_SINGLE_LAYER_ZERO], 1u);
+    else if (audit.state == BxDF::PT_MARGINAL_STATE_NLAYER_ZERO_CANDIDATE)
+        InterlockedAdd(Stats[PT_VALIDATION_STAT_NLAYER_ZERO_CANDIDATE], 1u);
+    else if (audit.state == BxDF::PT_MARGINAL_STATE_NLAYER_POSITIVE)
+        InterlockedAdd(Stats[PT_VALIDATION_STAT_NLAYER_POSITIVE], 1u);
+    else if (audit.state == BxDF::PT_MARGINAL_STATE_NONFINITE)
+        InterlockedAdd(Stats[PT_VALIDATION_STAT_NONFINITE], 1u);
+
+    if (retryClassification == PT_VALIDATION_RETRY_ANY_POSITIVE)
+        InterlockedAdd(Stats[PT_VALIDATION_STAT_NLAYER_RETRY_ANY_POSITIVE], 1u);
+    else if (retryClassification == PT_VALIDATION_RETRY_ALL_ZERO)
+        InterlockedAdd(Stats[PT_VALIDATION_STAT_NLAYER_RETRY_ALL_ZERO], 1u);
+
+    RecordValidationWalkerAudit(PT_VALIDATION_WALKER_PDF, layerCount, audit.walker);
+}
+
+
 struct PathValidationSums
 {
     float3 albedo;

@@ -7,19 +7,43 @@
 namespace BxDF
 {
 
+
+
+#if PT_VALIDATION
+static const uint PT_MARGINAL_STATE_INVALID                = 0u;
+static const uint PT_MARGINAL_STATE_NO_CONTINUOUS_PROPOSAL = 1u;
+static const uint PT_MARGINAL_STATE_SINGLE_LAYER           = 2u;
+static const uint PT_MARGINAL_STATE_NLAYER_POSITIVE        = 3u;
+static const uint PT_MARGINAL_STATE_NLAYER_ZERO_CANDIDATE  = 4u;
+static const uint PT_MARGINAL_STATE_NONFINITE              = 5u;
+
+struct LayerWalkerAudit
+{
+    uint supportProbeEvents;
+    uint forwardEvents;
+    uint reverseContinuousEvents;
+    uint reverseDeltaEvents;
+};
+
+struct MarginalPDFAudit
+{
+    LayerWalkerAudit walker;
+    uint state;
+};
+#endif
+
 namespace LayerComposite
 {
 
-static const uint LOBE_SLOT_DIFFUSE      = 0u;
-static const uint LOBE_SLOT_SPECULAR     = 1u;
-static const uint LOBE_SLOT_CLEARCOAT    = 2u;
-static const uint LOBE_SLOT_TRANSMISSION = 3u;
-static const uint LOBE_SLOT_COUNT        = 4u;
-
-// Keep both rough dielectric branches away from zero without discarding Fresnel importance sampling.
-static const float ROUGH_DIELECTRIC_PROPOSAL_SAFETY_MIX = 0.2;
+static const uint MODEL_SLOT_DIFFUSE    = 0u;
+static const uint MODEL_SLOT_SHEEN      = 1u;
+static const uint MODEL_SLOT_CLEARCOAT  = 2u;
+static const uint MODEL_SLOT_CONDUCTOR  = 3u;
+static const uint MODEL_SLOT_DIELECTRIC = 4u;
+static const uint MODEL_SLOT_COUNT      = 5u;
 
 static const float MAX_RAY_CONE_FULL_ANGLE = 0.5 * PI;
+
 
 bool IsSmoothConductor(SurfaceMaterial material)
 {
@@ -30,11 +54,16 @@ bool IsSmoothConductor(SurfaceMaterial material)
            saturate(material.metallic) > 1.0 - PT_LOBE_EPS &&
            material.isSmooth != 0u;
 }
+float GetIncidentFrameSign(float3 wo, uint isIncidentRayEntering)
+{
+    bool isShadingFrameEntering = wo.z > 0.0;
+    return isShadingFrameEntering == (isIncidentRayEntering != 0u) ? 1.0 : -1.0;
+}
 
-bool RefractConeBoundary(float2 incidentDir, float2 normal, float etaInv, out float2 transmittedDir)
+bool RefractConeBoundary(float2 incidentDir, float2 normal, float etaIOverT, out float2 transmittedDir)
 {
     float NoI = dot(normal, incidentDir);
-    float k = 1.0 - sq(etaInv) * (1.0 - sq(NoI));
+    float k = 1.0 - sq(etaIOverT) * (1.0 - sq(NoI));
 
     if (k < -EPSILON_MIN)
     {
@@ -46,7 +75,7 @@ bool RefractConeBoundary(float2 incidentDir, float2 normal, float etaInv, out fl
         transmittedDir *= rsqrt(tangentLenSq);
         return IsPathFinite(transmittedDir.x) && IsPathFinite(transmittedDir.y);
     }
-    transmittedDir = etaInv * incidentDir - normal * (etaInv * NoI + safeSqrt(max(k, 0.0)));
+    transmittedDir = etaIOverT * incidentDir - normal * (etaIOverT * NoI + safeSqrt(max(k, 0.0)));
 
     float transmittedLenSq = dot(transmittedDir, transmittedDir);
     if (!IsPathFinite(transmittedLenSq) || transmittedLenSq <= EPSILON_MIN)
@@ -60,13 +89,13 @@ bool RefractConeBoundary(float2 incidentDir, float2 normal, float etaInv, out fl
 bool UpdateTransmissionRayCone(float3 wo, Layered::LayerEvent event, inout RayCone cone)
 {
     if (!IsPathFinite3(wo) || !IsPathFinite3(event.wi) ||
-        !IsPathFinite(event.eta) || event.eta <= EPSILON_MIN ||
+        !IsPathFinite(event.etaTOverI) || event.etaTOverI <= EPSILON_MIN ||
         !IsPathFinite(cone.radius) || !IsPathFinite(cone.tanHalfAngle))
     {
         return false;
     }
 
-    if (abs(event.eta - 1.0) <= EPSILON_MIN)
+    if (abs(event.etaTOverI - 1.0) <= EPSILON_MIN)
         return true;
 
     float woLenSq = dot(wo, wo);
@@ -87,8 +116,8 @@ bool UpdateTransmissionRayCone(float3 wo, Layered::LayerEvent event, inout RayCo
         float3 woIncident = flipped ? -wo : wo;
         float3 wiIncident = flipped ? -event.wi : event.wi;
 
-        float  etaP;
-        float3 whIncident = BxDF::Transmission::HalfVector(woIncident, wiIncident, event.eta, etaP);
+        float  resolvedEtaTOverI;
+        float3 whIncident = BxDF::Lobe::Transmission::HalfVector(woIncident, wiIncident, event.etaTOverI, resolvedEtaTOverI);
         if (!IsPathFinite3(whIncident) || dot(whIncident, whIncident) <= EPSILON_MIN)
         {
             return false;
@@ -150,7 +179,7 @@ bool UpdateTransmissionRayCone(float3 wo, Layered::LayerEvent event, inout RayCo
         return false;
 
     float normalSign = upperHitX > lowerHitX ? 1.0 : -1.0;
-    float etaIOverT = rcp(event.eta); // LayerEvent stores etaT / etaI.
+    float etaIOverT = rcp(event.etaTOverI); // LayerEvent stores iorT / iorI.
     float2 normal2D = float2(0.0, 1.0);
     float2 refractedUpper;
     float2 refractedLower;
@@ -206,7 +235,7 @@ void UpdateRayCone(SurfaceMaterial sm, float3 wo, Layered::LayerEvent event, flo
         return;
 
     float roughnessSpread;
-    if (event.lobe == BxDF::LOBE_DIFFUSE)
+    if (event.lobe == BxDF::LOBE_DIFFUSE || event.lobe == BxDF::LOBE_SHEEN)
     {
         roughnessSpread = MAX_RAY_CONE_FULL_ANGLE;
     }
@@ -232,262 +261,247 @@ void UpdateRayCone(SurfaceMaterial sm, float3 wo, Layered::LayerEvent event, flo
     cone.tanHalfAngle = tan(0.5 * fullAngle);
 }
 
-struct LobeMixture
+struct ModelMixture
 {
-    // diffuse, specular reflection, clearcoat, transmission
-    float4 pmf; // sampling probability
+    float diffusePMF;
+    float sheenPMF;
+    float clearcoatPMF;
+    float conductorPMF;
+    float dielectricPMF;
 };
 
-float4 NormalizeLobePMF(float4 weights)
+bool IsSupportedSmoothThinDielectric(SurfaceMaterial sm)
 {
-    float weightSum = weights.x + weights.y + weights.z + weights.w;
-    if (weightSum <= EPSILON_MIN)
-        return float4(1.0, 0.0, 0.0, 0.0);
-    return weights / weightSum;
+    return IsThinWalled(sm) &&
+           sm.layerCount == 1u &&
+           sm.isSmooth != 0u &&
+           IsPathFinite(sm.ior) && sm.ior > 0.0 &&
+           IsPathFinite(sm.metallic) && saturate(sm.metallic) <= PT_LOBE_EPS &&
+           IsPathFinite(sm.transmission) && saturate(sm.transmission) >= 1.0 - PT_LOBE_EPS &&
+           IsPathFinite(sm.clearcoat) && !HasClearcoatLobe(sm) &&
+           IsPathFinite3(sm.sheenColor) && !HasSheenLobe(sm);
 }
 
-float DielectricF0(float eta)
+bool IsSupportedThinCompositeLayout(SurfaceMaterial rootMaterial)
 {
-    eta = max(eta, 1.0e-4);
-    float f0 = (eta - 1.0) / (eta + 1.0);
+    uint count = max(rootMaterial.layerCount, 1u);
+    if (count == 1u)
+        return !IsThinWalled(rootMaterial) || IsSupportedSmoothThinDielectric(rootMaterial);
+
+    if (IsThinWalled(rootMaterial) || rootMaterial.layerOffset == INVALID_INDEX)
+        return false;
+
+    StructuredBuffer< MaterialSlabData > Slabs = GetResource(g_MaterialSlabs.index);
+    StructuredBuffer< MaterialData > Materials = GetResource(g_Materials.index);
+
+    [loop]
+    for (uint boundary = 1u; boundary < count; ++boundary)
+    {
+        MaterialSlabData slab = Slabs[rootMaterial.layerOffset + boundary];
+        if (slab.materialID == INVALID_INDEX || (Materials[slab.materialID].materialFlags & MATERIAL_FLAG_THIN_WALLED) != 0u)
+            return false;
+    }
+
+    return true;
+}
+
+Layered::DielectricFrame ResolveDielectricFrame(SurfaceMaterial sm, float3 wo, float ior1, float ior2)
+{
+    if (IsThinWalled(sm))
+        return Layered::MakeThinDielectricFrame(wo, ior1, sm.ior);
+    if (IsRelativeIORInterface(sm))
+        return Layered::MakeDielectricFrame(wo, 1.0, sm.ior);
+    return Layered::MakeDielectricFrame(wo, ior1, ior2);
+}
+
+
+float DielectricF0(float etaTOverI)
+{
+    etaTOverI = max(etaTOverI, 1.0e-4);
+    float f0 = (etaTOverI - 1.0) / (etaTOverI + 1.0);
     return f0 * f0;
 }
 
-float DielectricSpecularScale(SurfaceMaterial sm, float eta)
+float3 ResolveConductorF0(SurfaceMaterial sm)
 {
-    if (!IsPrincipledMaterial(sm) && !HasDielectricSpecularLobe(sm, eta))
-        return 0.0;
+    return IsPrincipledMaterial(sm) ? saturate(sm.albedo) : saturate(sm.specularColor);
+}
+
+float ResolveConductorScale(SurfaceMaterial sm)
+{
+    float scale = saturate(sm.metallic);
+    return scale > PT_LOBE_EPS ? scale : 0.0;
+}
+
+float3 ResolveDielectricReflectionScale(SurfaceMaterial sm, float etaTOverI)
+{
+    float dielectric = 1.0 - saturate(sm.metallic);
+    float strength   = saturate(sm.specularStrength);
+    if (dielectric <= PT_LOBE_EPS || strength <= PT_LOBE_EPS ||
+        (!IsPrincipledMaterial(sm) && !HasDielectricSpecularLobe(sm, etaTOverI)))
+    {
+        return float3(0.0, 0.0, 0.0);
+    }
+
+    float3 scale =
+            IsPrincipledMaterial(sm) ? float3(dielectric, dielectric, dielectric) : dielectric * strength * saturate(sm.specularColor);
+    return max3(scale) > PT_LOBE_EPS ? scale : float3(0.0, 0.0, 0.0);
+}
+
+float3 ResolveDielectricF0(SurfaceMaterial sm, float etaTOverI)
+{
+    float baseF0 = DielectricF0(etaTOverI);
+    if (!IsPrincipledMaterial(sm))
+        return float3(baseF0, baseF0, baseF0);
 
     float strength = saturate(sm.specularStrength);
-    if (!IsPrincipledMaterial(sm))
-        return strength * max3(saturate(sm.specularColor));
-
-    float f0 = DielectricF0(eta);
-    float3 tint = f0 > 1.0e-6
-        ? max(sm.specularColor / f0, float3(0.0, 0.0, 0.0))
-        : float3(1.0, 1.0, 1.0);
-    return strength * max3(tint);
+    return min(saturate(sm.specularColor) * strength, float3(strength, strength, strength));
 }
 
-float ConductorReflectionProposalWeight(SurfaceMaterial sm, float3 wo)
+float3 ResolveDielectricF90(SurfaceMaterial sm)
 {
-    float metallic = saturate(sm.metallic);
-    if (metallic <= PT_LOBE_EPS)
-        return 0.0;
+    float strength = IsPrincipledMaterial(sm) ? saturate(sm.specularStrength) : 1.0;
+    return float3(strength, strength, strength);
+}
 
-    float3 F = IsPrincipledMaterial(sm)
-        ? saturate(sm.specularStrength) * BxDF::Fresnel::Schlick(saturate(sm.albedo), BxDF::AbsCosTheta(wo))
-        : BxDF::Fresnel::Schlick(saturate(sm.specularColor), BxDF::AbsCosTheta(wo));
-    return metallic * max3(max(F, float3(0.0, 0.0, 0.0)));
+float3 ResolveDielectricTransmissionScale(SurfaceMaterial sm)
+{
+    float scale = (1.0 - saturate(sm.metallic)) * saturate(sm.transmission);
+    scale = scale > PT_LOBE_EPS ? scale : 0.0;
+    return float3(scale, scale, scale);
+}
+
+float ResolveDiffuseScale(SurfaceMaterial sm)
+{
+    float scale = (1.0 - saturate(sm.metallic)) * (1.0 - saturate(sm.transmission));
+    return scale > PT_LOBE_EPS ? scale : 0.0;
 }
 
 
-// pi_k: 'proposal' PMF
-LobeMixture ResolveLobeMixture(SurfaceMaterial sm, float eta, float3 wo)
+ModelMixture ResolveModelMixture(SurfaceMaterial sm, float3 wo, float etaTOverI)
 {
-    LobeMixture ls;
-    ls.pmf = float4(0.0, 0.0, 0.0, 0.0);
+    ModelMixture mixture;
+    mixture.diffusePMF    = 0.0;
+    mixture.sheenPMF      = 0.0;
+    mixture.clearcoatPMF  = 0.0;
+    mixture.conductorPMF  = 0.0;
+    mixture.dielectricPMF = 0.0;
+
+    if (IsThinWalled(sm))
+    {
+        if (IsSupportedSmoothThinDielectric(sm))
+            mixture.dielectricPMF = 1.0;
+        return mixture;
+    }
 
     float metallic     = saturate(sm.metallic);
     float dielectric   = 1.0 - metallic;
     float transmission = saturate(sm.transmission);
 
     float opaqueDielectric = dielectric * (1.0 - transmission);
-    float wSheen           = SheenSamplingWeight(sm);
-    float wDiffuse         = max(opaqueDielectric, wSheen);
+    float wDiffuse         = opaqueDielectric > PT_LOBE_EPS ? opaqueDielectric : 0.0;
+    float wSheen           = HasSheenLobe(sm) ? max(SheenSamplingWeight(sm), PT_LOBE_EPS) : 0.0;
+    float wClearcoat       =
+            HasClearcoatLobe(sm) ? (IsPrincipledMaterial(sm) ? saturate(sm.clearcoat) * 0.25 : saturate(sm.clearcoat)) : 0.0;
 
-    bool isSymmetricDeltaProposal = sm.isSmooth != 0u && dielectric * transmission > 0.0;
-    float3 proposalWo = isSymmetricDeltaProposal ? float3(0.0, 0.0, 1.0) : wo;
+    float  conductorScale    = ResolveConductorScale(sm);
+    float3 conductorF        = BxDF::Fresnel::Schlick(ResolveConductorF0(sm), BxDF::AbsCosTheta(wo));
+    float  conductorResponse = max3(conductorF);
+    if (sm.isSmooth == 0u && conductorScale > PT_LOBE_EPS)
+        conductorResponse = max(conductorResponse, PT_LOBE_EPS);
+    float wConductor = conductorScale > PT_LOBE_EPS ? conductorScale * conductorResponse : 0.0;
 
-    float dielectricFresnel = BxDF::Fresnel::Dielectric(BxDF::CosTheta(proposalWo), 1.0, eta);
-    float dielectricScale = DielectricSpecularScale(sm, eta);
-    bool hasDielectricReflection = dielectricScale > PT_LOBE_EPS;
-    bool hasTransmissiveDielectric =
-        transmission > PT_LOBE_EPS &&
-        dielectric > PT_LOBE_EPS;
+    float3 dielectricReflectionScale   = ResolveDielectricReflectionScale(sm, etaTOverI);
+    float3 dielectricTransmissionScale = ResolveDielectricTransmissionScale(sm);
+    float3 dielectricF = BxDF::ScatteringModel::Dielectric::EvaluateFresnel(
+        BxDF::CosTheta(wo),
+        ResolveDielectricF0(sm, etaTOverI),
+        ResolveDielectricF90(sm),
+        etaTOverI);
 
-    float dielectricReflectionProposal = dielectricFresnel * dielectricScale;
-    float transmissionFresnelProxy = 1.0 - dielectricFresnel;
-    if (hasTransmissiveDielectric)
+    float wDielectricReflection =
+        max3(max(dielectricReflectionScale * dielectricF, float3(0.0, 0.0, 0.0)));
+    float wDielectricTransmission =
+        max3(max(dielectricTransmissionScale * (1.0 - dielectricF), float3(0.0, 0.0, 0.0)));
+
+    bool isRoughSolidDielectric = sm.isSmooth == 0u && abs(etaTOverI - 1.0) > EPSILON_MIN;
+    if (isRoughSolidDielectric)
     {
-        if (sm.isSmooth != 0u)
-        {
-            if (hasDielectricReflection)
-                dielectricReflectionProposal = 1.0;
-            transmissionFresnelProxy = 1.0;
-        }
-        else
-        {
-            if (hasDielectricReflection)
-                dielectricReflectionProposal = lerp(dielectricReflectionProposal, 0.5, ROUGH_DIELECTRIC_PROPOSAL_SAFETY_MIX);
-            transmissionFresnelProxy = lerp(transmissionFresnelProxy, 0.5, ROUGH_DIELECTRIC_PROPOSAL_SAFETY_MIX);
-        }
+        if (max3(dielectricReflectionScale) > PT_LOBE_EPS)
+            wDielectricReflection = max(wDielectricReflection, PT_LOBE_EPS);
+        if (max3(dielectricTransmissionScale) > PT_LOBE_EPS)
+            wDielectricTransmission = max(wDielectricTransmission, PT_LOBE_EPS);
     }
+    float wDielectric = wDielectricReflection + wDielectricTransmission;
 
-    float wSpecular =
-        ConductorReflectionProposalWeight(sm, proposalWo) +
-        dielectric * dielectricReflectionProposal;
-    float wClearcoat = IsPrincipledMaterial(sm) ? saturate(sm.clearcoat) * 0.25 : saturate(sm.clearcoat);
-    float wTransmission = dielectric * transmission * transmissionFresnelProxy;
+    float weightSum = wDiffuse + wSheen + wClearcoat + wConductor + wDielectric;
+    if (weightSum <= EPSILON_MIN)
+        return mixture;
 
-    if (IsSmoothConductor(sm))
-    {
-        ls.pmf.y = 1.0;
-        return ls;
-    }
-
-    ls.pmf = NormalizeLobePMF(float4(wDiffuse, wSpecular, wClearcoat, wTransmission));
-    return ls;
+    float invWeightSum = rcp(weightSum);
+    mixture.diffusePMF    = wDiffuse * invWeightSum;
+    mixture.sheenPMF      = wSheen * invWeightSum;
+    mixture.clearcoatPMF  = wClearcoat * invWeightSum;
+    mixture.conductorPMF  = wConductor * invWeightSum;
+    mixture.dielectricPMF = wDielectric * invWeightSum;
+    return mixture;
 }
+
 
 
 float3 EvaluateDiffuseBRDF(SurfaceMaterial sm, float3 wo, float3 wi)
 {
-    if (!BxDF::SameHemisphere(wo, wi))
-        return float3(0.0, 0.0, 0.0);
-
-    float3 f = IsPrincipledMaterial(sm)
-        ? BxDF::Diffuse::EvaluateBRDF(sm.albedo, sm.roughness, wo, wi)
-        : BxDF::Diffuse::Lambert(sm.albedo);
-
-    float wDiffuse = (1.0 - saturate(sm.metallic)) * (1.0 - saturate(sm.transmission));
-    return f * wDiffuse;
+    return BxDF::ScatteringModel::Diffuse::Evaluate(wo, wi, sm.albedo, sm.roughness, ResolveDiffuseScale(sm), IsPrincipledMaterial(sm) ? 1u : 0u);
 }
 
 float3 EvaluateSheenBRDF(SurfaceMaterial sm, float3 wo, float3 wi)
 {
-    if (!HasSheenLobe(sm) || !BxDF::SameHemisphere(wo, wi))
+    if (!HasSheenLobe(sm))
         return float3(0.0, 0.0, 0.0);
 
-    if (!IsPrincipledMaterial(sm))
-        return BxDF::Sheen::EvaluateBRDF(sm.sheenColor, sm.sheenRoughness, wo, wi);
-
-    float3 h = wo + wi;
-    float  hLenSq = dot(h, h);
-    if (hLenSq <= 0.0)
-        return float3(0.0, 0.0, 0.0);
-
-    h = h * rsqrt(hLenSq);
-    float sheenWeight = pow(saturate(1.0 - dot(wi, h)), 5.0);
-    return sm.sheenColor * sheenWeight;
+    return BxDF::ScatteringModel::Sheen::Evaluate(wo, wi, sm.sheenColor, sm.sheenRoughness, IsPrincipledMaterial(sm) ? 1u : 0u);
 }
 
-float3 EvaluateSmoothSpecularWeight(SurfaceMaterial sm, float3 wo, float eta)
+float3 EvaluateSpecularBRDF(SurfaceMaterial sm, float3 wo, float3 wi, float etaTOverI)
 {
-    float wConductor  = saturate(sm.metallic);
-    float wDielectric = 1.0 - wConductor;
-
-    if (!IsPrincipledMaterial(sm))
-    {
-        float3 f = float3(0.0, 0.0, 0.0);
-
-        if (wConductor > PT_LOBE_EPS)
-            f += wConductor * BxDF::Conductor::Smooth::EvaluateReflection(wo, sm.specularColor);
-
-        if (wDielectric > PT_LOBE_EPS && HasDielectricSpecularLobe(sm, eta))
-        {
-            float3 specularScale = saturate(sm.specularColor) * saturate(sm.specularStrength);
-            f += wDielectric * specularScale * BxDF::Dielectric::Smooth::EvaluateReflection(wo, eta);
-        }
-
-        return f;
-    }
-
-    // principled branch
-    float cosTheta = saturate(BxDF::AbsCosTheta(wo));
-
-    float f0Eta = (eta - 1.0) / (eta + 1.0);
-    f0Eta *= f0Eta;
-
-    float3 dielectricTint = (f0Eta > 1.0e-6) ? max(sm.specularColor / f0Eta, float3(0.0, 0.0, 0.0)) : float3(1.0, 1.0, 1.0);
-
-    float  fd = BxDF::Fresnel::Dielectric(cosTheta, 1.0, eta);
-    float3 Fdielectric = float3(fd, fd, fd);
-    float3 Fconductor  = BxDF::Fresnel::Schlick(sm.albedo, cosTheta);
-
-    return (dielectricTint * wDielectric * Fdielectric + wConductor * Fconductor) * sm.specularStrength;
-}
-
-//
-float3 EvaluateSpecularBRDF(SurfaceMaterial sm, float3 wo, float3 wi, float eta)
-{
-    if (!BxDF::SameHemisphere(wo, wi) || sm.isSmooth != 0u)
-        return float3(0.0, 0.0, 0.0);
-
-    float wConductor  = saturate(sm.metallic);
-    float wDielectric = 1.0 - wConductor;
-
     float2 alpha = GetAlpha2(sm);
+    float3 conductor = BxDF::ScatteringModel::Conductor::Evaluate(
+        wo,
+        wi,
+        ResolveConductorF0(sm),
+        ResolveConductorScale(sm),
+        alpha.x,
+        alpha.y);
 
-    if (!IsPrincipledMaterial(sm))
-    {
-        float3 f = float3(0.0, 0.0, 0.0);
-        if (wConductor > PT_LOBE_EPS)
-        {
-            f += wConductor * BxDF::Conductor::EvaluateReflection(wo, wi, sm.specularColor, alpha.x, alpha.y);
-        }
+    float3 dielectric = BxDF::ScatteringModel::Dielectric::EvaluateReflection(
+        wo,
+        wi,
+        ResolveDielectricReflectionScale(sm, etaTOverI),
+        ResolveDielectricF0(sm, etaTOverI),
+        ResolveDielectricF90(sm),
+        alpha.x,
+        alpha.y,
+        etaTOverI);
 
-        if (wDielectric > PT_LOBE_EPS && HasDielectricSpecularLobe(sm, eta))
-        {
-            float3 specularScale = saturate(sm.specularColor) * saturate(sm.specularStrength);
-            f += wDielectric * specularScale * BxDF::Dielectric::EvaluateReflection(wo, wi, alpha.x, alpha.y, eta);
-        }
-
-        return f;
-    }
-
-    // principled branch
-    float3 h = wo + wi;
-    float  hLenSq = dot(h, h);
-    if (hLenSq <= 0.0)
-        return float3(0.0, 0.0, 0.0);
-    h = h * rsqrt(hLenSq);
-
-    float WoH = saturate(dot(wo, h));
-    if (WoH <= 0.0)
-        return float3(0.0, 0.0, 0.0);
-
-    float f0Eta = (eta - 1.0) / (eta + 1.0);
-    f0Eta *= f0Eta;
-
-    float3 dielectricTint = (f0Eta > 1.0e-6) ? max(sm.specularColor / f0Eta, float3(0.0, 0.0, 0.0)) : float3(1.0, 1.0, 1.0);
-
-    float  fd = BxDF::Fresnel::Dielectric(WoH, 1.0, eta);
-    float3 Fdielectric = float3(fd, fd, fd);
-    float3 Fconductor  = BxDF::Fresnel::Schlick(sm.albedo, WoH);
-
-    float3 Fprincipled = (dielectricTint * wDielectric * Fdielectric + wConductor * Fconductor) * sm.specularStrength;
-    return Fprincipled * BxDF::Reflection::EvaluateBRDF(wo, wi, float3(1.0, 1.0, 1.0), alpha.x, alpha.y);
+    return conductor + dielectric;
 }
 
 float3 EvaluateClearcoatBRDF(SurfaceMaterial sm, float3 wo, float3 wi)
 {
-    if (!HasClearcoatLobe(sm) || !BxDF::SameHemisphere(wo, wi))
+    if (!HasClearcoatLobe(sm))
         return float3(0.0, 0.0, 0.0);
 
-    float3 clearcoatBRDF = BxDF::Clearcoat::EvaluateBRDF(wo, wi, GetClearcoatAlpha(sm));
-    if (!IsPrincipledMaterial(sm))
-        return saturate(sm.clearcoat) * clearcoatBRDF;
-
-    float noV = BxDF::AbsCosTheta(wo);
-    float noL = BxDF::AbsCosTheta(wi);
-
-    // disney-principled clearcoat: BxDF keeps the physical denominator; this adapter matches Disney/Mitsuba.
-    float disneyClearcoatScale = 4.0 * noV * noL;
-    return (sm.clearcoat * 0.25) * disneyClearcoatScale * clearcoatBRDF;
+    return BxDF::ScatteringModel::Clearcoat::Evaluate(wo, wi, GetClearcoatAlpha(sm), saturate(sm.clearcoat), IsPrincipledMaterial(sm) ? 1u : 0u);
 }
 
 
 // wk * fk : 'physical' weighted bsdf
-PathContribution EvaluateBoundaryLobes(
-    SurfaceMaterial sm,
-    float3 wo,
-    float3 wi,
-    float etaAbove,
-    float etaBelow,
-    uint transportMode)
+PathContribution EvaluateBoundaryLobes(SurfaceMaterial sm, float3 wo, float3 wi, float ior1, float ior2, uint transportMode)
 {
-    Layered::DielectricFrame frame = Layered::MakeDielectricFrame(wo, etaAbove, etaBelow);
+    if (IsThinWalled(sm))
+        return ZeroPathContribution();
+
+    Layered::DielectricFrame frame = ResolveDielectricFrame(sm, wo, ior1, ior2);
 
     float3 woLayer    = BxDF::RotateXY(frame.wo, -GetAnisotropyRotation(sm));
     float3 wiIncident = frame.bFlipped != 0u ? -wi : wi;
@@ -495,27 +509,39 @@ PathContribution EvaluateBoundaryLobes(
 
     PathContribution lobes = ZeroPathContribution();
     lobes.diffuse  = EvaluateDiffuseBRDF(sm, woLayer, wiLayer) + EvaluateSheenBRDF(sm, woLayer, wiLayer);
-    lobes.specular = EvaluateSpecularBRDF(sm, woLayer, wiLayer, frame.eta) + EvaluateClearcoatBRDF(sm, woLayer, wiLayer);
+    lobes.specular = EvaluateSpecularBRDF(sm, woLayer, wiLayer, frame.etaTOverI) + EvaluateClearcoatBRDF(sm, woLayer, wiLayer);
 
-    float wTransmission = (1.0 - saturate(sm.metallic)) * saturate(sm.transmission);
-    if (wTransmission > PT_LOBE_EPS && !BxDF::SameHemisphere(woLayer, wiLayer))
+    float3 transmissionScale = ResolveDielectricTransmissionScale(sm);
+    if (max3(transmissionScale) > PT_LOBE_EPS && !BxDF::SameHemisphere(woLayer, wiLayer))
     {
         float2 alpha = GetAlpha2(sm);
-        lobes.transmission = wTransmission * BxDF::Dielectric::EvaluateTransmission(woLayer, wiLayer, alpha.x, alpha.y, frame.eta, transportMode);
+        lobes.transmission = BxDF::ScatteringModel::Dielectric::EvaluateTransmission(
+            woLayer,
+            wiLayer,
+            transmissionScale,
+            ResolveDielectricF0(sm, frame.etaTOverI),
+            ResolveDielectricF90(sm),
+            alpha.x,
+            alpha.y,
+            frame.etaTOverI,
+            transportMode);
     }
 
     return lobes;
 }
 
-PathContribution EvaluateBoundaryLobes(SurfaceMaterial sm, float3 wo, float3 wi, float etaAbove, float etaBelow)
+PathContribution EvaluateBoundaryLobes(SurfaceMaterial sm, float3 wo, float3 wi, float ior1, float ior2)
 {
-    return EvaluateBoundaryLobes(sm, wo, wi, etaAbove, etaBelow, PT_TRANSPORT_RADIANCE);
+    return EvaluateBoundaryLobes(sm, wo, wi, ior1, ior2, PT_TRANSPORT_RADIANCE);
 }
 
 // 'proposal' bsdf's sampling pdf
-float BoundaryMarginalPDF(SurfaceMaterial sm, float3 wo, float3 wi, float etaAbove, float etaBelow)
+float BoundaryMarginalPDF(SurfaceMaterial sm, float3 wo, float3 wi, float ior1, float ior2)
 {
-    Layered::DielectricFrame frame = Layered::MakeDielectricFrame(wo, etaAbove, etaBelow);
+    if (IsThinWalled(sm))
+        return 0.0;
+
+    Layered::DielectricFrame frame = ResolveDielectricFrame(sm, wo, ior1, ior2);
 
     float3 woLayer    = BxDF::RotateXY(frame.wo, -GetAnisotropyRotation(sm));
     float3 wiIncident = frame.bFlipped != 0u ? -wi : wi;
@@ -523,169 +549,207 @@ float BoundaryMarginalPDF(SurfaceMaterial sm, float3 wo, float3 wi, float etaAbo
 
     float2 alpha = GetAlpha2(sm);
 
-    LobeMixture ls = ResolveLobeMixture(sm, frame.eta, woLayer);
-    float pdf = ls.pmf.x * BxDF::Diffuse::EvaluatePDF(woLayer, wiLayer);
+    ModelMixture mixture = ResolveModelMixture(sm, woLayer, frame.etaTOverI);
+    float pdf = 0.0;
 
-    if (ls.pmf.y > 0.0 && sm.isSmooth == 0u)
-        pdf += ls.pmf.y * BxDF::Reflection::EvaluatePDF(woLayer, wiLayer, alpha.x, alpha.y);
-
-    if (ls.pmf.z > 0.0)
-        pdf += ls.pmf.z * BxDF::Clearcoat::EvaluatePDF(woLayer, wiLayer, GetClearcoatAlpha(sm));
-
-    if (ls.pmf.w > 0.0 && sm.isSmooth == 0u)
-        pdf += ls.pmf.w * BxDF::Transmission::EvaluatePDF(woLayer, wiLayer, alpha.x, alpha.y, frame.eta);
+    pdf += mixture.diffusePMF * BxDF::ScatteringModel::Diffuse::EvaluatePDF(woLayer, wiLayer);
+    pdf += mixture.sheenPMF * BxDF::ScatteringModel::Sheen::EvaluatePDF(woLayer, wiLayer);
+    pdf += mixture.clearcoatPMF * BxDF::ScatteringModel::Clearcoat::EvaluatePDF(woLayer, wiLayer, GetClearcoatAlpha(sm));
+    pdf += mixture.conductorPMF * BxDF::ScatteringModel::Conductor::EvaluatePDF(woLayer, wiLayer, alpha.x, alpha.y);
+    pdf += mixture.dielectricPMF *
+            BxDF::ScatteringModel::Dielectric::EvaluatePDF(
+                woLayer,
+                wiLayer,
+                ResolveDielectricReflectionScale(sm, frame.etaTOverI),
+                ResolveDielectricTransmissionScale(sm),
+                ResolveDielectricF0(sm, frame.etaTOverI),
+                ResolveDielectricF90(sm),
+                alpha.x,
+                alpha.y,
+                frame.etaTOverI);
 
     return pdf;
 }
 
-uint ChooseLobeSlot(LobeMixture ls, float uc)
+float BoundaryMarginalDeltaPMF(SurfaceMaterial sm, float3 wo, float3 wi, float ior1, float ior2)
 {
-    float remainingUc = saturate(uc);
+    Layered::DielectricFrame frame = ResolveDielectricFrame(sm, wo, ior1, ior2);
 
-    float cumulative = ls.pmf.x;
-    if (ls.pmf.x > 0.0 && remainingUc < cumulative)
+    float3 woLayer    = BxDF::RotateXY(frame.wo, -GetAnisotropyRotation(sm));
+    float3 wiIncident = frame.bFlipped != 0u ? -wi : wi;
+    float3 wiLayer    = BxDF::RotateXY(wiIncident, -GetAnisotropyRotation(sm));
+
+    ModelMixture mixture = ResolveModelMixture(sm, woLayer, frame.etaTOverI);
+    if (IsThinWalled(sm))
     {
-        return LOBE_SLOT_DIFFUSE;
+        return mixture.dielectricPMF * BxDF::ScatteringModel::Dielectric::Thin::EvaluateDeltaPMF(
+            woLayer,
+            wiLayer,
+            float3(1.0, 1.0, 1.0),
+            float3(1.0, 1.0, 1.0),
+            frame.etaTOverI);
     }
 
-    cumulative += ls.pmf.y;
-    if (ls.pmf.y > 0.0 && remainingUc < cumulative)
-    {
-        return LOBE_SLOT_SPECULAR;
-    }
-
-    cumulative += ls.pmf.z;
-    if (ls.pmf.z > 0.0 && remainingUc < cumulative)
-    {
-        return LOBE_SLOT_CLEARCOAT;
-    }
-
-    if (ls.pmf.w > 0.0)
-    {
-        return LOBE_SLOT_TRANSMISSION;
-    }
-
-    return LOBE_SLOT_DIFFUSE;
+    float2 alpha = GetAlpha2(sm);
+    float deltaPMF = mixture.conductorPMF * BxDF::ScatteringModel::Conductor::EvaluateDeltaPMF(
+        woLayer,
+        wiLayer,
+        ResolveConductorScale(sm),
+        alpha.x,
+        alpha.y);
+    deltaPMF += mixture.dielectricPMF * BxDF::ScatteringModel::Dielectric::EvaluateDeltaPMF(
+        woLayer,
+        wiLayer,
+        ResolveDielectricReflectionScale(sm, frame.etaTOverI),
+        ResolveDielectricTransmissionScale(sm),
+        ResolveDielectricF0(sm, frame.etaTOverI),
+        ResolveDielectricF90(sm),
+        alpha.x,
+        alpha.y,
+        frame.etaTOverI);
+    return deltaPMF;
 }
 
-Layered::LayerEvent SampleLayerEvent(SurfaceMaterial sm, float3 wo, float etaAbove, float etaBelow, uint transportMode, inout RngState rng)
+uint ChooseModel(ModelMixture mixture, float uc, out float modelPMF)
+{
+    modelPMF = 0.0;
+    float cumulative = mixture.diffusePMF;
+    if (mixture.diffusePMF > 0.0 && uc < cumulative)
+    {
+        modelPMF = mixture.diffusePMF;
+        return MODEL_SLOT_DIFFUSE;
+    }
+
+    cumulative += mixture.sheenPMF;
+    if (mixture.sheenPMF > 0.0 && uc < cumulative)
+    {
+        modelPMF = mixture.sheenPMF;
+        return MODEL_SLOT_SHEEN;
+    }
+
+    cumulative += mixture.clearcoatPMF;
+    if (mixture.clearcoatPMF > 0.0 && uc < cumulative)
+    {
+        modelPMF = mixture.clearcoatPMF;
+        return MODEL_SLOT_CLEARCOAT;
+    }
+
+    cumulative += mixture.conductorPMF;
+    if (mixture.conductorPMF > 0.0 && uc < cumulative)
+    {
+        modelPMF = mixture.conductorPMF;
+        return MODEL_SLOT_CONDUCTOR;
+    }
+
+    if (mixture.dielectricPMF > 0.0)
+    {
+        modelPMF = mixture.dielectricPMF;
+        return MODEL_SLOT_DIELECTRIC;
+    }
+
+    return MODEL_SLOT_COUNT;
+}
+
+Layered::LayerEvent SampleLayerEvent(
+    SurfaceMaterial sm,
+    float3 wo,
+    float ior1,
+    float ior2,
+    uint transportMode,
+    inout RngState rng)
 {
     Layered::LayerEvent event = Layered::InitializeLayerEvent();
-    Layered::DielectricFrame frame = Layered::MakeDielectricFrame(wo, etaAbove, etaBelow);
-    float3 woLayer = BxDF::RotateXY(frame.wo, -GetAnisotropyRotation(sm));
-
-    LobeMixture ls = ResolveLobeMixture(sm, frame.eta, woLayer);
-
-    uint slot = ChooseLobeSlot(ls, NextFloat(rng));
-
-    float slotPmf = ls.pmf[slot];
-    if (!IsPathFinite(slotPmf) || slotPmf <= 0.0)
+    if (IsThinWalled(sm) && !IsSupportedSmoothThinDielectric(sm))
         return event;
 
-    float2 u = NextFloat2(rng);
+    bool isThinWalled = IsThinWalled(sm);
+    Layered::DielectricFrame frame = ResolveDielectricFrame(sm, wo, ior1, ior2);
+    float3 woLayer = BxDF::RotateXY(frame.wo, -GetAnisotropyRotation(sm));
 
-    BxDF::BSDFSample bs = (BxDF::BSDFSample)0;
-    switch (slot)
+    ModelMixture mixture = ResolveModelMixture(sm, woLayer, frame.etaTOverI);
+    float modelPMF;
+    uint model = ChooseModel(mixture, NextFloat(rng), modelPMF);
+    if (!IsPathFinite(modelPMF) || modelPMF <= 0.0)
+        return event;
+
+    float2 uDirection = NextFloat2(rng);
+    BxDF::ScatteringModelSample bs = (BxDF::ScatteringModelSample)0;
+    switch (model)
     {
-        case LOBE_SLOT_DIFFUSE:
+        case MODEL_SLOT_DIFFUSE:
         {
-            bs.wi  = BxDF::Diffuse::SampleRay(woLayer, u);
-            bs.pdf = BxDF::Diffuse::EvaluatePDF(woLayer, bs.wi);
-
-            if (!IsPathFinite(bs.pdf) || bs.pdf <= 0.0)
-                return event;
-
-            float3 f = EvaluateDiffuseBRDF(sm, woLayer, bs.wi) + EvaluateSheenBRDF(sm, woLayer, bs.wi);
-            bs.weight = f * BxDF::AbsCosTheta(bs.wi) / bs.pdf;
-
-            bs.isDelta = 0u;
-            bs.lobe    = BxDF::LOBE_DIFFUSE;
+            bs = BxDF::ScatteringModel::Diffuse::Sample(
+                woLayer,
+                sm.albedo,
+                sm.roughness,
+                ResolveDiffuseScale(sm),
+                IsPrincipledMaterial(sm) ? 1u : 0u,
+                uDirection);
         }
         break;
 
-        case LOBE_SLOT_SPECULAR:
+        case MODEL_SLOT_SHEEN:
         {
-            if (sm.isSmooth != 0u)
+            bs = BxDF::ScatteringModel::Sheen::Sample(
+                woLayer,
+                sm.sheenColor,
+                sm.sheenRoughness,
+                IsPrincipledMaterial(sm) ? 1u : 0u,
+                uDirection);
+        }
+        break;
+
+        case MODEL_SLOT_CLEARCOAT:
+        {
+            bs = BxDF::ScatteringModel::Clearcoat::Sample(
+                woLayer,
+                GetClearcoatAlpha(sm),
+                saturate(sm.clearcoat),
+                IsPrincipledMaterial(sm) ? 1u : 0u,
+                uDirection);
+        }
+        break;
+
+        case MODEL_SLOT_CONDUCTOR:
+        {
+            float2 alpha = GetAlpha2(sm);
+            bs = BxDF::ScatteringModel::Conductor::Sample(
+                woLayer,
+                ResolveConductorF0(sm),
+                ResolveConductorScale(sm),
+                alpha.x,
+                alpha.y,
+                uDirection);
+        }
+        break;
+
+        case MODEL_SLOT_DIELECTRIC:
+        {
+            float uBranch = NextFloat(rng);
+            if (isThinWalled)
             {
-                bs.wi      = float3(-woLayer.x, -woLayer.y, woLayer.z);
-                bs.pdf     = 1.0; // deterministic
-                bs.weight  = EvaluateSmoothSpecularWeight(sm, woLayer, frame.eta);
-                bs.lobe    = BxDF::LOBE_SPECULAR;
-                bs.isDelta = 1u;
+                bs = BxDF::ScatteringModel::Dielectric::Thin::Sample(
+                    woLayer,
+                    float3(1.0, 1.0, 1.0),
+                    float3(1.0, 1.0, 1.0),
+                    frame.etaTOverI,
+                    uBranch);
             }
             else
             {
                 float2 alpha = GetAlpha2(sm);
-
-                bs.wi  = BxDF::Reflection::SampleRay(woLayer, alpha.x, alpha.y, u);
-                bs.pdf = BxDF::Reflection::EvaluatePDF(woLayer, bs.wi, alpha.x, alpha.y);
-
-                if (!IsPathFinite(bs.pdf) || bs.pdf <= 0.0)
-                    return event;
-
-                bs.weight = EvaluateSpecularBRDF(sm, woLayer, bs.wi, frame.eta) * BxDF::AbsCosTheta(bs.wi) / bs.pdf;
-
-                bs.isDelta = 0u;
-                bs.lobe    = BxDF::LOBE_SPECULAR;
-            }
-        }
-        break;
-
-        case LOBE_SLOT_CLEARCOAT:
-        {
-            float alpha = GetClearcoatAlpha(sm);
-
-            bs.wi  = BxDF::Clearcoat::SampleRay(woLayer, alpha, u);
-            bs.pdf = BxDF::Clearcoat::EvaluatePDF(woLayer, bs.wi, alpha);
-
-            if (!IsPathFinite(bs.pdf) || bs.pdf <= 0.0)
-                return event;
-
-            bs.weight = EvaluateClearcoatBRDF(sm, woLayer, bs.wi) * BxDF::AbsCosTheta(bs.wi) / bs.pdf;
-
-            bs.isDelta = 0u;
-            bs.lobe    = BxDF::LOBE_CLEARCOAT;
-        }
-        break;
-
-        case LOBE_SLOT_TRANSMISSION:
-        {
-            float2 alpha = GetAlpha2(sm);
-            bool isDelta = frame.eta == 1.0 || BxDF::GGX::IsSmooth(alpha.x, alpha.y);
-
-            bs.wi = BxDF::Transmission::SampleRay(woLayer, alpha.x, alpha.y, frame.eta, u);
-            if (!IsPathFinite3(bs.wi) || dot(bs.wi, bs.wi) <= EPSILON_MIN)
-                return event;
-
-            float wTransmission = (1.0 - saturate(sm.metallic)) * saturate(sm.transmission);
-            if (isDelta)
-            {
-                bs.pdf     = 1.0; // deterministic conditional mass
-                bs.isDelta = 1u;
-                bs.weight = wTransmission * BxDF::Dielectric::Smooth::EvaluateTransmission(
+                bs = BxDF::ScatteringModel::Dielectric::Sample(
                     woLayer,
-                    bs.wi,
-                    frame.eta,
-                    transportMode);
-            }
-            else
-            {
-                bs.pdf     = BxDF::Transmission::EvaluatePDF(woLayer, bs.wi, alpha.x, alpha.y, frame.eta);
-                bs.isDelta = 0u;
-                if (!IsPathFinite(bs.pdf) || bs.pdf <= 0.0)
-                    return event;
-
-                float3 f = BxDF::Dielectric::EvaluateTransmission(
-                    woLayer,
-                    bs.wi,
+                    ResolveDielectricReflectionScale(sm, frame.etaTOverI),
+                    ResolveDielectricTransmissionScale(sm),
+                    ResolveDielectricF0(sm, frame.etaTOverI),
+                    ResolveDielectricF90(sm),
                     alpha.x,
                     alpha.y,
-                    frame.eta,
-                    transportMode);
-                bs.weight = wTransmission * f * BxDF::AbsCosTheta(bs.wi) / bs.pdf;
+                    frame.etaTOverI,
+                    transportMode,
+                    float3(uDirection, uBranch));
             }
-
-            bs.lobe = BxDF::LOBE_TRANSMISSION;
         }
         break;
 
@@ -693,69 +757,151 @@ Layered::LayerEvent SampleLayerEvent(SurfaceMaterial sm, float3 wo, float etaAbo
             return event;
     }
 
-    if (!IsPathFinite(bs.pdf) || bs.pdf <= 0.0 ||
-        !IsPathFinite3(bs.wi) || dot(bs.wi, bs.wi) <= EPSILON_MIN ||
-        !IsPathFinite3(bs.weight) || any(bs.weight < 0.0))
-    {
-        return event;
-    }
-
     // layer frame -> incident(or transmitted)-side frame
     float3 wiIncident = BxDF::RotateXY(bs.wi, GetAnisotropyRotation(sm));
-    event.wi = frame.bFlipped != 0u ? -wiIncident : wiIncident;
+    event.wi             = frame.bFlipped != 0u ? -wiIncident : wiIncident;
     event.isDelta        = bs.isDelta;
     event.isTransmission = BxDF::SameHemisphere(woLayer, bs.wi) ? 0u : 1u;
-    event.eta            = event.isTransmission != 0u ? frame.eta : 1.0;
+    event.etaTOverI      = event.isTransmission != 0u && !isThinWalled ? frame.etaTOverI : 1.0;
 
-    event.pdf    = slotPmf * bs.pdf;
-    event.weight = bs.weight / slotPmf;
+    if (bs.isDelta != 0u)
+    {
+        event.pdf    = modelPMF * bs.pdf;
+        event.weight = bs.weight / modelPMF;
+    }
+    else
+    {
+        float mixturePDF = BoundaryMarginalPDF(sm, wo, event.wi, ior1, ior2);
+        if (!IsPathFinite(mixturePDF) || mixturePDF <= 0.0)
+            return Layered::InitializeLayerEvent();
 
-    if (!IsPathFinite(event.pdf) || event.pdf <= 0.0 ||
-        !IsPathFinite3(event.weight) || any(event.weight < 0.0))
+        PathContribution lobes = EvaluateBoundaryLobes(
+            sm,
+            wo,
+            event.wi,
+            ior1,
+            ior2,
+            transportMode);
+        float3 f = lobes.diffuse + lobes.specular + lobes.transmission;
+
+        event.pdf    = mixturePDF;
+        event.weight = f * BxDF::AbsCosTheta(bs.wi) / mixturePDF;
+    }
+
+    if (!IsPathFinite3(event.wi) || dot(event.wi, event.wi) <= EPSILON_MIN ||
+        !IsPathFinite(event.pdf) || event.pdf <= 0.0 ||
+        !IsPathFinite3(event.weight) || any(event.weight < 0.0) ||
+        !IsPathFinite(event.etaTOverI) || event.etaTOverI <= 0.0)
         return Layered::InitializeLayerEvent();
 
     event.lobe  = bs.lobe;
-    event.flags = bs.lobe == BxDF::LOBE_DIFFUSE ? PT_BSDF_FLAG_DIFFUSE : event.isTransmission != 0u ? PT_BSDF_FLAG_TRANSMISSION : PT_BSDF_FLAG_GLOSSY;
+    event.flags = bs.lobe == BxDF::LOBE_DIFFUSE || bs.lobe == BxDF::LOBE_SHEEN ?
+            PT_BSDF_FLAG_DIFFUSE : event.isTransmission != 0u ? PT_BSDF_FLAG_TRANSMISSION : PT_BSDF_FLAG_GLOSSY;
     event.valid = 1u;
     return event;
 }
 
-PathBSDFSample SampleRay(
-        SurfaceMaterial rootMaterial,
-        float2 uv,
-        float2 ddxUV,
-        float2 ddyUV,
-        float3 wo,
-        float etaExterior,
-        uint rrStartDepth,
-        float roughnessSpreadScale,
-        inout RayCone rayCone,
-        inout RngState rng)
+
+bool TryResolveTerminalMedium(
+    SurfaceMaterial rootMaterial,
+    uint rootMaterialID,
+    float2 uv,
+    float2 ddxUV,
+    float2 ddyUV,
+    out Medium terminalMedium,
+    out bool isTerminalMedium)
 {
+    isTerminalMedium = HasTransmissionLobe(rootMaterial);
+
+    uint count = max(rootMaterial.layerCount, 1u);
+    if (count == 1u)
+    {
+        terminalMedium.mediumID = rootMaterialID;
+        terminalMedium.ior      = rootMaterial.ior;
+    }
+    else
+    {
+        if (rootMaterial.layerOffset == INVALID_INDEX)
+            return false;
+
+        StructuredBuffer< MaterialSlabData > Slabs = GetResource(g_MaterialSlabs.index);
+        StructuredBuffer< MaterialData > Materials = GetResource(g_Materials.index);
+
+        [loop]
+        for (uint boundary = 1u; boundary < count; ++boundary)
+        {
+            MaterialSlabData slab = Slabs[rootMaterial.layerOffset + boundary];
+            if (slab.materialID == INVALID_INDEX)
+                return false;
+
+            SurfaceMaterial boundaryMaterial = LoadSurfaceMaterial(
+                slab.materialID,
+                uv,
+                ddxUV,
+                ddyUV,
+                rootMaterial.tangentFrameSign);
+            if (IsThinWalled(boundaryMaterial))
+                return false;
+
+            isTerminalMedium = isTerminalMedium && HasTransmissionLobe(boundaryMaterial);
+            if (boundary == count - 1u)
+            {
+                terminalMedium.mediumID = slab.materialID;
+                terminalMedium.ior      = max(Materials[slab.materialID].ior, 1.0e-4);
+            }
+        }
+    }
+
+    if (!IsPathFinite(terminalMedium.ior) || terminalMedium.ior <= 0.0)
+        return false;
+
+    return true;
+}
+
+PathBSDFSample SampleRay(
+    SurfaceMaterial rootMaterial,
+    float2 uv,
+    float2 ddxUV,
+    float2 ddyUV,
+    float3 wo,
+    BoundaryMediumPair boundaryPair,
+    uint rrStartDepth,
+    float roughnessSpreadScale,
+    inout RayCone rayCone,
+    inout RngState rng
+#if PT_VALIDATION
+    , out LayerWalkerAudit audit
+#endif
+)
+{
+#if PT_VALIDATION
+    audit = (LayerWalkerAudit)0;
+#endif
+
     PathBSDFSample s = (PathBSDFSample)0;
     s.attempted  = 1u;
     s.rrEtaScale = 1.0;
 
-    if (!IsPathFinite3(wo) ||
-        abs(wo.z) <= EPSILON_MIN ||
-        !IsPathFinite(etaExterior) ||
-        etaExterior <= 0.0)
+    float iorExterior = boundaryPair.isEntering != 0u ? boundaryPair.mediumI.ior : boundaryPair.mediumT.ior;
+    if (!IsPathFinite3(wo) || abs(wo.z) <= EPSILON_MIN || !IsPathFinite(iorExterior) || iorExterior <= 0.0)
         return s;
 
-    StructuredBuffer<MaterialSlabData> Slabs = GetResource(g_MaterialSlabs.index);
-    StructuredBuffer<MaterialData> Materials = GetResource(g_Materials.index);
+    if (!IsSupportedThinCompositeLayout(rootMaterial))
+        return s;
+
+    StructuredBuffer< MaterialSlabData > Slabs = GetResource(g_MaterialSlabs.index);
+    StructuredBuffer< MaterialData > Materials = GetResource(g_Materials.index);
+
+    float incidentFrameSign = GetIncidentFrameSign(wo, boundaryPair.isEntering);
+    wo *= incidentFrameSign;
 
     int  count    = int(max(rootMaterial.layerCount, 1u));
     uint offset   = rootMaterial.layerOffset;
     int  boundary = wo.z > 0.0 ? 0 : count - 1;
 
-    if (count > 1 && offset == INVALID_INDEX)
-        return s;
-
     float3 w = -wo;
 
     float3 beta       = float3(1.0, 1.0, 1.0);
-    float  qH         = 1.0;
     float  rrEtaScale = 1.0;
 
     bool allDelta      = true;
@@ -768,50 +914,46 @@ PathBSDFSample SampleRay(
         if (boundary > 0)
         {
             MaterialSlabData slab = Slabs[offset + boundary];
-            if (slab.materialID == INVALID_INDEX)
-                return s;
-
             sm = LoadSurfaceMaterial(slab.materialID, uv, ddxUV, ddyUV, rootMaterial.tangentFrameSign);
         }
 
-        float etaAbove = etaExterior;
+        float ior1 = iorExterior;
         if (boundary > 0)
         {
             MaterialSlabData aboveSlab = Slabs[offset + boundary - 1];
             if (aboveSlab.materialID == INVALID_INDEX)
                 return s;
 
-            etaAbove = max(Materials[aboveSlab.materialID].ior, 1.0e-4);
+            ior1 = max(Materials[aboveSlab.materialID].ior, 1.0e-4);
         }
-        float etaBelow = max(sm.ior, 1.0e-4);
+        float ior2 = max(sm.ior, 1.0e-4);
 
-        Layered::LayerEvent event = SampleLayerEvent(sm, -w, etaAbove, etaBelow, PT_TRANSPORT_RADIANCE, rng);
-        if (!Layered::IsLayerEventValid(event))
-            return s;
-
-        bool crossedBoundary = w.z * event.wi.z > 0.0;
-        if (crossedBoundary != (event.isTransmission != 0u))
+#if PT_VALIDATION
+        ++audit.forwardEvents;
+#endif
+        Layered::LayerEvent event = SampleLayerEvent(sm, -w, ior1, ior2, PT_TRANSPORT_RADIANCE, rng);
+        if (event.valid == 0u)
             return s;
 
         UpdateRayCone(sm, -w, event, roughnessSpreadScale, rayCone);
 
         w     = event.wi;
-        qH   *= event.pdf;
         beta *= event.weight;
 
         allDelta     = allDelta && event.isDelta != 0u;
         historyFlags |= event.flags;
 
         if (event.isTransmission != 0u)
-            rrEtaScale *= sq(event.eta);
+            rrEtaScale *= sq(event.etaTOverI);
 
-        if (!IsPathFinite3(beta) || abs(w.z) <= EPSILON_MIN)
+        if (!IsPathFinite3(beta) || !any(beta > 0.0) ||
+            !IsPathFinite(rrEtaScale) || abs(w.z) <= EPSILON_MIN)
             return s;
 
         int nextBoundary = boundary + (w.z < 0.0 ? 1 : -1);
         if (nextBoundary < 0 || nextBoundary >= count)
         {
-            s.wi     = w;
+            s.wi     = w * incidentFrameSign;
             s.weight = beta;
 
             s.flags      = historyFlags;
@@ -819,16 +961,14 @@ PathBSDFSample SampleRay(
             s.isDelta    = allDelta ? 1u : 0u;
             s.rrEtaScale = rrEtaScale;
 
-            s.valid = any(beta > 0.0) &&
-                      IsPathFinite3(s.wi) &&
-                      IsPathFinite3(beta) &&
-                      IsPathFinite(rrEtaScale);
+            s.valid = 1u;
             return s;
         }
 
         int slabIndex = min(boundary, nextBoundary);
         MaterialSlabData medium = Slabs[offset + slabIndex];
         float distance = medium.thickness / max(abs(w.z), EPSILON_MIN);
+        const float rrImportance = max3(beta * rrEtaScale);
         // volume extinction
         float3 sigmaA = float3(medium.sigmaA_r, medium.sigmaA_g, medium.sigmaA_b);
         beta *= exp(-sigmaA * distance);
@@ -838,16 +978,17 @@ PathBSDFSample SampleRay(
         boundary = nextBoundary;
         ++depth;
 
+
+
         const float rrThreshold = 0.05;
-        if (depth >= rrStartDepth)
+        // This depth also includes the entrance transmission; PBRT's does not.
+        if (depth > rrStartDepth + 1u && rrImportance < 0.25)
         {
-            float3 rrBeta  = beta * rrEtaScale;
-            float qSurvive = clamp(max3(rrBeta), rrThreshold, 1.0 - rrThreshold);
+            float qSurvive = max(rrImportance, rrThreshold);
             if (NextFloat(rng) >= qSurvive)
                 return s;
 
             beta /= qSurvive;
-            qH   *= qSurvive;
         }
     }
 
@@ -855,33 +996,58 @@ PathBSDFSample SampleRay(
 }
 
 #if PT_VALIDATION
-float3 SurfaceLobeMask(SurfaceMaterial material, float etaAbove, float etaBelow)
+float3 SurfaceLobeMask(SurfaceMaterial material, float ior1, float ior2)
 {
-    float eta = max(etaBelow, 1.0e-4) / max(etaAbove, 1.0e-4);
-    float3 wo = float3(0.0, 0.0, 1.0);
-    LobeMixture ls = ResolveLobeMixture(material, eta, wo);
+    float etaTOverI = IsRelativeIORInterface(material) ?
+        max(material.ior, 1.0e-4) : max(ior2, 1.0e-4) / max(ior1, 1.0e-4);
+    ModelMixture mixture = ResolveModelMixture(material, float3(0.0, 0.0, 1.0), etaTOverI);
+    bool hasDielectricReflection = IsThinWalled(material) ||
+        max3(ResolveDielectricReflectionScale(material, etaTOverI)) > PT_LOBE_EPS;
+    bool hasDielectricTransmission = IsThinWalled(material) ||
+        max3(ResolveDielectricTransmissionScale(material)) > PT_LOBE_EPS;
     return float3(
-        ls.pmf.x > PT_LOBE_EPS ? 1.0 : 0.0,
-        (ls.pmf.y > PT_LOBE_EPS || ls.pmf.z > PT_LOBE_EPS) ? 1.0 : 0.0,
-        ls.pmf.w > PT_LOBE_EPS ? 1.0 : 0.0);
+        mixture.diffusePMF + mixture.sheenPMF > PT_LOBE_EPS ? 1.0 : 0.0,
+        mixture.clearcoatPMF + mixture.conductorPMF > PT_LOBE_EPS ||
+            (mixture.dielectricPMF > PT_LOBE_EPS && hasDielectricReflection) ? 1.0 : 0.0,
+        mixture.dielectricPMF > PT_LOBE_EPS && hasDielectricTransmission ? 1.0 : 0.0);
 }
 
-float3 SurfaceLobeWeight(SurfaceMaterial material, float3 wo, float etaAbove, float etaBelow)
+float3 SurfaceLobeWeight(SurfaceMaterial material, float3 wo, float ior1, float ior2)
 {
-    Layered::DielectricFrame frame = Layered::MakeDielectricFrame(wo, etaAbove, etaBelow);
-    LobeMixture ls = ResolveLobeMixture(material, frame.eta, frame.wo);
+    Layered::DielectricFrame frame = ResolveDielectricFrame(material, wo, ior1, ior2);
+    ModelMixture mixture = ResolveModelMixture(material, frame.wo, frame.etaTOverI);
+
+    float2 dielectricBranchPMF;
+    if (IsThinWalled(material))
+    {
+        dielectricBranchPMF = BxDF::ScatteringModel::Dielectric::Thin::ResolveBranchPMF(
+            frame.wo, float3(1.0, 1.0, 1.0), float3(1.0, 1.0, 1.0), frame.etaTOverI);
+    }
+    else
+    {
+        dielectricBranchPMF = BxDF::ScatteringModel::Dielectric::ResolveBranchPMF(
+            frame.wo,
+            float3(0.0, 0.0, 1.0),
+            ResolveDielectricReflectionScale(material, frame.etaTOverI),
+            ResolveDielectricTransmissionScale(material),
+            ResolveDielectricF0(material, frame.etaTOverI),
+            ResolveDielectricF90(material),
+            frame.etaTOverI,
+            1u,
+            1u);
+    }
 
     return float3(
-        ls.pmf.x,
-        ls.pmf.y + ls.pmf.z,
-        ls.pmf.w);
+        mixture.diffusePMF + mixture.sheenPMF,
+        mixture.clearcoatPMF + mixture.conductorPMF + mixture.dielectricPMF * dielectricBranchPMF.x,
+        mixture.dielectricPMF * dielectricBranchPMF.y);
 }
 
 float3 SampledLobeVector(PathBSDFSample sample)
 {
     if (sample.attempted == 0u)
         return float3(0.0, 0.0, 0.0);
-    if (sample.lobe == BxDF::LOBE_DIFFUSE)
+    if (sample.lobe == BxDF::LOBE_DIFFUSE || sample.lobe == BxDF::LOBE_SHEEN)
         return float3(1.0, 0.0, 0.0);
     if (sample.lobe == BxDF::LOBE_TRANSMISSION)
         return float3(0.0, 0.0, 1.0);
@@ -900,6 +1066,32 @@ static const uint  EVALUATE_QUERY_SALT        = 0x243F6A88u;
 static const uint  PDF_QUERY_SALT             = 0x85A308D3u;
 static const uint  DIRECTIONAL_RR_START_DEPTH = 8u;
 static const float DIRECTIONAL_RR_SURVIVAL    = 0.95;
+
+bool TryResolveShadowStartMedium(
+    float3 Ng,
+    float3 woWS,
+    float3 wiWS,
+    float3 wo,
+    float3 wi,
+    BoundaryMediumPair boundaryPair,
+    out Medium shadowStartMedium)
+{
+    float NgoWo = dot(Ng, woWS);
+    float NgoWi = dot(Ng, wiWS);
+    if (abs(NgoWi) <= EPSILON_MIN || abs(wi.z) <= EPSILON_MIN)
+        return false;
+
+    bool isGeometricTransmission  = (NgoWo > 0.0) != (NgoWi > 0.0);
+    bool isScatteringTransmission = (wo.z > 0.0) != (wi.z > 0.0);
+    if (isGeometricTransmission != isScatteringTransmission)
+        return false;
+
+    if (isGeometricTransmission)
+        shadowStartMedium = boundaryPair.mediumT;
+    else
+        shadowStartMedium = boundaryPair.mediumI;
+    return true;
+}
 
 float ExtendPowerStrategyRatioSum(float ratioSum, float numerator, float denominator)
 {
@@ -944,16 +1136,16 @@ bool LoadBoundaryData(
     float2 uv,
     float2 ddxUV,
     float2 ddyUV,
-    float etaExterior,
+    float iorExterior,
     int boundary,
     uint layerOffset,
     out SurfaceMaterial material,
-    out float etaAbove,
-    out float etaBelow)
+    out float ior1,
+    out float ior2)
 {
     material = rootMaterial;
-    etaAbove = max(etaExterior, 1.0e-4);
-    etaBelow = max(rootMaterial.ior, 1.0e-4);
+    ior1 = max(iorExterior, 1.0e-4);
+    ior2 = max(rootMaterial.ior, 1.0e-4);
 
     if (boundary < 0)
         return false;
@@ -971,48 +1163,88 @@ bool LoadBoundaryData(
         return false;
 
     material = LoadSurfaceMaterial(belowSlab.materialID, uv, ddxUV, ddyUV, rootMaterial.tangentFrameSign);
-    etaAbove = max(Materials[aboveSlab.materialID].ior, 1.0e-4);
-    etaBelow = max(material.ior, 1.0e-4);
+    if (IsThinWalled(material))
+        return false;
+
+    ior1 = max(Materials[aboveSlab.materialID].ior, 1.0e-4);
+    ior2 = max(material.ior, 1.0e-4);
     return true;
 }
 
-float3 Evaluate(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 ddyUV, float3 wo, float3 wi, float etaExterior, uint querySeed)
+float3 Evaluate(
+    SurfaceMaterial rootMaterial,
+    float2 uv,
+    float2 ddxUV,
+    float2 ddyUV,
+    float3 wo,
+    float3 wi,
+    BoundaryMediumPair boundaryPair,
+    uint querySeed
+#if PT_VALIDATION
+    , out LayerWalkerAudit audit
+#endif
+)
 {
+#if PT_VALIDATION
+    audit = (LayerWalkerAudit)0;
+#endif
+
     const float3 zero = float3(0.0, 0.0, 0.0);
-    if (!IsPathFinite3(wo) || !IsPathFinite3(wi) ||
-        abs(wo.z) <= EPSILON_MIN || abs(wi.z) <= EPSILON_MIN ||
-        !IsPathFinite(etaExterior) || etaExterior <= 0.0)
-    {
+
+    float iorExterior = boundaryPair.isEntering != 0u ? boundaryPair.mediumI.ior : boundaryPair.mediumT.ior;
+    if (!IsPathFinite3(wo) || !IsPathFinite3(wi) || abs(wo.z) <= EPSILON_MIN || abs(wi.z) <= EPSILON_MIN || !IsPathFinite(iorExterior) || iorExterior <= 0.0)
         return zero;
-    }
+
+    if (IsThinWalled(rootMaterial))
+        return zero;
+
+    if (!LayerComposite::IsSupportedThinCompositeLayout(rootMaterial))
+        return zero;
 
     StructuredBuffer< MaterialSlabData > Slabs = GetResource(g_MaterialSlabs.index);
 
     int  count  = int(max(rootMaterial.layerCount, 1u));
     uint offset = rootMaterial.layerOffset;
-    if (count > 1 && offset == INVALID_INDEX)
-        return zero;
+    float incidentFrameSign = LayerComposite::GetIncidentFrameSign(wo, boundaryPair.isEntering);
+    wo *= incidentFrameSign;
+    wi *= incidentFrameSign;
 
     int entryBoundary = wo.z > 0.0 ? 0 : count - 1;
     int exitBoundary  = wi.z > 0.0 ? 0 : count - 1;
 
+    SurfaceMaterial exitMaterial;
+    float exitEtaAbove;
+    float exitEtaBelow;
+    if (!LoadBoundaryData(
+            rootMaterial,
+            uv,
+            ddxUV,
+            ddyUV,
+            iorExterior,
+            exitBoundary,
+            offset,
+            exitMaterial,
+            exitEtaAbove,
+            exitEtaBelow))
+    {
+        return zero;
+    }
+
     float3 result = zero;
+    // The zero-internal-event boundary term is deterministic.
     if (entryBoundary == exitBoundary)
     {
-        SurfaceMaterial directMaterial;
-        float etaAbove;
-        float etaBelow;
-        if (!LoadBoundaryData(rootMaterial, uv, ddxUV, ddyUV, etaExterior, entryBoundary, offset, directMaterial, etaAbove, etaBelow))
-            return zero;
-
         PathContribution directLobes = LayerComposite::EvaluateBoundaryLobes(
-            directMaterial,
+            exitMaterial,
             wo,
             wi,
-            etaAbove,
-            etaBelow);
+            exitEtaAbove,
+            exitEtaBelow);
         result += directLobes.diffuse + directLobes.specular + directLobes.transmission;
     }
+
+    if (count == 1)
+        return IsPathFinite3(result) && all(result >= 0.0) ? result : zero;
 
     RngState forwardRng = InitDirectionalQueryRng(
         querySeed,
@@ -1067,7 +1299,7 @@ float3 Evaluate(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 dd
                         uv,
                         ddxUV,
                         ddyUV,
-                        etaExterior,
+                        iorExterior,
                         reverseBoundary,
                         offset,
                         reverseMaterial,
@@ -1137,6 +1369,9 @@ float3 Evaluate(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 dd
                 }
 
                 float3 reverseWo = -reverseW;
+#if PT_VALIDATION
+                ++audit.reverseContinuousEvents;
+#endif
                 Layered::LayerEvent reverseEvent = LayerComposite::SampleLayerEvent(
                     reverseMaterial,
                     reverseWo,
@@ -1144,7 +1379,7 @@ float3 Evaluate(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 dd
                     reverseEtaBelow,
                     PT_TRANSPORT_IMPORTANCE,
                     reverseRng);
-                if (!Layered::IsLayerEventValid(reverseEvent) || reverseEvent.isDelta != 0u)
+                if (reverseEvent.valid == 0u || reverseEvent.isDelta != 0u)
                     break;
 
                 float reverseEventPDF = LayerComposite::BoundaryMarginalPDF(
@@ -1180,9 +1415,6 @@ float3 Evaluate(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 dd
                 }
                 reversePreviousPDF = reverseEventPDF;
 
-                bool crossedBoundary = reverseW.z * reverseEvent.wi.z > 0.0;
-                if (crossedBoundary != (reverseEvent.isTransmission != 0u))
-                    return zero;
 
                 reverseW     = reverseEvent.wi;
                 reverseBeta *= reverseEvent.weight;
@@ -1246,7 +1478,7 @@ float3 Evaluate(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 dd
                         uv,
                         ddxUV,
                         ddyUV,
-                        etaExterior,
+                        iorExterior,
                         reverseBoundary,
                         offset,
                         reverseMaterial,
@@ -1300,6 +1532,9 @@ float3 Evaluate(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 dd
                         result += forwardBeta * connection * reverseBeta;
                 }
 
+#if PT_VALIDATION
+                ++audit.reverseDeltaEvents;
+#endif
                 Layered::LayerEvent reverseEvent = LayerComposite::SampleLayerEvent(
                     reverseMaterial,
                     -reverseW,
@@ -1307,14 +1542,11 @@ float3 Evaluate(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 dd
                     reverseEtaBelow,
                     PT_TRANSPORT_IMPORTANCE,
                     deltaRng);
-                if (!Layered::IsLayerEventValid(reverseEvent) || reverseEvent.isDelta == 0u)
+                if (reverseEvent.valid == 0u || reverseEvent.isDelta == 0u)
                     break;
 
                 bHasReverseDelta = true;
 
-                bool crossedBoundary = reverseW.z * reverseEvent.wi.z > 0.0;
-                if (crossedBoundary != (reverseEvent.isTransmission != 0u))
-                    return zero;
 
                 reverseW     = reverseEvent.wi;
                 reverseBeta *= reverseEvent.weight;
@@ -1356,7 +1588,7 @@ float3 Evaluate(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 dd
                 uv,
                 ddxUV,
                 ddyUV,
-                etaExterior,
+                iorExterior,
                 forwardBoundary,
                 offset,
                 forwardMaterial,
@@ -1367,6 +1599,9 @@ float3 Evaluate(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 dd
         }
 
         float3 forwardWo = -forwardW;
+#if PT_VALIDATION
+        ++audit.forwardEvents;
+#endif
         Layered::LayerEvent forwardEvent = LayerComposite::SampleLayerEvent(
             forwardMaterial,
             forwardWo,
@@ -1374,7 +1609,7 @@ float3 Evaluate(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 dd
             forwardEtaBelow,
             PT_TRANSPORT_RADIANCE,
             forwardRng);
-        if (!Layered::IsLayerEventValid(forwardEvent))
+        if (forwardEvent.valid == 0u)
             break;
 
         if (bForwardMISCompatible)
@@ -1423,9 +1658,6 @@ float3 Evaluate(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 dd
             }
         }
 
-        bool crossedBoundary = forwardW.z * forwardEvent.wi.z > 0.0;
-        if (crossedBoundary != (forwardEvent.isTransmission != 0u))
-            return zero;
 
         forwardW     = forwardEvent.wi;
         forwardBeta *= forwardEvent.weight;
@@ -1460,22 +1692,60 @@ float3 Evaluate(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 dd
 
     return IsPathFinite3(result) && all(result >= 0.0) ? result : zero;
 }
-float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 ddyUV, float3 wo, float3 wi, float etaExterior, uint querySeed)
+
+float MarginalPDF(
+    SurfaceMaterial rootMaterial,
+    float2 uv,
+    float2 ddxUV,
+    float2 ddyUV,
+    float3 wo,
+    float3 wi,
+    BoundaryMediumPair boundaryPair,
+    uint querySeed
+#if PT_VALIDATION
+    , out MarginalPDFAudit audit
+#endif
+)
 {
-    if (!IsPathFinite3(wo) || !IsPathFinite3(wi) ||
-        abs(wo.z) <= EPSILON_MIN || abs(wi.z) <= EPSILON_MIN ||
-        !IsPathFinite(etaExterior) || etaExterior <= 0.0)
-    {
+#if PT_VALIDATION
+    audit = (MarginalPDFAudit)0;
+    audit.state = PT_MARGINAL_STATE_INVALID;
+#endif
+
+    float iorExterior = boundaryPair.isEntering != 0u ? boundaryPair.mediumI.ior : boundaryPair.mediumT.ior;
+    if (!IsPathFinite3(wo) || !IsPathFinite3(wi) || abs(wo.z) <= EPSILON_MIN || abs(wi.z) <= EPSILON_MIN || !IsPathFinite(iorExterior) || iorExterior <= 0.0)
         return 0.0;
-    }
+
+    if (IsThinWalled(rootMaterial))
+        return 0.0;
+
+    if (!LayerComposite::IsSupportedThinCompositeLayout(rootMaterial))
+        return 0.0;
 
     int  count  = int(max(rootMaterial.layerCount, 1u));
     uint offset = rootMaterial.layerOffset;
-    if (count > 1 && offset == INVALID_INDEX)
-        return 0.0;
+    float incidentFrameSign = LayerComposite::GetIncidentFrameSign(wo, boundaryPair.isEntering);
+    wo *= incidentFrameSign;
+    wi *= incidentFrameSign;
 
     int entryBoundary = wo.z > 0.0 ? 0 : count - 1;
     int exitBoundary  = wi.z > 0.0 ? 0 : count - 1;
+    if (count == 1)
+    {
+        SurfaceMaterial directMaterial;
+        float ior1;
+        float ior2;
+        if (!LoadBoundaryData(rootMaterial, uv, ddxUV, ddyUV, iorExterior, entryBoundary, offset, directMaterial, ior1, ior2))
+            return 0.0;
+
+        float result = LayerComposite::BoundaryMarginalPDF(directMaterial, wo, wi, ior1, ior2);
+#if PT_VALIDATION
+        audit.state = IsPathFinite(result) && result >= 0.0
+            ? PT_MARGINAL_STATE_SINGLE_LAYER
+            : PT_MARGINAL_STATE_NONFINITE;
+#endif
+        return IsPathFinite(result) && result >= 0.0 ? result : 0.0;
+    }
 
     bool   hasContinuousProposal = false;
     int    probeBoundary         = entryBoundary;
@@ -1484,6 +1754,9 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 
     [loop]
     for (;;)
     {
+#if PT_VALIDATION
+        ++audit.walker.supportProbeEvents;
+#endif
         SurfaceMaterial probeMaterial;
         float probeEtaAbove;
         float probeEtaBelow;
@@ -1492,7 +1765,7 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 
                 uv,
                 ddxUV,
                 ddyUV,
-                etaExterior,
+                iorExterior,
                 probeBoundary,
                 offset,
                 probeMaterial,
@@ -1502,39 +1775,37 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 
             return 0.0;
         }
 
-        Layered::DielectricFrame frame = Layered::MakeDielectricFrame(-probeW, probeEtaAbove, probeEtaBelow);
-        LayerComposite::LobeMixture mixture = LayerComposite::ResolveLobeMixture(probeMaterial, frame.eta, frame.wo);
+        Layered::DielectricFrame frame = LayerComposite::ResolveDielectricFrame(
+            probeMaterial,
+            -probeW,
+            probeEtaAbove,
+            probeEtaBelow);
+        float3 woLayer = BxDF::RotateXY(frame.wo, -GetAnisotropyRotation(probeMaterial));
+        LayerComposite::ModelMixture mixture =
+            LayerComposite::ResolveModelMixture(probeMaterial, woLayer, frame.etaTOverI);
 
-        bool hasRoughReflection = probeMaterial.isSmooth == 0u &&
-                                  mixture.pmf.y > 0.0;
-        bool hasRoughTransmission = probeMaterial.isSmooth == 0u &&
-                                    frame.eta != 1.0 &&
-                                    mixture.pmf.w > 0.0;
-        bool hasClearcoat = mixture.pmf.z > 0.0;
-        hasContinuousProposal = mixture.pmf.x > 0.0 ||
-                                hasRoughReflection ||
-                                hasRoughTransmission ||
-                                hasClearcoat;
+        bool isRoughSolidDielectric = probeMaterial.isSmooth == 0u && abs(frame.etaTOverI - 1.0) > EPSILON_MIN;
+        bool hasRoughConductor      = probeMaterial.isSmooth == 0u && mixture.conductorPMF > 0.0;
+        bool hasRoughDielectric     = isRoughSolidDielectric && mixture.dielectricPMF > 0.0;
+        hasContinuousProposal =
+            mixture.diffusePMF > 0.0 ||
+            mixture.sheenPMF > 0.0 ||
+            mixture.clearcoatPMF > 0.0 ||
+            hasRoughConductor ||
+            hasRoughDielectric;
         if (hasContinuousProposal)
             break;
 
-        bool hasDeltaTransmission = mixture.pmf.w > 0.0 &&
-                                    (probeMaterial.isSmooth != 0u || frame.eta == 1.0);
+        bool hasDeltaTransmission = mixture.dielectricPMF > 0.0 &&
+                                    max3(LayerComposite::ResolveDielectricTransmissionScale(probeMaterial)) > PT_LOBE_EPS &&
+                                    (probeMaterial.isSmooth != 0u || abs(frame.etaTOverI - 1.0) <= EPSILON_MIN);
         if (!hasDeltaTransmission)
             break;
 
-        float3 woLayer = BxDF::RotateXY(frame.wo, -GetAnisotropyRotation(probeMaterial));
         float3 wiLayer;
-        float etaP;
-        if (!BxDF::Transmission::Refract(
-                woLayer,
-                float3(0.0, 0.0, 1.0),
-                frame.eta,
-                wiLayer,
-                etaP))
-        {
+        float resolvedEtaTOverI;
+        if (!BxDF::Lobe::Transmission::Refract(woLayer, float3(0.0, 0.0, 1.0), frame.etaTOverI, wiLayer, resolvedEtaTOverI))
             break;
-        }
 
         float3 wiIncident = BxDF::RotateXY(wiLayer, GetAnisotropyRotation(probeMaterial));
         probeW = frame.bFlipped != 0u ? -wiIncident : wiIncident;
@@ -1547,23 +1818,40 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 
 
     // Atomic direction mass is not an ordinary sr^-1 density.
     if (!hasContinuousProposal)
+    {
+#if PT_VALIDATION
+        audit.state = PT_MARGINAL_STATE_NO_CONTINUOUS_PROPOSAL;
+#endif
         return 0.0;
+    }
+
+    SurfaceMaterial exitMaterial;
+    float exitEtaAbove;
+    float exitEtaBelow;
+    if (!LoadBoundaryData(
+            rootMaterial,
+            uv,
+            ddxUV,
+            ddyUV,
+            iorExterior,
+            exitBoundary,
+            offset,
+            exitMaterial,
+            exitEtaAbove,
+            exitEtaBelow))
+    {
+        return 0.0;
+    }
 
     float result = 0.0;
     if (entryBoundary == exitBoundary)
     {
-        SurfaceMaterial directMaterial;
-        float etaAbove;
-        float etaBelow;
-        if (!LoadBoundaryData(rootMaterial, uv, ddxUV, ddyUV, etaExterior, entryBoundary, offset, directMaterial, etaAbove, etaBelow))
-            return 0.0;
-
         result += LayerComposite::BoundaryMarginalPDF(
-            directMaterial,
+            exitMaterial,
             wo,
             wi,
-            etaAbove,
-            etaBelow);
+            exitEtaAbove,
+            exitEtaBelow);
     }
 
     RngState forwardRng = InitDirectionalQueryRng(
@@ -1620,7 +1908,7 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 
                         uv,
                         ddxUV,
                         ddyUV,
-                        etaExterior,
+                        iorExterior,
                         reverseBoundary,
                         offset,
                         reverseMaterial,
@@ -1682,6 +1970,9 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 
                 }
 
                 float3 reverseWo = -reverseW;
+#if PT_VALIDATION
+                ++audit.walker.reverseContinuousEvents;
+#endif
                 Layered::LayerEvent reverseEvent = LayerComposite::SampleLayerEvent(
                     reverseMaterial,
                     reverseWo,
@@ -1689,7 +1980,7 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 
                     reverseEtaBelow,
                     PT_TRANSPORT_IMPORTANCE,
                     reverseRng);
-                if (!Layered::IsLayerEventValid(reverseEvent) || reverseEvent.isDelta != 0u)
+                if (reverseEvent.valid == 0u || reverseEvent.isDelta != 0u)
                     break;
 
                 float reverseEventPDF = LayerComposite::BoundaryMarginalPDF(
@@ -1729,9 +2020,6 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 
                 }
                 reversePreviousPDF = reverseEventPDF;
 
-                bool crossedBoundary = reverseW.z * reverseEvent.wi.z > 0.0;
-                if (crossedBoundary != (reverseEvent.isTransmission != 0u))
-                    return 0.0;
 
                 reverseW = reverseEvent.wi;
                 if (!IsPathFinite3(reverseW) || abs(reverseW.z) <= EPSILON_MIN)
@@ -1780,7 +2068,7 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 
                         uv,
                         ddxUV,
                         ddyUV,
-                        etaExterior,
+                        iorExterior,
                         reverseBoundary,
                         offset,
                         reverseMaterial,
@@ -1831,6 +2119,9 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 
                 }
 
                 float3 reverseWo = -reverseW;
+#if PT_VALIDATION
+                ++audit.walker.reverseDeltaEvents;
+#endif
                 Layered::LayerEvent reverseEvent = LayerComposite::SampleLayerEvent(
                     reverseMaterial,
                     reverseWo,
@@ -1838,21 +2129,40 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 
                     reverseEtaBelow,
                     PT_TRANSPORT_IMPORTANCE,
                     deltaRng);
-                if (!Layered::IsLayerEventValid(reverseEvent) || reverseEvent.isDelta == 0u)
+                if (reverseEvent.valid == 0u || reverseEvent.isDelta == 0u)
                     break;
 
                 bHasReverseDelta = true;
 
-                bool crossedBoundary = reverseW.z * reverseEvent.wi.z > 0.0;
-                if (crossedBoundary != (reverseEvent.isTransmission != 0u))
-                    return 0.0;
+                float reverseDeltaPMF = LayerComposite::BoundaryMarginalDeltaPMF(
+                    reverseMaterial,
+                    reverseWo,
+                    reverseEvent.wi,
+                    reverseEtaAbove,
+                    reverseEtaBelow);
+                float forwardDeltaPMF = LayerComposite::BoundaryMarginalDeltaPMF(
+                    reverseMaterial,
+                    reverseEvent.wi,
+                    reverseWo,
+                    reverseEtaAbove,
+                    reverseEtaBelow);
+                if (!IsPathFinite(reverseDeltaPMF) ||
+                    !IsPathFinite(forwardDeltaPMF) ||
+                    reverseDeltaPMF <= 0.0 ||
+                    forwardDeltaPMF <= 0.0)
+                {
+                    break;
+                }
+                reverseLog2DensityScale +=
+                    log2(forwardDeltaPMF) - log2(reverseDeltaPMF);
+
 
                 if (reverseEvent.isTransmission != 0u)
                 {
                     // Current closures have symmetric delta masses. Refraction
                     // still changes the directional measure by this Jacobian.
                     float jacobian = BxDF::AbsCosTheta(reverseWo) /
-                        max(sq(reverseEvent.eta) * BxDF::AbsCosTheta(reverseEvent.wi), EPSILON_MIN);
+                        max(sq(reverseEvent.etaTOverI) * BxDF::AbsCosTheta(reverseEvent.wi), EPSILON_MIN);
                     if (!IsPathFinite(jacobian) || jacobian <= 0.0)
                         break;
                     reverseLog2DensityScale += log2(jacobian);
@@ -1885,7 +2195,7 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 
                 uv,
                 ddxUV,
                 ddyUV,
-                etaExterior,
+                iorExterior,
                 forwardBoundary,
                 offset,
                 forwardMaterial,
@@ -1896,6 +2206,9 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 
         }
 
         float3 forwardWo = -forwardW;
+#if PT_VALIDATION
+        ++audit.walker.forwardEvents;
+#endif
         Layered::LayerEvent forwardEvent = LayerComposite::SampleLayerEvent(
             forwardMaterial,
             forwardWo,
@@ -1903,7 +2216,7 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 
             forwardEtaBelow,
             PT_TRANSPORT_RADIANCE,
             forwardRng);
-        if (!Layered::IsLayerEventValid(forwardEvent))
+        if (forwardEvent.valid == 0u)
             break;
 
         if (bForwardMISCompatible)
@@ -1952,9 +2265,6 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 
             }
         }
 
-        bool crossedBoundary = forwardW.z * forwardEvent.wi.z > 0.0;
-        if (crossedBoundary != (forwardEvent.isTransmission != 0u))
-            return 0.0;
 
         forwardW = forwardEvent.wi;
         if (!IsPathFinite3(forwardW) || abs(forwardW.z) <= EPSILON_MIN)
@@ -1975,8 +2285,18 @@ float MarginalPDF(SurfaceMaterial rootMaterial, float2 uv, float2 ddxUV, float2 
     }
 
     if (!IsPathFinite(result) || result < 0.0)
+    {
+#if PT_VALIDATION
+        audit.state = PT_MARGINAL_STATE_NONFINITE;
+#endif
         return 0.0;
+    }
 
+#if PT_VALIDATION
+    audit.state = result > 0.0
+        ? PT_MARGINAL_STATE_NLAYER_POSITIVE
+        : PT_MARGINAL_STATE_NLAYER_ZERO_CANDIDATE;
+#endif
     return result;
 }
 } // namespace DirectionalComposite

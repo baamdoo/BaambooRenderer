@@ -22,6 +22,7 @@ cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
 };
 
 RaytracingAccelerationStructure g_Scene : register(t0, space1);
+StructuredBuffer< PrimaryRayMediumStackSeedData > g_PrimaryRayMediumSeed : register(t1, space1);
 
 ConstantBuffer< DescriptorHeapIndex > g_Accumulation : register(b1,  ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_Radiance     : register(b2,  ROOT_CONSTANT_SPACE);
@@ -45,11 +46,14 @@ ConstantBuffer< DescriptorHeapIndex > g_PrimaryId             : register(b17, RO
 ConstantBuffer< DescriptorHeapIndex > g_EnvironmentMap          : register(b18, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_EnvironmentDistribution : register(b19, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_MaterialSlabs           : register(b20, ROOT_CONSTANT_SPACE);
+#if PT_VALIDATION
+ConstantBuffer< DescriptorHeapIndex > g_PathValidationStats     : register(b21, ROOT_CONSTANT_SPACE);
+#endif
 
 #include "PathSurface.hlsli"
 #include "PathComposite.hlsli"
-#include "PathSampling.hlsli"
 #include "PathValidation.hlsli"
+#include "PathSampling.hlsli"
 
 void OrientOpaqueSurfaceNormalForPath(inout SurfaceData hp, inout SurfaceMaterial material, float3 woWS)
 {
@@ -66,6 +70,7 @@ void OrientOpaqueSurfaceNormalForPath(inout SurfaceData hp, inout SurfaceMateria
 
 float3 TracePath(RayDesc primaryRay, inout RngState rng
 #if PT_VALIDATION
+    , uint recordValidationStats
     , out SurfaceData primaryHit
     , out PathContribution contribution
     , out PathBSDFSample primaryBSDFSample
@@ -73,7 +78,7 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
 )
 {
     RayDesc ray = primaryRay;
-    StructuredBuffer< InstanceData > Instances = GetResource(g_Instances.index);
+
 
     float3 L    = float3(0.0, 0.0, 0.0); // radiance carried back along this path
     float3 beta = float3(1.0, 1.0, 1.0); // β — path throughput: running product of f·cosθ/pdf
@@ -84,6 +89,12 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
     contribution      = ZeroPathContribution();
     primaryBSDFSample = (PathBSDFSample)0;
 #endif
+
+    MediumStack mediumStack;
+    if (!mediumStack.TryInitialize(g_PrimaryRayMediumSeed[0]))
+        return L;
+
+    StructuredBuffer< InstanceData > Instances = GetResource(g_Instances.index);
 
     uint2 dimensions = DispatchRaysDimensions().xy;
     float tanHalfU = rcp(max(abs(g_Camera.mProj[0][0]) * float(dimensions.x), EPSILON_MIN));
@@ -113,7 +124,7 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
         for (;;)
         {
             SurfacePayload sp = (SurfacePayload)0;
-            TraceRay(g_Scene, RAY_FLAG_FORCE_NON_OPAQUE, 0xFF, 0, 0, 0, ray, sp);
+            TraceRay(g_Scene, RAY_FLAG_NONE, 0xFF, 0, 0, 0, ray, sp);
 
             if (sp.hitKind == 0u)
             {
@@ -166,7 +177,7 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
 
         const float3 surfacePosition = ray.Origin + ray.Direction * hp.dist;
         // ── Case A: the random walk hit an emitter ─────────────────────
-        if (any(sm.emission > 0.0))
+        if (any(sm.emission > 0.0) && dot(hp.geometricNormal, -ray.Direction) > 0.0)
         {
             float3 emittedContribution = beta * sm.emission;
             if (depth == 0u)
@@ -194,7 +205,51 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
         BxDF::Frame frame = MakeSurfaceFrame(hp);
         float3 woWS = -ray.Direction;
 
-        const float etaExterior = 1.0; // replace with path medium state when it exists
+        const float NgoWo = dot(hp.geometricNormal, woWS);
+        if (!IsPathFinite(NgoWo) || abs(NgoWo) <= EPSILON_MIN)
+            break;
+
+        const bool shouldPreservesPathMedium = IsThinWalled(sm) || IsRelativeIORInterface(sm);
+        bool canChangePathMedium = false;
+
+        BoundaryMediumPair boundaryPair;
+        if (shouldPreservesPathMedium)
+        {
+            boundaryPair.mediumI    = mediumStack.Current().medium;
+            boundaryPair.mediumT    = boundaryPair.mediumI;
+            boundaryPair.isEntering = NgoWo > 0.0 ? 1u : 0u;
+        }
+        else
+        {
+            Medium toMedium;
+            if (!BxDF::LayerComposite::TryResolveTerminalMedium(
+                    sm,
+                    materialID,
+                    hp.uv,
+                    hp.ddxUV,
+                    hp.ddyUV,
+                    toMedium,
+                    canChangePathMedium))
+            {
+                break;
+            }
+
+            if (!canChangePathMedium)
+            {
+                boundaryPair.mediumI    = mediumStack.Current().medium;
+                boundaryPair.mediumT    = boundaryPair.mediumI;
+                boundaryPair.isEntering = 1u;
+            }
+            else if (!mediumStack.TryResolveBoundaryMediums(
+                         hp.instanceID,
+                         toMedium,
+                         NgoWo,
+                         boundaryPair))
+            {
+                break;
+            }
+        }
+
         // Fixed-endpoint queries must not consume or depend on the transport RNG counter.
         uint directionalQuerySeed = PCGHash(rng.seed ^ PCGHash(depth + 0x9E3779B9u) ^ PCGHash(materialID + 0x85EBCA6Bu));
 #if PT_VALIDATION
@@ -208,10 +263,11 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
             hp.uv,
             hp.ddxUV,
             hp.ddyUV,
-            etaExterior,
+            boundaryPair,
             directionalQuerySeed,
             (depth + 1u) < maxDepth,
             rng,
+            recordValidationStats,
             directContribution);
 
         PathContribution environmentDirectContribution;
@@ -224,10 +280,11 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
             hp.uv,
             hp.ddxUV,
             hp.ddyUV,
-            etaExterior,
+            boundaryPair,
             directionalQuerySeed,
             (depth + 1u) < maxDepth,
             rng,
+            recordValidationStats,
             environmentDirectContribution);
 #else
         float3 directLighting = EstimateDirectLighting(
@@ -239,7 +296,7 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
             hp.uv,
             hp.ddxUV,
             hp.ddyUV,
-            etaExterior,
+            boundaryPair,
             directionalQuerySeed,
             (depth + 1u) < maxDepth,
             rng);
@@ -252,7 +309,7 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
             hp.uv,
             hp.ddxUV,
             hp.ddyUV,
-            etaExterior,
+            boundaryPair,
             directionalQuerySeed,
             (depth + 1u) < maxDepth,
             rng);
@@ -269,6 +326,9 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
         RayCone sampledCone = rayCone;
 
         float3 wo = BxDF::ToLocal(frame, woWS);
+#if PT_VALIDATION
+        BxDF::LayerWalkerAudit sampleAudit;
+#endif
         // History-space continuation query: weight is already C_H / q_H.
         PathBSDFSample s = BxDF::LayerComposite::SampleRay(
             sm,
@@ -276,15 +336,26 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
             hp.ddxUV,
             hp.ddyUV,
             wo,
-            etaExterior,
+            boundaryPair,
             3u,  // internal layer-event depth, independent of outer path depth
             isPrimary ? 0.25 : 1.0,
             sampledCone,
-            rng);
+            rng
+#if PT_VALIDATION
+            , sampleAudit
+#endif
+        );
+#if PT_VALIDATION
+        if (recordValidationStats != 0u)
+            RecordValidationWalkerAudit(PT_VALIDATION_WALKER_SAMPLE, sm.layerCount, sampleAudit);
+#endif
 
         float marginalPDF = 0.0;
         if (s.valid != 0u && s.isDelta == 0u)
         {
+#if PT_VALIDATION
+            BxDF::MarginalPDFAudit marginalAudit;
+#endif
             // Direction-space query used only by outer MIS
             marginalPDF = BxDF::DirectionalComposite::MarginalPDF(
                 sm,
@@ -293,8 +364,33 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
                 hp.ddyUV,
                 wo,
                 s.wi,
-                etaExterior,
-                directionalQuerySeed);
+                boundaryPair,
+                directionalQuerySeed
+#if PT_VALIDATION
+                , marginalAudit
+#endif
+            );
+#if PT_VALIDATION
+            if (recordValidationStats != 0u)
+            {
+                uint retryClassification = DiagnoseValidationMarginalPDFZero(
+                    sm,
+                    hp.uv,
+                    hp.ddxUV,
+                    hp.ddyUV,
+                    wo,
+                    s.wi,
+                    boundaryPair,
+                    directionalQuerySeed,
+                    marginalAudit);
+                RecordValidationMarginalPDF(
+                    PT_VALIDATION_QUERY_CONTINUATION,
+                    sm.layerCount,
+                    marginalPDF,
+                    marginalAudit,
+                    retryClassification);
+            }
+#endif
         }
 #if PT_VALIDATION
         if (depth == 0u)
@@ -306,18 +402,53 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
         if (!IsPathFinite3(s.wi) || !IsPathFinite3(s.weight) || !IsPathFinite(marginalPDF))
             break;
 
-        if (s.isDelta == 0u && marginalPDF <= 0.0)
+        float3 wiWSUnnormalized = BxDF::ToWorld(frame, s.wi);
+        float  wiLength2        = dot(wiWSUnnormalized, wiWSUnnormalized);
+        if (!IsPathFinite3(wiWSUnnormalized) || !IsPathFinite(wiLength2) || wiLength2 <= EPSILON_MIN)
+        {
             break;
+        }
+        float3 wiWS = wiWSUnnormalized * rsqrt(wiLength2);
+
+        const float NgoWi = dot(hp.geometricNormal, wiWS);
+        if (!IsPathFinite(NgoWi) || abs(NgoWi) <= EPSILON_MIN)
+            break;
+
+        float3 nextBeta       = beta * s.weight;
+        float  nextRrEtaScale = rrEtaScale * s.rrEtaScale;
+        if (!IsPathFinite3(nextBeta) || !IsPathFinite(nextRrEtaScale))
+            break;
+
+        // ===== medium stack update ===============================
+        const bool crossedSurface        = (NgoWo > 0.0) != (NgoWi > 0.0);
+        const bool crossedSampledSurface = (wo.z > 0.0) != (s.wi.z > 0.0);
+        if (crossedSampledSurface != crossedSurface)
+            break;
+
+        const bool changesPathMedium = crossedSurface && canChangePathMedium;
+        if (changesPathMedium)
+        {
+            bool committed;
+            if (boundaryPair.isEntering != 0u)
+            {
+                MediumEntry entry;
+                entry.boundaryInstanceID = hp.instanceID;
+                entry.medium             = boundaryPair.mediumT;
+
+                committed = mediumStack.TryPush(entry);
+            }
+            else
+            {
+                committed = mediumStack.TryPop(hp.instanceID);
+            }
+
+            if (!committed)
+                break;
+        }
 
         // ===== β update ===============================
-        beta *= s.weight;
-        if (!IsPathFinite3(beta))
-            break;
-        rrEtaScale *= s.rrEtaScale;
-
-        prevBSDFFlags   = s.flags;
-        prevMarginalPDF = marginalPDF;
-        wasDelta        = s.isDelta;
+        beta       = nextBeta;
+        rrEtaScale = nextRrEtaScale;
 
         // ===== Russian Roulette ========================================
         const float rrThreshold = 0.05;
@@ -331,9 +462,9 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
             beta /= qSurvive;
         }
 
-        float3 wiWS = normalize(BxDF::ToWorld(frame, s.wi));
-        if (!IsPathFinite3(wiWS))
-            break;
+        prevBSDFFlags   = s.flags;
+        prevMarginalPDF = marginalPDF;
+        wasDelta        = s.isDelta;
 
         rayCone = sampledCone;
 
@@ -405,7 +536,7 @@ void RayGen()
         PathContribution pathContribution;
         PathBSDFSample primaryBSDFSample = (PathBSDFSample)0;
 
-        float3 sampleRadiance = TracePath(ray, rng, primaryHit, pathContribution, primaryBSDFSample);
+        float3 sampleRadiance = TracePath(ray, rng, 1u, primaryHit, pathContribution, primaryBSDFSample);
         if (IsPathFinite3(sampleRadiance))
             Lsum += sampleRadiance;
 
@@ -437,7 +568,7 @@ void RayGen()
         PathBSDFSample primaryValidationBSDFSample = (PathBSDFSample)0;
         RngState validationRng = InitRng(rayIndex, 0u, 0u);
         validationRng.seed = PCGHash(validationRng.seed ^ 0xD1B54A35u);
-        TracePath(primaryValidationRay, validationRng, primaryValidationHit, unusedPrimaryContribution, primaryValidationBSDFSample);
+        TracePath(primaryValidationRay, validationRng, 0u, primaryValidationHit, unusedPrimaryContribution, primaryValidationBSDFSample);
 
         if (primaryValidationHit.hitKind == 0u)
             AccumulatePrimaryMissValidation(primaryValidation);

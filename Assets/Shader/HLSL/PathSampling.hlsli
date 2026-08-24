@@ -394,11 +394,12 @@ float3 EstimateDirectLighting(
     float2 materialUV,
     float2 ddxUV,
     float2 ddyUV,
-    float etaExterior,
+    BoundaryMediumPair boundaryPair,
     uint directionalQuerySeed,
     bool bUseMIS,
     inout RngState rng
 #if PT_VALIDATION
+    , uint recordValidationStats
     , out PathContribution contribution
 #endif
 )
@@ -435,12 +436,26 @@ float3 EstimateDirectLighting(
         return direct;
 
     uint alphaSeed = NextUint(rng);
+    Medium shadowStartMedium;
+    if (!BxDF::DirectionalComposite::TryResolveShadowStartMedium(
+            visibilityNormal,
+            woWS,
+            ls.wiWS,
+            wo,
+            wi,
+            boundaryPair,
+            shadowStartMedium))
+        return direct;
+
     bool bVisible = (ls.isDirectional != 0u)
-        ? IsDirectionVisible(p, visibilityNormal, ls.wiWS, alphaSeed)
-        : IsVisible(p, visibilityNormal, ls.shadowTarget, alphaSeed);
+        ? IsDirectionVisible(p, visibilityNormal, ls.wiWS, shadowStartMedium, alphaSeed)
+        : IsVisible(p, visibilityNormal, ls.shadowTarget, shadowStartMedium, alphaSeed);
     if (!bVisible)
         return direct;
 
+#if PT_VALIDATION
+    BxDF::LayerWalkerAudit evaluateAudit;
+#endif
     float3 f = BxDF::DirectionalComposite::Evaluate(
         material,
         materialUV,
@@ -448,22 +463,33 @@ float3 EstimateDirectLighting(
         ddyUV,
         wo,
         wi,
-        etaExterior,
-        directionalQuerySeed);
+        boundaryPair,
+        directionalQuerySeed
+#if PT_VALIDATION
+        , evaluateAudit
+#endif
+    );
+#if PT_VALIDATION
+    if (recordValidationStats != 0u)
+        RecordValidationWalkerAudit(PT_VALIDATION_WALKER_EVALUATE, material.layerCount, evaluateAudit);
+#endif
     if (!any(f > 0.0))
         return direct;
 #if PT_VALIDATION
+    float iorExterior = boundaryPair.isEntering != 0u ? boundaryPair.mediumI.ior : boundaryPair.mediumT.ior;
+
     PathContribution bsdfLobes = ZeroPathContribution();
     if (material.layerCount <= 1u)
     {
+        float incidentFrameSign = BxDF::LayerComposite::GetIncidentFrameSign(wo, boundaryPair.isEntering);
         bsdfLobes = BxDF::LayerComposite::EvaluateBoundaryLobes(
             material,
-            wo,
-            wi,
-            etaExterior,
+            incidentFrameSign * wo,
+            incidentFrameSign * wi,
+            iorExterior,
             material.ior);
     }
-    // TODO: classify generic N-layer DirectionalComposite histories.
+    // N-layer contribution provenance is intentionally not inferred from a terminal history event.
 #endif
 
     float3 lightScale;
@@ -477,6 +503,9 @@ float3 EstimateDirectLighting(
         float misWeight = 1.0;
         if (bUseMIS)
         {
+#if PT_VALIDATION
+            BxDF::MarginalPDFAudit marginalAudit;
+#endif
             float materialMarginalPDF = BxDF::DirectionalComposite::MarginalPDF(
                 material,
                 materialUV,
@@ -484,8 +513,33 @@ float3 EstimateDirectLighting(
                 ddyUV,
                 wo,
                 wi,
-                etaExterior,
-                directionalQuerySeed);
+                boundaryPair,
+                directionalQuerySeed
+#if PT_VALIDATION
+                , marginalAudit
+#endif
+            );
+#if PT_VALIDATION
+            if (recordValidationStats != 0u)
+            {
+                uint retryClassification = DiagnoseValidationMarginalPDFZero(
+                    material,
+                    materialUV,
+                    ddxUV,
+                    ddyUV,
+                    wo,
+                    wi,
+                    boundaryPair,
+                    directionalQuerySeed,
+                    marginalAudit);
+                RecordValidationMarginalPDF(
+                    PT_VALIDATION_QUERY_FINITE_NEE,
+                    material.layerCount,
+                    materialMarginalPDF,
+                    marginalAudit,
+                    retryClassification);
+            }
+#endif
             misWeight = PowerHeuristic(ls.pdfW, materialMarginalPDF);
         }
         lightScale = misWeight * ls.Le * cosSurface / ls.pdfW;
@@ -508,11 +562,12 @@ float3 EstimateEnvironmentDirectLighting(
     float2 materialUV,
     float2 ddxUV,
     float2 ddyUV,
-    float etaExterior,
+    BoundaryMediumPair boundaryPair,
     uint directionalQuerySeed,
     bool bUseMIS,
     inout RngState rng
 #if PT_VALIDATION
+    , uint recordValidationStats
     , out PathContribution contribution
 #endif
 )
@@ -543,9 +598,23 @@ float3 EstimateEnvironmentDirectLighting(
         return float3(0.0, 0.0, 0.0);
 
     uint alphaSeed = NextUint(rng);
-    if (!IsDirectionVisible(p, visibilityNormal, wiWS, alphaSeed))
+    Medium shadowStartMedium;
+    if (!BxDF::DirectionalComposite::TryResolveShadowStartMedium(
+            visibilityNormal,
+            woWS,
+            wiWS,
+            wo,
+            wi,
+            boundaryPair,
+            shadowStartMedium))
         return float3(0.0, 0.0, 0.0);
 
+    if (!IsDirectionVisible(p, visibilityNormal, wiWS, shadowStartMedium, alphaSeed))
+        return float3(0.0, 0.0, 0.0);
+
+#if PT_VALIDATION
+    BxDF::LayerWalkerAudit evaluateAudit;
+#endif
     float3 f = BxDF::DirectionalComposite::Evaluate(
         material,
         materialUV,
@@ -553,27 +622,41 @@ float3 EstimateEnvironmentDirectLighting(
         ddyUV,
         wo,
         wi,
-        etaExterior,
-        directionalQuerySeed);
+        boundaryPair,
+        directionalQuerySeed
+#if PT_VALIDATION
+        , evaluateAudit
+#endif
+    );
+#if PT_VALIDATION
+    if (recordValidationStats != 0u)
+        RecordValidationWalkerAudit(PT_VALIDATION_WALKER_EVALUATE, material.layerCount, evaluateAudit);
+#endif
     if (!any(f > 0.0))
         return float3(0.0, 0.0, 0.0);
 #if PT_VALIDATION
+    float iorExterior = boundaryPair.isEntering != 0u ? boundaryPair.mediumI.ior : boundaryPair.mediumT.ior;
+
     PathContribution bsdfLobes = ZeroPathContribution();
     if (material.layerCount <= 1u)
     {
+        float incidentFrameSign = BxDF::LayerComposite::GetIncidentFrameSign(wo, boundaryPair.isEntering);
         bsdfLobes = BxDF::LayerComposite::EvaluateBoundaryLobes(
             material,
-            wo,
-            wi,
-            etaExterior,
+            incidentFrameSign * wo,
+            incidentFrameSign * wi,
+            iorExterior,
             material.ior);
     }
-    // TODO: classify generic N-layer DirectionalComposite histories.
+    // N-layer contribution provenance is intentionally not inferred from a terminal history event.
 #endif
 
     float misWeight = 1.0;
     if (bUseMIS)
     {
+#if PT_VALIDATION
+        BxDF::MarginalPDFAudit marginalAudit;
+#endif
         float materialMarginalPDF = BxDF::DirectionalComposite::MarginalPDF(
             material,
             materialUV,
@@ -581,8 +664,33 @@ float3 EstimateEnvironmentDirectLighting(
             ddyUV,
             wo,
             wi,
-            etaExterior,
-            directionalQuerySeed);
+            boundaryPair,
+            directionalQuerySeed
+#if PT_VALIDATION
+            , marginalAudit
+#endif
+        );
+#if PT_VALIDATION
+        if (recordValidationStats != 0u)
+        {
+            uint retryClassification = DiagnoseValidationMarginalPDFZero(
+                material,
+                materialUV,
+                ddxUV,
+                ddyUV,
+                wo,
+                wi,
+                boundaryPair,
+                directionalQuerySeed,
+                marginalAudit);
+            RecordValidationMarginalPDF(
+                PT_VALIDATION_QUERY_ENVIRONMENT_NEE,
+                material.layerCount,
+                materialMarginalPDF,
+                marginalAudit,
+                retryClassification);
+        }
+#endif
         misWeight = PowerHeuristic(pdfLightW, materialMarginalPDF);
     }
     float3 lightScale = misWeight * Le * cosSurface / pdfLightW;

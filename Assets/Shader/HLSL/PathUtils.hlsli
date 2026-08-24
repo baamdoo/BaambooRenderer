@@ -47,6 +47,154 @@ struct SurfaceData
     float2 ddyUV;
 };
 
+bool IsPathFinite(float v)
+{
+    return (v == v) && abs(v) < 3.402823e+38;
+}
+
+struct Medium
+{
+    uint mediumID;
+    float ior; // absolute
+};
+
+struct BoundaryMediumPair
+{
+    Medium mediumI;
+    Medium mediumT;
+
+    uint isEntering;
+};
+
+struct MediumEntry
+{
+    uint boundaryInstanceID;
+
+    Medium medium;
+};
+
+static const uint MAX_MEDIUM_STACK_CAPACITY = PRIMARY_RAY_MEDIUM_STACK_CAPACITY;
+struct MediumStack
+{
+    uint count;
+    MediumEntry entries[MAX_MEDIUM_STACK_CAPACITY];
+
+    void Initialize(Medium sceneExteriorMedium)
+    {
+        count = 1u;
+        entries[0].boundaryInstanceID = INVALID_INDEX;
+        entries[0].medium = sceneExteriorMedium;
+    }
+
+    bool TryInitialize(PrimaryRayMediumStackSeedData seed)
+    {
+        count = 0u;
+        if (seed.status != PRIMARY_RAY_MEDIUM_SEED_STATUS_VALID ||
+            seed.count < 1u ||
+            seed.count > MAX_MEDIUM_STACK_CAPACITY)
+        {
+            return false;
+        }
+
+        [unroll]
+        for (uint i = 0u; i < MAX_MEDIUM_STACK_CAPACITY; ++i)
+        {
+            if (i >= seed.count)
+                break;
+
+            PrimaryRayMediumSeedEntryData entry = seed.entries[i];
+            if (!IsPathFinite(entry.ior) || entry.ior <= 0.0)
+                return false;
+
+            if (i == 0u)
+            {
+                if (entry.boundaryInstanceID != INVALID_INDEX)
+                    return false;
+            }
+            else if (entry.boundaryInstanceID == INVALID_INDEX ||
+                     entry.mediumID == INVALID_INDEX)
+            {
+                return false;
+            }
+        }
+
+        [unroll]
+        for (uint i = 0u; i < MAX_MEDIUM_STACK_CAPACITY; ++i)
+        {
+            if (i >= seed.count)
+                break;
+
+            entries[i].boundaryInstanceID = seed.entries[i].boundaryInstanceID;
+            entries[i].medium.mediumID     = seed.entries[i].mediumID;
+            entries[i].medium.ior          = seed.entries[i].ior;
+        }
+
+        count = seed.count;
+        return true;
+    }
+
+    MediumEntry Current()
+    {
+        return entries[count - 1u];
+    }
+
+    bool TryPush(MediumEntry entry)
+    {
+        if (count < 1u ||
+            count >= MAX_MEDIUM_STACK_CAPACITY ||
+            entry.boundaryInstanceID == INVALID_INDEX ||
+            !IsPathFinite(entry.medium.ior) ||
+            entry.medium.ior <= 0.0)
+        {
+            return false;
+        }
+
+        entries[count] = entry;
+        count++;
+        return true;
+    }
+
+    bool TryPop(uint parityID)
+    {
+        if (count <= 1u)
+            return false;
+
+        const uint topIndex = count - 1u;
+        if (entries[topIndex].boundaryInstanceID != parityID)
+            return false;
+
+        count = topIndex;
+        return true;
+    }
+
+    bool TryResolveBoundaryMediums(uint parityID, Medium toMedium, float NoW, out BoundaryMediumPair pair)
+    {
+        pair = (BoundaryMediumPair)0;
+        if (count < 1 || parityID == INVALID_INDEX)
+            return false;
+
+        pair.mediumI = Current().medium;
+        if (NoW > EPSILON_MIN)
+        {
+            pair.isEntering = 1;
+
+            pair.mediumT = toMedium;
+        }
+        else if (NoW < -EPSILON_MIN)
+        {
+            pair.isEntering = 0;
+            if (count < 2 || Current().boundaryInstanceID != parityID)
+                return false;
+
+            pair.mediumT = entries[count - 2].medium;
+        }
+        else
+            return false;
+
+        return true;
+    }
+};
+
 struct ShadowPayload
 {
     uint visible;
@@ -84,21 +232,10 @@ struct PathBSDFSample
 
 struct RayCone
 {
-    // Signed half-width. Refraction can place the cone focus ahead of the
-    // current origin, producing a negative radius until that focus is crossed.
-    // Use abs(radius) only when resolving a texture footprint.
     float radius;
-
-    // Tangent of half the signed full-spread angle. Distance propagation keeps
-    // the orientation through: radius += distance * tanHalfAngle.
     float tanHalfAngle;
 };
 
-
-bool IsPathFinite(float v)
-{
-    return (v == v) && abs(v) < 3.402823e+38;
-}
 
 bool IsPathFinite3(float3 v)
 {
@@ -404,7 +541,7 @@ float3 OffsetRay(float3 p, float3 n, float3 w)
 }
 
 // Shadow ray visibility: returns true when no occluder lies between p and target
-bool IsVisible(float3 p, float3 n, float3 target, uint alphaSeed)
+bool IsVisible(float3 p, float3 n, float3 target, Medium shadowStartMedium, uint alphaSeed)
 {
     float3 toTarget = target - p;
     float3 wi       = normalize(toTarget);
@@ -426,7 +563,7 @@ bool IsVisible(float3 p, float3 n, float3 target, uint alphaSeed)
     sp.alphaSeed = alphaSeed;
     TraceRay(
         g_Scene,
-        RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_FORCE_NON_OPAQUE,
+        RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
         0xFF,
         1,
         0,
@@ -437,7 +574,7 @@ bool IsVisible(float3 p, float3 n, float3 target, uint alphaSeed)
     return sp.visible != 0u;
 }
 
-bool IsDirectionVisible(float3 p, float3 n, float3 wi, uint alphaSeed)
+bool IsDirectionVisible(float3 p, float3 n, float3 wi, Medium shadowStartMedium, uint alphaSeed)
 {
     wi = normalize(wi);
     float3 origin = OffsetRay(p, n, wi);
@@ -453,7 +590,7 @@ bool IsDirectionVisible(float3 p, float3 n, float3 wi, uint alphaSeed)
     sp.alphaSeed = alphaSeed;
     TraceRay(
         g_Scene,
-        RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_FORCE_NON_OPAQUE,
+        RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
         0xFF,
         1,
         0,

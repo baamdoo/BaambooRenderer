@@ -937,7 +937,18 @@ void Dx12CommandContext::Impl::SetComputeConstantBufferView(const std::string& n
 
 void Dx12CommandContext::Impl::SetComputeShaderResourceView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle)
 {
-	auto [_, rootIndex] = m_pComputePipeline->GetResourceBindingIndex(name);
+	u32 rootIndex = kInvalidIndex;
+	if (IsRaytracingContext())
+	{
+		auto [_, idx] = m_pRaytracingPipeline->GetResourceBindingIndex(name);
+		rootIndex = idx;
+	}
+	else if (IsComputeContext())
+	{
+		auto [_, idx] = m_pComputePipeline->GetResourceBindingIndex(name);
+		rootIndex = idx;
+	}
+
 	if (rootIndex == kInvalidIndex)
 	{
 		return;
@@ -1507,7 +1518,7 @@ void Dx12CommandContext::SetComputeShaderResource(const std::string& name, Arc< 
 	assert(rhiBuffer);
 
 	const auto& state = rhiBuffer->GetCurrentState();
-	bool bIsUAV = state.GetSubresourceState() == BarrierStates::BufferUnorderedAccess;
+	bool bIsUAV = state.GetSubresourceState().Access & D3D12_BARRIER_ACCESS_UNORDERED_ACCESS;
 
 	if (bIsUAV)
 		m_Impl->SetComputeUnorderedAccessView(name, rhiBuffer->GpuAddress());

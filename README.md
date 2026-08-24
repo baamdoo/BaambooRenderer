@@ -1,6 +1,6 @@
 # BaambooRenderer
 
-A real-time rendering engine written from scratch in **C++23**, with a **Direct3D 12** backend (Shader Model 6.6, fully bindless) and an **Vulkan 1.4** backend behind a single abstract rendering interface.
+A real-time rendering engine written from scratch in **C++23**, with a **Direct3D 12** backend (Shader Model 6.6, fully bindless) and an **Vulkan** backend behind a single abstract rendering interface.
 
 The end goal, and the motivation behind this project: learning how **high-quality AAA open-world rendering** is built for high-end PCs — using this engine as a long-term **sandbox for researching and implementing state-of-the-art graphics techniques**.
 
@@ -42,13 +42,13 @@ A 256³ voxel chunk is built entirely on GPU — **SDF density field → marchin
 - Compute dicing: distance-based per-meshlet subdivision budgets with per-edge levels and neighbor snapping — T-junction-free by construction
 - Erosion detail baked into a 2048² detail/ridge map (Runevision-style directional erosion filter), applied as displacement plus an analytic micro-noise layer
 
-<details><summary>🚧 <b>In progress — multi-chunk streaming</b></summary>
+<details><summary>🚧 <b>In progress — Transvoxel</b></summary>
 
-The single-chunk pipeline (GPU generation, erosion, compute dicing) is complete; extending to multi-chunk residency and streaming on top of the existing slab-pool infrastructure.
+The multi-chunk pipeline (GPU generation, erosion, compute dicing, streaming) is complete; resolving cracks between different LOD chunks by Transvoxel.
 </details>
 
-<img src="Media/single_chunk_voxel_terrain.png" width="100%" alt="GPU-generated voxel terrain chunk with baked erosion detail">
-<p align="center"><i>Single 256³ voxel chunk — GPU-generated geometry with erosion detail from compute dicing</i></p>
+<img src="Media/voxelterrain_multichunk_lod.png" width="100%" alt="GPU-generated voxel terrain chunk with baked erosion detail">
+<p align="center"><i>Multi-chunk voxel streamin — GPU-generated geometry with erosion detail from compute dicing</i></p>
 
 ### Clustered Lighting & Area Lights
 
@@ -90,11 +90,14 @@ Iterative progressive path tracer (**NEE + power-heuristic MIS**, Russian roulet
 - Validate by dumping AOVs to EXR (headless CLI) compared against PBRT-v4 / Mitsuba 3 renders of identical generated scenes
 - Cached BLAS / on-demand TLAS management; progressive accumulation with automatic invalidation on camera or scene changes
 
-<img src="Media/PT_white_room.png" width="100%" alt="White room — engine render vs Mitsuba 3 and PBRT-v4 references with absolute-difference maps">
-<p align="center"><i>The White Room — engine radiance vs Mitsuba 3 / PBRT-v4 references with absolute-difference maps</i></p>
+<img src="Media/PT_water_glass.png" width="100%" alt="White room — engine render vs PBRT-v4 references with absolute-difference maps">
+<p align="center"><i>The Water Glass — engine radiance vs PBRT-v4 references with absolute-difference maps</i></p>
 
 <img src="Media/PT_complex_scene.png" width="100%" alt="Material test box — engine render vs Mitsuba 3 and PBRT-v4 references with absolute-difference maps">
 <p align="center"><i>Material test box (conductor · rough dielectric · principled) — engine vs Mitsuba 3 / PBRT-v4</i></p>
+
+<img src="Media/PT_killeroo.png" width="100%" alt="Material test box — engine render vs guo references with absolute-difference maps">
+<p align="center"><i>4-layered material killeroo — engine vs Mitsuba 3 / PBRT-v4</i></p>
 
 ### Post-Processing
 

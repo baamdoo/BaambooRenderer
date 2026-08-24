@@ -11,11 +11,13 @@ namespace baamboo
 
 enum eMaterialFlags : u32
 {
-	eMaterialFlag_None        = 0,
-	eMaterialFlag_FaceNormals = 1 << 0,
-	eMaterialFlag_AlphaMask   = 1 << 1,
-	eMaterialFlag_AlphaBlend  = 1 << 2,
-	eMaterialFlag_DoubleSided = 1 << 3,
+	eMaterialFlag_None                 = 0,
+	eMaterialFlag_FaceNormals          = 1 << 0,
+	eMaterialFlag_AlphaMask            = 1 << 1,
+	eMaterialFlag_AlphaBlend           = 1 << 2,
+	eMaterialFlag_DoubleSided          = 1 << 3,
+	eMaterialFlag_ThinWalled           = 1 << 4,
+	eMaterialFlag_RelativeIORInterface = 1 << 5,
 };
 
 enum eMaterialType : u32

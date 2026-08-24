@@ -349,6 +349,12 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
                 aiMat->Get(AI_MATKEY_COLOR_SPECULAR, color) == AI_SUCCESS;
             if (bHasExplicitSpecularColor)
                 material.specularColor = float3(color.r, color.g, color.b);
+
+            float specularFactor = 1.0f;
+            const bool bHasGltfSpecularExtension =
+                aiMat->Get(AI_MATKEY_SPECULAR_FACTOR, specularFactor) == AI_SUCCESS;
+            if (bHasGltfSpecularExtension)
+                material.specularStrength = std::clamp(specularFactor, 0.0f, 1.0f);
             if (aiMat->Get(AI_MATKEY_SHEEN_COLOR_FACTOR, color) == AI_SUCCESS)
                 material.sheenColor = float3(color.r, color.g, color.b);
             if (aiMat->Get(AI_MATKEY_COLOR_EMISSIVE, color) == AI_SUCCESS)
@@ -384,12 +390,23 @@ void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, ModelNode* cur
             if (aiMat->Get(AI_MATKEY_REFRACTI, ior) == AI_SUCCESS)
                 material.ior = ior;
 
-            if (bPrincipled && !bHasExplicitSpecularColor)
+            if (bPrincipled)
             {
                 const float eta = std::max(material.ior, 1.0e-4f);
                 float f0 = (eta - 1.0f) / (eta + 1.0f);
                 f0 *= f0;
-                material.specularColor = float3(f0);
+
+                if (bHasGltfSpecularExtension)
+                {
+                    const float3 colorFactor = bHasExplicitSpecularColor
+                        ? glm::clamp(material.specularColor, float3(0.0f), float3(1.0f))
+                        : float3(1.0f);
+                    material.specularColor = f0 * colorFactor;
+                }
+                else if (!bHasExplicitSpecularColor)
+                {
+                    material.specularColor = float3(f0);
+                }
             }
 
             float anisotropy = 0.0f;

@@ -8,6 +8,8 @@
 #define MATERIAL_FLAG_ALPHA_MASK   (1u << 1u)
 #define MATERIAL_FLAG_ALPHA_BLEND  (1u << 2u)
 #define MATERIAL_FLAG_DOUBLE_SIDED (1u << 3u)
+#define MATERIAL_FLAG_THIN_WALLED  (1u << 4u)
+#define MATERIAL_FLAG_RELATIVE_IOR_INTERFACE (1u << 5u)
 
 #define MATERIAL_TEXTURE_SEMANTIC_BASE_COLOR           0u
 #define MATERIAL_TEXTURE_SEMANTIC_OPACITY              1u
@@ -29,6 +31,15 @@
 #define MATERIAL_TEXTURE_CHANNEL_A    3u
 #define MATERIAL_TEXTURE_CHANNEL_RGB  4u
 #define MATERIAL_TEXTURE_CHANNEL_RGBA 5u
+
+#define PRIMARY_RAY_MEDIUM_STACK_CAPACITY 8u
+
+#define PRIMARY_RAY_MEDIUM_SEED_STATUS_UNINITIALIZED      0u
+#define PRIMARY_RAY_MEDIUM_SEED_STATUS_VALID              1u
+#define PRIMARY_RAY_MEDIUM_SEED_STATUS_INVALID_PARAMS     2u
+#define PRIMARY_RAY_MEDIUM_SEED_STATUS_TRACE_FAILED       3u
+#define PRIMARY_RAY_MEDIUM_SEED_STATUS_HIT_LIMIT          4u
+#define PRIMARY_RAY_MEDIUM_SEED_STATUS_CONSENSUS_MISMATCH 5u
 
 
 
@@ -417,6 +428,35 @@ struct MaterialSlabData
 
     float sigmaS_r, sigmaS_g, sigmaS_b;
     float padding2;
+};
+
+struct PrimaryMediumQueryParams
+{
+    float sceneBoundsCenterX, sceneBoundsCenterY, sceneBoundsCenterZ;
+    float sceneBoundsRadius;
+
+    uint  worldExteriorMediumID;
+    float worldExteriorIOR;
+    uint  maxTraceHits;
+    uint  padding0;
+};
+
+struct PrimaryRayMediumSeedEntryData
+{
+    uint  boundaryInstanceID;
+    uint  mediumID;
+    float ior;
+    uint  padding0;
+};
+
+struct PrimaryRayMediumStackSeedData
+{
+    uint status;
+    uint count;
+    uint padding0;
+    uint padding1;
+
+    PrimaryRayMediumSeedEntryData entries[PRIMARY_RAY_MEDIUM_STACK_CAPACITY];
 };
 
 

@@ -218,10 +218,46 @@ struct MaterialSlabData
 };
 static_assert(sizeof(MaterialSlabData) == 48);
 
-static constexpr u32 MATERIAL_FLAG_FACE_NORMALS = 1u << 0u;
-static constexpr u32 MATERIAL_FLAG_ALPHA_MASK   = 1u << 1u;
-static constexpr u32 MATERIAL_FLAG_ALPHA_BLEND  = 1u << 2u;
-static constexpr u32 MATERIAL_FLAG_DOUBLE_SIDED = 1u << 3u;
+static constexpr u32 kPrimaryRayMediumStackCapacity = 8u;
+
+struct alignas(16) PrimaryMediumQueryParams
+{
+    float3 sceneBoundsCenter;
+    f32    sceneBoundsRadius;
+
+    u32 worldExteriorMediumID;
+    f32 worldExteriorIOR;
+    u32 maxTraceHits;
+    u32 padding0;
+};
+static_assert(sizeof(PrimaryMediumQueryParams) == 32);
+
+struct alignas(16) PrimaryRayMediumSeedEntryData
+{
+    u32 boundaryInstanceID;
+    u32 mediumID;
+    f32 ior;
+    u32 padding0;
+};
+static_assert(sizeof(PrimaryRayMediumSeedEntryData) == 16);
+
+struct alignas(16) PrimaryRayMediumStackSeedData
+{
+    u32 status;
+    u32 count;
+    u32 padding0;
+    u32 padding1;
+
+    PrimaryRayMediumSeedEntryData entries[kPrimaryRayMediumStackCapacity];
+};
+static_assert(sizeof(PrimaryRayMediumStackSeedData) == 144);
+
+static constexpr u32 MATERIAL_FLAG_FACE_NORMALS           = 1u << 0u;
+static constexpr u32 MATERIAL_FLAG_ALPHA_MASK             = 1u << 1u;
+static constexpr u32 MATERIAL_FLAG_ALPHA_BLEND            = 1u << 2u;
+static constexpr u32 MATERIAL_FLAG_DOUBLE_SIDED           = 1u << 3u;
+static constexpr u32 MATERIAL_FLAG_THIN_WALLED            = 1u << 4u;
+static constexpr u32 MATERIAL_FLAG_RELATIVE_IOR_INTERFACE = 1u << 5u;
 
 struct DirectionalLight
 {

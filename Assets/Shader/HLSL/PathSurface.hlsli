@@ -33,6 +33,16 @@ bool IsPrincipledMaterial(SurfaceMaterial sm)
     return sm.isPrincipled != 0u;
 }
 
+bool IsThinWalled(SurfaceMaterial sm)
+{
+    return (sm.materialFlags & MATERIAL_FLAG_THIN_WALLED) != 0u;
+}
+
+bool IsRelativeIORInterface(SurfaceMaterial sm)
+{
+    return (sm.materialFlags & MATERIAL_FLAG_RELATIVE_IOR_INTERFACE) != 0u;
+}
+
 bool HasTransmissionLobe(SurfaceMaterial sm)
 {
     float wDielectric   = 1.0 - saturate(sm.metallic);
@@ -61,11 +71,11 @@ float SheenSamplingWeight(SurfaceMaterial sm)
 }
 
 // Opaque non-metal materials may still have a dielectric specular interface (plastic, ceramic, lacquered wood).
-bool HasDielectricSpecularLobe(SurfaceMaterial sm, float eta)
+bool HasDielectricSpecularLobe(SurfaceMaterial sm, float etaTOverI)
 {
-    eta = max(eta, 1.0e-4);
+    etaTOverI = max(etaTOverI, 1.0e-4);
 
-    float etaContrast = abs(eta - 1.0) / max(eta + 1.0, 1.0e-4);
+    float etaContrast = abs(etaTOverI - 1.0) / max(etaTOverI + 1.0, 1.0e-4);
     float specularColorMax = max(sm.specularColor.x, max(sm.specularColor.y, sm.specularColor.z));
 
     return !IsPrincipledMaterial(sm) &&

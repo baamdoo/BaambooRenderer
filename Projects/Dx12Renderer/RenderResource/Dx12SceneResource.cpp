@@ -408,6 +408,15 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
                 inst.instanceID                          = instID++ + numVoxelSlots; // voxel slots sit ahead of the statics
                 inst.pBLAS                               = blasIter->second.get();
                 inst.instanceContributionToHitGroupIndex = 0;
+                if (IsValidIndex(data.material))
+                {
+                    assert(data.material < sceneView.materials.size());
+                    const u32 materialFlags = sceneView.materials[data.material].materialFlags;
+                    if ((materialFlags & (MATERIAL_FLAG_ALPHA_MASK | MATERIAL_FLAG_ALPHA_BLEND)) != 0u)
+                    {
+                        inst.flags = static_cast<u32>(D3D12_RAYTRACING_INSTANCE_FLAG_FORCE_NON_OPAQUE);
+                    }
+                }
 
                 m_pTLAS->AddInstance(inst);
             }
