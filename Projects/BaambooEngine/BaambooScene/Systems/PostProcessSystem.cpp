@@ -37,8 +37,10 @@ void PostProcessSystem::OnComponentDestroyed(entt::registry& registry, entt::ent
 	Super::OnComponentDestroyed(registry, entity);
 }
 
-std::vector< u64 > PostProcessSystem::UpdateRenderData(const EditorCamera& edCamera)
+std::vector< u64 > PostProcessSystem::UpdateRenderData(const float3& cameraPos)
 {
+	UNUSED(cameraPos);
+
 	for (auto entity : m_ExpiredEntities)
 	{
 		RemoveRenderData(entt::to_integral(entity));
@@ -50,7 +52,7 @@ std::vector< u64 > PostProcessSystem::UpdateRenderData(const EditorCamera& edCam
 		return markedEntities;
 
 	m_bHasData = false;
-	m_Registry.view< PostProcessComponent >().each([this, &edCamera, &markedEntities](auto entity, auto& component)
+	m_Registry.view< PostProcessComponent >().each([this, &markedEntities](auto entity, auto& component)
 		{
 			if (m_bHasData)
 				return;

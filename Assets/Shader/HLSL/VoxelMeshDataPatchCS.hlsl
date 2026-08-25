@@ -30,6 +30,7 @@ void main(uint3 tID : SV_DispatchThreadID)
     meshData.vOffset = chunk.vOffset;
     meshData.radius  = halfLengthPerAxis * 1.7320508; // half-diagonal of a cube = 0.5 * sqrt(3) * size
 	meshData.centerX = originWS.x + halfLengthPerAxis; meshData.centerY = originWS.y + halfLengthPerAxis; meshData.centerZ = originWS.z + halfLengthPerAxis;
+
     meshData.lods[0].mCount   = (chunk.pageID != INVALID_INDEX && (chunk.flags & 1u) != 0u) ? Counts[ti].meshletCount : 0u;
     meshData.lods[0].mOffset  = chunk.mOffset;
     meshData.lods[0].mvOffset = chunk.mvOffset;

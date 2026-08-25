@@ -278,7 +278,7 @@ void Scene::Update(f32 dt, const EditorCamera& edCamera)
 	const auto updateSystem = [&]< typename TSystem >(TSystem* pSystem, eComponentType component)
 	{
 		const bool bChanged = pSystem->HasPendingRenderDataChanges();
-		pSystem->UpdateRenderData(edCamera);
+		pSystem->UpdateRenderData(m_bCameraFrozen ? m_FrozenCamera.pos : edCamera.GetPosition());
 		if (bChanged)
 			changedComponents |= 1ULL << component;
 	};
@@ -286,7 +286,7 @@ void Scene::Update(f32 dt, const EditorCamera& edCamera)
 	updateSystem(m_pTransformSystem, eComponentType::CTransform);
 
 	const bool bStaticMeshChanged = m_pStaticMeshSystem->HasPendingRenderDataChanges();
-	m_pStaticMeshSystem->UpdateRenderData(edCamera);
+	m_pStaticMeshSystem->UpdateRenderData(edCamera.GetPosition());
 	if (bStaticMeshChanged)
 	{
 		changedComponents |= 1ULL << eComponentType::CStaticMesh;

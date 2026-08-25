@@ -36,7 +36,7 @@ public:
         m_ExpiredEntities.emplace(entity);
     }
 
-    virtual std::vector< u64 > UpdateRenderData(const EditorCamera& edCamera) { UNUSED(edCamera); return {}; }
+    virtual std::vector< u64 > UpdateRenderData(const float3& cameraPos) { UNUSED(cameraPos); return {}; }
     virtual void CollectRenderData(SceneRenderView& outView) const { UNUSED(outView); }
     virtual void RemoveRenderData(u64 entityId) { UNUSED(entityId); }
     [[nodiscard]]

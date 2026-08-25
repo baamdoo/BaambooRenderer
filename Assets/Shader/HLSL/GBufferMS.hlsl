@@ -250,8 +250,8 @@ void main(
             uint vi    = sh_VOffset + DMeshletVertices[sh_MvOffset + sh_VertexOffset + local];
 
             VoxelVertex vv = DVertices[vi];
-            sh_CornerPosWS[c] = VoxelUnpackPos(vv, chunk.chunkSizeMeter) + float3(chunk.originX, chunk.originY, chunk.originZ);
-            sh_CornerNrm[c] = VoxelUnpackNormal(vv);
+            sh_CornerPosWS[c] = VoxelUnpackPosTransition(vv, chunk.chunkSizeMeter, chunk.lodAndMask) + float3(chunk.originX, chunk.originY, chunk.originZ);
+            sh_CornerNrm[c]   = VoxelUnpackNormal(vv);
         }
         GroupMemoryBarrierWithGroupSync();
 
@@ -430,8 +430,8 @@ void main(
         return;
     }
 
-    StructuredBuffer< Vertex >      Vertices      = GetResource(sh_VtxHeapIdx);
-    StructuredBuffer< VoxelVertex > VoxelVertices = GetResource(sh_VtxHeapIdx);
+    StructuredBuffer< Vertex >      Vertices        = GetResource(sh_VtxHeapIdx);
+    StructuredBuffer< VoxelVertex > VoxelVertices   = GetResource(sh_VtxHeapIdx);
     StructuredBuffer< uint >        MeshletVertices = GetResource(sh_MvHeapIdx);
 
     for (uint i = ti; i < sh_VertexCount; i += 32)
@@ -442,7 +442,7 @@ void main(
         if (isVoxel)
         {
             VoxelVertex vertex = VoxelVertices[vi];
-            pos = VoxelUnpackPos(vertex, chunk.chunkSizeMeter);
+            pos = VoxelUnpackPosTransition(vertex, chunk.chunkSizeMeter, chunk.lodAndMask);
             nrm = VoxelUnpackNormal(vertex);
         }
         else

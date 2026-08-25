@@ -527,7 +527,6 @@ void DiceSubVertex(uint3 coord, uint Lt, uint3 le,
 
 
 // ---- Micro band ------------------------------------------------------------------
-
 struct DiceMicroParams
 {
     float amplitudeMeter;

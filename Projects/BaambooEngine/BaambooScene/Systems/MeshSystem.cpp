@@ -108,9 +108,9 @@ void StaticMeshSystem::OnComponentDestroyed(entt::registry& registry, entt::enti
 	Super::OnComponentDestroyed(registry, entity);
 }
 
-std::vector< u64 > StaticMeshSystem::UpdateRenderData(const EditorCamera& edCamera)
+std::vector< u64 > StaticMeshSystem::UpdateRenderData(const float3& cameraPos)
 {
-    UNUSED(edCamera);
+    UNUSED(cameraPos);
 
     for (auto entity : m_ExpiredEntities)
     {

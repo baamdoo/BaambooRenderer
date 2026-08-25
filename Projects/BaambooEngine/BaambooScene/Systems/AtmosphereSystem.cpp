@@ -59,9 +59,9 @@ void AtmosphereSystem::OnComponentDestroyed(entt::registry& registry, entt::enti
 	Super::OnComponentDestroyed(registry, entity);
 }
 
-std::vector< u64 > AtmosphereSystem::UpdateRenderData(const EditorCamera& edCamera)
+std::vector< u64 > AtmosphereSystem::UpdateRenderData(const float3& cameraPos)
 {
-    UNUSED(edCamera);
+    UNUSED(cameraPos);
 
     for (auto entity : m_ExpiredEntities)
     {

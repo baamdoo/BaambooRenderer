@@ -1,0 +1,214 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "DescriptorCommon.hg"
+
+layout(push_constant) uniform TvPushConstants
+{
+    uint  g_CellsPerAxis;
+    uint  g_Apron;
+    float g_VoxelSizeMeter;
+    uint  g_VertexSlabBase;
+    uint  g_MaxTriangles;
+} pc;
+
+layout(set = 1, binding = 0) readonly buffer DensityFieldBuffer { float g_DensityField[]; };
+layout(set = 1, binding = 1)          buffer McCounterBuffer    { uint  g_MCCounter[]; };
+layout(set = 1, binding = 2)          buffer OutVertexBuffer    { VoxelVertex g_OutVertices[]; };
+layout(set = 1, binding = 3) readonly buffer TvTableBuffer      { uint  g_TvTables[]; };
+
+#define TV_CLASS_BASE        0u
+#define TV_CELLDATA_BASE     512u
+#define TV_CELLDATA_STRIDE   10u
+#define TV_VERTEXDATA_BASE   1072u
+#define TV_VERTEXDATA_STRIDE 6u
+
+uint FlatTexel(uvec3 t, uint dim)
+{
+    return (t.z * dim + t.y) * dim + t.x;
+}
+
+// return: bit7 = reversed winding, low 7 bits = equivalence class
+uint TvCellClass(uint caseCode)
+{
+    return g_TvTables[TV_CLASS_BASE + caseCode];
+}
+
+// return: high 4-bits = vertex count, low 4-bits = triangle count
+uint TvGeometryCounts(uint classIdx)
+{
+    return g_TvTables[TV_CELLDATA_BASE + classIdx * TV_CELLDATA_STRIDE];
+}
+
+// return: i-th triangulation index (i in [0, 3*triCount)) into the cell's vertex list
+uint TvVertexIndex(uint classIdx, uint i)
+{
+    uint w = g_TvTables[TV_CELLDATA_BASE + classIdx * TV_CELLDATA_STRIDE + 1u + i / 4u];
+    return (w >> ((i % 4u) * 8u)) & 0xFFu;
+}
+
+// return: low byte = the edge's two corner locations, one nibble(4bits) each
+uint TvVertexData(uint caseCode, uint i)
+{
+    uint w = g_TvTables[TV_VERTEXDATA_BASE + caseCode * TV_VERTEXDATA_STRIDE + i / 2u];
+    return (w >> ((i % 2u) * 16u)) & 0xFFFFu;
+}
+
+// Isosurface vertex on `edge`: position interpolates the two corner samples, normal = density gradient.
+VoxelVertex MakeEdgeVertex(uvec2 edge, float cornerVal[13], uvec3 cornerPos[13], vec3 cornerGrad[13], float chunkSizeMeter)
+{
+    bool bCoarse = (edge.x >= 9u && edge.y >= 9u);
+
+    float v0 = cornerVal[edge.x], v1 = cornerVal[edge.y];
+    vec3  p0 = vec3(cornerPos[edge.x]), p1 = vec3(cornerPos[edge.y]);
+    vec3  g0 = cornerGrad[edge.x], g1 = cornerGrad[edge.y];
+
+    float tt = (abs(v0 - v1) < 1e-6) ? 0.0 : v0 / (v0 - v1); // zero crossing along the edge
+
+    vec3  pos = mix(p0, p1, tt) * pc.g_VoxelSizeMeter;
+    vec3  g   = mix(g0, g1, tt);
+    float gSq = dot(g, g);
+    vec3  n   = (gSq > 1e-12) ? g * inversesqrt(gSq) : vec3(0.0, 1.0, 0.0);
+
+    return VoxelPackVertexPinned(pos, n, chunkSizeMeter, bCoarse);
+}
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+void main()
+{
+    uvec3 DTid = gl_GlobalInvocationID;
+    uint  C    = pc.g_CellsPerAxis;
+    if (DTid.x >= C / 2u || DTid.y >= C / 2u)
+        return;
+
+    uint face = DTid.z; // 0..5 = -x,+x,-y,+y,-z,+z
+    uint dim  = C + 1u + 2u * pc.g_Apron;
+
+    uvec3 u, v, b;
+    switch (face)
+    {
+    case 0u:
+        u = uvec3(0, 1, 0);
+        v = uvec3(0, 0, 1);
+        b = uvec3(0, 0, 0);
+        break;
+    case 1u:
+        u = uvec3(0, 0, 1);
+        v = uvec3(0, 1, 0);
+        b = uvec3(C, 0, 0);
+        break;
+    case 2u:
+        u = uvec3(0, 0, 1);
+        v = uvec3(1, 0, 0);
+        b = uvec3(0, 0, 0);
+        break;
+    case 3u:
+        u = uvec3(1, 0, 0);
+        v = uvec3(0, 0, 1);
+        b = uvec3(0, C, 0);
+        break;
+    case 4u:
+        u = uvec3(1, 0, 0);
+        v = uvec3(0, 1, 0);
+        b = uvec3(0, 0, 0);
+        break;
+    case 5u:
+        u = uvec3(0, 1, 0);
+        v = uvec3(1, 0, 0);
+        b = uvec3(0, 0, C);
+        break;
+    default:
+        return;
+    }
+    uvec3 coords = b + (2u * DTid.x) * u + (2u * DTid.y) * v;
+
+    uvec3 patchPoints[13];
+    for (uint j = 0u; j < 3u; ++j)
+    {
+        for (uint i = 0u; i < 3u; ++i)
+        {
+            uvec3 s = coords + i * u + j * v;
+            patchPoints[j * 3u + i] = s;
+        }
+    }
+    patchPoints[9]  = patchPoints[0];
+    patchPoints[10] = patchPoints[2];
+    patchPoints[11] = patchPoints[6];
+    patchPoints[12] = patchPoints[8];
+
+    const uint bitOrder[9] = uint[9](0u, 1u, 2u, 7u, 8u, 3u, 6u, 5u, 4u);
+    float cornerVal [13];
+    vec3  cornerGrad[13];
+
+    uint patchBits = 0u;
+    for (uint i = 0u; i < 9u; ++i)
+    {
+        uvec3 t = patchPoints[i] + pc.g_Apron;
+        float d = g_DensityField[FlatTexel(t, dim)];
+
+        cornerVal [i] = d;
+        cornerGrad[i] = vec3(
+            g_DensityField[FlatTexel(t + uvec3(1u, 0u, 0u), dim)] - g_DensityField[FlatTexel(t - uvec3(1u, 0u, 0u), dim)],
+            g_DensityField[FlatTexel(t + uvec3(0u, 1u, 0u), dim)] - g_DensityField[FlatTexel(t - uvec3(0u, 1u, 0u), dim)],
+            g_DensityField[FlatTexel(t + uvec3(0u, 0u, 1u), dim)] - g_DensityField[FlatTexel(t - uvec3(0u, 0u, 1u), dim)]);
+
+        patchBits |= (d < 0.0) ? (1u << bitOrder[i]) : 0u;
+    }
+    if (patchBits == 0u || patchBits == 0x1FFu)
+        return; // no surface
+
+    cornerVal[9]  = cornerVal[0];
+    cornerVal[10] = cornerVal[2];
+    cornerVal[11] = cornerVal[6];
+    cornerVal[12] = cornerVal[8];
+
+    cornerGrad[9]  = cornerGrad[0];
+    cornerGrad[10] = cornerGrad[2];
+    cornerGrad[11] = cornerGrad[6];
+    cornerGrad[12] = cornerGrad[8];
+
+    uint tvClass   = TvCellClass(patchBits);
+    uint winding   = (tvClass >> 7) & 1u;
+    uint classBits = tvClass & 0x7Fu;
+
+    uint tvGeoCounts = TvGeometryCounts(classBits);
+    uint triCount    = tvGeoCounts & 0xFu;
+
+    const float chunkSize = float(C) * pc.g_VoxelSizeMeter;
+
+    uint baseTri = atomicAdd(g_MCCounter[0], triCount); // reserve a contiguous triangle range
+
+    for (uint t = 0u; t < triCount; ++t)
+    {
+        if (baseTri + t >= pc.g_MaxTriangles)
+            break;
+
+        uint i0 = TvVertexIndex(classBits, t * 3u + 0u);
+        uint i1 = TvVertexIndex(classBits, t * 3u + 1u);
+        uint i2 = TvVertexIndex(classBits, t * 3u + 2u);
+
+        uint p0 = TvVertexData(patchBits, i0);
+        uint p1 = TvVertexData(patchBits, i1);
+        uint p2 = TvVertexData(patchBits, i2);
+
+        uvec2 e0 = uvec2((p0 >> 4u) & 0xFu, (p0 >> 0u) & 0xFu);
+        uvec2 e1 = uvec2((p1 >> 4u) & 0xFu, (p1 >> 0u) & 0xFu);
+        uvec2 e2 = uvec2((p2 >> 4u) & 0xFu, (p2 >> 0u) & 0xFu);
+
+        uint v0 = pc.g_VertexSlabBase + (baseTri + t) * 3u + 0u;
+        uint v1 = pc.g_VertexSlabBase + (baseTri + t) * 3u + 1u;
+        uint v2 = pc.g_VertexSlabBase + (baseTri + t) * 3u + 2u;
+        if (winding == 0u)
+        {
+            g_OutVertices[v0] = MakeEdgeVertex(e0, cornerVal, patchPoints, cornerGrad, chunkSize);
+            g_OutVertices[v1] = MakeEdgeVertex(e2, cornerVal, patchPoints, cornerGrad, chunkSize);
+            g_OutVertices[v2] = MakeEdgeVertex(e1, cornerVal, patchPoints, cornerGrad, chunkSize);
+        }
+        else
+        {
+            g_OutVertices[v0] = MakeEdgeVertex(e0, cornerVal, patchPoints, cornerGrad, chunkSize);
+            g_OutVertices[v2] = MakeEdgeVertex(e2, cornerVal, patchPoints, cornerGrad, chunkSize);
+            g_OutVertices[v1] = MakeEdgeVertex(e1, cornerVal, patchPoints, cornerGrad, chunkSize);
+        }
+    }
+}

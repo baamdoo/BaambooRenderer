@@ -58,9 +58,10 @@ public:
 		u32    rejectedClassId  = kInvalidIndex; // class that overflowed at rejectedRevision
 		u32    lastTriCount     = 0u;            // triangle demand of the last read-back build
 		u32    lastTriRevision  = kInvalidIndex; // revision lastTriCount was measured at
+		u32    desiredMask      = 0u;            // transition-face mask from the cut (bits 0..5 = -x,+x,-y,+y,-z,+z)
 
 		bool bDesired = false; // member of this frame's cut
-		bool bVisible = false;         
+		bool bVisible = false;
 	};
 
 	VoxelChunkRenderNode(render::RenderDevice& rd);
@@ -128,6 +129,7 @@ private:
 	std::unordered_map< u64, ErosionColumn > m_ErosionColumns;
 
 	Box< render::ComputePipeline > m_pMCExtractPSO;
+	Box< render::ComputePipeline > m_pTransvoxelPSO;
 	Box< render::ComputePipeline > m_pMeshletBuildPSO;
 
 	Arc< render::Texture >          m_pDensityVolume; // written by VoxelDensityCS; MC reads the linear copy below
@@ -138,8 +140,9 @@ private:
 	Arc< render::Texture >         m_pErosionDetailMap;
 	Box< render::ComputePipeline > m_pErosionBakePSO;
 
-	Arc< render::Buffer > m_pMCTriTable; // 256x16 MC triangle-edge table (SSBO, uploaded once)
-	Arc< render::Buffer > m_pMCCounter;  // [triangleCount, activeCellCount]
+	Arc< render::Buffer > m_pMCTriTable;      // 256x16 MC triangle-edge table (SSBO, uploaded once)
+	Arc< render::Buffer > m_pTransvoxelTable; // Transvoxel transition-cell tables, flat u32 (SSBO, uploaded once)
+	Arc< render::Buffer > m_pMCCounter;       // [triangleCount, activeCellCount]
 
 	// Tri-count readback ring: per-build MCCounter snapshot, tagged for attribution when it arrives
 	static constexpr u32 kTriReadbackSlots    = kMaxFramesInFlight;
@@ -164,6 +167,8 @@ private:
 	u32 m_ReclaimCount        = 0u;
 	u32 m_NumHeldSwaps        = 0u;
 	u32 m_RecenterCount       = 0u;
+	u32 m_NumMaskFlips        = 0u;
+	u32 m_NumMaskDiverged     = 0u;
 	u32 m_CurrentRevision     = 0u;
 
 	// Triangle spatial sort: MC append order -> Morton-block order, baked into the meshlet-vertex indirection
@@ -172,7 +177,7 @@ private:
 	Box< render::ComputePipeline > m_pTriSortScanPSO;
 	Box< render::ComputePipeline > m_pTriSortScatterPSO;
 
-	bool m_bTriTableUploaded = false;
+	bool m_bStaticTablesUploaded = false;
 	// Per-corner identity/pattern index arrays are page-local
 	std::array< bool, kMaxResidentPages > m_PageStaticUploaded = {};
 };

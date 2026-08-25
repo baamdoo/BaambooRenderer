@@ -75,8 +75,8 @@ int main(int argc, char** argv)
 	//ExampleApp app = {};
 	//BistroApp app = {};
 	//LightingApp app = {};
-	RayTracingApp app = {};
-	//TerrainApp app = {};
+	//RayTracingApp app = {};
+	TerrainApp app = {};
 	try
 	{
 		app.Initialize(api);

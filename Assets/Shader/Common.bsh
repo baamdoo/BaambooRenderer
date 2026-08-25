@@ -186,7 +186,7 @@ struct VoxelChunkDesc
     uint  microOctaves;
     float microSharpness;        // -1 = ridged .. 0 = plain .. +1 = billowed
     uint  pageID;
-    uint  lodAndMask;            // lod u8 | transitionMask u8
+    uint  lodAndMask;            // lod u8 | transitionMask u8 (mask bits 0..5 = -x,+x,-y,+y,-z,+z)
 
     uint mOffset;                // absolute meshlet-pool base of this chunk's page
     uint erosionSlice;           // erosion detail array slice (independent of pageID)
@@ -203,7 +203,7 @@ struct VoxelChunkCounts
 struct VoxelVertex
 {
     uint posXY;    // pos.x 16b | pos.y 16b
-    uint posZres;  // pos.z 16b | reserved 16b
+    uint posZres;  // pos.z 16b | reserved 16b (bit0 = transition-pinned)
     uint octUoctV; // octahedral normal u 16b | octahedral normal v 16b
 };
 
@@ -250,6 +250,47 @@ float3 VoxelUnpackPos(VoxelVertex v, float chunkSizeMeter)
 {
     uint3 posQ = uint3(v.posXY >> 16u, v.posXY & 0xFFFFu, v.posZres >> 16u);
     return float3(posQ) / 65535.0 * chunkSizeMeter;
+}
+
+// Pinned vertices (transition-cell coarse face) never take the transition delta
+VoxelVertex VoxelPackVertexPinned(float3 pos, float3 normal, float chunkSizeMeter, bool pinned)
+{
+    VoxelVertex v = VoxelPackVertex(pos, normal, chunkSizeMeter);
+    v.posZres |= pinned ? 1u : 0u;
+    return v;
+}
+
+float3 VoxelTransitionDelta(float3 posQ, uint transitionMask)
+{
+    const float cellWidth = 65535.0 / 128.0; // pos(uint16) resolution / 128 cells per chunk
+
+    bool isBoundaryXMin = posQ.x < cellWidth;           // vertex inside the -x boundary cell
+    bool isBoundaryXMax = posQ.x > 65535.0 - cellWidth; // vertex inside the +x boundary cell
+    bool isBoundaryYMin = posQ.y < cellWidth;           // vertex inside the -y boundary cell
+    bool isBoundaryYMax = posQ.y > 65535.0 - cellWidth; // vertex inside the +y boundary cell
+    bool isBoundaryZMin = posQ.z < cellWidth;           // vertex inside the -z boundary cell
+    bool isBoundaryZMax = posQ.z > 65535.0 - cellWidth; // vertex inside the +z boundary cell
+
+    float3 delta = float3(0.0, 0.0, 0.0);
+    if      (isBoundaryXMin && (transitionMask & (1 << 0)) != 0u) delta.x = +0.5 * (cellWidth - posQ.x);
+    else if (isBoundaryXMax && (transitionMask & (1 << 1)) != 0u) delta.x = -0.5 * (cellWidth - (65535.0 - posQ.x));
+    if      (isBoundaryYMin && (transitionMask & (1 << 2)) != 0u) delta.y = +0.5 * (cellWidth - posQ.y);
+    else if (isBoundaryYMax && (transitionMask & (1 << 3)) != 0u) delta.y = -0.5 * (cellWidth - (65535.0 - posQ.y));
+    if      (isBoundaryZMin && (transitionMask & (1 << 4)) != 0u) delta.z = +0.5 * (cellWidth - posQ.z);
+    else if (isBoundaryZMax && (transitionMask & (1 << 5)) != 0u) delta.z = -0.5 * (cellWidth - (65535.0 - posQ.z));
+
+    return delta;
+}
+
+// Render-position unpack: boundary-band vertices shift inward on faces whose transition mask bit is set
+float3 VoxelUnpackPosTransition(VoxelVertex v, float chunkSizeMeter, uint lodAndMask)
+{
+    uint3 posQ = uint3(v.posXY >> 16u, v.posXY & 0xFFFFu, v.posZres >> 16u);
+
+    float3 posF = float3(posQ);
+    if ((v.posZres & 1u) == 0u)
+        posF += VoxelTransitionDelta(posF, (lodAndMask >> 8u) & 0x3Fu);
+    return posF / 65535.0 * chunkSizeMeter;
 }
 
 float3 VoxelUnpackNormal(VoxelVertex v)
@@ -299,6 +340,46 @@ vec3 VoxelUnpackPos(VoxelVertex v, float chunkSizeMeter)
 {
     uvec3 posQ = uvec3(v.posXY >> 16u, v.posXY & 0xFFFFu, v.posZres >> 16u);
     return vec3(posQ) / 65535.0 * chunkSizeMeter;
+}
+
+// Pinned vertices (transition-cell coarse face) never take the transition delta
+VoxelVertex VoxelPackVertexPinned(vec3 pos, vec3 normal, float chunkSizeMeter, bool pinned)
+{
+    VoxelVertex v = VoxelPackVertex(pos, normal, chunkSizeMeter);
+    v.posZres |= pinned ? 1u : 0u;
+    return v;
+}
+
+vec3 VoxelTransitionDelta(vec3 posQ, uint transitionMask)
+{
+    const float cellWidth = 65535.0 / 128.0; // pos(uint16) resolution / 128 cells per chunk
+
+    bool isBoundaryXMin = posQ.x < cellWidth;           // vertex inside the -x boundary cell
+    bool isBoundaryXMax = posQ.x > 65535.0 - cellWidth; // vertex inside the +x boundary cell
+    bool isBoundaryYMin = posQ.y < cellWidth;           // vertex inside the -y boundary cell
+    bool isBoundaryYMax = posQ.y > 65535.0 - cellWidth; // vertex inside the +y boundary cell
+    bool isBoundaryZMin = posQ.z < cellWidth;           // vertex inside the -z boundary cell
+    bool isBoundaryZMax = posQ.z > 65535.0 - cellWidth; // vertex inside the +z boundary cell
+
+    vec3 delta = vec3(0.0, 0.0, 0.0);
+    if      (isBoundaryXMin && (transitionMask & (1u << 0u)) != 0u) delta.x = +0.5 * (cellWidth - posQ.x);
+    else if (isBoundaryXMax && (transitionMask & (1u << 1u)) != 0u) delta.x = -0.5 * (cellWidth - (65535.0 - posQ.x));
+    if      (isBoundaryYMin && (transitionMask & (1u << 2u)) != 0u) delta.y = +0.5 * (cellWidth - posQ.y);
+    else if (isBoundaryYMax && (transitionMask & (1u << 3u)) != 0u) delta.y = -0.5 * (cellWidth - (65535.0 - posQ.y));
+    if      (isBoundaryZMin && (transitionMask & (1u << 4u)) != 0u) delta.z = +0.5 * (cellWidth - posQ.z);
+    else if (isBoundaryZMax && (transitionMask & (1u << 5u)) != 0u) delta.z = -0.5 * (cellWidth - (65535.0 - posQ.z));
+
+    return delta;
+}
+
+// Render-position unpack: boundary-band vertices shift inward on faces whose transition mask bit is set
+vec3 VoxelUnpackPosTransition(VoxelVertex v, float chunkSizeMeter, uint lodAndMask)
+{
+    uvec3 posQ = uvec3(v.posXY >> 16u, v.posXY & 0xFFFFu, v.posZres >> 16u);
+    vec3 posF = vec3(posQ);
+    if ((v.posZres & 1u) == 0u)
+        posF += VoxelTransitionDelta(vec3(posQ), (lodAndMask >> 8u) & 0x3Fu);
+    return posF / 65535.0 * chunkSizeMeter;
 }
 
 vec3 VoxelUnpackNormal(VoxelVertex v)

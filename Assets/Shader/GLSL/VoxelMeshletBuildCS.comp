@@ -61,7 +61,7 @@ void main()
     g_OutMeshlets[o].vertexCount    = triCount * 3u;
     g_OutMeshlets[o].triangleCount  = triCount;
     g_OutMeshlets[o].centerX        = center.x; g_OutMeshlets[o].centerY = center.y; g_OutMeshlets[o].centerZ = center.z;
-    g_OutMeshlets[o].radius         = length(bmax - center);
+    g_OutMeshlets[o].radius         = length(bmax - center) + pc.g_ChunkSizeMeter * (1.0 / 128.0); // transition delta can leave primary bounds by up to a cell
     g_OutMeshlets[o].coneAxisX      = 0.0; g_OutMeshlets[o].coneAxisY = 0.0; g_OutMeshlets[o].coneAxisZ = 0.0; // cone cull unused
     g_OutMeshlets[o].coneCutoff     = 1.0;
 }

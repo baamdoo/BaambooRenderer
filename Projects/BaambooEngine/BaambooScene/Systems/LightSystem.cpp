@@ -39,9 +39,9 @@ void SkyLightSystem::OnComponentDestroyed(entt::registry& registry, entt::entity
     Super::OnComponentDestroyed(registry, entity);
 }
 
-std::vector< u64 > SkyLightSystem::UpdateRenderData(const EditorCamera& edCamera)
+std::vector< u64 > SkyLightSystem::UpdateRenderData(const float3& cameraPos)
 {
-    UNUSED(edCamera);
+    UNUSED(cameraPos);
 
     const bool bHasExpired = !m_ExpiredEntities.empty();
     for (auto entity : m_ExpiredEntities)
@@ -131,9 +131,9 @@ void LocalLightSystem::OnComponentDestroyed(entt::registry& registry, entt::enti
     Super::OnComponentDestroyed(registry, entity);
 }
 
-std::vector< u64 > LocalLightSystem::UpdateRenderData(const EditorCamera& edCamera)
+std::vector< u64 > LocalLightSystem::UpdateRenderData(const float3& cameraPos)
 {
-    UNUSED(edCamera);
+    UNUSED(cameraPos);
 
     const bool bHasExpired = !m_ExpiredEntities.empty();
     for (auto entity : m_ExpiredEntities)

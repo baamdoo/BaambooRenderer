@@ -57,7 +57,7 @@ ResolvedSurface ResolveVoxelSurface(uint v0, uint v1, float2 pixelCenter, float2
         uint vi = chunk.vOffset + MeshletVertices[chunk.mvOffset + meshlet.vertexOffset + locals[k]];
 
         VoxelVertex vv = Vertices[vi];
-        posWS[k]  = VoxelUnpackPos(vv, chunk.chunkSizeMeter) + originWS;
+        posWS[k]  = VoxelUnpackPosTransition(vv, chunk.chunkSizeMeter, chunk.lodAndMask) + originWS;
         normal[k] = VoxelUnpackNormal(vv);
     }
 

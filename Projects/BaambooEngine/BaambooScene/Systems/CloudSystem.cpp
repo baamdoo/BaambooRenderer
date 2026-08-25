@@ -75,7 +75,7 @@ void CloudSystem::UpdateCameraDependentData(
 	m_RenderData.shadow.mSunViewProjInv = glm::inverse(m_RenderData.shadow.mSunViewProj);
 }
 
-std::vector< u64 > CloudSystem::UpdateRenderData(const EditorCamera& edCamera)
+std::vector< u64 > CloudSystem::UpdateRenderData(const float3& cameraPos)
 {
 	for (auto entity : m_ExpiredEntities)
 	{
@@ -85,9 +85,7 @@ std::vector< u64 > CloudSystem::UpdateRenderData(const EditorCamera& edCamera)
 
 	std::vector< u64 > markedEntities;
 	const bool bCloudDataChanged = !m_DirtyEntities.empty();
-	const float3 cameraPosition = edCamera.GetPosition();
-	const bool bCameraMoved = !m_bHasLastCameraPosition ||
-		glm::any(glm::notEqual(cameraPosition, m_LastCameraPosition));
+	const bool bCameraMoved      = !m_bHasLastCameraPosition || glm::any(glm::notEqual(cameraPos, m_LastCameraPosition));
 	if (!bCloudDataChanged)
 	{
 		if (bCameraMoved)
@@ -98,17 +96,17 @@ std::vector< u64 > CloudSystem::UpdateRenderData(const EditorCamera& edCamera)
 			{
 				const auto& component = m_Registry.get< CloudComponent >(m_ActiveEntity);
 				const auto& atmosphereView = m_pAtmosphereSystem->GetRenderData();
-				UpdateCameraDependentData(component, atmosphereView, cameraPosition);
+				UpdateCameraDependentData(component, atmosphereView, cameraPos);
 			}
 
-			m_LastCameraPosition = cameraPosition;
+			m_LastCameraPosition     = cameraPos;
 			m_bHasLastCameraPosition = true;
 		}
 		return markedEntities;
 	}
 
 	m_bHasData = false;
-	m_Registry.view< CloudComponent >().each([this, cameraPosition, &markedEntities](auto entity, auto& component)
+	m_Registry.view< CloudComponent >().each([this, cameraPos, &markedEntities](auto entity, auto& component)
         {
             if (m_bHasData)
                 return;
@@ -177,14 +175,15 @@ std::vector< u64 > CloudSystem::UpdateRenderData(const EditorCamera& edCamera)
 			m_RenderData.weatherMap   = component.weatherMap;
 			m_RenderData.curlNoiseTex = component.curlNoiseTex;
 
-			UpdateCameraDependentData(component, atmosphereView, cameraPosition);
+			UpdateCameraDependentData(component, atmosphereView, cameraPos);
 
             m_bHasData = true;
 			markedEntities.emplace_back(m_RenderData.id);
         });
 
-	m_LastCameraPosition = cameraPosition;
+	m_LastCameraPosition     = cameraPos;
 	m_bHasLastCameraPosition = true;
+
     ClearDirtyEntities();
 	return markedEntities;
 }

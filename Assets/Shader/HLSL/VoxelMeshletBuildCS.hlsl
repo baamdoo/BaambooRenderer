@@ -46,6 +46,7 @@ void main(uint3 dt : SV_DispatchThreadID)
     // AABB over meshlet verts, read through the sorted meshlet-vertex indirection (vertex pool stays in MC order)
     StructuredBuffer< VoxelVertex > Verts        = GetResource(g_Vertices.index);
     StructuredBuffer< uint >        MeshletVerts = GetResource(g_MeshletVerts.index);
+
     float3 bmin = float3(1e30, 1e30, 1e30);
     float3 bmax = float3(-1e30, -1e30, -1e30);
     for (uint v = 0u; v < triCount * 3u; ++v)
@@ -63,7 +64,7 @@ void main(uint3 dt : SV_DispatchThreadID)
     meshlet.vertexCount    = triCount * 3u;
     meshlet.triangleCount  = triCount;
     meshlet.centerX        = center.x; meshlet.centerY = center.y; meshlet.centerZ = center.z;
-    meshlet.radius         = length(bmax - center);
+    meshlet.radius         = length(bmax - center) + g_ChunkSizeMeter * (1.0 / 128.0); // transition delta can leave primary bounds by up to a cell
     meshlet.coneAxisX      = 0.0; meshlet.coneAxisY = 0.0; meshlet.coneAxisZ = 0.0; // cone cull unused
     meshlet.coneCutoff     = 1.0;
 

@@ -7,6 +7,7 @@
 
 #include "BaambooScene/Scene.h"
 #include "BaambooScene/VoxelTerrain/MarchingCubes.h"
+#include "BaambooScene/VoxelTerrain/TransvoxelTables.h"
 
 #include <imgui.h>
 #include <fstream>
@@ -59,6 +60,27 @@ bool AreChunksFaceAdjacent(VoxelChunkID chunkA, VoxelChunkID chunkB)
 	bAdjacent |= (finestChunkEndA.z == finestChunkBeginB.z || finestChunkBeginA.z == finestChunkEndB.z) && bOverlapX && bOverlapY; // z
 
 	return bAdjacent;
+}
+
+// Face of chunkA touching chunkB: bit 0..5 = -x,+x,-y,+y,-z,+z; kInvalidIndex if not face-adjacent
+u32 FaceBitToward(VoxelChunkID chunkA, VoxelChunkID chunkB)
+{
+	int3 beginA = chunkA.coord * (1 << chunkA.lod);
+	int3 endA   = (chunkA.coord + 1) * (1 << chunkA.lod);
+	int3 beginB = chunkB.coord * (1 << chunkB.lod);
+	int3 endB   = (chunkB.coord + 1) * (1 << chunkB.lod);
+
+	const bool bOverlapX = beginA.x < endB.x && beginB.x < endA.x;
+	const bool bOverlapY = beginA.y < endB.y && beginB.y < endA.y;
+	const bool bOverlapZ = beginA.z < endB.z && beginB.z < endA.z;
+
+	if (bOverlapY && bOverlapZ && beginA.x == endB.x) return 0u;
+	if (bOverlapY && bOverlapZ && endA.x == beginB.x) return 1u;
+	if (bOverlapX && bOverlapZ && beginA.y == endB.y) return 2u;
+	if (bOverlapX && bOverlapZ && endA.y == beginB.y) return 3u;
+	if (bOverlapX && bOverlapY && beginA.z == endB.z) return 4u;
+	if (bOverlapX && bOverlapY && endA.z == beginB.z) return 5u;
+	return kInvalidIndex;
 }
 
 u64 ErosionColumnKey(const VoxelChunkID& id)
@@ -146,6 +168,12 @@ VoxelChunkRenderNode::VoxelChunkRenderNode(render::RenderDevice& rd)
 			.elementSizeInBytes = sizeof(i32),
 			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest,
 		});
+	m_pTransvoxelTable = Buffer::Create(rd, "VoxelChunkPass::TransvoxelTable",
+		{
+			.count              = TransvoxelTables::kFlatTableSizeU32,
+			.elementSizeInBytes = sizeof(u32),
+			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest,
+		});
 	m_pMCCounter = Buffer::Create(rd, "VoxelChunkPass::MCCounter",
 		{
 			.count              = 2, // [triangleCount, activeCellCount]
@@ -164,6 +192,11 @@ VoxelChunkRenderNode::VoxelChunkRenderNode(render::RenderDevice& rd)
 		{ .stage = eShaderStage::Compute, .filename = "VoxelMarchingCubesCS" });
 	m_pMCExtractPSO = ComputePipeline::Create(rd, "VoxelMarchingCubesPSO");
 	m_pMCExtractPSO->SetComputeShader(pMCExtractCS).Build();
+
+	auto pTransvoxelCS = Shader::Create(rd, "VoxelTransvoxelCS",
+		{ .stage = eShaderStage::Compute, .filename = "VoxelTransvoxelCS" });
+	m_pTransvoxelPSO = ComputePipeline::Create(rd, "VoxelTransvoxelPSO");
+	m_pTransvoxelPSO->SetComputeShader(pTransvoxelCS).Build();
 
 	auto pMeshletBuildCS = Shader::Create(rd, "VoxelMeshletBuildCS",
 		{ .stage = eShaderStage::Compute, .filename = "VoxelMeshletBuildCS" });
@@ -395,12 +428,17 @@ void VoxelChunkRenderNode::InstallPage(ChunkSlot& chunkSlot, u32 pageID)
 
 void VoxelChunkRenderNode::EnsurePageStatics(render::CommandContext& context, u32 pageID)
 {
-	if (!m_bTriTableUploaded)
+	if (!m_bStaticTablesUploaded)
 	{
 		std::vector< i32 > triTable(MarchingCubes::kFlatTriangleTableSize);
 		MarchingCubes::FillFlatTriangleTable(triTable.data());
 		context.UploadData(m_pMCTriTable, triTable.data(), MarchingCubes::kFlatTriangleTableSize, sizeof(i32), 0);
-		m_bTriTableUploaded = true;
+
+		std::vector< u32 > tvTable(TransvoxelTables::kFlatTableSizeU32);
+		TransvoxelTables::FillFlatTable(tvTable.data());
+		context.UploadData(m_pTransvoxelTable, tvTable.data(), TransvoxelTables::kFlatTableSizeU32, sizeof(u32), 0);
+
+		m_bStaticTablesUploaded = true;
 	}
 
 	// Per-corner meshlets are field-independent: vertices = identity, triangles = repeating {3t,3t+1,3t+2}. Upload once per page.
@@ -449,7 +487,7 @@ bool VoxelChunkRenderNode::EnsureChunkResident(render::CommandContext& context, 
 	desc.originWS       = float3(int3(gp.chunkCoordX, gp.chunkCoordY, gp.chunkCoordZ) * (i32)gp.cellsPerAxis) * gp.voxelSizeMeter;
 	desc.chunkSizeMeter = float(gp.cellsPerAxis) * gp.voxelSizeMeter;
 	desc.voxelSizeMeter = gp.voxelSizeMeter;
-	desc.lodAndMask     = chunkSlot.id.lod & 0xFFu; // mask byte lands here at swap time (G-4)
+	desc.lodAndMask     = (chunkSlot.id.lod & 0xFFu) | ((chunkSlot.desiredMask & 0x3Fu) << 8u); // desired-cut mask; G-4 refines to active neighbors
 	desc.erosionSlice   = chunkSlot.erosionSlice;
 	desc.flags          = 0u; // build only; no-render
 	m_ChunkDescs[chunkSlot.chunkIndex] = desc;
@@ -508,7 +546,7 @@ void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, c
 	if (C == 0u)
 		return;
 
-	// Pass A: marching cubes -- each active cell atomic-appends its per-corner triangle vertices to the page.
+	// Pass A1: marching cubes -- each active cell atomic-appends its per-corner triangle vertices to the page.
 	context.BeginGpuMarker("MCExtract");
 	context.ClearBuffer(m_pMCCounter, 0u); // [triangleCount, activeCellCount]
 
@@ -531,13 +569,28 @@ void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, c
 	context.StageDescriptor("g_DensityField", m_pDensityField);
 	context.StageDescriptor("g_MCCounter", m_pMCCounter);
 	context.StageDescriptor("g_OutVertices", m_pVertexPool);
+
 	context.Dispatch3D< 4, 4, 4 >(C, C, C);
+	context.EndGpuMarker();
+
+	// Pass A2: transvoxel
+	context.BeginGpuMarker("TransvoxelExtract");
+	context.TransitionBufferToRead(m_pTransvoxelTable, ePipelineStage::ComputeShader);
+
+	context.SetRenderPipeline(m_pTransvoxelPSO.get());
+	context.SetComputeConstants(sizeof(mc), &mc);
+	context.StageDescriptor("g_TvTables", m_pTransvoxelTable);
+	context.StageDescriptor("g_DensityField", m_pDensityField);
+	context.StageDescriptor("g_MCCounter", m_pMCCounter);
+	context.StageDescriptor("g_OutVertices", m_pVertexPool);
+
+	context.Dispatch3D< 8, 8, 1 >(C / 2u, C / 2u, 6u);
 	context.EndGpuMarker();
 
 	context.UAVBarrier(m_pMCCounter, true); // extract -> sort
 	context.UAVBarrier(m_pVertexPool);
 
-	// Pass A2: triangle spatial sort into Morton blocks, baked into the meshlet-vertex indirection (vertices stay in place).
+	// Pass A3: triangle spatial sort into Morton blocks, baked into the meshlet-vertex indirection (vertices stay in place).
 	const u32 mvBase = VoxelClassMeshletVertexBase(cls) + idx * VoxelClassMeshletVertexCap(cls);
 
 	context.BeginGpuMarker("TriSortCount");
@@ -554,30 +607,32 @@ void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, c
 		float chunkSizeMeter;
 	} ts = { vBase, mvBase, triCap, float(C) * gp.voxelSizeMeter };
 
-	// A2.1: histogram
+	// A3.1: histogram
 	context.SetRenderPipeline(m_pTriSortCountPSO.get());
 	context.SetComputeConstants(sizeof(ts), &ts);
 	context.StageDescriptor("g_MCCounter", m_pMCCounter);
 	context.StageDescriptor("g_Vertices", m_pVertexPool);
 	context.StageDescriptor("g_SortBins", m_pTriSortBins);
+
 	context.Dispatch1D< 256 >(triCap);
 	context.EndGpuMarker();
 
 	context.UAVBarrier(m_pTriSortBins, true);
 
-	// A2.2: exclusive scan (single group)
+	// A3.2: exclusive scan (single group)
 	static_assert(kTriSortBins % 1024u == 0u, "scan CS strips assume bins % threads == 0");
 	context.BeginGpuMarker("TriSortScan");
 	context.SetRenderPipeline(m_pTriSortScanPSO.get());
 	struct { u32 numBins; } sc = { kTriSortBins };
 	context.SetComputeConstants(sizeof(sc), &sc);
 	context.StageDescriptor("g_SortBins", m_pTriSortBins);
+
 	context.Dispatch1D< 1024 >(1024u);
 	context.EndGpuMarker();
 
 	context.UAVBarrier(m_pTriSortBins, true);
 
-	// A2.3: scatter the permutation into the meshlet-vertex indirection
+	// A3.3: scatter the permutation into the meshlet-vertex indirection
 	context.BeginGpuMarker("TriSortScatter");
 	context.TransitionBufferToWrite(m_pMeshletVertexPool, ePipelineStage::ComputeShader);
 
@@ -587,6 +642,7 @@ void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, c
 	context.StageDescriptor("g_Vertices", m_pVertexPool);
 	context.StageDescriptor("g_SortBins", m_pTriSortBins);
 	context.StageDescriptor("g_OutMeshletVerts", m_pMeshletVertexPool);
+
 	context.Dispatch1D< 256 >(triCap);
 	context.EndGpuMarker();
 
@@ -616,6 +672,7 @@ void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, c
 	context.StageDescriptor("g_OutCounts", m_pChunkCountsBuffer);
 	context.StageDescriptor("g_Vertices", m_pVertexPool);
 	context.StageDescriptor("g_MeshletVerts", m_pMeshletVertexPool);
+
 	context.Dispatch1D< 64 >(VoxelClassMeshletCap(cls));
 	context.EndGpuMarker();
 
@@ -693,10 +750,11 @@ void VoxelChunkRenderNode::BuildChunkGeometryIfNeeded(render::CommandContext& co
 				break;
 			}
 
-			empty->id       = view.id;
-			empty->originWS = view.originWS;
-			empty->state    = eChunkState::Queued;
-			empty->bDesired = true;
+			empty->id          = view.id;
+			empty->originWS    = view.originWS;
+			empty->state       = eChunkState::Queued;
+			empty->bDesired    = true;
+			empty->desiredMask = view.mask;
 			if (view.id.lod == 0u)
 				empty->erosionSlice = AcquireErosionColumn(view.id);
 
@@ -708,7 +766,8 @@ void VoxelChunkRenderNode::BuildChunkGeometryIfNeeded(render::CommandContext& co
 				&& resident->builtRevision != vt.revision && resident->pendingRevision != vt.revision && resident->rejectedRevision != vt.revision)
 				resident->state = eChunkState::Dirty;
 
-			resident->bDesired = true;
+			resident->bDesired    = true;
+			resident->desiredMask = view.mask;
 
 			desiredChunksToAdd.emplace(targetKey, resident->chunkIndex);
 		}
@@ -864,6 +923,51 @@ void VoxelChunkRenderNode::BuildChunkGeometryIfNeeded(render::CommandContext& co
 		RetireSlot(m_ChunkSlots[candidates[i].retireSlot]);
 		for (u32 replacementSlot : candidates[i].replacementSlots)
 			m_ChunkSlots[replacementSlot].bVisible = true;
+	}
+
+	// Active-neighbor transition masks: the band state follows what is visible right now, not the desired cut
+	{
+		std::vector< u32 > visibleSlots;
+		visibleSlots.reserve(m_ChunkSlots.size());
+		for (const ChunkSlot& slot : m_ChunkSlots)
+		{
+			if (slot.state != eChunkState::Empty && slot.bVisible)
+				visibleSlots.push_back(slot.chunkIndex);
+		}
+
+		std::vector< u32 > derivedMasks(m_ChunkSlots.size(), 0u);
+		for (size_t i = 0; i < visibleSlots.size(); ++i)
+		{
+			for (size_t j = i + 1; j < visibleSlots.size(); ++j)
+			{
+				const ChunkSlot& a = m_ChunkSlots[visibleSlots[i]];
+				const ChunkSlot& b = m_ChunkSlots[visibleSlots[j]];
+
+				const int lodDelta = int(a.id.lod) - int(b.id.lod);
+				if (lodDelta != 1 && lodDelta != -1)
+					continue;
+
+				const ChunkSlot& fine   = (lodDelta < 0) ? a : b;
+				const ChunkSlot& coarse = (lodDelta < 0) ? b : a;
+				const u32 faceBit = FaceBitToward(fine.id, coarse.id);
+				if (faceBit != kInvalidIndex)
+					derivedMasks[fine.chunkIndex] |= 1u << faceBit;
+			}
+		}
+
+		u32 numDiverged = 0u;
+		for (u32 slotIndex : visibleSlots)
+		{
+			const ChunkSlot& slot = m_ChunkSlots[slotIndex];
+			const u32 lodAndMask = (slot.id.lod & 0xFFu) | (derivedMasks[slotIndex] << 8u);
+			if (m_ChunkDescs[slotIndex].lodAndMask != lodAndMask)
+				++m_NumMaskFlips;
+			m_ChunkDescs[slotIndex].lodAndMask = lodAndMask;
+
+			if (derivedMasks[slotIndex] != slot.desiredMask)
+				++numDiverged;
+		}
+		m_NumMaskDiverged = numDiverged;
 	}
 
 	std::vector< u32 > markedChunks;
@@ -1171,6 +1275,7 @@ void VoxelChunkRenderNode::DrawUI()
 			ImGui::TextColored(ImVec4(0.95f, 0.85f, 0.3f, 1.0f), "page reclaims (pressure valve): %u", m_ReclaimCount);
 		if (m_NumHeldSwaps != 0u)
 			ImGui::TextColored(ImVec4(0.95f, 0.85f, 0.3f, 1.0f), "held swaps (2:1 gate): %u", m_NumHeldSwaps);
+		ImGui::Text("mask flips %u | mask diverged %u", m_NumMaskFlips, m_NumMaskDiverged);
 		if (m_AllocFailCount != 0u)
 			ImGui::TextColored(ImVec4(0.95f, 0.6f, 0.2f, 1.0f), "page alloc fails: %u", m_AllocFailCount);
 		if (m_LastBuildChunkIndex != kInvalidIndex)

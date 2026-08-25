@@ -43,9 +43,9 @@ void TransformSystem::OnComponentDestroyed(entt::registry& registry, entt::entit
     Super::OnComponentDestroyed(registry, entity);
 }
 
-std::vector< u64 > TransformSystem::UpdateRenderData(const EditorCamera& edCamera)
+std::vector< u64 > TransformSystem::UpdateRenderData(const float3& cameraPos)
 {
-    UNUSED(edCamera);
+    UNUSED(cameraPos);
 
     std::vector< u64 > markedEntities;
     if (m_DirtyEntities.empty() && m_ExpiredEntities.empty())

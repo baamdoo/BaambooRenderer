@@ -16,12 +16,9 @@ void VoxelTerrainSystem::OnComponentUpdated(entt::registry& registry, entt::enti
     Super::OnComponentUpdated(registry, entity);
 }
 
-std::vector< u64 > VoxelTerrainSystem::UpdateRenderData(const EditorCamera& edCamera)
+std::vector< u64 > VoxelTerrainSystem::UpdateRenderData(const float3& cameraPos)
 {
     m_ExpiredEntities.clear();
-
-    float3 camPos = edCamera.GetPosition();
-
     m_DesiredChunks.clear();
 
     auto view = m_Registry.view< VoxelTerrainComponent >();
@@ -49,10 +46,10 @@ std::vector< u64 > VoxelTerrainSystem::UpdateRenderData(const EditorCamera& edCa
             // deadband: keep the stored pair cell until the camera leaves it by more than 0.5*S
             int2& c = m_SnapCells[lod];
             const int2 prev = c;
-            if (camPos.x < float(c.x) * pairSize - 0.5f * S || camPos.x >= float(c.x + 1) * pairSize + 0.5f * S)
-                c.x = (i32)std::floor(camPos.x / pairSize);
-            if (camPos.z < float(c.y) * pairSize - 0.5f * S || camPos.z >= float(c.y + 1) * pairSize + 0.5f * S)
-                c.y = (i32)std::floor(camPos.z / pairSize);
+            if (cameraPos.x < float(c.x) * pairSize - 0.5f * S || cameraPos.x >= float(c.x + 1) * pairSize + 0.5f * S)
+                c.x = (i32)std::floor(cameraPos.x / pairSize);
+            if (cameraPos.z < float(c.y) * pairSize - 0.5f * S || cameraPos.z >= float(c.y + 1) * pairSize + 0.5f * S)
+                c.y = (i32)std::floor(cameraPos.z / pairSize);
             if (c.x != prev.x || c.y != prev.y)
                 ++m_NumRecenters;
 

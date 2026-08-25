@@ -211,7 +211,7 @@ void main()
 			uint vi    = sh_VOffset + g_VoxelMeshletVertices[sh_VertexOffset + sh_MvOffset + local];
 
 			VoxelVertex vv = g_VoxelVertices[vi];
-			sh_CornerPosWS[c] = VoxelUnpackPos(vv, chunk.chunkSizeMeter) + vec3(chunk.originX, chunk.originY, chunk.originZ);
+			sh_CornerPosWS[c] = VoxelUnpackPosTransition(vv, chunk.chunkSizeMeter, chunk.lodAndMask) + vec3(chunk.originX, chunk.originY, chunk.originZ);
 			sh_CornerNrm[c] = VoxelUnpackNormal(vv);
 		}
 		barrier();
@@ -389,7 +389,7 @@ void main()
 		if (isVoxel)
 		{
 			uint vi  = g_VoxelMeshletVertices[sh_VertexOffset + sh_MvOffset + i];
-			position = VoxelUnpackPos(g_VoxelVertices[vi + sh_VOffset], chunk.chunkSizeMeter);
+			position = VoxelUnpackPosTransition(g_VoxelVertices[vi + sh_VOffset], chunk.chunkSizeMeter, chunk.lodAndMask);
 		}
 		else
 		{
