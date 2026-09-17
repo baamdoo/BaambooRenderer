@@ -8,7 +8,7 @@ namespace baamboo
 {
 
 // GPU density volume apron (extra samples each side)
-constexpr u32 kVoxelDensityApron = 2u;
+constexpr u32 kVoxelDensityApron = 16u; // for covering upto LOD+3 in geomorphing
 
 constexpr float kDefaultVoxelChunkWorldSizeMeter = 64.0f;
 constexpr u32   kDefaultVoxelCellsPerAxis        = 128u;
@@ -21,7 +21,7 @@ constexpr u32 kMaxVoxelErosionSlices = 58u;
 // Absolute terrain floor plane (below it is always air)
 constexpr float kVoxelWorldFloorYMeter = 0.0f;
 
-// Page size-classes: per-page triangle capacity + page count
+// Per-LOD-level page pools: class == LOD level
 struct VoxelPageClass
 {
     u32 triCapacity;
@@ -29,14 +29,16 @@ struct VoxelPageClass
 };
 constexpr VoxelPageClass kVoxelPageClasses[] =
 {
-    {  72000u,   2u }, // S
-    { 100800u,   2u }, // M
-    { 210000u, 170u }, // L
-    { 393216u,   2u }, // XL
+    { 220000u, 58u }, // LOD0
+    { 175000u, 44u }, // LOD1
+    { 140000u, 44u }, // LOD2
+    { 105000u, 44u }, // LOD3
+    {  85000u, 44u }, // LOD4
+    {  85000u, 44u }, // LOD5
+    {  85000u, 44u }, // LOD6
+    {  85000u, 44u }, // LOD7
 };
-constexpr u32   kVoxelPageClassCount               = 4u;
-constexpr u32   kVoxelInitialClassId               = 2u;
-constexpr float kVoxelPageClassTriangleReserveRate = 1.25f; 
+constexpr u32 kVoxelPageClassCount = 8u;
 
 // pageID = classId(8b) << 24 | pageIdx(24b)
 constexpr u32 MakeVoxelPageID(u32 classId, u32 idx) { return (classId << 24u) | idx; }
@@ -70,12 +72,15 @@ struct VoxelTerrainSettings
     u32   samplesPerAxis      = kDefaultVoxelSamplesPerAxis;
     float voxelSizeMeter      = kDefaultVoxelSizeMeter;
 
-    u32 maxLodLevel = 3u;
+    u32 maxLodLevel = 7u;
+
+    float crossfadeSeconds = 0.2f; // swap dither-crossfade length (seconds)
+    u32   debugFlags       = 0u;   // bit0 = chunk tint | bit1 = LOD tint
 
     // Procedural surface
     u32   seed              = 1337u;
     float frequency         = 0.015f; // base noise frequency
-    u32   octaves           = 6u;
+    u32   octaves           = 2u;
     float lacunarity        = 2.0f;
     float gain              = 0.5f;
     float warpStrength      = 0.0f;

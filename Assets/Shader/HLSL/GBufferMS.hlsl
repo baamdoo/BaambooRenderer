@@ -167,16 +167,18 @@ void main(
     uint ti         = GTid.x;
     uint tLm        = (Payload.LmPacked[ti >> 3u] >> ((ti % 8u) * 4u)) & 0xFu;
     uint tTriCount  = (Payload.triCountPacked[ti >> 2u] >> ((ti % 4u) * 8u)) & 0xFFu;
-    uint tNumGroups = (ti < slotCount) ? ((tLm > 0u) ? DiceGroupsForMeshlet(tLm, tTriCount) : 1u) : 0u;
+    uint tGroups    = DiceGroupsForMeshlet(max(tLm, 1u), tTriCount);
+    uint tNumGroups = (ti < slotCount) ? ((tLm > 0u) ? tGroups : 1u) : 0u;
     uint tPrefix    = WavePrefixSum(tNumGroups);
 
-    bool slotMatch  = (tNumGroups != 0u) && (Gid.x >= tPrefix) && (Gid.x < tPrefix + tNumGroups);
+    bool slotMatch  = (Gid.x - tPrefix) < tNumGroups;
     uint slot       = firstbitlow(WaveActiveBallot(slotMatch).x);
     uint localGroup = Gid.x - WaveActiveSum(slotMatch ? tPrefix : 0u); // exactly one matching lane -> its prefix
 
     // k-th set bit of laneBits: the set lane whose compact index among set lanes equals slot
     bool tSet        = ((laneBits >> ti) & 1u) != 0u;
-    bool laneMatch   = tSet && (WavePrefixCountBits(tSet) == slot);
+    uint tSetPrefix  = WavePrefixCountBits(tSet);
+    bool laneMatch   = tSet ? (tSetPrefix == slot) : false;
     uint tsLaneIndex = firstbitlow(WaveActiveBallot(laneMatch).x);
 
 	uint mi = Payload.miBaseGroupID + tsLaneIndex; // mesh.mOffset is already baked into the meshlet indices by TaskShader
@@ -222,20 +224,11 @@ void main(
     uint chunkBaseMI = chunk.mOffset;
 
     // num tris handled in this group
-    uint T = 1u, child = 0u, triBase = 0u;
+    uint T = 1u, triBase = 0u;
     if (diced)
     {
-        if (slotLm <= 3u)
-        {
-            T       = kDiceTrisPerGroup[slotLm];
-            triBase = localGroup * T;
-        }
-        else
-        {
-            uint numChildsPerTri = 1u << (2u * (slotLm - 3u));
-            triBase = localGroup / numChildsPerTri;
-            child   = localGroup % numChildsPerTri;
-        }
+        T       = kDiceTrisPerGroup[slotLm];
+        triBase = localGroup * T;
     }
     uint numTris = (diced && triBase < sh_TriangleCount) ? min(T, sh_TriangleCount - triBase) : 0u;
 
@@ -250,8 +243,9 @@ void main(
             uint vi    = sh_VOffset + DMeshletVertices[sh_MvOffset + sh_VertexOffset + local];
 
             VoxelVertex vv = DVertices[vi];
-            sh_CornerPosWS[c] = VoxelUnpackPosTransition(vv, chunk.chunkSizeMeter, chunk.lodAndMask) + float3(chunk.originX, chunk.originY, chunk.originZ);
+            float3 cornerWS   = VoxelUnpackPosTransition(vv, chunk.chunkSizeMeter, chunk.lodAndMask) + float3(chunk.originX, chunk.originY, chunk.originZ);
             sh_CornerNrm[c]   = VoxelUnpackNormal(vv);
+            sh_CornerPosWS[c] = VoxelMorphPosWS(vv, cornerWS, sh_CornerNrm[c], g_FrozenCamera.posWORLD, chunk);
         }
         GroupMemoryBarrierWithGroupSync();
 
@@ -269,36 +263,23 @@ void main(
         GroupMemoryBarrierWithGroupSync();
     }
 
-    // Output counts: emits based on highest level among 3-edges. Flat regime sums per-tri sizes; hier regime emits one level-3 child.
-    bool hier = false;
+    // Output counts: each base tri emits the sub-mesh of its highest edge level
     uint outVerts = 0u, outPrims = 0u;
     if (!diced)
     {
         outVerts = sh_VertexCount;
         outPrims = sh_TriangleCount;
     }
-    else if (numTris != 0u)
+    else
     {
-        uint Lt0 = sh_TriLt[0];
-        hier = (slotLm >= 4u) && (Lt0 >= 4u);
-        if (hier)
+        for (uint t = 0u; t < numTris; ++t)
         {
-			// early-return if this group is extra padding dispatched by conservative level calculation
-            bool active = child < (1u << (2u * (Lt0 - 3u)));
-            outVerts = active ? 45u : 0u; // DiceSubVertCount(3)
-            outPrims = active ? 64u : 0u; // DiceSubTriCount(3)
+            uint lt = sh_TriLt[t];
+            outVerts += (lt == 0u) ? 3u : DiceSubVertCount(lt);
+            outPrims += (lt == 0u) ? 1u : DiceSubTriCount(lt);
         }
-        else if (child == 0u)
-        {
-            for (uint t = 0u; t < numTris; ++t)
-            {
-                uint lt = sh_TriLt[t];
-                outVerts += (lt == 0u) ? 3u : DiceSubVertCount(lt);
-                outPrims += (lt == 0u) ? 1u : DiceSubTriCount(lt);
-            }
-            outVerts = min(outVerts, 64u);
-            outPrims = min(outPrims, 124u);
-        }
+        outVerts = min(outVerts, 64u);
+        outPrims = min(outPrims, 124u);
     }
 
     if (ti == 0u)
@@ -317,44 +298,6 @@ void main(
     if (diced)
     {
         Texture2DArray< float4 > ErosionMap = GetResource(g_ErosionDetailMap.index);
-
-        if (hier)
-        {
-            // Handle child diced internally at level 3(FIXED); VBuf1 sub-index = child*64 + local.
-            uint  Lt = sh_TriLt[0];
-            uint3 le = uint3(sh_TriLe[0] & 0xFu, (sh_TriLe[0] >> 4u) & 0xFu, (sh_TriLe[0] >> 8u) & 0xFu);
-
-            uint3 cc0, cc1, cc2;
-            DiceChildCorners(child, Lt, cc0, cc1, cc2);
-
-            for (uint v = ti; v < 45u; v += 32)
-            {
-                uint3 coord = DiceHierCoord(cc0, cc1, cc2, DiceSubVertexCoordInt(v, 3u));
-
-                float3 posWS, normal;
-                DiceSubVertex(coord, Lt, le,
-                              sh_CornerPosWS[0], sh_CornerPosWS[1], sh_CornerPosWS[2],
-                              sh_CornerNrm[0], sh_CornerNrm[1], sh_CornerNrm[2],
-                              posWS, normal);
-                posWS = DisplaceVoxelDice(posWS, normal.y, g_FrozenCamera.posWORLD, chunk, ErosionMap, g_LinearClampSampler);
-
-                vertices[v].position = mul(g_Camera.mViewProj, float4(posWS, 1.0));
-#if TEST_MODE == 1
-                vertices[v].color    = float4(normalize(normal) * 0.5 + 0.5, 1.0);
-#endif
-            }
-
-            for (uint p = ti; p < 64u; p += 32)
-            {
-                triangles[p] = DiceSubTriVerts(p, 3u); // local indices into the 45-vert set
-
-                primAttrs[p].cullPrimitive = false;
-                primAttrs[p].visID0 = PackVisID0Voxel(g_DrawID & 0x00FFFFFFu);
-                primAttrs[p].visID1 = PackVisID1Voxel(mi - chunkBaseMI, triBase, child * 64u + p + 1u);
-            }
-
-            return;
-        }
 
         for (uint v = ti; v < outVerts; v += 32)
         {
@@ -434,6 +377,7 @@ void main(
     StructuredBuffer< VoxelVertex > VoxelVertices   = GetResource(sh_VtxHeapIdx);
     StructuredBuffer< uint >        MeshletVertices = GetResource(sh_MvHeapIdx);
 
+    float3 originWS = float3(chunk.originX, chunk.originY, chunk.originZ);
     for (uint i = ti; i < sh_VertexCount; i += 32)
     {
         uint vi = sh_VOffset + MeshletVertices[sh_MvOffset + sh_VertexOffset + i];
@@ -444,6 +388,7 @@ void main(
             VoxelVertex vertex = VoxelVertices[vi];
             pos = VoxelUnpackPosTransition(vertex, chunk.chunkSizeMeter, chunk.lodAndMask);
             nrm = VoxelUnpackNormal(vertex);
+            pos = VoxelMorphPosWS(vertex, pos + originWS, nrm, g_FrozenCamera.posWORLD, chunk) - originWS;
         }
         else
         {
@@ -452,9 +397,7 @@ void main(
             nrm = float3(vertex.normalX, vertex.normalY, vertex.normalZ);
         }
 
-        float3 posWS = isVoxel
-            ? pos + float3(chunk.originX, chunk.originY, chunk.originZ)
-            : mul(sh_LocalToWorld, float4(pos, 1.0)).xyz;
+        float3 posWS = isVoxel ? pos + originWS : mul(sh_LocalToWorld, float4(pos, 1.0)).xyz;
         float4 posCS = mul(g_Camera.mViewProj, float4(posWS, 1.0));
 
         sh_ClipPos[i] = posCS;

@@ -1,4 +1,6 @@
 #include "Common.hlsli"
+#include "HelperFunctions.hlsli"
+#include "VoxelTerrainCommon.hlsli"
 
 cbuffer McPushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
@@ -7,6 +9,7 @@ cbuffer McPushConstants : register(b0, ROOT_CONSTANT_SPACE)
     float g_VoxelSizeMeter;
     uint  g_VertexSlabBase; // this chunk's base offset into the vertex pool (in vertices)
     uint  g_MaxTriangles;   // slab capacity in triangles -- overflow guard
+    float g_GeomorphRadiusMeter;
 };
 
 ConstantBuffer< DescriptorHeapIndex > g_DensityField : register(b1, ROOT_CONSTANT_SPACE);
@@ -14,41 +17,36 @@ ConstantBuffer< DescriptorHeapIndex > g_MCCounter    : register(b2, ROOT_CONSTAN
 ConstantBuffer< DescriptorHeapIndex > g_OutVertices  : register(b3, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_TriTable     : register(b4, ROOT_CONSTANT_SPACE);
 
-// corner i -> unit-cube offset
-static const uint3 kCornerOffset[8] =
-{
-    uint3(0, 0, 0), uint3(1, 0, 0), uint3(1, 1, 0), uint3(0, 1, 0),
-    uint3(0, 0, 1), uint3(1, 0, 1), uint3(1, 1, 1), uint3(0, 1, 1)
-};
+static StructuredBuffer<float> Density  = GetResource(g_DensityField.index);
+static StructuredBuffer<int>   TriTable = GetResource(g_TriTable.index);
 
-// edge -> its two corners
-static const uint2 kEdgeCorners[12] =
-{
-    uint2(0, 1), uint2(1, 2), uint2(2, 3), uint2(3, 0),
-    uint2(4, 5), uint2(5, 6), uint2(6, 7), uint2(7, 4),
-    uint2(0, 4), uint2(1, 5), uint2(2, 6), uint2(3, 7)
-};
-
-uint FlatTexel(uint3 t, uint dim)
-{
-    return (t.z * dim + t.y) * dim + t.x;
-}
-
-// Isosurface vertex on `edge`: position interpolates the two corner samples, normal = density gradient.
+// Isosurface vertex on `edge`: position interpolates the two corner samples along the density gradient
 VoxelVertex MakeEdgeVertex(int edge, float cornerVal[8], float3 cornerPos[8], float3 cornerGrad[8], float chunkSizeMeter)
 {
     uint2  ec = kEdgeCorners[edge];
-    float  v0 = cornerVal[ec.x],  v1 = cornerVal[ec.y];
-    float3 p0 = cornerPos[ec.x],  p1 = cornerPos[ec.y];
-    float3 g0 = cornerGrad[ec.x], g1 = cornerGrad[ec.y];
+    float3 pos, n;
+    VoxelEdgePoint(cornerVal[ec.x], cornerVal[ec.y], cornerPos[ec.x], cornerPos[ec.y], cornerGrad[ec.x], cornerGrad[ec.y], pos, n);
 
-    float  tt  = (abs(v0 - v1) < 1e-6) ? 0.0 : v0 / (v0 - v1); // zero crossing along the edge
-    float3 pos = lerp(p0, p1, tt);
-    float3 g   = lerp(g0, g1, tt);
-    float  gl2 = dot(g, g);
-    float3 n   = (gl2 > 1e-12) ? g * rsqrt(gl2) : float3(0.0, 1.0, 0.0);
+    // Should use the exact same normal value(decoded) as the rendering point(GBuffer) for consistency
+    float3 nq = VoxelQuantizeNormal(n);
 
-    return VoxelPackVertex(pos, n, chunkSizeMeter);
+    VoxelTerrainGenParams gp = (VoxelTerrainGenParams) 0;
+    gp.cellsPerAxis   = g_CellsPerAxis;
+    gp.apron          = g_Apron;
+    gp.voxelSizeMeter = g_VoxelSizeMeter;
+    VoxelProjectResult pr1 = VoxelProjectStage(gp, pos, nq, g_GeomorphRadiusMeter, 2u, Density, TriTable);       // s1 = hit point on parent mesh
+    VoxelProjectResult pr2 = VoxelProjectStage(gp, pos, nq, 2.0 * g_GeomorphRadiusMeter, 4u, Density, TriTable); // s2 = hit point on grandparent
+    VoxelProjectResult pr3 = VoxelProjectStage(gp, pos, nq, 4.0 * g_GeomorphRadiusMeter, 8u, Density, TriTable); // s3 = hit point on great-grandparent
+
+    float s1 = pr1.sd;
+    float s2 = (pr2.code == 0u) ? pr2.sd : s1; // no hit: stay on the previous LOD
+    float s3 = (pr3.code == 0u) ? pr3.sd : s2;
+
+    // normal morph targets: the ancestors' shading normals where the ray hit
+    float3 nT1 = pr1.nTarget;
+    float3 nT2 = (pr2.code == 0u) ? pr2.nTarget : nT1;
+
+    return VoxelPackVertex(pos, nq, nT1, nT2, s1, s2, s3, false, chunkSizeMeter, g_VoxelSizeMeter);
 }
 
 [numthreads(4, 4, 4)]
@@ -59,8 +57,6 @@ void main(uint3 cell : SV_DispatchThreadID)
         return;
 
     const uint dim = C + 1u + 2u * g_Apron;
-    StructuredBuffer< float > Density  = GetResource(g_DensityField.index);
-    StructuredBuffer< int >   TriTable = GetResource(g_TriTable.index);
 
     // sample 8 corners + a central-difference gradient at each (apron guarantees the neighbours)
     float  cornerVal[8];

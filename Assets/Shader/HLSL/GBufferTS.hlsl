@@ -220,7 +220,8 @@ void main(uint3 Gid : SV_DispatchThreadID, uint3 GTid : SV_GroupThreadID)
     uint payloadIndex = WavePrefixCountBits(accept);
 
     // Per-slot MS group budget
-    uint numGroups = accept ? ((slotLm > 0u) ? DiceGroupsForMeshlet(slotLm, slotTriCount) : 1u) : 0u;
+    uint groups    = DiceGroupsForMeshlet(max(slotLm, 1u), slotTriCount);
+    uint numGroups = accept ? ((slotLm > 0u) ? groups : 1u) : 0u;
     uint diceMask  = WaveActiveBitOr((accept && slotLm > 0u) ? (1u << payloadIndex) : 0u);
 
     // Per-slot budget levels, 4 bits each, 8 slots per uint

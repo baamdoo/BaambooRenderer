@@ -33,9 +33,7 @@ float4 VarianceColorClampAABB(float4 historyColor, Texture2D cloudLUT, float2 uv
         {
             float2 sampleUV = uv + float2(x, y) * invLowResTexSize;
 
-            // Common.hg에 g_SamplerLinear가 정의되어 있다고 가정합니다.
             float4 neighborColor = cloudLUT.Sample(g_LinearClampSampler, sampleUV);
-
             float3 neighborYCoCg = RGB2YCoCg(neighborColor.rgb);
             m1 += neighborYCoCg;
             m2 += neighborYCoCg * neighborYCoCg;
@@ -79,7 +77,7 @@ void main(uint3 tID : SV_DispatchThreadID)
     if (tID.x >= imgSize.x || tID.y >= imgSize.y)
         return;
 
-    float2 uv       = (float2(pixCoords) + 0.5) / float2(imgSize);
+    float2 uv = (float2(pixCoords) + 0.5) / float2(imgSize);
 
     Texture2D< float >  DepthBuffer                    = GetResource(g_DepthBuffer.index);
     Texture2D< float4 > CloudScatteringLUT             = GetResource(g_CloudScatteringLUT.index);
@@ -92,13 +90,13 @@ void main(uint3 tID : SV_DispatchThreadID)
         return;
     }
 
-    float  depth        = DepthBuffer.Sample(g_PointClampSampler, uv).r;
+    float depth = DepthBuffer.Sample(g_PointClampSampler, uv).r;
 
-    float4 posCLIP        = float4(uv.x * 2.0 - 1.0, uv.y * -2.0 + 1.0, depth, 1.0);
-    float4 posHOMOGENEOUS = mul(g_Camera.mViewProjInv, posCLIP);
+    float4 posCLIP  = float4(uv.x * 2.0 - 1.0, uv.y * -2.0 + 1.0, depth, 1.0);
+    float4 posWORLD = mul(g_Camera.mViewProjInv, posCLIP);
 
-    float4 posPrevClip = mul(g_Camera.mViewProjUnjitteredPrev, posHOMOGENEOUS);
-    float3 posPrevNDC  = posPrevClip.xyz / posPrevClip.w;
+    float4 posPrevCLIP = mul(g_Camera.mViewProjUnjitteredPrev, posWORLD);
+    float3 posPrevNDC  = posPrevCLIP.xyz / posPrevCLIP.w;
     float2 prevUV      = posPrevNDC.xy * 0.5 + 0.5;
            prevUV.y    = 1.0 - prevUV.y;
 

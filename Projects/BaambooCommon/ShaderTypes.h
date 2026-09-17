@@ -38,7 +38,7 @@ struct InstanceData
 };
 
 constexpr u32 kVoxelChunkInstanceBase = 0u;
-constexpr u32 kMaxVoxelChunkSlots     = 512u; // Reserved voxel instance slots (= max concurrent resident chunks)
+constexpr u32 kMaxVoxelChunkSlots     = 1024u; // Reserved voxel instance slots (= max concurrent resident chunks)
 
 struct VoxelChunkID
 {
@@ -470,13 +470,13 @@ struct VoxelChunkDesc
     u32   mvOffset;
     u32   mtOffset;
     float chunkSizeMeter;
-    u32   diceMaxLevel;          // micro-dicing max subdivision level (0 = off, 1..5)
+    u32   diceMaxLevel;          // micro-dicing max subdivision level (0 = off, 1..3)
 
     // Micro-dicing
     float diceRadiusMeter;
     float diceFadeWidthMeter;    // displacement fades to 0 approaching the radius
     float diceDisplacementScale;
-    u32   debugFlags;            // bit0 = dice-level tint
+    u32   debugFlags;            // bit0 = chunk tint | bit1 = LOD tint
 
     // Adaptive dicing
     float diceTargetPx;        // target sub-edge screen size (px)
@@ -496,7 +496,7 @@ struct VoxelChunkDesc
 
     u32 mOffset;          // absolute meshlet-pool base of this chunk's page
     u32 erosionSlice;     // erosion detail array slice (independent of pageID)
-    u32 flags;            // bit0 = renderable
+    u32 flags;            // bit0 = renderable | bit1 = fadeOut | bits 8..12 = dither threshold
     u32 reserved;
 };
 static_assert(sizeof(VoxelChunkDesc) == 112);
@@ -507,14 +507,15 @@ struct VoxelChunkCounts
 };
 static_assert(sizeof(VoxelChunkCounts) == 4);
 
-// 12B voxel vertex: chunk-local position quantized by chunkSize + octahedral normal
+// 16B voxel vertex: quantized chunk-local position, three 8+8 octahedral normals, three 10-bit geomorph offsets
 struct VoxelVertex
 {
-    u32 posXY;    // pos.x 16b | pos.y 16b
-    u32 posZres;  // pos.z 16b | reserved 16b
-    u32 octUoctV; // octahedral normal u 16b | v 16b
+    u32 posXY;      // pos.x 16b | pos.y 16b
+    u32 posZnormal; // pos.z 16b | vertex normal 8b+8b
+    u32 normalT;    // geomorph target normals: parent 8b+8b (bits 16..31) | grandparent 8b+8b (bits 0..15)
+    u32 morph;      // bit0 pinned | s1 10b (bits 1..10) | s2 10b (bits 11..20) | s3 10b (bits 21..30): signed offsets along the normal to the parent / grandparent / great-grandparent mesh (units 2/4/8 voxels)
 };
-static_assert(sizeof(VoxelVertex) == 12);
+static_assert(sizeof(VoxelVertex) == 16);
 
 // =========================================================================
 // Voxel Terrain Generation Params

@@ -1,5 +1,6 @@
 #include "Common.hlsli"
 #include "HelperFunctions.hlsli"
+#include "VoxelTerrainCommon.hlsli"
 
 cbuffer TriSortPushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {

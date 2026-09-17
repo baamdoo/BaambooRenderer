@@ -2,6 +2,7 @@
 #extension GL_GOOGLE_include_directive : require
 
 #include "DescriptorCommon.hg"
+#include "VoxelTerrainCommon.hg"
 
 layout(push_constant) uniform MeshletBuildPushConstants
 {

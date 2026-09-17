@@ -122,7 +122,7 @@ project "BaambooEngine"
 	links {
 		"BaambooCommon",
 		"glfw3.lib",
-		'assimp-vc143-mt.lib', 
+		(_ACTION == "vs2026" and 'assimp-vc145-mt.lib' or 'assimp-vc143-mt.lib'),
 		'meshoptimizer.lib', 
 	}
 
@@ -187,7 +187,7 @@ project "BaambooCommon"
 	filter "configurations:Debug"
 		defines "_DEBUG"
 		runtime "Debug"
-		optimize "on"
+		optimize "off"
 
 	filter "configurations:Release"
 		defines "NDEBUG"
@@ -322,6 +322,7 @@ project "Dx12Renderer"
 		defines "_DEBUG"
 		runtime "Debug"
 		symbols "on"
+		shaderoptions "-O3"
 		links {  }
 		
 	filter "configurations:Release"

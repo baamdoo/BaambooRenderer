@@ -87,11 +87,11 @@ void main()
         return;
     }
 
-    vec4 posCLIP        = vec4(uv * 2.0 - 1.0, depth, 1.0);
-    vec4 posHOMOGENEOUS = g_Camera.mViewProjInv * posCLIP;
+    vec4 posCLIP  = vec4(uv * 2.0 - 1.0, depth, 1.0);
+    vec4 posWORLD = g_Camera.mViewProjInv * posCLIP;
 
-    vec4 posPrevClip = g_Camera.mViewProjUnjitteredPrev * posHOMOGENEOUS;
-    vec3 posPrevNDC  = posPrevClip.xyz / posPrevClip.w;
+    vec4 posPrevCLIP = g_Camera.mViewProjUnjitteredPrev * posWORLD;
+    vec3 posPrevNDC  = posPrevCLIP.xyz / posPrevCLIP.w;
     vec2 prevUV      = posPrevNDC.xy * 0.5 + 0.5;
 
     vec4 newColor = currentColor;

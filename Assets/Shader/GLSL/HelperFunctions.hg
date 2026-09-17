@@ -88,6 +88,16 @@ uint roundUpAndDivide(uint value, uint alignment)
     return (value + alignment - 1) / alignment;
 }
 
+int FlatTexel(ivec3 t, int dim)
+{
+    return (t.z * dim + t.y) * dim + t.x;
+}
+
+uint FlatTexel(uvec3 t, uint dim)
+{
+    return (t.z * dim + t.y) * dim + t.x;
+}
+
 vec3 ReconstructWorldPos(vec2 uv, float depth, mat4 mViewProjInv)
 {
     // vec4 posCLIP  = vec4(uv.x * 2.0 - 1.0, uv.y * -2.0 + 1.0, depth, 1.0);
@@ -353,10 +363,10 @@ uint MortonEncode3D(uvec3 v)
 }
 
 // Voxel triangle spatial-sort key: 32^3 blocks over the chunk cube -> 15-bit Morton code.
-uint VoxelTriSortKey(vec3 posLocal, float chunkSizeMeter)
+uint VoxelTriSortKey(vec3 pos, float chunkSizeMeter)
 {
     float blocksPerMeter = 32.0 / max(chunkSizeMeter, 1e-3);
-    uvec3 blk = min(uvec3(max(posLocal, vec3(0.0)) * blocksPerMeter), uvec3(31u, 31u, 31u));
+    uvec3 blk = min(uvec3(max(pos, vec3(0.0)) * blocksPerMeter), uvec3(31u, 31u, 31u));
     return MortonEncode3D(blk);
 }
 // ---------------- //

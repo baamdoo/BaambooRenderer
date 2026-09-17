@@ -35,6 +35,7 @@ void main(uint3 DTid : SV_DispatchThreadID)
     [loop] for (uint si = 0; si < g_Lights.numSpheres; ++si)
     {
         SphereLight l = g_Lights.spheres[si];
+        
         float3 cWorld = float3(l.posX, l.posY, l.posZ);
         float3 cView  = mul(g_FrozenCamera.mView, float4(cWorld, 1.0)).xyz;
         float  rMax   = InfluenceRadiusIsotropic(l.luminousFluxLm, l.radius);
@@ -44,11 +45,8 @@ void main(uint3 DTid : SV_DispatchThreadID)
 
     [loop] for (uint pi = 0; pi < g_Lights.numSpots; ++pi)
     {
-        // Spot cluster cull — use an apex-centered enclosing sphere of radius `range / cos(θ)` so
-        // that the entire cone is bounded. Cone-AABB intersection is intractable to make perfectly
-        // tight, and any false-negative manifests as cluster-aligned hard edges in the shading.
-        // Cone shape is enforced per-pixel by `spotAttenuation` in ApplySpotLight.
         SpotLight l = g_Lights.spots[pi];
+        
         float3 cWorld = float3(l.posX, l.posY, l.posZ);
         float3 cView  = mul(g_FrozenCamera.mView, float4(cWorld, 1.0)).xyz;
         float  rCone  = InfluenceRadiusCone(l.luminousFluxLm, l.outerConeAngleRad, l.radiusM);
@@ -60,6 +58,7 @@ void main(uint3 DTid : SV_DispatchThreadID)
     [loop] for (uint ai = 0; ai < g_Lights.numAreas; ++ai)
     {
         AreaLight l = g_Lights.areas[ai];
+        
         float3 cWorld     = float3(l.posX, l.posY, l.posZ);
         float3 nWorld     = float3(l.normalX, l.normalY, l.normalZ);
         float3 cView      = mul(g_FrozenCamera.mView, float4(cWorld, 1.0)).xyz;
@@ -73,6 +72,7 @@ void main(uint3 DTid : SV_DispatchThreadID)
     [loop] for (uint di = 0; di < g_Lights.numDisks; ++di)
     {
         DiskLight l = g_Lights.disks[di];
+        
         float3 cWorld = float3(l.posX, l.posY, l.posZ);
         float3 nWorld = float3(l.normalX, l.normalY, l.normalZ);
         float3 cView  = mul(g_FrozenCamera.mView, float4(cWorld, 1.0)).xyz;
@@ -85,6 +85,7 @@ void main(uint3 DTid : SV_DispatchThreadID)
     [loop] for (uint ti = 0; ti < g_Lights.numTubes; ++ti)
     {
         TubeLight l = g_Lights.tubes[ti];
+        
         float3 aWorld = float3(l.posAX, l.posAY, l.posAZ);
         float3 bWorld = float3(l.posBX, l.posBY, l.posBZ);
         float3 aView  = mul(g_FrozenCamera.mView, float4(aWorld, 1.0)).xyz;
@@ -96,5 +97,5 @@ void main(uint3 DTid : SV_DispatchThreadID)
     count = min(count, MAX_LIGHTS_PER_CLUSTER);
 
     RWStructuredBuffer< uint2 > LightGrid = GetResource(g_LightGridBuffer.index);
-    LightGrid[clusterIdx] = uint2(0, count);  // offset 은 Pass 2 (Scan) 에서 채움
+    LightGrid[clusterIdx] = uint2(0, count);
 }

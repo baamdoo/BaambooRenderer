@@ -199,18 +199,22 @@ void TerrainApp::DrawUI()
 				int seed    = (int)gs.seed;
 
 				// Rebuild on change.
-				bRebuildChunk |= ImGui::SliderFloat("Detail Weight",  &gs.detailWeight,      0.0f,   4.0f,  "%.2f");
-				bRebuildChunk |= ImGui::SliderFloat("Ridged Blend",   &gs.ridgedBlend,       0.0f,   1.0f,  "%.2f");
-				bRebuildChunk |= ImGui::SliderFloat("Redistribution", &gs.redistributionExp, 0.2f,   4.0f,  "%.2f");
-				bRebuildChunk |= ImGui::SliderInt  ("Octaves",        &octaves,              0,      8);
-				bRebuildChunk |= ImGui::SliderFloat("Frequency",      &gs.frequency,         0.005f, 0.2f,  "%.4f");
-				bRebuildChunk |= ImGui::SliderFloat("Lacunarity",     &gs.lacunarity,        1.5f,   3.0f,  "%.2f");
-				bRebuildChunk |= ImGui::SliderFloat("Gain",           &gs.gain,              0.2f,   0.8f,  "%.2f");
-				bRebuildChunk |= ImGui::SliderFloat("Warp Strength",  &gs.warpStrength,      0.0f,   3.0f,  "%.2f");
-				bRebuildChunk |= ImGui::SliderFloat("Warp Frequency", &gs.warpFrequency,     0.005f, 0.1f,  "%.4f");
-				bRebuildChunk |= ImGui::SliderFloat("Amplitude (m)",  &gs.mountainAmplitude, 0.0f,   64.0f, "%.1f");
+				bRebuildChunk |= ImGui::SliderFloat("Detail Weight",     &gs.detailWeight,      0.0f,   4.0f,  "%.2f");
+				bRebuildChunk |= ImGui::SliderFloat("Ridged Blend",      &gs.ridgedBlend,       0.0f,   1.0f,  "%.2f");
+				bRebuildChunk |= ImGui::SliderFloat("Redistribution",    &gs.redistributionExp, 0.2f,   4.0f,  "%.2f");
+				ImGui::SetItemTooltip("Height curve h^exp: > 1 widens lowlands and sharpens peaks (1 = off)");
+				bRebuildChunk |= ImGui::SliderInt  ("Octaves",           &octaves,              0,      8);
+				bRebuildChunk |= ImGui::SliderFloat("Frequency",         &gs.frequency,         0.005f, 0.2f,  "%.4f");
+				ImGui::SetItemTooltip("Base noise frequency (1/m); lower = broader features");
+				bRebuildChunk |= ImGui::SliderFloat("Lacunarity",        &gs.lacunarity,        1.5f,   3.0f,  "%.2f");
+				ImGui::SetItemTooltip("Frequency multiplier per octave");
+				bRebuildChunk |= ImGui::SliderFloat("Gain",              &gs.gain,              0.2f,   0.8f,  "%.2f");
+				ImGui::SetItemTooltip("Amplitude multiplier per octave");
+				bRebuildChunk |= ImGui::SliderFloat("Warp Strength",     &gs.warpStrength,      0.0f,   3.0f,  "%.2f");
+				bRebuildChunk |= ImGui::SliderFloat("Warp Frequency",    &gs.warpFrequency,     0.005f, 0.1f,  "%.4f");
+				bRebuildChunk |= ImGui::SliderFloat("Amplitude (m)",     &gs.mountainAmplitude, 0.0f,   64.0f, "%.1f");
 				bRebuildChunk |= ImGui::SliderFloat("Surface Level (m)", &gs.surfaceBaseYMeter, 0.0f, 64.0f, "%.1f");
-				bRebuildChunk |= ImGui::InputInt   ("Seed",           &seed);
+				bRebuildChunk |= ImGui::InputInt   ("Seed",              &seed);
 
 				gs.octaves = octaves;
 				gs.seed    = (u32)(seed < 0 ? 0 : seed);
@@ -227,12 +231,17 @@ void TerrainApp::DrawUI()
 				bRebuildChunk |= ImGui::SliderFloat("Ero Strength",    &gs.erosionStrength,       0.0f,  1.0f,  "%.2f");
 				bRebuildChunk |= ImGui::SliderFloat("Gully Weight",    &gs.erosionGullyWeight,    0.0f,  1.0f,  "%.2f");
 				bRebuildChunk |= ImGui::SliderFloat("Ero Detail",      &gs.erosionDetail,         0.5f,  3.0f,  "%.2f");
+				ImGui::SetItemTooltip("Higher lets finer octaves keep carving already-carved slopes");
 				bRebuildChunk |= ImGui::SliderFloat("Cell Scale",      &gs.erosionCellScale,      0.4f,  1.0f,  "%.2f");
+				ImGui::SetItemTooltip("Gully cell width as a fraction of Ero Scale (smaller = denser)");
 				bRebuildChunk |= ImGui::SliderFloat("Normalization",   &gs.erosionNormalization,  0.0f,  1.0f,  "%.2f");
+				ImGui::SetItemTooltip("Evens out gully depth across noise cells (0 = raw noise)");
 				bRebuildChunk |= ImGui::SliderFloat("Slope Scale",     &gs.erosionSlopeScale,     0.0f,  4.0f,  "%.2f");
-				// Higher onset restricts carving to steeper slopes.
+				ImGui::SetItemTooltip("Multiplier on the base slope that drives gully direction and onset");
 				bRebuildChunk |= ImGui::SliderFloat("Onset Input",     &gs.erosionOnsetInput,     0.25f, 4.0f,  "%.2f");
+				ImGui::SetItemTooltip("Carving ramps up with base slope, full at slope 1/onset; higher = starts on gentler ground");
 				bRebuildChunk |= ImGui::SliderFloat("Onset Octave",    &gs.erosionOnsetOctave,    0.25f, 4.0f,  "%.2f");
+				ImGui::SetItemTooltip("Same ramp on each gully's own flanks; higher = finer gullies reach closer to crests and creases");
 
 				gs.erosionOctaves = (u32)(erosionOctaves < 0 ? 0 : erosionOctaves);
 			}
@@ -241,49 +250,52 @@ void TerrainApp::DrawUI()
 			{
 				auto& dice = terrain.settings.dice;
 				int  diceMaxLevel = (int)dice.maxLevel;
-				bool bLevelTint   = (dice.debugFlags & 1u) != 0u;
 
 				// Live, no rebuild.
-				ImGui::SliderInt  ("Dice Max Level",  &diceMaxLevel,           0,    5           );
+				ImGui::SliderInt  ("Dice Max Level",  &diceMaxLevel,           0,    3           );
 				ImGui::SliderFloat("Target Px",       &dice.targetPx,          2.0f, 16.0f, "%.1f");
 				ImGui::SliderFloat("Dice Radius (m)", &dice.radiusM,           5.0f, 80.0f, "%.0f");
-				ImGui::SliderFloat("Dice Fade (m)",   &dice.fadeWidthMeter,        1.0f, 20.0f, "%.0f");
+				ImGui::SetItemTooltip("Subdivision and displacement only within this distance");
+				ImGui::SliderFloat("Dice Fade (m)",   &dice.fadeWidthMeter,    1.0f, 20.0f, "%.0f");
+				ImGui::SetItemTooltip("Fade-out band width inside the radius");
 				ImGui::SliderFloat("Disp Scale",      &dice.displacementScale, 0.0f, 2.0f,  "%.2f");
-				if (ImGui::Checkbox("Level Tint", &bLevelTint))
-					dice.debugFlags = bLevelTint ? (dice.debugFlags | 1u) : (dice.debugFlags & ~1u);
-
-				bool bChunkTint = (dice.debugFlags & 2u) != 0u;
-				if (ImGui::Checkbox("Chunk Tint", &bChunkTint))
-					dice.debugFlags = bChunkTint ? (dice.debugFlags | 2u) : (dice.debugFlags & ~2u);
-
-				bool bLodTint = (dice.debugFlags & 8u) != 0u;
-				if (ImGui::Checkbox("LOD Tint", &bLodTint))
-					dice.debugFlags = bLodTint ? (dice.debugFlags | 8u) : (dice.debugFlags & ~8u);
+				ImGui::SetItemTooltip("Multiplier on the baked erosion detail displacement");
 
 				int microOctaves = (int)dice.microOctaves;
-				ImGui::SliderFloat("Micro Amp (m)",      &dice.microAmplitudeMeter,        0.0f,  0.10f, "%.3f");
-				ImGui::SliderFloat("Micro Base WL (m)",  &dice.microBaseWaveLengthMeter,     0.05f, 1.0f,  "%.2f");
+				ImGui::SliderFloat("Micro Amp (m)",      &dice.microAmplitudeMeter,      0.0f,  0.10f, "%.3f");
+				ImGui::SliderFloat("Micro Base WL (m)",  &dice.microBaseWaveLengthMeter, 0.05f, 1.0f,  "%.2f");
 				ImGui::SliderFloat("Micro Lacunarity",   &dice.microLacunarity,  1.5f,  4.0f,  "%.2f");
 				ImGui::SliderFloat("Micro Gain",         &dice.microGain,        0.1f,  0.9f,  "%.2f");
 				ImGui::SliderFloat("Micro Sharpness",    &dice.microSharpness,  -1.0f,  1.0f,  "%.2f"); // -1 ridged .. +1 billowed
 				ImGui::SliderFloat("Micro Crease Boost", &dice.microCreaseBoost, 0.0f,  4.0f,  "%.2f");
-				ImGui::SliderInt  ("Micro Octaves",      &microOctaves,          0,     6     );
+				ImGui::SliderInt  ("Micro Octaves",      &microOctaves,          0,     4     );
 
-				bool bMicroCavity = (dice.debugFlags & 4u) != 0u;
-				if (ImGui::Checkbox("Micro Cavity", &bMicroCavity))
-					dice.debugFlags = bMicroCavity ? (dice.debugFlags | 4u) : (dice.debugFlags & ~4u);
-
-				dice.maxLevel     = (u32)(diceMaxLevel < 0 ? 0 : diceMaxLevel);
+				dice.maxLevel     = (u32)(diceMaxLevel < 0 ? 0 : (diceMaxLevel > 3 ? 3 : diceMaxLevel));
 				dice.microOctaves = (u32)(microOctaves < 0 ? 0 : microOctaves);
 			}
 
 			if (ImGui::CollapsingHeader("Streaming", ImGuiTreeNodeFlags_DefaultOpen))
 			{
 				auto& gs = terrain.settings;
-				int maxLodLevel = (int)gs.maxLodLevel;
+				int maxLodLevel     = (int)gs.maxLodLevel;
 
 				ImGui::SliderInt("Max LOD Level", &maxLodLevel, 0, 7);
-				gs.maxLodLevel = (u32)maxLodLevel;
+				ImGui::SliderFloat("Crossfade Seconds", &gs.crossfadeSeconds, 0.0f, 0.5f, "%.2f s");
+				gs.maxLodLevel     = (u32)maxLodLevel;
+			}
+
+			if (ImGui::CollapsingHeader("Debug"))
+			{
+				auto& gs = terrain.settings;
+
+				// Live, no rebuild.
+				bool bChunkTint = (gs.debugFlags & 1u) != 0u;
+				if (ImGui::Checkbox("Chunk Tint", &bChunkTint))
+					gs.debugFlags = bChunkTint ? (gs.debugFlags | 1u) : (gs.debugFlags & ~1u);
+
+				bool bLodTint = (gs.debugFlags & 2u) != 0u;
+				if (ImGui::Checkbox("LOD Tint", &bLodTint))
+					gs.debugFlags = bLodTint ? (gs.debugFlags | 2u) : (gs.debugFlags & ~2u);
 			}
 
 			if (bRebuildChunk)

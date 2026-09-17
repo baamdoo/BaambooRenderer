@@ -1,3 +1,4 @@
+include ("cmake.lua")
 include ("assimp.lua")
 include ("GLFW.lua")
 include ("meshoptimizer.lua")

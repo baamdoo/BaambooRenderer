@@ -3,6 +3,7 @@
 
 #include "DescriptorCommon.hg"
 #include "HelperFunctions.hg"
+#include "VoxelTerrainCommon.hg"
 
 layout(push_constant) uniform TriSortPushConstants
 {

@@ -9,9 +9,6 @@
 #include "BaambooScene/VoxelTerrain/MarchingCubes.h"
 #include "BaambooScene/VoxelTerrain/TransvoxelTables.h"
 
-#include <imgui.h>
-#include <fstream>
-#include <filesystem>
 
 namespace baamboo
 {
@@ -126,13 +123,13 @@ VoxelChunkRenderNode::VoxelChunkRenderNode(render::RenderDevice& rd)
 
 	m_pChunkCountsBuffer = Buffer::Create(rd, "VoxelChunkPass::ChunkCounts",
 		{
-			.count              = kMaxChunks,
+			.count              = kMaxVoxelChunkSlots,
 			.elementSizeInBytes = sizeof(VoxelChunkCounts),
 			.bufferUsage        = eBufferUsage_Storage,
 		});
 	m_pChunkDescBuffer = Buffer::Create(rd, "VoxelChunkPass::ChunkDescs",
 		{
-			.count              = kMaxChunks,
+			.count              = kMaxVoxelChunkSlots,
 			.elementSizeInBytes = sizeof(VoxelChunkDesc),
 			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest,
 		});
@@ -142,15 +139,8 @@ VoxelChunkRenderNode::VoxelChunkRenderNode(render::RenderDevice& rd)
 		m_FreePages[c].reserve(VoxelClassPageCount(c));
 	m_FreeErosionSlices.reserve(kMaxVoxelErosionSlices);
 
-	// Density volume + the linear copy the MC extract samples.
+	// Density volume the extract samples, linear (C+1+2A)^3
 	const u32 kDensityVoxelCount = kDensityVolumeDim * kDensityVolumeDim * kDensityVolumeDim;
-	m_pDensityVolume = Texture::Create(rd, "VoxelChunkPass::DensityVolume",
-		{
-			.imageType  = eImageType::Texture3D,
-			.resolution = uint3(kDensityVolumeDim, kDensityVolumeDim, kDensityVolumeDim),
-			.format     = eFormat::R32_FLOAT,
-			.imageUsage = eTextureUsage_Storage | eTextureUsage_Sample,
-		});
 	m_pDensityField = Buffer::Create(rd, "VoxelChunkPass::DensityField",
 		{
 			.count              = kDensityVoxelCount,
@@ -249,6 +239,10 @@ VoxelChunkRenderNode::VoxelChunkRenderNode(render::RenderDevice& rd)
 
 	for (u32 i = 0; i < kMaxVoxelChunkSlots; ++i)
 		m_ChunkSlots[i].chunkIndex = i;
+
+	m_FreeSlots.reserve(kMaxVoxelChunkSlots);
+	for (u32 i = kMaxVoxelChunkSlots; i > 0u; --i)
+		m_FreeSlots.push_back(i - 1u); // back = lowest index, matching the old low-first linear search
 }
 
 // ---- Chunk residency ------------------------------------------------------
@@ -267,17 +261,6 @@ u32 VoxelChunkRenderNode::AllocatePage(u32 classId)
 	return kInvalidIndex; // class pool exhausted
 }
 
-u32 VoxelChunkRenderNode::AllocatePageAtLeast(u32 classId)
-{
-	for (u32 c = classId; c < kVoxelPageClassCount; ++c)
-	{
-		const u32 pageID = AllocatePage(c);
-		if (pageID != kInvalidIndex)
-			return pageID;
-	}
-	return kInvalidIndex;
-}
-
 void VoxelChunkRenderNode::DeallocatePage(u32 pageID)
 {
 	if (pageID == kInvalidIndex)
@@ -294,8 +277,12 @@ void VoxelChunkRenderNode::RetireSlot(ChunkSlot& chunkSlot)
 	if (chunkSlot.id.lod == 0u)
 		ReleaseErosionColumn(chunkSlot.id);
 
+	assert(m_SlotIdMap.contains(VoxelChunkKey(chunkSlot.id)));
+	m_SlotIdMap.erase(VoxelChunkKey(chunkSlot.id));
+
 	chunkSlot = {};
 	chunkSlot.chunkIndex = slotIndex;
+	m_FreeSlots.push_back(slotIndex);
 
 	m_ChunkDescs[slotIndex] = {};
 	m_ChunkDescs[slotIndex].pageID = kInvalidIndex;
@@ -303,11 +290,11 @@ void VoxelChunkRenderNode::RetireSlot(ChunkSlot& chunkSlot)
 
 u32 VoxelChunkRenderNode::AllocatePageOrReclaim(u32 classId, const float3& camPos, float baseChunkSizeMeter)
 {
-	const u32 pageID = AllocatePageAtLeast(classId);
+	const u32 pageID = AllocatePage(classId);
 	if (pageID != kInvalidIndex)
 		return pageID;
 
-	// reclaim the farthest retiring chunk holding a big-enough page; its built members go visible now (partial swap)
+	// reclaim the farthest retiring chunk holding a page of this pool; its built members go visible now (partial swap)
 	ChunkSlot* victim = nullptr;
 	float farthest = -1.0f;
 	for (ChunkSlot& slot : m_ChunkSlots)
@@ -315,8 +302,8 @@ u32 VoxelChunkRenderNode::AllocatePageOrReclaim(u32 classId, const float3& camPo
 		if (slot.state == eChunkState::Empty || slot.bDesired || !slot.bVisible)
 			continue;
 
-		const bool bReclaimable = 
-			(slot.pageID != kInvalidIndex && VoxelPageClassId(slot.pageID) >= classId) || (slot.pendingPageID != kInvalidIndex && VoxelPageClassId(slot.pendingPageID) >= classId);
+		const bool bReclaimable =
+			(slot.pageID != kInvalidIndex && VoxelPageClassId(slot.pageID) == classId) || (slot.pendingPageID != kInvalidIndex && VoxelPageClassId(slot.pendingPageID) == classId);
 		if (!bReclaimable)
 			continue;
 
@@ -334,12 +321,14 @@ u32 VoxelChunkRenderNode::AllocatePageOrReclaim(u32 classId, const float3& camPo
 	for (ChunkSlot& member : m_ChunkSlots)
 	{
 		if (member.bDesired && IsBuilt(member) && IsChunksOverlapped(victim->id, member.id))
+		{
+			member.fadeRemaining = 0.0f;
 			member.bVisible = true;
+		}
 	}
 	RetireSlot(*victim);
-	++m_ReclaimCount;
 
-	return AllocatePageAtLeast(classId);
+	return AllocatePage(classId);
 }
 
 u32 VoxelChunkRenderNode::AllocateErosionSlice()
@@ -398,17 +387,7 @@ bool VoxelChunkRenderNode::ConsumeErosionBake(const VoxelChunkID& id, u32 revisi
 
 u32 VoxelChunkRenderNode::SelectPageClass(const ChunkSlot& chunkSlot) const
 {
-	if (chunkSlot.lastTriCount <= 0u)
-		return kVoxelInitialClassId;
-
-	u32 reservedTriCount = u32(glm::round(float(chunkSlot.lastTriCount) * kVoxelPageClassTriangleReserveRate));
-	for (u32 i = 0; i < kVoxelPageClassCount; ++i)
-	{
-		if (reservedTriCount <= VoxelClassTriCap(i))
-			return i;
-	}
-
-	return 3u; // XL
+	return std::min(chunkSlot.id.lod, kVoxelPageClassCount - 1u);
 }
 
 void VoxelChunkRenderNode::InstallPage(ChunkSlot& chunkSlot, u32 pageID)
@@ -474,12 +453,7 @@ bool VoxelChunkRenderNode::EnsureChunkResident(render::CommandContext& context, 
 		const u32 targetClass = SelectPageClass(chunkSlot);
 		chunkSlot.pageID = AllocatePageOrReclaim(targetClass, camPos, baseChunkSizeMeter);
 		if (chunkSlot.pageID == kInvalidIndex)
-		{
-			++m_AllocFailCount;
-			if ((m_AllocFailCount & (m_AllocFailCount - 1u)) == 0u)
-				fprintf(stderr, "[VoxelChunkRenderNode] page pool exhausted (class %u, fail #%u).\n", targetClass, m_AllocFailCount);
-			return false;
-		}
+			return false; // pool of this level exhausted: stays queued until a page frees
 	}
 	EnsurePageStatics(context, chunkSlot.pageID);
 
@@ -504,7 +478,7 @@ bool VoxelChunkRenderNode::EnsureChunkResident(render::CommandContext& context, 
 void VoxelChunkRenderNode::DispatchDensity(render::CommandContext& context, const VoxelTerrainGenParams& gp, const ChunkSlot& chunkSlot)
 {
 	using namespace render;
-	if (!m_pDensityPSO || !m_pDensityVolume)
+	if (!m_pDensityPSO)
 		return;
 
 	const u32 dim = gp.samplesPerAxis + 2u * gp.apron; // C+1+2A
@@ -518,16 +492,12 @@ void VoxelChunkRenderNode::DispatchDensity(render::CommandContext& context, cons
 
 	context.SetRenderPipeline(m_pDensityPSO.get());
 
-	context.TransitionBarrier(m_pDensityVolume, eTextureLayout::General);
 	context.TransitionBufferToWrite(m_pDensityField, ePipelineStage::ComputeShader);
 
 	context.SetComputeDynamicUniformBuffer("g_VoxelGenParams", gp);
-	context.StageDescriptor("g_OutDensityTex", m_pDensityVolume);
-	context.StageDescriptor("g_OutDensityDebug", m_pDensityField);
+	context.StageDescriptor("g_OutDensity", m_pDensityField);
 
 	context.Dispatch3D< 4, 4, 4 >(dim, dim, dim);
-
-	context.TransitionBarrier(m_pDensityVolume, eTextureLayout::ShaderReadOnly);
 }
 
 void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, const VoxelTerrainGenParams& gp, const ChunkSlot& chunkSlot, u32 buildPageID)
@@ -563,7 +533,8 @@ void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, c
 		float voxelSizeMeter;
 		u32   vertexPageBase;
 		u32   maxTriangles;
-	} mc = { C, apron, gp.voxelSizeMeter, vBase, triCap };
+		float morphRadiusMeter; // geomorph projection search radius
+	} mc = { C, apron, gp.voxelSizeMeter, vBase, triCap, 2.0f * gp.voxelSizeMeter }; // projection radius = one parent cell
 	context.SetComputeConstants(sizeof(mc), &mc);
 	context.StageDescriptor("g_TriTable", m_pMCTriTable);
 	context.StageDescriptor("g_DensityField", m_pDensityField);
@@ -580,6 +551,7 @@ void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, c
 	context.SetRenderPipeline(m_pTransvoxelPSO.get());
 	context.SetComputeConstants(sizeof(mc), &mc);
 	context.StageDescriptor("g_TvTables", m_pTransvoxelTable);
+	context.StageDescriptor("g_TriTable", m_pMCTriTable);
 	context.StageDescriptor("g_DensityField", m_pDensityField);
 	context.StageDescriptor("g_MCCounter", m_pMCCounter);
 	context.StageDescriptor("g_OutVertices", m_pVertexPool);
@@ -721,93 +693,112 @@ void VoxelChunkRenderNode::BuildChunkGeometryIfNeeded(render::CommandContext& co
 	const VoxelTerrainRenderView& vt = renderView.voxelTerrain;
 
 	PublishTriReadback();
-	
-	if (vt.bValid)
-	{
-		m_CurrentRevision = vt.revision;
-		m_RecenterCount   = vt.recenterCount;
-	}
 
 	for (ChunkSlot& slot : m_ChunkSlots)
 		slot.bDesired = false;
+	BB_ASSERT(m_SlotIdMap.size() + m_FreeSlots.size() == kMaxVoxelChunkSlots,
+		"slot bookkeeping drifted: %u mapped + %u free != %u", (u32)m_SlotIdMap.size(), (u32)m_FreeSlots.size(), kMaxVoxelChunkSlots);
 
-	std::unordered_map< u64, u32 > desiredChunksToAdd;
+	std::vector< u32 > desiredChunksToAdd;
 	for (const VoxelChunkView& view : vt.chunks)
 	{
 		u64 targetKey = VoxelChunkKey(view.id);
-		auto resident = std::ranges::find_if(m_ChunkSlots.begin(), m_ChunkSlots.end(),
-			[&view, targetKey](const ChunkSlot& slot)
-				{
-					return slot.state != eChunkState::Empty && VoxelChunkKey(slot.id) == targetKey;
-				});
+		auto it = m_SlotIdMap.find(targetKey);
+
 		// allocate(queueing) if not resident
-		if (resident == m_ChunkSlots.end())
+		if (it == m_SlotIdMap.end())
 		{
-			auto empty = std::ranges::find_if(m_ChunkSlots.begin(), m_ChunkSlots.end(), [](const ChunkSlot& slot) { return slot.state == eChunkState::Empty; });
-			if (empty == m_ChunkSlots.end())
-			{
-				fprintf(stderr, "[VoxelChunkRenderNode] chunk slot pool exhausted.\n");
-				break;
-			}
+			BB_ASSERT(!m_FreeSlots.empty(), "chunk slot pool exhausted: the ring cut exceeds kMaxVoxelChunkSlots");
+			ChunkSlot& empty = m_ChunkSlots[m_FreeSlots.back()];
+			m_FreeSlots.pop_back();
 
-			empty->id          = view.id;
-			empty->originWS    = view.originWS;
-			empty->state       = eChunkState::Queued;
-			empty->bDesired    = true;
-			empty->desiredMask = view.mask;
+			empty.id          = view.id;
+			empty.originWS    = view.originWS;
+			empty.state       = eChunkState::Queued;
+			empty.bDesired    = true;
+			empty.desiredMask = view.mask;
 			if (view.id.lod == 0u)
-				empty->erosionSlice = AcquireErosionColumn(view.id);
+				empty.erosionSlice = AcquireErosionColumn(view.id);
 
-			desiredChunksToAdd.emplace(targetKey, empty->chunkIndex);
+			desiredChunksToAdd.push_back(empty.chunkIndex);
+
+			m_SlotIdMap.emplace(targetKey, empty.chunkIndex);
 		}
 		else
 		{
-			if (vt.bValid && (resident->state == eChunkState::Resident || resident->state == eChunkState::ResidentEmpty)
-				&& resident->builtRevision != vt.revision && resident->pendingRevision != vt.revision && resident->rejectedRevision != vt.revision)
-				resident->state = eChunkState::Dirty;
+			auto& resident = m_ChunkSlots[it->second];
 
-			resident->bDesired    = true;
-			resident->desiredMask = view.mask;
+			if (vt.bValid && (resident.state == eChunkState::Resident || resident.state == eChunkState::ResidentEmpty)
+				&& resident.builtRevision != vt.revision && resident.pendingRevision != vt.revision && resident.rejectedRevision != vt.revision)
+				resident.state = eChunkState::Dirty;
 
-			desiredChunksToAdd.emplace(targetKey, resident->chunkIndex);
+			resident.bDesired    = true;
+			resident.desiredMask = view.mask;
+
+			desiredChunksToAdd.push_back(resident.chunkIndex);
 		}
 	}
 
-	// ready swap groups collected this frame; committed together after the 2:1 gate verdict
-#ifdef _DEBUG
-	// I-BAL: the cut itself must never demand face-adjacent chunks more than one level apart
-	for (size_t a = 0; a < vt.chunks.size(); ++a)
-		for (size_t b = a + 1; b < vt.chunks.size(); ++b)
-		{
-			const int lodDelta = int(vt.chunks[a].id.lod) - int(vt.chunks[b].id.lod);
-			if ((lodDelta >= 2 || lodDelta <= -2) && AreChunksFaceAdjacent(vt.chunks[a].id, vt.chunks[b].id))
-				BB_ASSERT(false, "I-BAL violated in the desired cut: L%u vs L%u", vt.chunks[a].id.lod, vt.chunks[b].id.lod);
-		}
-#endif
-
 	struct SwapCandidate { u32 retireSlot; std::vector< u32 > replacementSlots; };
 	std::vector< SwapCandidate > candidates;
+
+	std::vector< u32 > oldSlots;
+	std::vector< u32 > oldIndexOf(m_ChunkSlots.size(), kInvalidIndex);
+	for (const ChunkSlot& slot : m_ChunkSlots)
+	{
+		if (slot.state != eChunkState::Empty && slot.bVisible && !slot.bDesired)
+		{
+			oldIndexOf[slot.chunkIndex] = (u32)oldSlots.size();
+			oldSlots.push_back(slot.chunkIndex);
+		}
+	}
+
+	std::vector< std::vector< u32 > > replacementsOf(oldSlots.size());
+	std::vector< bool >               hasVisibleDescendant(m_ChunkSlots.size(), false);
+
+	// visits mapped ancestors coarse-ward until fn returns true
+	auto forEachAncestor = [&](VoxelChunkID id, auto&& fn)
+	{
+		while (id.lod + 1u < kVoxelPageClassCount)
+		{
+			id = VoxelChunkID{ id.coord >> 1, id.lod + 1u };
+			auto it = m_SlotIdMap.find(VoxelChunkKey(id));
+			if (it != m_SlotIdMap.end() && fn(m_ChunkSlots[it->second]))
+				break;
+		}
+	};
+
+	for (u32 desiredSlot : desiredChunksToAdd)
+	{
+		forEachAncestor(m_ChunkSlots[desiredSlot].id, [&](const ChunkSlot& ancestor)
+			{
+				if (ancestor.bVisible && !ancestor.bDesired)
+					replacementsOf[oldIndexOf[ancestor.chunkIndex]].push_back(desiredSlot);
+				return false;
+			});
+	}
+	for (u32 oldSlot : oldSlots)
+	{
+		forEachAncestor(m_ChunkSlots[oldSlot].id, [&](const ChunkSlot& ancestor)
+			{
+				if (!ancestor.bDesired)
+					return false;
+				replacementsOf[oldIndexOf[oldSlot]].push_back(ancestor.chunkIndex);
+				hasVisibleDescendant[ancestor.chunkIndex] = true;
+				return true;
+			});
+	}
 
 	for (ChunkSlot& slot : m_ChunkSlots)
 	{
 		if (slot.state == eChunkState::Empty)
 			continue;
 
-		// new chunk visible; only if all overlapping chunks are evicted
+		// new chunk visible; only if no old still shows in its footprint (an ancestor above it or descendants inside it)
 		if (slot.bDesired && !slot.bVisible && IsBuilt(slot))
 		{
-			bool bOverlaps = false;
-			for (const ChunkSlot& s : m_ChunkSlots)
-			{
-				if (!s.bVisible) 
-					continue;
-
-				if (IsChunksOverlapped(slot.id, s.id))
-				{
-					bOverlaps = true;
-					break;
-				}
-			}
+			bool bOverlaps = hasVisibleDescendant[slot.chunkIndex];
+			forEachAncestor(slot.id, [&](const ChunkSlot& ancestor) { bOverlaps |= ancestor.bVisible; return ancestor.bVisible; });
 
 			if (!bOverlaps)
 				slot.bVisible = true;
@@ -816,30 +807,18 @@ void VoxelChunkRenderNode::BuildChunkGeometryIfNeeded(render::CommandContext& co
 		// old chunk eviction; judged by the 2:1 gate below once all replacements are built
 		if (slot.bVisible && !slot.bDesired)
 		{
-			std::vector< u32 > replacementSlots;
+			const std::vector< u32 >& replacementSlots = replacementsOf[oldIndexOf[slot.chunkIndex]];
 
 			bool bAllBuilt = true;
-			for (const auto& e : desiredChunksToAdd)
-			{
-				const ChunkSlot& replacement = m_ChunkSlots[e.second];
-				if (!IsChunksOverlapped(slot.id, replacement.id))
-					continue;
-
-				if (!IsBuilt(replacement))
-				{
-					bAllBuilt = false;
-					break;
-				}
-
-				replacementSlots.push_back(e.second);
-			}
+			for (u32 replacementSlot : replacementSlots)
+				bAllBuilt = bAllBuilt && IsBuilt(m_ChunkSlots[replacementSlot]);
 
 			// register as candidate to evict current slot and make-visible replacements if all overlapping chunks(=replacements) are built
-			if (bAllBuilt)
+			if (bAllBuilt && slot.fadeRemaining == 0.0f)
 			{
 				SwapCandidate& candidate = candidates.emplace_back();
 				candidate.retireSlot       = slot.chunkIndex;
-				candidate.replacementSlots = std::move(replacementSlots);
+				candidate.replacementSlots = replacementSlots;
 			}
 		}
 		else if (!slot.bDesired && !slot.bVisible)
@@ -848,25 +827,18 @@ void VoxelChunkRenderNode::BuildChunkGeometryIfNeeded(render::CommandContext& co
 		}
 	}
 
-	// 2:1 gate
+	// 2:1 gate: desired chunks nest 2:1 by construction, so a replacement's only possible 2-step partner is an old that stays visible
 	std::vector< bool > alive(candidates.size(), true);
 
-	u32  numHeldSwaps = 0u;
 	bool bPruned      = true;
 	while (bPruned)
 	{
 		bPruned = false;
 		std::vector< bool > retires(m_ChunkSlots.size(), false);
-		std::vector< bool > enters(m_ChunkSlots.size(), false);
-
 		for (size_t i = 0; i < candidates.size(); ++i)
 		{
-			if (!alive[i])
-				continue;
-
-			retires[candidates[i].retireSlot] = true;
-			for (u32 replacementSlot : candidates[i].replacementSlots)
-				enters[replacementSlot] = true;
+			if (alive[i])
+				retires[candidates[i].retireSlot] = true;
 		}
 
 		for (size_t i = 0; i < candidates.size(); ++i)
@@ -881,13 +853,10 @@ void VoxelChunkRenderNode::BuildChunkGeometryIfNeeded(render::CommandContext& co
 				if (replacement.state == eChunkState::ResidentEmpty)
 					continue;
 
-				for (const ChunkSlot& s : m_ChunkSlots)
+				for (u32 oldSlot : oldSlots)
 				{
-					if (s.state == eChunkState::Empty || s.state == eChunkState::ResidentEmpty || s.chunkIndex == replacementSlot)
-						continue;
-
-					const bool bVisibleAfterCommit = (s.bVisible && !retires[s.chunkIndex]) || enters[s.chunkIndex];
-					if (!bVisibleAfterCommit)
+					const ChunkSlot& s = m_ChunkSlots[oldSlot];
+					if (s.state == eChunkState::ResidentEmpty || retires[oldSlot])
 						continue;
 
 					const int lodDelta = int(replacement.id.lod) - int(s.id.lod);
@@ -909,65 +878,35 @@ void VoxelChunkRenderNode::BuildChunkGeometryIfNeeded(render::CommandContext& co
 			{
 				alive[i] = false;
 				bPruned  = true;
-				++numHeldSwaps;
 			}
 		}
 	}
-	m_NumHeldSwaps = numHeldSwaps;
-
 	for (size_t i = 0; i < candidates.size(); ++i)
 	{
 		if (!alive[i])
 			continue;
 
-		RetireSlot(m_ChunkSlots[candidates[i].retireSlot]);
-		for (u32 replacementSlot : candidates[i].replacementSlots)
-			m_ChunkSlots[replacementSlot].bVisible = true;
-	}
-
-	// Active-neighbor transition masks: the band state follows what is visible right now, not the desired cut
-	{
-		std::vector< u32 > visibleSlots;
-		visibleSlots.reserve(m_ChunkSlots.size());
-		for (const ChunkSlot& slot : m_ChunkSlots)
+		if (vt.crossfadeSeconds <= 0.0f)
 		{
-			if (slot.state != eChunkState::Empty && slot.bVisible)
-				visibleSlots.push_back(slot.chunkIndex);
+			RetireSlot(m_ChunkSlots[candidates[i].retireSlot]);
+			for (u32 replacementSlot : candidates[i].replacementSlots)
+				m_ChunkSlots[replacementSlot].bVisible = true;
 		}
-
-		std::vector< u32 > derivedMasks(m_ChunkSlots.size(), 0u);
-		for (size_t i = 0; i < visibleSlots.size(); ++i)
+		else
 		{
-			for (size_t j = i + 1; j < visibleSlots.size(); ++j)
+			ChunkSlot& retiring = m_ChunkSlots[candidates[i].retireSlot];
+			retiring.fadeRemaining = 1.0f;
+			retiring.fadeLastUpdateTime = renderView.time;
+			for (u32 replacementSlot : candidates[i].replacementSlots)
 			{
-				const ChunkSlot& a = m_ChunkSlots[visibleSlots[i]];
-				const ChunkSlot& b = m_ChunkSlots[visibleSlots[j]];
-
-				const int lodDelta = int(a.id.lod) - int(b.id.lod);
-				if (lodDelta != 1 && lodDelta != -1)
-					continue;
-
-				const ChunkSlot& fine   = (lodDelta < 0) ? a : b;
-				const ChunkSlot& coarse = (lodDelta < 0) ? b : a;
-				const u32 faceBit = FaceBitToward(fine.id, coarse.id);
-				if (faceBit != kInvalidIndex)
-					derivedMasks[fine.chunkIndex] |= 1u << faceBit;
+				if (!m_ChunkSlots[replacementSlot].bVisible)
+				{
+					m_ChunkSlots[replacementSlot].fadeRemaining = -1.0f;
+					m_ChunkSlots[replacementSlot].fadeLastUpdateTime = renderView.time;
+					m_ChunkSlots[replacementSlot].bVisible = true;
+				}
 			}
 		}
-
-		u32 numDiverged = 0u;
-		for (u32 slotIndex : visibleSlots)
-		{
-			const ChunkSlot& slot = m_ChunkSlots[slotIndex];
-			const u32 lodAndMask = (slot.id.lod & 0xFFu) | (derivedMasks[slotIndex] << 8u);
-			if (m_ChunkDescs[slotIndex].lodAndMask != lodAndMask)
-				++m_NumMaskFlips;
-			m_ChunkDescs[slotIndex].lodAndMask = lodAndMask;
-
-			if (derivedMasks[slotIndex] != slot.desiredMask)
-				++numDiverged;
-		}
-		m_NumMaskDiverged = numDiverged;
 	}
 
 	std::vector< u32 > markedChunks;
@@ -1014,21 +953,16 @@ void VoxelChunkRenderNode::BuildChunkGeometryIfNeeded(render::CommandContext& co
 		}
 		else
 		{
-			const u32 targetClass = SelectPageClass(slot);
-			if (slot.rejectedRevision == vt.revision && targetClass <= slot.rejectedClassId)
+			// a rejected revision stays rejected (keep-last geometry) -- no bigger pool exists for this level
+			if (slot.rejectedRevision == vt.revision)
 			{
 				slot.state = eChunkState::Resident;
 				continue;
 			}
 
-			buildPageID = AllocatePageOrReclaim(targetClass, renderView.camera.pos, vt.chunkWorldSizeMeter);
+			buildPageID = AllocatePageOrReclaim(SelectPageClass(slot), renderView.camera.pos, vt.chunkWorldSizeMeter);
 			if (buildPageID == kInvalidIndex)
-			{
-				++m_AllocFailCount;
-				if ((m_AllocFailCount & (m_AllocFailCount - 1u)) == 0u) // exponential backoff: log on fail #1, 2, 4, 8, ...
-					fprintf(stderr, "[VoxelChunkRenderNode] pending page alloc failed (class %u, fail #%u).\n", targetClass, m_AllocFailCount);
-				continue;
-			}
+				continue; // pool of this level exhausted: keeps the last geometry until a page frees
 			EnsurePageStatics(context, buildPageID);
 
 			if (slot.pendingPageID != kInvalidIndex)
@@ -1063,6 +997,72 @@ void VoxelChunkRenderNode::BuildChunkGeometryIfNeeded(render::CommandContext& co
 		}
 	}
 
+	for (auto& slot : m_ChunkSlots)
+	{
+		if (slot.state == eChunkState::Empty || slot.fadeRemaining == 0.0f)
+			continue;
+
+		// New fades start at this snapshot's time, so they consume no earlier interval.
+		const float dt = std::max(0.0f, renderView.time - slot.fadeLastUpdateTime);
+		slot.fadeLastUpdateTime = renderView.time;
+		const float fadeStep = vt.crossfadeSeconds > 0.0f ? dt / vt.crossfadeSeconds : 1.0f;
+
+		if (slot.fadeRemaining > 0.0f)
+		{
+			slot.fadeRemaining = std::max(0.0f, slot.fadeRemaining - fadeStep);
+			if (slot.fadeRemaining == 0.0f)
+				RetireSlot(slot);
+		}
+		else
+		{
+			slot.fadeRemaining = std::min(0.0f, slot.fadeRemaining + fadeStep);
+		}
+	}
+
+	// Active-neighbor transition masks: the band state follows what is visible right now, not the desired cut
+	{
+		std::vector< u32 > visibleSlots;
+		visibleSlots.reserve(m_ChunkSlots.size());
+		for (const ChunkSlot& slot : m_ChunkSlots)
+		{
+			if (slot.state != eChunkState::Empty && slot.bVisible)
+				visibleSlots.push_back(slot.chunkIndex);
+		}
+
+		std::vector< u32 > derivedMasks(m_ChunkSlots.size(), 0u);
+		for (size_t i = 0; i < visibleSlots.size(); ++i)
+		{
+			const auto& fine = m_ChunkSlots[visibleSlots[i]];
+
+			VoxelChunkID coarseFaceIDs[6] =
+			{
+				{ (fine.id.coord + int3(-1,  0,  0)) >> 1, fine.id.lod + 1 },
+				{ (fine.id.coord + int3(+1,  0,  0)) >> 1, fine.id.lod + 1 },
+				{ (fine.id.coord + int3( 0, -1,  0)) >> 1, fine.id.lod + 1 },
+				{ (fine.id.coord + int3( 0, +1,  0)) >> 1, fine.id.lod + 1 },
+				{ (fine.id.coord + int3( 0,  0, -1)) >> 1, fine.id.lod + 1 },
+				{ (fine.id.coord + int3( 0,  0, +1)) >> 1, fine.id.lod + 1 }
+			};
+
+			for (u32 f = 0; f < 6u; ++f)
+			{
+				auto it = m_SlotIdMap.find(VoxelChunkKey(coarseFaceIDs[f]));
+				if (it == m_SlotIdMap.end())
+					continue;
+
+				if (m_ChunkSlots[it->second].state == eChunkState::Empty || m_ChunkSlots[it->second].bVisible == false)
+					continue;
+
+				const u32 faceBit = FaceBitToward(fine.id, coarseFaceIDs[f]);
+				if (faceBit != kInvalidIndex)
+					derivedMasks[fine.chunkIndex] |= 1u << faceBit;
+			}
+		}
+
+		for (u32 slotIndex : visibleSlots)
+			m_ChunkDescs[slotIndex].lodAndMask = (m_ChunkSlots[slotIndex].id.lod & 0xFFu) | (derivedMasks[slotIndex] << 8u);
+	}
+
 	if (vt.bValid)
 	{
 		const CameraRenderView& cam = renderView.bFrozen ? renderView.frozenCamera : renderView.camera;
@@ -1078,7 +1078,7 @@ void VoxelChunkRenderNode::BuildChunkGeometryIfNeeded(render::CommandContext& co
 			desc.diceRadiusMeter       = vt.dice.radiusM;
 			desc.diceFadeWidthMeter    = vt.dice.fadeWidthMeter;
 			desc.diceDisplacementScale = vt.dice.displacementScale;
-			desc.debugFlags            = vt.dice.debugFlags;
+			desc.debugFlags            = vt.debugFlags;
 			desc.diceKScale            = kScale;
 
 			desc.microAmplitudeMeter      = vt.dice.microAmplitudeMeter;
@@ -1089,7 +1089,10 @@ void VoxelChunkRenderNode::BuildChunkGeometryIfNeeded(render::CommandContext& co
 			desc.microSharpness           = vt.dice.microSharpness;
 			desc.microOctaves             = vt.dice.microOctaves;
 
-			desc.flags = m_ChunkSlots[i].bVisible ? 1u : 0u;
+			const bool isFading  = m_ChunkSlots[i].fadeRemaining != 0.0f;
+			const u32  threshold = isFading ? 16u - std::min(16u, u32(16.0f * std::abs(m_ChunkSlots[i].fadeRemaining))) : 16u;
+			// visible(bit0) | fadeOut(bit1) | ditherThreshold(bits 8..12)
+			desc.flags = m_ChunkSlots[i].bVisible ? (1u | ((isFading && m_ChunkSlots[i].fadeRemaining > 0.0f) ? (1u << 1) : 0u) | (threshold << 8)) : 0u;
 		}
 
 		context.UploadData(m_pChunkDescBuffer, m_ChunkDescs.data(), kMaxVoxelChunkSlots, sizeof(VoxelChunkDesc), 0);
@@ -1125,11 +1128,6 @@ void VoxelChunkRenderNode::PublishTriReadback()
 			{
 				slot.lastTriCount    = counts[entry * kMCCounterFields + 0u];
 				slot.lastTriRevision = tag.revision;
-
-				m_LastBuildChunkIndex = tag.chunkIndex;
-				m_LastBuildTriCount   = slot.lastTriCount;
-				m_LastBuildCellCount  = counts[entry * kMCCounterFields + 1u];
-				m_LastBuildTriCap     = tag.triCap;
 			}
 
 			const u32 cellCount = counts[entry * kMCCounterFields + 1u];
@@ -1153,21 +1151,16 @@ void VoxelChunkRenderNode::PublishTriReadback()
 				}
 				else
 				{
+					// over the level's capacity: keep-last geometry stands, retry only on the next revision
 					DeallocatePage(slot.pendingPageID);
 					slot.rejectedRevision = tag.revision;
-					slot.rejectedClassId  = VoxelPageClassId(slot.pendingPageID);
-					if (slot.rejectedClassId + 1u < kVoxelPageClassCount)
-						slot.state = eChunkState::Dirty; // requeue -- SelectPageClass must exceed rejectedClassId
 				}
 				slot.pendingPageID   = kInvalidIndex;
 				slot.pendingRevision = kInvalidIndex;
 			}
 			else if (bLiveVerdict && slot.lastTriCount > tag.triCap)
 			{
-				slot.rejectedRevision = tag.revision;
-				slot.rejectedClassId  = VoxelPageClassId(slot.pageID);
-				if (slot.rejectedClassId + 1u < kVoxelPageClassCount)
-					slot.state = eChunkState::Dirty; // clamped initial build -- rebuild one class up
+				slot.rejectedRevision = tag.revision; // clamped initial build stays clamped this revision
 			}
 			else if (bLiveVerdict && cellCount == 0u)
 			{
@@ -1179,209 +1172,6 @@ void VoxelChunkRenderNode::PublishTriReadback()
 		}
 		tag = {};
 	}
-}
-
-void VoxelChunkRenderNode::Resize(u32 width, u32 height, u32 depth)
-{
-	UNUSED(width);
-	UNUSED(height);
-	UNUSED(depth);
-}
-
-void VoxelChunkRenderNode::DrawUI()
-{
-	if (ImGui::Begin("Voxel Streaming"))
-	{
-		static const char* kClassNames[] = { "S", "M", "L", "XL" };
-
-		u32 numResident = 0, numQueued = 0, numDirty = 0, numEmpty = 0;
-		u32 numMappedPerClass[kVoxelPageClassCount] = {};
-		u32 numPerLevel[8] = {}, numDesiredPerLevel[8] = {}, numVisiblePerLevel[8] = {}, numEmptyPerLevel[8] = {};
-		for (const ChunkSlot& slot : m_ChunkSlots)
-		{
-			switch (slot.state)
-			{
-			case eChunkState::Resident:      ++numResident; break;
-			case eChunkState::Queued:        ++numQueued;   break;
-			case eChunkState::Dirty:         ++numDirty;    break;
-			case eChunkState::ResidentEmpty: ++numEmpty;    break;
-			default: break;
-			}
-			if (slot.state != eChunkState::Empty)
-			{
-				const u32 level = std::min(slot.id.lod, 7u);
-				++numPerLevel[level];
-				if (slot.bDesired) ++numDesiredPerLevel[level];
-				if (slot.bVisible) ++numVisiblePerLevel[level];
-				if (slot.state == eChunkState::ResidentEmpty) ++numEmptyPerLevel[level];
-			}
-			if (slot.pageID != kInvalidIndex)
-				++numMappedPerClass[VoxelPageClassId(slot.pageID)];
-			if (slot.pendingPageID != kInvalidIndex)
-				++numMappedPerClass[VoxelPageClassId(slot.pendingPageID)];
-		}
-
-		// 2-step visible seams: expected only while the pressure valve is force-swapping
-		u32 numVisibleSeamViolations = 0u;
-		for (u32 a = 0; a < (u32)m_ChunkSlots.size(); ++a)
-		{
-			const ChunkSlot& sa = m_ChunkSlots[a];
-			if (sa.state == eChunkState::Empty || sa.state == eChunkState::ResidentEmpty || !sa.bVisible)
-				continue;
-
-			for (u32 b = a + 1u; b < (u32)m_ChunkSlots.size(); ++b)
-			{
-				const ChunkSlot& sb = m_ChunkSlots[b];
-				if (sb.state == eChunkState::Empty || sb.state == eChunkState::ResidentEmpty || !sb.bVisible)
-					continue;
-
-				const int lodDelta = int(sa.id.lod) - int(sb.id.lod);
-				if ((lodDelta >= 2 || lodDelta <= -2) && AreChunksFaceAdjacent(sa.id, sb.id))
-					++numVisibleSeamViolations;
-			}
-		}
-
-		for (u32 c = 0u; c < kVoxelPageClassCount; ++c)
-		{
-			const u32 numFree   = (u32)m_FreePages[c].size();
-			const u32 numMapped = numMappedPerClass[c];
-			if (numFree + numMapped == m_NumAllocatedPages[c])
-				ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f), "%-2s pages: %2u free + %2u mapped == %2u activated (cap %2u, %uk tris)",
-					kClassNames[c], numFree, numMapped, m_NumAllocatedPages[c], VoxelClassPageCount(c), VoxelClassTriCap(c) / 1000u);
-			else
-				ImGui::TextColored(ImVec4(0.95f, 0.3f, 0.3f, 1.0f), "%-2s pages CONSERVATION VIOLATED: %u free + %u mapped != %u activated",
-					kClassNames[c], numFree, numMapped, m_NumAllocatedPages[c]);
-		}
-		ImGui::Text("erosion slices: %u free / %u activated (cap %u) | %u columns", (u32)m_FreeErosionSlices.size(), m_NumAllocatedSlices, kMaxVoxelErosionSlices, (u32)m_ErosionColumns.size());
-		ImGui::Text("slots: %u resident / %u empty / %u queued / %u dirty | recenters %u", numResident, numEmpty, numQueued, numDirty, m_RecenterCount);
-		ImGui::Text("levels: L0 %u | L1 %u | L2 %u | L3 %u | L4+ %u",
-			numPerLevel[0], numPerLevel[1], numPerLevel[2], numPerLevel[3],
-			numPerLevel[4] + numPerLevel[5] + numPerLevel[6] + numPerLevel[7]);
-		if (ImGui::TreeNode("Level stats"))
-		{
-			for (u32 level = 0u; level < 8u; ++level)
-			{
-				if (numPerLevel[level] == 0u)
-					continue;
-
-				ImGui::Text("L%u: %u slots | %u desired | %u visible | %u empty", level,
-					numPerLevel[level], numDesiredPerLevel[level], numVisiblePerLevel[level], numEmptyPerLevel[level]);
-			}
-			ImGui::TreePop();
-		}
-		if (numVisibleSeamViolations != 0u)
-			ImGui::TextColored(ImVec4(0.95f, 0.6f, 0.2f, 1.0f), "visible 2-step seams: %u", numVisibleSeamViolations);
-		if (m_ReclaimCount != 0u)
-			ImGui::TextColored(ImVec4(0.95f, 0.85f, 0.3f, 1.0f), "page reclaims (pressure valve): %u", m_ReclaimCount);
-		if (m_NumHeldSwaps != 0u)
-			ImGui::TextColored(ImVec4(0.95f, 0.85f, 0.3f, 1.0f), "held swaps (2:1 gate): %u", m_NumHeldSwaps);
-		ImGui::Text("mask flips %u | mask diverged %u", m_NumMaskFlips, m_NumMaskDiverged);
-		if (m_AllocFailCount != 0u)
-			ImGui::TextColored(ImVec4(0.95f, 0.6f, 0.2f, 1.0f), "page alloc fails: %u", m_AllocFailCount);
-		if (m_LastBuildChunkIndex != kInvalidIndex)
-			ImGui::Text("last build: slot %u  tris %u / cap %u  cells %u", m_LastBuildChunkIndex, m_LastBuildTriCount, m_LastBuildTriCap, m_LastBuildCellCount);
-
-		if (ImGui::TreeNode("Tri histogram"))
-		{
-			std::vector< u32 > samples;
-			samples.reserve(kMaxVoxelChunkSlots);
-			u32 numRejected = 0u;
-			for (const ChunkSlot& slot : m_ChunkSlots)
-			{
-				if (slot.state == eChunkState::Empty || slot.lastTriRevision != m_CurrentRevision)
-					continue;
-				samples.push_back(slot.lastTriCount);
-				if (slot.rejectedRevision == m_CurrentRevision)
-					++numRejected;
-			}
-
-			if (samples.empty())
-				ImGui::TextDisabled("no readback samples yet");
-			else
-			{
-				std::ranges::sort(samples.begin(), samples.end());
-				auto pct = [&](float p) { return samples[(size_t)(p * float(samples.size() - 1u))]; };
-				ImGui::Text("samples %u  rejected %u", (u32)samples.size(), numRejected);
-				ImGui::Text("p50 %u  p90 %u  p99 %u  max %u", pct(0.50f), pct(0.90f), pct(0.99f), samples.back());
-
-				constexpr u32 kBins = 32u;
-				float bins[kBins] = {};
-				for (u32 tri : samples)
-					bins[std::min(kBins - 1u, tri * kBins / kMaxTrianglesPerChunk)] += 1.0f;
-				ImGui::PlotHistogram("##tribins", bins, (int)kBins, 0, "lastTri distribution (0 .. cap)", FLT_MAX, FLT_MAX, ImVec2(0.0f, 80.0f));
-
-				static char sweepLabel[64] = "default";
-				ImGui::SetNextItemWidth(160.0f);
-				ImGui::InputText("label", sweepLabel, sizeof(sweepLabel));
-				ImGui::SameLine();
-				if (ImGui::Button("Dump CSV"))
-				{
-					std::ofstream csv(std::string("voxel_tri_stats_") + sweepLabel + ".csv", std::ios::trunc);
-					csv << "chunkIndex,coordX,coordZ,lastTriCount,lastTriRevision,rejectedRevision\n";
-					for (const ChunkSlot& slot : m_ChunkSlots)
-					{
-						if (slot.state == eChunkState::Empty || slot.lastTriRevision != m_CurrentRevision)
-							continue;
-						csv << slot.chunkIndex << ',' << slot.id.coord.x << ',' << slot.id.coord.z << ','
-							<< slot.lastTriCount << ',' << slot.lastTriRevision << ',' << (i32)slot.rejectedRevision << '\n';
-					}
-
-					std::error_code fsErr;
-					const u64  sweepSize = (u64)std::filesystem::file_size("voxel_tri_sweep.csv", fsErr);
-					const bool bNewSweep = fsErr || sweepSize == 0u || sweepSize == (u64)-1;
-
-					std::ofstream sweep("voxel_tri_sweep.csv", std::ios::app);
-					if (bNewSweep)
-						sweep << "label,samples,rejected,p50,p90,p99,max\n";
-					sweep << sweepLabel << ',' << samples.size() << ',' << numRejected << ','
-						  << pct(0.50f) << ',' << pct(0.90f) << ',' << pct(0.99f) << ',' << samples.back() << '\n';
-				}
-				ImGui::SameLine();
-				ImGui::TextDisabled("-> voxel_tri_stats_<label>.csv + voxel_tri_sweep.csv row");
-			}
-			ImGui::TreePop();
-		}
-
-		if (ImGui::TreeNode("Slot table"))
-		{
-			static const char* kStateNames[] = { "Empty", "Queued", "Resident", "Dirty", "ResidentEmpty" };
-			if (ImGui::BeginTable("slots", 7, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit))
-			{
-				ImGui::TableSetupColumn("slot");
-				ImGui::TableSetupColumn("state");
-				ImGui::TableSetupColumn("coord");
-				ImGui::TableSetupColumn("originWS");
-				ImGui::TableSetupColumn("page");
-				ImGui::TableSetupColumn("builtRev");
-				ImGui::TableSetupColumn("lastTri");
-				ImGui::TableHeadersRow();
-
-				for (const ChunkSlot& slot : m_ChunkSlots)
-				{
-					if (slot.state == eChunkState::Empty)
-						continue;
-
-					ImGui::TableNextRow();
-					ImGui::TableSetColumnIndex(0); ImGui::Text("%u", slot.chunkIndex);
-					ImGui::TableSetColumnIndex(1); ImGui::TextUnformatted(kStateNames[(u32)slot.state]);
-					ImGui::TableSetColumnIndex(2); ImGui::Text("(%d, %d) L%u", slot.id.coord.x, slot.id.coord.z, slot.id.lod);
-					ImGui::TableSetColumnIndex(3); ImGui::Text("(%.1f, %.1f)", slot.originWS.x, slot.originWS.z);
-					ImGui::TableSetColumnIndex(4);
-					if (slot.pageID == kInvalidIndex) ImGui::TextUnformatted("-");
-					else                              ImGui::Text("%s%u", kClassNames[VoxelPageClassId(slot.pageID)], VoxelPageIdx(slot.pageID));
-					ImGui::TableSetColumnIndex(5);
-					if (slot.builtRevision == kInvalidIndex) ImGui::TextUnformatted("-");
-					else                                     ImGui::Text("%u", slot.builtRevision);
-					ImGui::TableSetColumnIndex(6);
-					if (slot.lastTriRevision == kInvalidIndex) ImGui::TextUnformatted("-");
-					else                                       ImGui::Text("%u", slot.lastTriCount);
-				}
-				ImGui::EndTable();
-			}
-			ImGui::TreePop();
-		}
-	}
-	ImGui::End();
 }
 
 

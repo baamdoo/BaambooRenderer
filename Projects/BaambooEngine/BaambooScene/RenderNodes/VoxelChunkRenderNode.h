@@ -15,12 +15,10 @@ class VoxelChunkRenderNode : public render::RenderNode
 {
 using Super = render::RenderNode;
 public:
-	static constexpr u32 kMaxChunks        = 1024u;
 	static constexpr u32 kMaxResidentPages = VoxelTotalPages();
 
-	static constexpr u32 kMaxTrianglesPerChunk = VoxelClassTriCap(kVoxelPageClassCount - 1u);
+	static constexpr u32 kMaxTrianglesPerChunk = []{ u32 m = 0u; for (u32 i = 0u; i < kVoxelPageClassCount; ++i) m = m < VoxelClassTriCap(i) ? VoxelClassTriCap(i) : m; return m; }();
 
-	static constexpr u32 kDensityApron     = kVoxelDensityApron;
 	static constexpr u32 kDensityVolumeDim = kDefaultVoxelSamplesPerAxis + 2u * kVoxelDensityApron;
 
 	static constexpr u32 kTrianglesPerMeshlet = 21u; // 21 tris * 3 = 63 verts fits the 64-vertex mesh-shader limit
@@ -55,10 +53,11 @@ public:
 		u32    pendingPageID    = kInvalidIndex; // build-before-swap page awaiting its readback verdict
 		u32    pendingRevision  = kInvalidIndex;
 		u32    rejectedRevision = kInvalidIndex; // last revision whose build overflowed
-		u32    rejectedClassId  = kInvalidIndex; // class that overflowed at rejectedRevision
 		u32    lastTriCount     = 0u;            // triangle demand of the last read-back build
 		u32    lastTriRevision  = kInvalidIndex; // revision lastTriCount was measured at
 		u32    desiredMask      = 0u;            // transition-face mask from the cut (bits 0..5 = -x,+x,-y,+y,-z,+z)
+		float  fadeRemaining    = 0.0f;          // signed fraction: +1 -> 0 fades out, -1 -> 0 fades in; 0 is inactive
+		float  fadeLastUpdateTime = 0.0f;        // scene time in seconds; initialized when the fade starts
 
 		bool bDesired = false; // member of this frame's cut
 		bool bVisible = false;
@@ -68,8 +67,6 @@ public:
 	virtual ~VoxelChunkRenderNode() = default;
 
 	virtual void Apply(render::CommandContext& context, const SceneRenderView& renderView) override;
-	virtual void Resize(u32 width, u32 height, u32 depth = 1) override;
-	virtual void DrawUI() override;
 
 	// GPU geometry build (density -> marching cubes -> vertex/meshlet pools + chunk counts); driven by CullingNode.
 	void BuildChunkGeometryIfNeeded(render::CommandContext& context, const SceneRenderView& renderView);
@@ -81,7 +78,6 @@ private:
 	u32  AllocatePageOrReclaim(u32 classId, const float3& camPos, float baseChunkSizeMeter);
 
 	u32  AllocatePage(u32 classId);
-	u32  AllocatePageAtLeast(u32 classId); // preferred class first, then larger classes (a larger page always fits)
 	void DeallocatePage(u32 pageID);
 	u32  AllocateErosionSlice();
 	void FreeErosionSlice(u32 slice);
@@ -116,6 +112,9 @@ private:
 	std::array< std::vector< u32 >, kVoxelPageClassCount > m_FreePages;         // page indices per class
 	std::array< u32, kVoxelPageClassCount >                m_NumAllocatedPages = {};
 
+	std::unordered_map< u64, u32 > m_SlotIdMap;
+	std::vector< u32 >             m_FreeSlots;
+
 	std::vector< u32 > m_FreeErosionSlices;
 	u32                m_NumAllocatedSlices = 0u;
 
@@ -132,9 +131,8 @@ private:
 	Box< render::ComputePipeline > m_pTransvoxelPSO;
 	Box< render::ComputePipeline > m_pMeshletBuildPSO;
 
-	Arc< render::Texture >          m_pDensityVolume; // written by VoxelDensityCS; MC reads the linear copy below
-	Arc< render::Buffer >           m_pDensityField;  // linear density copy the MC extract samples
-	Box< render::ComputePipeline >  m_pDensityPSO;
+	Arc< render::Buffer >          m_pDensityField; // density volume, linear (C+1+2A)^3
+	Box< render::ComputePipeline > m_pDensityPSO;
 
 	// Erosion detail map: RGBA16F = R detail height (m), G ridgeMap, B surfaceY, A unused
 	Arc< render::Texture >         m_pErosionDetailMap;
@@ -159,17 +157,7 @@ private:
 	u32 m_TriReadbackIdx          = 0u;
 	u32 m_TriReadbackFrameCounter = 0u;
 
-	u32 m_LastBuildChunkIndex = kInvalidIndex;
-	u32 m_LastBuildTriCount   = 0u;
-	u32 m_LastBuildCellCount  = 0u;
-	u32 m_LastBuildTriCap     = 0u;
-	u32 m_AllocFailCount      = 0u;
-	u32 m_ReclaimCount        = 0u;
-	u32 m_NumHeldSwaps        = 0u;
-	u32 m_RecenterCount       = 0u;
-	u32 m_NumMaskFlips        = 0u;
-	u32 m_NumMaskDiverged     = 0u;
-	u32 m_CurrentRevision     = 0u;
+	u32 m_DitherFrame = 0u; // crossfade Bayer translation index, cycles every 16 frames
 
 	// Triangle spatial sort: MC append order -> Morton-block order, baked into the meshlet-vertex indirection
 	Arc< render::Buffer >          m_pTriSortBins; // kTriSortBins histogram / scanned offsets / scatter cursors

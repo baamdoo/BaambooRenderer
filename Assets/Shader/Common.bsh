@@ -153,7 +153,7 @@ struct IndirectCommandData
 // Voxel terrain chunk
 //-------------------------------------------------------------------------
 #define VOXEL_CHUNK_INSTANCE_BASE 0u   // Voxel chunk i lives at instance (VOXEL_CHUNK_INSTANCE_BASE + i) and VoxelChunkCounts[i]
-#define VOXEL_CHUNK_MAX_SLOTS     512u
+#define VOXEL_CHUNK_MAX_SLOTS     1024u
 #define VOXEL_EROSION_APRON       2u   // erosion map apron texels per side (interior = dim - 2*apron)
 
 struct VoxelChunkDesc
@@ -164,13 +164,13 @@ struct VoxelChunkDesc
     uint  mvOffset;         // page base into the voxel MeshletVertices pool
     uint  mtOffset;         // page base into the voxel MeshletTriangles pool
     float chunkSizeMeter;   // world XZ extent
-    uint  diceMaxLevel;     // micro-dicing max subdivision level (0 = off, 1..5)
+    uint  diceMaxLevel;     // micro-dicing max subdivision level (0 = off, 1..3)
 
     // Micro-dicing
     float diceRadiusMeter;       // camera-distance band where base tris are diced
     float diceFadeWidthMeter;    // displacement fades to 0 approaching the radius
     float diceDisplacementScale; // bake-band displacement scale (1 = baked detail height)
-    uint  debugFlags;            // bit0 = dice-level tint, bit1 = chunk tint, bit2 = micro cavity
+    uint  debugFlags;            // bit0 = chunk tint | bit1 = LOD tint
 
     // Adaptive dicing: subdivision level l(d,e) = log2(K*e / (targetPx*d)).
     float diceTargetPx;          // target sub-edge screen size (px)
@@ -199,194 +199,14 @@ struct VoxelChunkCounts
     uint meshletCount;
 };
 
-// 12B voxel vertex: chunk-local position quantized by chunkSize + octahedral normal
+// 16B voxel vertex: quantized chunk-local position, three 8+8 octahedral normals, three 10-bit geomorph offsets
 struct VoxelVertex
 {
-    uint posXY;    // pos.x 16b | pos.y 16b
-    uint posZres;  // pos.z 16b | reserved 16b (bit0 = transition-pinned)
-    uint octUoctV; // octahedral normal u 16b | octahedral normal v 16b
+    uint posXY;      // pos.x 16b | pos.y 16b
+    uint posZnormal; // pos.z 16b | vertex normal 8b+8b
+    uint normalT;    // geomorph target normals: parent 8b+8b (bits 16..31) | grandparent 8b+8b (bits 0..15)
+    uint morph;      // bit0 pinned | s1 10b (bits 1..10) | s2 10b (bits 11..20) | s3 10b (bits 21..30): signed offsets along the normal to the parent / grandparent / great-grandparent mesh (units 2/4/8 voxels)
 };
-
-#ifdef _HLSL
-uint OctEncodePacked(float3 n)
-{
-    float denom = abs(n.x) + abs(n.y) + abs(n.z);
-    if (denom < 1e-6)
-        return 0u;
-
-    float2 oct = n.xy / denom;
-    if (n.z < 0.0)
-        oct = float2((1.0 - abs(oct.y)) * (oct.x >= 0.0 ? 1.0 : -1.0),
-                     (1.0 - abs(oct.x)) * (oct.y >= 0.0 ? 1.0 : -1.0));
-
-    uint2 q = uint2(round((oct * 0.5 + 0.5) * 65535.0));
-    return q.x << 16u | q.y;
-}
-
-float3 OctDecodePacked(uint octN)
-{
-    float2 oct = float2(octN >> 16u, octN & 0xFFFFu) / 65535.0 * 2.0 - 1.0;
-
-    float z = 1.0 - abs(oct.x) - abs(oct.y);
-    if (z < 0.0)
-        oct = float2((1.0 - abs(oct.y)) * (oct.x >= 0.0 ? 1.0 : -1.0),
-                     (1.0 - abs(oct.x)) * (oct.y >= 0.0 ? 1.0 : -1.0));
-
-    return normalize(float3(oct.x, oct.y, z));
-}
-
-VoxelVertex VoxelPackVertex(float3 pos, float3 normal, float chunkSizeMeter)
-{
-    uint3 posQ = uint3(round(saturate(pos / chunkSizeMeter) * 65535.0));
-
-    VoxelVertex v;
-    v.posXY    = posQ.x << 16u | posQ.y;
-    v.posZres  = posQ.z << 16u;
-    v.octUoctV = OctEncodePacked(normal);
-    return v;
-}
-
-float3 VoxelUnpackPos(VoxelVertex v, float chunkSizeMeter)
-{
-    uint3 posQ = uint3(v.posXY >> 16u, v.posXY & 0xFFFFu, v.posZres >> 16u);
-    return float3(posQ) / 65535.0 * chunkSizeMeter;
-}
-
-// Pinned vertices (transition-cell coarse face) never take the transition delta
-VoxelVertex VoxelPackVertexPinned(float3 pos, float3 normal, float chunkSizeMeter, bool pinned)
-{
-    VoxelVertex v = VoxelPackVertex(pos, normal, chunkSizeMeter);
-    v.posZres |= pinned ? 1u : 0u;
-    return v;
-}
-
-float3 VoxelTransitionDelta(float3 posQ, uint transitionMask)
-{
-    const float cellWidth = 65535.0 / 128.0; // pos(uint16) resolution / 128 cells per chunk
-
-    bool isBoundaryXMin = posQ.x < cellWidth;           // vertex inside the -x boundary cell
-    bool isBoundaryXMax = posQ.x > 65535.0 - cellWidth; // vertex inside the +x boundary cell
-    bool isBoundaryYMin = posQ.y < cellWidth;           // vertex inside the -y boundary cell
-    bool isBoundaryYMax = posQ.y > 65535.0 - cellWidth; // vertex inside the +y boundary cell
-    bool isBoundaryZMin = posQ.z < cellWidth;           // vertex inside the -z boundary cell
-    bool isBoundaryZMax = posQ.z > 65535.0 - cellWidth; // vertex inside the +z boundary cell
-
-    float3 delta = float3(0.0, 0.0, 0.0);
-    if      (isBoundaryXMin && (transitionMask & (1 << 0)) != 0u) delta.x = +0.5 * (cellWidth - posQ.x);
-    else if (isBoundaryXMax && (transitionMask & (1 << 1)) != 0u) delta.x = -0.5 * (cellWidth - (65535.0 - posQ.x));
-    if      (isBoundaryYMin && (transitionMask & (1 << 2)) != 0u) delta.y = +0.5 * (cellWidth - posQ.y);
-    else if (isBoundaryYMax && (transitionMask & (1 << 3)) != 0u) delta.y = -0.5 * (cellWidth - (65535.0 - posQ.y));
-    if      (isBoundaryZMin && (transitionMask & (1 << 4)) != 0u) delta.z = +0.5 * (cellWidth - posQ.z);
-    else if (isBoundaryZMax && (transitionMask & (1 << 5)) != 0u) delta.z = -0.5 * (cellWidth - (65535.0 - posQ.z));
-
-    return delta;
-}
-
-// Render-position unpack: boundary-band vertices shift inward on faces whose transition mask bit is set
-float3 VoxelUnpackPosTransition(VoxelVertex v, float chunkSizeMeter, uint lodAndMask)
-{
-    uint3 posQ = uint3(v.posXY >> 16u, v.posXY & 0xFFFFu, v.posZres >> 16u);
-
-    float3 posF = float3(posQ);
-    if ((v.posZres & 1u) == 0u)
-        posF += VoxelTransitionDelta(posF, (lodAndMask >> 8u) & 0x3Fu);
-    return posF / 65535.0 * chunkSizeMeter;
-}
-
-float3 VoxelUnpackNormal(VoxelVertex v)
-{
-    return OctDecodePacked(v.octUoctV);
-}
-#else
-uint OctEncodePacked(vec3 n)
-{
-    float denom = abs(n.x) + abs(n.y) + abs(n.z);
-    if (denom < 1e-6)
-        return 0u;
-
-    vec2 oct = n.xy / denom;
-    if (n.z < 0.0)
-        oct = vec2((1.0 - abs(oct.y)) * (oct.x >= 0.0 ? 1.0 : -1.0),
-                   (1.0 - abs(oct.x)) * (oct.y >= 0.0 ? 1.0 : -1.0));
-
-    uvec2 q = uvec2(round((oct * 0.5 + 0.5) * 65535.0));
-    return q.x << 16u | q.y;
-}
-
-vec3 OctDecodePacked(uint octN)
-{
-    vec2 oct = vec2(octN >> 16u, octN & 0xFFFFu) / 65535.0 * 2.0 - 1.0;
-
-    float z = 1.0 - abs(oct.x) - abs(oct.y);
-    if (z < 0.0)
-        oct = vec2((1.0 - abs(oct.y)) * (oct.x >= 0.0 ? 1.0 : -1.0),
-                   (1.0 - abs(oct.x)) * (oct.y >= 0.0 ? 1.0 : -1.0));
-
-    return normalize(vec3(oct.x, oct.y, z));
-}
-
-VoxelVertex VoxelPackVertex(vec3 pos, vec3 normal, float chunkSizeMeter)
-{
-    uvec3 posQ = uvec3(round(clamp(pos / chunkSizeMeter, 0.0, 1.0) * 65535.0));
-
-    VoxelVertex v;
-    v.posXY    = posQ.x << 16u | posQ.y;
-    v.posZres  = posQ.z << 16u;
-    v.octUoctV = OctEncodePacked(normal);
-    return v;
-}
-
-vec3 VoxelUnpackPos(VoxelVertex v, float chunkSizeMeter)
-{
-    uvec3 posQ = uvec3(v.posXY >> 16u, v.posXY & 0xFFFFu, v.posZres >> 16u);
-    return vec3(posQ) / 65535.0 * chunkSizeMeter;
-}
-
-// Pinned vertices (transition-cell coarse face) never take the transition delta
-VoxelVertex VoxelPackVertexPinned(vec3 pos, vec3 normal, float chunkSizeMeter, bool pinned)
-{
-    VoxelVertex v = VoxelPackVertex(pos, normal, chunkSizeMeter);
-    v.posZres |= pinned ? 1u : 0u;
-    return v;
-}
-
-vec3 VoxelTransitionDelta(vec3 posQ, uint transitionMask)
-{
-    const float cellWidth = 65535.0 / 128.0; // pos(uint16) resolution / 128 cells per chunk
-
-    bool isBoundaryXMin = posQ.x < cellWidth;           // vertex inside the -x boundary cell
-    bool isBoundaryXMax = posQ.x > 65535.0 - cellWidth; // vertex inside the +x boundary cell
-    bool isBoundaryYMin = posQ.y < cellWidth;           // vertex inside the -y boundary cell
-    bool isBoundaryYMax = posQ.y > 65535.0 - cellWidth; // vertex inside the +y boundary cell
-    bool isBoundaryZMin = posQ.z < cellWidth;           // vertex inside the -z boundary cell
-    bool isBoundaryZMax = posQ.z > 65535.0 - cellWidth; // vertex inside the +z boundary cell
-
-    vec3 delta = vec3(0.0, 0.0, 0.0);
-    if      (isBoundaryXMin && (transitionMask & (1u << 0u)) != 0u) delta.x = +0.5 * (cellWidth - posQ.x);
-    else if (isBoundaryXMax && (transitionMask & (1u << 1u)) != 0u) delta.x = -0.5 * (cellWidth - (65535.0 - posQ.x));
-    if      (isBoundaryYMin && (transitionMask & (1u << 2u)) != 0u) delta.y = +0.5 * (cellWidth - posQ.y);
-    else if (isBoundaryYMax && (transitionMask & (1u << 3u)) != 0u) delta.y = -0.5 * (cellWidth - (65535.0 - posQ.y));
-    if      (isBoundaryZMin && (transitionMask & (1u << 4u)) != 0u) delta.z = +0.5 * (cellWidth - posQ.z);
-    else if (isBoundaryZMax && (transitionMask & (1u << 5u)) != 0u) delta.z = -0.5 * (cellWidth - (65535.0 - posQ.z));
-
-    return delta;
-}
-
-// Render-position unpack: boundary-band vertices shift inward on faces whose transition mask bit is set
-vec3 VoxelUnpackPosTransition(VoxelVertex v, float chunkSizeMeter, uint lodAndMask)
-{
-    uvec3 posQ = uvec3(v.posXY >> 16u, v.posXY & 0xFFFFu, v.posZres >> 16u);
-    vec3 posF = vec3(posQ);
-    if ((v.posZres & 1u) == 0u)
-        posF += VoxelTransitionDelta(vec3(posQ), (lodAndMask >> 8u) & 0x3Fu);
-    return posF / 65535.0 * chunkSizeMeter;
-}
-
-vec3 VoxelUnpackNormal(VoxelVertex v)
-{
-    return OctDecodePacked(v.octUoctV);
-}
-#endif
 
 #ifdef _HLSL
 struct CullData

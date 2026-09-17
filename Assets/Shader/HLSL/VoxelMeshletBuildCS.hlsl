@@ -1,4 +1,5 @@
 #include "Common.hlsli"
+#include "VoxelTerrainCommon.hlsli"
 
 cbuffer MeshletBuildPushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {

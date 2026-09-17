@@ -5,58 +5,60 @@
 
 layout(push_constant) uniform McPushConstants
 {
-    uint  g_CellsPerAxis;
-    uint  g_Apron;
+    uint  g_CellsPerAxis;   // C; volume dim = C + 1 + 2A
+    uint  g_Apron;          // A apron texels per side
     float g_VoxelSizeMeter;
-    uint  g_VertexSlabBase;
-    uint  g_MaxTriangles;
+    uint  g_VertexSlabBase; // this chunk's base offset into the vertex pool (in vertices)
+    uint  g_MaxTriangles;   // slab capacity in triangles -- overflow guard
+    float g_GeomorphRadiusMeter;
 } pc;
 
-layout(set = 1, binding = 0) readonly buffer DensityFieldBuffer { float  g_DensityField[]; };
-layout(set = 1, binding = 1)          buffer McCounterBuffer    { uint   g_MCCounter[]; };
+layout(set = 1, binding = 0) readonly buffer DensityFieldBuffer { float       g_DensityField[]; };
+layout(set = 1, binding = 1)          buffer McCounterBuffer    { uint        g_MCCounter[]; };
 layout(set = 1, binding = 2)          buffer OutVertexBuffer    { VoxelVertex g_OutVertices[]; };
-layout(set = 1, binding = 3) readonly buffer TriTableBuffer     { int    g_TriTable[]; };
+layout(set = 1, binding = 3) readonly buffer TriTableBuffer     { int         g_TriTable[]; };
 
-const uvec3 kCornerOffset[8] = uvec3[8](
-    uvec3(0, 0, 0), uvec3(1, 0, 0), uvec3(1, 1, 0), uvec3(0, 1, 0),
-    uvec3(0, 0, 1), uvec3(1, 0, 1), uvec3(1, 1, 1), uvec3(0, 1, 1));
-    
-const uvec2 kEdgeCorners[12] = uvec2[12](
-    uvec2(0, 1), uvec2(1, 2), uvec2(2, 3), uvec2(3, 0),
-    uvec2(4, 5), uvec2(5, 6), uvec2(6, 7), uvec2(7, 4),
-    uvec2(0, 4), uvec2(1, 5), uvec2(2, 6), uvec2(3, 7));
+#define VOXEL_GEOMORPH_BUILD
+#include "VoxelTerrainCommon.hg"
 
-uint FlatTexel(uvec3 t, uint dim)
-{
-    return (t.z * dim + t.y) * dim + t.x;
-}
-
-// Isosurface vertex on `edge`: position interpolates the two corner samples, normal = density gradient.
-VoxelVertex MakeEdgeVertex(int edge, float cv[8], vec3 cp[8], vec3 cg[8], float chunkSizeMeter)
+// Isosurface vertex on `edge`: position interpolates the two corner samples along the density gradient
+VoxelVertex MakeEdgeVertex(int edge, float cornerVal[8], vec3 cornerPos[8], vec3 cornerGrad[8], float chunkSizeMeter)
 {
     uvec2 ec = kEdgeCorners[edge];
-    float v0 = cv[ec.x], v1 = cv[ec.y];
-    vec3  p0 = cp[ec.x], p1 = cp[ec.y];
-    vec3  g0 = cg[ec.x], g1 = cg[ec.y];
+    vec3  pos, n;
+    VoxelEdgePoint(cornerVal[ec.x], cornerVal[ec.y], cornerPos[ec.x], cornerPos[ec.y], cornerGrad[ec.x], cornerGrad[ec.y], pos, n);
 
-    float tt  = (abs(v0 - v1) < 1e-6) ? 0.0 : v0 / (v0 - v1); // zero crossing along the edge
-    vec3  pos = mix(p0, p1, tt);
-    vec3  g   = mix(g0, g1, tt);
-    float gl2 = dot(g, g);
-    vec3  n   = (gl2 > 1e-12) ? g * inversesqrt(gl2) : vec3(0.0, 1.0, 0.0);
+    // Should use the exact same normal value(decoded) as the rendering point(GBuffer) for consistency
+    vec3 nq = VoxelQuantizeNormal(n);
 
-    return VoxelPackVertex(pos, n, chunkSizeMeter);
+    VoxelTerrainGenParams gp;
+    gp.cellsPerAxis   = pc.g_CellsPerAxis;
+    gp.apron          = pc.g_Apron;
+    gp.voxelSizeMeter = pc.g_VoxelSizeMeter;
+    VoxelProjectResult pr1 = VoxelProjectStage(gp, pos, nq, pc.g_GeomorphRadiusMeter, 2u);       // s1 = hit point on parent mesh
+    VoxelProjectResult pr2 = VoxelProjectStage(gp, pos, nq, 2.0 * pc.g_GeomorphRadiusMeter, 4u); // s2 = hit point on grandparent
+    VoxelProjectResult pr3 = VoxelProjectStage(gp, pos, nq, 4.0 * pc.g_GeomorphRadiusMeter, 8u); // s3 = hit point on great-grandparent
+
+    float s1 = pr1.sd;
+    float s2 = (pr2.code == 0u) ? pr2.sd : s1; // no hit: stay on the previous LOD
+    float s3 = (pr3.code == 0u) ? pr3.sd : s2;
+
+    // normal morph targets: the ancestors' shading normals where the ray hit
+    vec3 nT1 = pr1.nTarget;
+    vec3 nT2 = (pr2.code == 0u) ? pr2.nTarget : nT1;
+
+    return VoxelPackVertex(pos, nq, nT1, nT2, s1, s2, s3, false, chunkSizeMeter, pc.g_VoxelSizeMeter);
 }
 
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 void main()
 {
     uvec3 cell = gl_GlobalInvocationID;
-    uint  C    = pc.g_CellsPerAxis;
+    const uint C = pc.g_CellsPerAxis;
     if (cell.x >= C || cell.y >= C || cell.z >= C)
         return;
 
-    uint dim = C + 1u + 2u * pc.g_Apron;
+    const uint dim = C + 1u + 2u * pc.g_Apron;
 
     // sample 8 corners + a central-difference gradient at each (apron guarantees the neighbours)
     float cornerVal[8];
@@ -95,7 +97,7 @@ void main()
     uint baseTri = atomicAdd(g_MCCounter[0], triCount); // reserve a contiguous triangle range
     atomicAdd(g_MCCounter[1], 1u);                      // active-cell tally
 
-    float chunkSize = float(C) * pc.g_VoxelSizeMeter;
+    const float chunkSize = float(C) * pc.g_VoxelSizeMeter;
 
     for (uint t = 0u; t < triCount; ++t)
     {

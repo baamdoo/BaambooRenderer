@@ -208,7 +208,8 @@ struct VoxelTerrainRenderView
 {
 	bool   bValid        = false;
 	u32    revision      = 0u;
-	u32    recenterCount = 0u;
+	float  crossfadeSeconds = 0.2f;
+	u32    debugFlags       = 0u; // bit0 = chunk tint | bit1 = LOD tint
 
 	float  chunkWorldSizeMeter = 64.0f;
 

@@ -97,26 +97,8 @@ void main(uint3 tID : SV_DispatchThreadID)
             albedo    = lerp(surfaceAlbedo, cliffAlbedo, sBlend);
             roughness = max(lerp(surfaceRough, cliffRough, sBlend), MIN_ROUGHNESS);
 
-            // micro cavity: valleys darken (self-shadow proxy computed by resolve)
-            if ((chunk.debugFlags & 4u) != 0u)
-                albedo *= 1.0 - core.a;
-
-            if ((chunk.debugFlags & 1u) != 0u)
-            {
-                uint lvl = (uint)round(core.b * 5.0);
-                const float3 kLevelTint[6] = {
-                    float3(0.55, 0.55, 0.55),
-                    float3(0.25, 0.45, 0.95),
-                    float3(0.20, 0.85, 0.85),
-                    float3(0.25, 0.80, 0.25),
-                    float3(0.95, 0.85, 0.25),
-                    float3(0.95, 0.30, 0.25)
-                };
-                albedo = lerp(albedo, kLevelTint[min(lvl, 5u)], 0.8);
-            }
-
             // chunk tint: distinct color per chunk slot (streaming debug)
-            if ((chunk.debugFlags & 2u) != 0u)
+            if ((chunk.debugFlags & 1u) != 0u)
             {
                 float ci = float(VisChunkIndex(v0) - VOXEL_CHUNK_INSTANCE_BASE);
                 float3 chunkTint = frac(float3(0.618034, 0.302775, 0.415573) * ci + float3(0.15, 0.45, 0.75));
@@ -124,7 +106,7 @@ void main(uint3 tID : SV_DispatchThreadID)
             }
 
             // LOD tint: distinct color per terrain LOD level (ring debug)
-            if ((chunk.debugFlags & 8u) != 0u)
+            if ((chunk.debugFlags & 2u) != 0u)
             {
                 uint lod = chunk.lodAndMask & 0xFFu;
                 const float3 kLodTint[8] = {

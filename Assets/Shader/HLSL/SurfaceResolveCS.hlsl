@@ -20,8 +20,6 @@ ConstantBuffer< DescriptorHeapIndex > g_CoreMaterial   : register(b4, ROOT_CONST
 ConstantBuffer< DescriptorHeapIndex > g_VoxelChunkDescs       : register(b11, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_ErosionDetailMap      : register(b5, ROOT_CONSTANT_SPACE);
 
-static float s_DebugDiceLevel = 0.0;
-static float s_MicroCavity = 0.0;
 ConstantBuffer< DescriptorHeapIndex > g_VoxelVertices         : register(b6, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_VoxelMeshlets         : register(b7, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_VoxelMeshletVertices  : register(b8, ROOT_CONSTANT_SPACE);
@@ -56,9 +54,11 @@ ResolvedSurface ResolveVoxelSurface(uint v0, uint v1, float2 pixelCenter, float2
     {
         uint vi = chunk.vOffset + MeshletVertices[chunk.mvOffset + meshlet.vertexOffset + locals[k]];
 
-        VoxelVertex vv = Vertices[vi];
-        posWS[k]  = VoxelUnpackPosTransition(vv, chunk.chunkSizeMeter, chunk.lodAndMask) + originWS;
-        normal[k] = VoxelUnpackNormal(vv);
+        VoxelVertex vv  = Vertices[vi];
+        float3      nq  = VoxelUnpackNormal(vv);
+        float3      pWS = VoxelUnpackPosTransition(vv, chunk.chunkSizeMeter, chunk.lodAndMask) + originWS;
+        posWS[k]  = VoxelMorphPosWS(vv, pWS, nq, g_FrozenCamera.posWORLD, chunk);
+        normal[k] = VoxelMorphNormal(vv, nq, pWS, g_FrozenCamera.posWORLD, chunk);
     }
 
     if (subTriPlus1 != 0u && chunk.diceMaxLevel != 0u)
@@ -69,7 +69,6 @@ ResolvedSurface ResolveVoxelSurface(uint v0, uint v1, float2 pixelCenter, float2
         uint le1  = DiceEdgeLevel(posWS[1], posWS[2], cameraPosWS, chunk);
         uint le2  = DiceEdgeLevel(posWS[2], posWS[0], cameraPosWS, chunk);
         uint Lt   = max(le0, max(le1, le2));
-        s_DebugDiceLevel = (float)Lt / 5.0;
 
         if (Lt != 0u)
         {
@@ -78,23 +77,10 @@ ResolvedSurface ResolveVoxelSurface(uint v0, uint v1, float2 pixelCenter, float2
             uint  subIdx = subTriPlus1 - 1u;
             uint3 le     = uint3(le0, le1, le2);
 
-            // Sub-vertex integer coords: flat (Lt <= 3) or hierarchical child*64 + local.
+            uint3 sub = DiceSubTriVerts(subIdx, Lt);
             uint3 coords[3];
-            if (Lt <= 3u)
-            {
-                uint3 sub = DiceSubTriVerts(subIdx, Lt);
-                [unroll] for (uint k = 0; k < 3; ++k)
-                    coords[k] = DiceSubVertexCoordInt(sub[k], Lt);
-            }
-            else
-            {
-                uint3 cc0, cc1, cc2;
-                DiceChildCorners(subIdx >> 6u, Lt, cc0, cc1, cc2);
-
-                uint3 sub = DiceSubTriVerts(subIdx & 63u, 3u);
-                [unroll] for (uint k = 0; k < 3; ++k)
-                    coords[k] = DiceHierCoord(cc0, cc1, cc2, DiceSubVertexCoordInt(sub[k], 3u));
-            }
+            [unroll] for (uint k = 0; k < 3; ++k)
+                coords[k] = DiceSubVertexCoordInt(sub[k], Lt);
 
             // stage corners and sub-corner normals: posWS is both lerp input and output
             float3 cornerWS[3] = { posWS[0], posWS[1], posWS[2] };
@@ -160,8 +146,6 @@ ResolvedSurface ResolveVoxelSurface(uint v0, uint v1, float2 pixelCenter, float2
             float3 micro  = VoxelMicroHeightDeriv(pWS.xz, lv, mpar);
             float  gate   = creaseA * hfMask * wDist * baseNy;
             ds += micro.yz * gate;
-
-            s_MicroCavity = 0.6 * saturate(-micro.x * gate / max(chunk.microAmplitudeMeter * 2.0, 1e-4));
         }
 
         if (N.y > 0.05)
@@ -215,7 +199,7 @@ void main(uint3 tID : SV_DispatchThreadID)
         s = ResolveMeshSurface(v0, v1, pixelCenter, g_Viewport);
 
     CoreNormal[px]   = OctEncode(s.N);
-    CoreMaterial[px] = float4(s.roughness, (float)s.matClass / 255.0, s_DebugDiceLevel, s_MicroCavity); // .b = Lt/5 (dice debug) | .a = micro cavity
+    CoreMaterial[px] = float4(s.roughness, (float)s.matClass / 255.0, 0.0, 0.0);
 
     float2 currUV = float2(pixelCenter.x / g_Viewport.x, 1.0 - pixelCenter.y / g_Viewport.y) - g_Camera.jitterUV;
     float4 prevCS = mul(g_Camera.mViewProjUnjitteredPrev, float4(s.posWS, 1.0));

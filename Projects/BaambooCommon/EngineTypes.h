@@ -4,15 +4,14 @@
 // CPU-side authoring types shared between engine and common
 struct VoxelDiceSettings
 {
-    u32   maxLevel          = 3u;   // 0 = off, 1..5
+    u32   maxLevel          = 3u;   // 0 = off, 1..3
     float targetPx          = 2.5f;
     float radiusM           = 40.0f;
     float fadeWidthMeter    = 8.0f;
     float displacementScale = 1.0f;
-    u32   debugFlags        = 0u;   // bit0 = dice-level tint
 
     // Micro displacement band
-    float microAmplitudeMeter      = 0.03f;
+    float microAmplitudeMeter      = 0.2f;
     float microBaseWaveLengthMeter = 0.35f;
     float microLacunarity          = 2.5f;
     float microGain                = 0.45f;

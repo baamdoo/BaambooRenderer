@@ -3,6 +3,12 @@
 
 #include "DescriptorCommon.hg"
 
+#define TV_CLASS_BASE        0u
+#define TV_CELLDATA_BASE     512u
+#define TV_CELLDATA_STRIDE   10u
+#define TV_VERTEXDATA_BASE   1072u
+#define TV_VERTEXDATA_STRIDE 6u
+
 layout(push_constant) uniform TvPushConstants
 {
     uint  g_CellsPerAxis;
@@ -10,24 +16,19 @@ layout(push_constant) uniform TvPushConstants
     float g_VoxelSizeMeter;
     uint  g_VertexSlabBase;
     uint  g_MaxTriangles;
+    float g_GeomorphRadiusMeter;
 } pc;
 
-layout(set = 1, binding = 0) readonly buffer DensityFieldBuffer { float g_DensityField[]; };
-layout(set = 1, binding = 1)          buffer McCounterBuffer    { uint  g_MCCounter[]; };
+layout(set = 1, binding = 0) readonly buffer DensityFieldBuffer { float       g_DensityField[]; };
+layout(set = 1, binding = 1)          buffer McCounterBuffer    { uint        g_MCCounter[]; };
 layout(set = 1, binding = 2)          buffer OutVertexBuffer    { VoxelVertex g_OutVertices[]; };
-layout(set = 1, binding = 3) readonly buffer TvTableBuffer      { uint  g_TvTables[]; };
+layout(set = 1, binding = 3) readonly buffer TvTableBuffer      { uint        g_TvTables[]; };
+layout(set = 1, binding = 4) readonly buffer TriTableBuffer     { int         g_TriTable[]; };
 
-#define TV_CLASS_BASE        0u
-#define TV_CELLDATA_BASE     512u
-#define TV_CELLDATA_STRIDE   10u
-#define TV_VERTEXDATA_BASE   1072u
-#define TV_VERTEXDATA_STRIDE 6u
+#define VOXEL_GEOMORPH_BUILD
+#include "VoxelTerrainCommon.hg"
 
-uint FlatTexel(uvec3 t, uint dim)
-{
-    return (t.z * dim + t.y) * dim + t.x;
-}
-
+// Reference: https://transvoxel.org/
 // return: bit7 = reversed winding, low 7 bits = equivalence class
 uint TvCellClass(uint caseCode)
 {
@@ -54,7 +55,7 @@ uint TvVertexData(uint caseCode, uint i)
     return (w >> ((i % 2u) * 16u)) & 0xFFFFu;
 }
 
-// Isosurface vertex on `edge`: position interpolates the two corner samples, normal = density gradient.
+// Isosurface vertex on `edge`: position interpolates the two corner samples
 VoxelVertex MakeEdgeVertex(uvec2 edge, float cornerVal[13], uvec3 cornerPos[13], vec3 cornerGrad[13], float chunkSizeMeter)
 {
     bool bCoarse = (edge.x >= 9u && edge.y >= 9u);
@@ -70,19 +71,38 @@ VoxelVertex MakeEdgeVertex(uvec2 edge, float cornerVal[13], uvec3 cornerPos[13],
     float gSq = dot(g, g);
     vec3  n   = (gSq > 1e-12) ? g * inversesqrt(gSq) : vec3(0.0, 1.0, 0.0);
 
-    return VoxelPackVertexPinned(pos, n, chunkSizeMeter, bCoarse);
+    // Should use the exact same normal value(decoded) as the rendering point(GBuffer) for consistency
+    vec3 nq = VoxelQuantizeNormal(n);
+
+    VoxelTerrainGenParams gp;
+    gp.cellsPerAxis   = pc.g_CellsPerAxis;
+    gp.apron          = pc.g_Apron;
+    gp.voxelSizeMeter = pc.g_VoxelSizeMeter;
+    VoxelProjectResult pr1 = VoxelProjectStage(gp, pos, nq, pc.g_GeomorphRadiusMeter, 2u);       // s1 = to the parent mesh
+    VoxelProjectResult pr2 = VoxelProjectStage(gp, pos, nq, 2.0 * pc.g_GeomorphRadiusMeter, 4u); // s2 = to the grandparent
+    VoxelProjectResult pr3 = VoxelProjectStage(gp, pos, nq, 4.0 * pc.g_GeomorphRadiusMeter, 8u); // s3 = to the great-grandparent
+
+    float s1 = bCoarse ? 0.0 : pr1.sd;         // coarse-side vertices already sit on the parent mesh
+    float s2 = (pr2.code == 0u) ? pr2.sd : s1; // no hit: stay on the previous LOD
+    float s3 = (pr3.code == 0u) ? pr3.sd : s2;
+
+    // normal morph targets: the ancestors' shading normals where the ray hit
+    vec3 nT1 = bCoarse ? nq : pr1.nTarget;
+    vec3 nT2 = (pr2.code == 0u) ? pr2.nTarget : nT1;
+
+    return VoxelPackVertex(pos, nq, nT1, nT2, s1, s2, s3, bCoarse, chunkSizeMeter, pc.g_VoxelSizeMeter);
 }
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 void main()
 {
     uvec3 DTid = gl_GlobalInvocationID;
-    uint  C    = pc.g_CellsPerAxis;
+    const uint C = pc.g_CellsPerAxis;
     if (DTid.x >= C / 2u || DTid.y >= C / 2u)
         return;
 
-    uint face = DTid.z; // 0..5 = -x,+x,-y,+y,-z,+z
-    uint dim  = C + 1u + 2u * pc.g_Apron;
+    const uint face = DTid.z; // 0..5 = -x,+x,-y,+y,-z,+z
+    const uint dim  = C + 1u + 2u * pc.g_Apron;
 
     uvec3 u, v, b;
     switch (face)
@@ -136,6 +156,7 @@ void main()
     patchPoints[11] = patchPoints[6];
     patchPoints[12] = patchPoints[8];
 
+
     const uint bitOrder[9] = uint[9](0u, 1u, 2u, 7u, 8u, 3u, 6u, 5u, 4u);
     float cornerVal [13];
     vec3  cornerGrad[13];
@@ -162,16 +183,22 @@ void main()
     cornerVal[11] = cornerVal[6];
     cornerVal[12] = cornerVal[8];
 
-    cornerGrad[9]  = cornerGrad[0];
-    cornerGrad[10] = cornerGrad[2];
-    cornerGrad[11] = cornerGrad[6];
-    cornerGrad[12] = cornerGrad[8];
+    // coarse-face corners: gradient at the coarse level's spacing (+-2 texels) so the normal equals the coarse neighbour's
+    for (uint k = 0u; k < 4u; ++k)
+    {
+        uvec3 t = patchPoints[9u + k] + pc.g_Apron;
+        cornerGrad[9u + k] = vec3(
+            g_DensityField[FlatTexel(t + uvec3(2u, 0u, 0u), dim)] - g_DensityField[FlatTexel(t - uvec3(2u, 0u, 0u), dim)],
+            g_DensityField[FlatTexel(t + uvec3(0u, 2u, 0u), dim)] - g_DensityField[FlatTexel(t - uvec3(0u, 2u, 0u), dim)],
+            g_DensityField[FlatTexel(t + uvec3(0u, 0u, 2u), dim)] - g_DensityField[FlatTexel(t - uvec3(0u, 0u, 2u), dim)]);
+    }
 
     uint tvClass   = TvCellClass(patchBits);
     uint winding   = (tvClass >> 7) & 1u;
     uint classBits = tvClass & 0x7Fu;
 
     uint tvGeoCounts = TvGeometryCounts(classBits);
+    uint vertexCount = (tvGeoCounts >> 4) & 0xFu;
     uint triCount    = tvGeoCounts & 0xFu;
 
     const float chunkSize = float(C) * pc.g_VoxelSizeMeter;

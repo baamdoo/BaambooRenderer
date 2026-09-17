@@ -45,13 +45,10 @@ std::vector< u64 > VoxelTerrainSystem::UpdateRenderData(const float3& cameraPos)
 
             // deadband: keep the stored pair cell until the camera leaves it by more than 0.5*S
             int2& c = m_SnapCells[lod];
-            const int2 prev = c;
             if (cameraPos.x < float(c.x) * pairSize - 0.5f * S || cameraPos.x >= float(c.x + 1) * pairSize + 0.5f * S)
                 c.x = (i32)std::floor(cameraPos.x / pairSize);
             if (cameraPos.z < float(c.y) * pairSize - 0.5f * S || cameraPos.z >= float(c.y + 1) * pairSize + 0.5f * S)
                 c.y = (i32)std::floor(cameraPos.z / pairSize);
-            if (c.x != prev.x || c.y != prev.y)
-                ++m_NumRecenters;
 
             LevelSpan& span = spans[lod];
             span = { 2 * c.x - 2, 2 * c.x + 4, 2 * c.y - 2, 2 * c.y + 4 };
@@ -120,11 +117,12 @@ void VoxelTerrainSystem::CollectRenderData(SceneRenderView& outView) const
         VoxelTerrainRenderView& vt = outView.voxelTerrain;
         vt.bValid                   = true;
         vt.revision                 = m_MeshRevision;
-        vt.recenterCount            = m_NumRecenters;
+        vt.crossfadeSeconds         = s.crossfadeSeconds;
+        vt.debugFlags               = s.debugFlags;
         vt.chunkWorldSizeMeter      = s.chunkWorldSizeMeter;
 
         vt.dice          = s.dice;
-        vt.dice.maxLevel = s.dice.maxLevel > 5u ? 5u : s.dice.maxLevel;
+        vt.dice.maxLevel = s.dice.maxLevel > 3u ? 3u : s.dice.maxLevel;
 
         VoxelTerrainGenParams& gp = vt.genParams;
         gp = {};
