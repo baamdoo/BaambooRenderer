@@ -23,7 +23,7 @@ inline float RemapClamped(float v, float inMin, float inMax, float outMin, float
 
 inline float Luminance(float3 color)
 {
-	return color.r * 0.3f + color.g * 0.59f + color.b * 0.11f;
+	return color.r * 0.2126f + color.g * 0.7152f + color.b * 0.0722f;
 }
 
 inline float4 Desaturate(float4 color, float desaturation)

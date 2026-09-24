@@ -21,6 +21,8 @@ cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
     uint   g_EnvironmentPadding0;
 };
 
+static const uint SOBOL_SEED_OFFSET = 0u;
+
 RaytracingAccelerationStructure g_Scene : register(t0, space1);
 StructuredBuffer< PrimaryRayMediumStackSeedData > g_PrimaryRayMediumSeed : register(t1, space1);
 
@@ -49,6 +51,7 @@ ConstantBuffer< DescriptorHeapIndex > g_MaterialSlabs           : register(b20, 
 #if PT_VALIDATION
 ConstantBuffer< DescriptorHeapIndex > g_PathValidationStats     : register(b21, ROOT_CONSTANT_SPACE);
 #endif
+ConstantBuffer< DescriptorHeapIndex > g_LightSelectionCDF       : register(b22, ROOT_CONSTANT_SPACE);
 
 #include "PathSurface.hlsli"
 #include "PathComposite.hlsli"
@@ -252,6 +255,7 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
 
         // Fixed-endpoint queries must not consume or depend on the transport RNG counter.
         uint directionalQuerySeed = PCGHash(rng.seed ^ PCGHash(depth + 0x9E3779B9u) ^ PCGHash(materialID + 0x85EBCA6Bu));
+        SobolRebaseForBounce(rng, depth, SOBOL_SECTION_NEE_LIGHT);
 #if PT_VALIDATION
         PathContribution directContribution;
         float3 directLighting = EstimateDirectLighting(
@@ -270,6 +274,7 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
             recordValidationStats,
             directContribution);
 
+        SobolRebaseForBounce(rng, depth, SOBOL_SECTION_NEE_ENV);
         PathContribution environmentDirectContribution;
         float3 environmentDirectLighting = EstimateEnvironmentDirectLighting(
             surfacePosition,
@@ -300,6 +305,7 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
             directionalQuerySeed,
             (depth + 1u) < maxDepth,
             rng);
+        SobolRebaseForBounce(rng, depth, SOBOL_SECTION_NEE_ENV);
         float3 environmentDirectLighting = EstimateEnvironmentDirectLighting(
             surfacePosition,
             hp.geometricNormal,
@@ -330,6 +336,7 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
         BxDF::LayerWalkerAudit sampleAudit;
 #endif
         // History-space continuation query: weight is already C_H / q_H.
+        SobolRebaseForBounce(rng, depth, SOBOL_SECTION_BSDF);
         PathBSDFSample s = BxDF::LayerComposite::SampleRay(
             sm,
             hp.uv,
@@ -454,6 +461,7 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
         const float rrThreshold = 0.05;
         if (depth >= 3)
         {
+            SobolRebaseForBounce(rng, depth, SOBOL_SECTION_RR);
             float3 rrBeta  = beta * rrEtaScale;
             float qSurvive = clamp(max(rrBeta.r, max(rrBeta.g, rrBeta.b)), rrThreshold, 1.0 - rrThreshold);
             if (NextFloat(rng) >= qSurvive)
@@ -519,7 +527,7 @@ void RayGen()
     for (uint sampleOffset = 0u; sampleOffset < numSamples; ++sampleOffset)
     {
         uint sampleIndex = g_AccumulatedSampleCount + sampleOffset;
-        RngState rng = InitRng(rayIndex, 0u, sampleIndex);
+        RngState rng = InitSobolRng(rayIndex, SOBOL_SEED_OFFSET, sampleIndex);
 
         float2 pixelJitter = SamplePixelTent(NextFloat2(rng));
         float2 pathUV      = (float2(rayIndex) + 0.5 + pixelJitter) / float2(rayDimensions);

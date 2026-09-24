@@ -82,18 +82,24 @@ bool TryResolveQueryTriangle(
     float3 p0 = float3(v0.posX, v0.posY, v0.posZ);
     float3 p1 = float3(v1.posX, v1.posY, v1.posZ);
     float3 p2 = float3(v2.posX, v2.posY, v2.posZ);
-    float3 normalOS = cross(p1 - p0, p2 - p0);
+    
+    float3 edge01   = p1 - p0;
+    float3 edge02   = p2 - p0;
+    float3 normalOS = cross(edge01, edge02);
+
     float normalOSLength2 = dot(normalOS, normalOS);
-    if (!IsPathFinite3(normalOS) || normalOSLength2 <= EPSILON_MIN)
+    float edgeScale2      = dot(edge01, edge01) * dot(edge02, edge02);
+    if (!IsPathFinite3(normalOS) || normalOSLength2 <= edgeScale2 * DEGENERATE_SIN2)
     {
         geometricNormal = 0.0;
         return false;
     }
 
+    // Unit object-space normal through the inverse-transpose; only a singular transform gives zero length.
     float3x3 normalTransform = transpose((float3x3)transform.mWorldToLocal);
     float3 normalWS = mul(normalTransform, normalOS * rsqrt(normalOSLength2));
     float normalWSLength2 = dot(normalWS, normalWS);
-    if (!IsPathFinite3(normalWS) || normalWSLength2 <= EPSILON_MIN)
+    if (!IsPathFinite3(normalWS) || normalWSLength2 <= 0.0)
     {
         geometricNormal = 0.0;
         return false;

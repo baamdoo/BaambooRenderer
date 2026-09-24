@@ -6,6 +6,8 @@
 
 #include "BaambooScene/Scene.h"
 
+#include "Utils/Math.hpp"
+
 #include <imgui.h>
 #include <algorithm>
 #include <filesystem>
@@ -66,9 +68,7 @@ bool IsFiniteFloat3(const float3& value)
     return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
 }
 
-bool TryBuildPrimaryMediumQueryParams(
-    const SceneRenderView& renderView,
-    PrimaryMediumQueryParams& params)
+bool TryBuildPrimaryMediumQueryParams(const SceneRenderView& renderView, PrimaryMediumQueryParams& params)
 {
     params = {};
     params.sceneBoundsCenter     = renderView.camera.pos;
@@ -191,9 +191,7 @@ static_assert(sizeof(PATH_VALIDATION_STAT_NAMES) / sizeof(PATH_VALIDATION_STAT_N
               "PATH_VALIDATION_STAT_NAMES must match the shader validation-stat contract");
 #endif // PT_VALIDATION
 
-u64 GatherPathTracerDirtyMask(
-    const SceneRenderView& renderView,
-    const std::array< u64, NumComponents >& lastComponentRevisions)
+u64 GatherPathTracerDirtyMask(const SceneRenderView& renderView, const std::array< u64, NumComponents >& lastComponentRevisions)
 {
     u64 dirtyMask = 0;
     for (u32 component = 0; component < NumComponents; ++component)
@@ -206,6 +204,59 @@ u64 GatherPathTracerDirtyMask(
         }
     }
     return dirtyMask;
+}
+
+void ComputeLightPowerWeights(const LightRenderView& light, float sceneBoundsRadius, std::vector< float >& outWeights)
+{
+    u32 numLights = light.numDirectionals + light.numSpots + light.numAreas + light.numDisks + light.numSpheres + light.numTubes;
+
+    outWeights.clear();
+    outWeights.reserve(numLights);
+    for (u32 i = 0u; i < numLights; ++i)
+    {
+        if (i < light.numDirectionals)
+        {
+            u32 index = i;
+
+            float flux = light.directionals[index].illuminanceLux * PI * sceneBoundsRadius * sceneBoundsRadius;
+            outWeights.push_back(flux * math::Luminance(light.directionals[index].color));
+        }
+        else if (i < light.numDirectionals + light.numSpots)
+        {
+            u32 index = i - light.numDirectionals;
+
+            float flux = light.spots[index].luminousFluxLm;
+            outWeights.push_back(flux * math::Luminance(light.spots[index].color));
+        }
+        else if (i < light.numDirectionals + light.numSpots + light.numAreas)
+        {
+            u32 index = i - light.numDirectionals - light.numSpots;
+
+            float flux = light.areas[index].luminousFluxLm;
+            outWeights.push_back(flux * math::Luminance(light.areas[index].color));
+        }
+        else if (i < light.numDirectionals + light.numSpots + light.numAreas + light.numDisks)
+        {
+            u32 index = i - light.numDirectionals - light.numSpots - light.numAreas;
+
+            float flux = light.disks[index].luminousFluxLm;
+            outWeights.push_back(flux * math::Luminance(light.disks[index].color));
+        }
+        else if (i < light.numDirectionals + light.numSpots + light.numAreas + light.numDisks + light.numSpheres)
+        {
+            u32 index = i - light.numDirectionals - light.numSpots - light.numAreas - light.numDisks;
+
+            float flux = light.spheres[index].luminousFluxLm;
+            outWeights.push_back(flux * math::Luminance(light.spheres[index].color));
+        }
+        else
+        {
+            u32 index = i - light.numDirectionals - light.numSpots - light.numAreas - light.numDisks - light.numSpheres;
+
+            float flux = light.tubes[index].luminousFluxLm;
+            outWeights.push_back(flux * math::Luminance(light.tubes[index].color));
+        }
+    }
 }
 
 } // namespace
@@ -271,6 +322,22 @@ PathTracerNode::PathTracerNode(render::RenderDevice& rd)
             .bufferUsage        = eBufferUsage_Storage,
         });
     ResetEnvironmentDistribution();
+
+    m_pLightSelectionCDF = Buffer::Create(
+        m_RenderDevice,
+        "PathTracer::LightSelectionCDFFallback",
+        {
+            .count              = 1,
+            .elementSizeInBytes = sizeof(f32),
+            .mapDirection       = 1,
+            .bufferUsage        = eBufferUsage_Storage,
+        });
+    if (m_pLightSelectionCDF && m_pLightSelectionCDF->MappedMemory())
+    {
+        auto* p = static_cast< f32* >(m_pLightSelectionCDF->MappedMemory());
+        p[0] = 1.0f;
+        m_pLightSelectionCDF->FlushMappedRange(0, sizeof(f32));
+    }
     RebuildMaterialSlabBuffer({});
 
     m_pPrimaryRayMediumSeed = Buffer::Create(
@@ -358,13 +425,16 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
             m_MaterialSlabRevision = materialSlabRevision;
     }
 
+    // A changed selection CDF changes the estimator - accumulation must restart.
+    const bool bLightSelectionChanged = UpdateLightSelectionDistribution(renderView);
+
     const bool bPrimaryMediumQueryDirty =
         !m_bHasPrimaryMediumQueryState ||
         !BytesEqual(m_LastPrimaryMediumQueryPosition, renderView.camera.pos) ||
         (sceneDirtyMask & PATH_TRACER_PRIMARY_MEDIUM_DIRTY_MASK) != 0 ||
         bMaterialSlabsRebuilt;
 
-    if (bCameraChanged || bSceneChanged)
+    if (bCameraChanged || bSceneChanged || bLightSelectionChanged)
     {
         m_LastView        = renderView.camera.mView;
         m_LastProj        = renderView.camera.mProj;
@@ -486,6 +556,7 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
 #endif // PT_VALIDATION
     context.StageDescriptor("g_EnvironmentMap", m_pEnvironmentMap ? m_pEnvironmentMap : rm.GetFlatBlackTexture(), g_FrameData.pLinearClamp);
     context.StageDescriptor("g_EnvironmentDistribution", m_pEnvironmentDistribution);
+    context.StageDescriptor("g_LightSelectionCDF", m_pLightSelectionCDF);
 
     context.StageDescriptor("g_MaterialSlabs", m_pMaterialSlabs);
     context.DispatchRays(*m_pSBT, m_pRadiance->Width(), m_pRadiance->Height());
@@ -634,6 +705,79 @@ bool PathTracerNode::LoadEnvironmentDistribution(const std::filesystem::path& en
     m_EnvironmentDistributionHeight = header.height;
     m_bUseEnvironmentSampling = true;
     printf("[PathTracer] loaded environment distribution: %s (%ux%u)\n", cdfPath.string().c_str(), header.width, header.height);
+    return true;
+}
+
+bool PathTracerNode::UpdateLightSelectionDistribution(const SceneRenderView& renderView)
+{
+    const LightRenderView& light = renderView.light;
+    const u32 lightCount = light.numDirectionals + light.numSpots + light.numAreas +
+                           light.numDisks + light.numSpheres + light.numTubes;
+    if (lightCount == 0)
+    {
+        const bool bChanged = !m_LightSelectionCDFData.empty();
+        m_LightSelectionCDFData.clear();
+        return bChanged;
+    }
+
+    PrimaryMediumQueryParams boundsParams;
+    if (!TryBuildPrimaryMediumQueryParams(renderView, boundsParams))
+        boundsParams.sceneBoundsRadius = PRIMARY_MEDIUM_QUERY_MIN_SCENE_RADIUS;
+
+    std::vector< f32 > weights;
+    ComputeLightPowerWeights(light, boundsParams.sceneBoundsRadius, weights);
+
+    float total         = 0.0f;
+    bool  bValidWeights = weights.size() == lightCount;
+    if (bValidWeights)
+    {
+        for (float w : weights)
+        {
+            if (!std::isfinite(w) || w < 0.0f)
+            {
+                bValidWeights = false;
+                break;
+            }
+            total += w;
+        }
+    }
+    if (!bValidWeights || !(total > 0.0f))
+    {
+        weights.assign(lightCount, 1.0f);
+        total = (f32)lightCount;
+    }
+
+    std::vector< f32 > cdf(lightCount);
+    f32 running = 0.0f;
+    for (u32 i = 0; i < lightCount; ++i)
+    {
+        running += weights[i];
+        cdf[i] = running / total;
+    }
+    cdf[lightCount - 1] = 1.0f;
+
+    if (cdf == m_LightSelectionCDFData)
+        return false;
+
+    if (!m_pLightSelectionCDF || m_LightSelectionBufferCount < lightCount)
+    {
+        m_pLightSelectionCDF = render::Buffer::Create(
+            m_RenderDevice,
+            "PathTracer::LightSelectionCDF",
+            {
+                .count              = lightCount,
+                .elementSizeInBytes = sizeof(f32),
+                .mapDirection       = 1,
+                .bufferUsage        = render::eBufferUsage_Storage,
+            });
+        m_LightSelectionBufferCount = lightCount;
+    }
+    if (!m_pLightSelectionCDF || !m_pLightSelectionCDF->MappedMemory())
+        return false;
+
+    std::memcpy(m_pLightSelectionCDF->MappedMemory(), cdf.data(), cdf.size() * sizeof(f32));
+    m_pLightSelectionCDF->FlushMappedRange(0, cdf.size() * sizeof(f32));
+    m_LightSelectionCDFData = std::move(cdf);
     return true;
 }
 

@@ -2,6 +2,7 @@
 #define _HLSL_SAMPLING_HEADER
 
 #include "HelperFunctions.hlsli"
+#include "SobolSampling.hlsli"
 
 // PCG Hash (O'Neill 2014)
 uint PCGHash(uint input)
@@ -12,31 +13,65 @@ uint PCGHash(uint input)
 }
 
 
-// Stateful RNG - wraps PCGHash into a NextFloat() interface
+#define RNG_MODE_PCG   0u
+#define RNG_MODE_SOBOL 1u
+
+// Stateful RNG. Two modes behind one NextFloat() interface:
+//  - PCG:   hash(seed + counter) - the original independent sampler
+//  - SOBOL: Owen-scrambled Sobol, counter = dimension index, with PCG fallback
+//           past SOBOL_DIMS. The fallback reuses `seed`, which carries the same
+//           (pixel, sample) mixing as PCG mode, so overflow dims stay decorrelated
+//           across samples.
 struct RngState
 {
-    uint seed;     // base seed, constant for the whole path
-    uint counter;  // dimension counter, advanced by each NextFloat call
+    uint seed;        // per-(pixel, sample) hash - PCG stream base in both modes
+    uint counter;     // dimension counter, advanced by each NextFloat call
+    uint sobolIndex;
+    uint scrambleKey;
+    uint sobolLimit;  // SOBOL: first dimension past the current section's budget
+    uint mode;
 };
 
 
-// Build an RNG state for a given (pixel, frame, sample) triple.
-RngState InitRng(uint2 pixel, uint frameIndex, uint sampleIndex)
+// Build an RNG state for a given (pixel, seedOffset, sample) triple.
+RngState InitRng(uint2 pixel, uint seedOffset, uint sampleIndex)
 {
     // Stage 1: pack the 2D pixel into one uint (resolution <= 65536).
     uint pixelSeed = (pixel.y << 16u) | (pixel.x & 0xFFFFu);
 
-    // Stage 2: mix frameIndex via the golden-ratio prime, then PCG-hash.
-    // The XOR scatters frame changes across the high bits; PCGHash then
+    // Stage 2: mix seedOffset via the golden-ratio prime, then PCG-hash.
+    // The XOR scatters seed changes across the high bits; PCGHash then
     // non-linearly mixes those into every output bit.
-    uint seed = PCGHash(pixelSeed ^ (frameIndex * 0x9E3779B9u));
+    uint seed = PCGHash(pixelSeed ^ (seedOffset * 0x9E3779B9u));
 
     // Stage 3: mix sampleIndex via a second PCG round.
     seed      = PCGHash(seed + sampleIndex);
 
     RngState rng;
-    rng.seed    = seed;
-    rng.counter = 0u;
+    rng.seed        = seed;
+    rng.counter     = 0u;
+    rng.sobolIndex  = sampleIndex;
+    rng.scrambleKey = seed;
+    rng.sobolLimit  = SOBOL_DIMS;
+    rng.mode        = RNG_MODE_PCG;
+    return rng;
+}
+
+
+// Owen-scrambled Sobol state for the outer transport loop.
+// Layer-walk and fixed-endpoint MIS-query streams stay PCG.
+RngState InitSobolRng(uint2 pixel, uint seedOffset, uint sampleIndex)
+{
+    uint pixelSeed = (pixel.y << 16u) | (pixel.x & 0xFFFFu);
+    uint base      = PCGHash(pixelSeed ^ (seedOffset * 0x9E3779B9u));
+
+    RngState rng;
+    rng.seed        = PCGHash(base + sampleIndex); // fallback stream, sample-mixed
+    rng.counter     = 0u;
+    rng.sobolIndex  = sampleIndex;
+    rng.scrambleKey = base;                        // pixel + seedOffset only
+    rng.sobolLimit  = SOBOL_DIMS;
+    rng.mode        = RNG_MODE_SOBOL;
     return rng;
 }
 
@@ -44,12 +79,40 @@ RngState InitRng(uint2 pixel, uint frameIndex, uint sampleIndex)
 // Return the next raw random bits and advance the RNG to the next dimension.
 uint NextUint(inout RngState rng)
 {
-    // Hash (seed + counter), not (state after counter rounds of PCG):
-    // the additive form makes random access to any dimension O(1), which
-    // we rely on for the Sobol migration in Phase 7.
+    if (rng.mode == RNG_MODE_SOBOL && rng.counter < min(rng.sobolLimit, SOBOL_DIMS))
+    {
+        uint bits = ScrambledSobolBits(rng.sobolIndex, rng.counter, rng.scrambleKey);
+        rng.counter++;
+        return bits;
+    }
     uint hashed = PCGHash(rng.seed + rng.counter);
     rng.counter++;
     return hashed;
+}
+
+
+#define SOBOL_SECTION_NEE_LIGHT 0u
+#define SOBOL_SECTION_NEE_ENV   1u
+#define SOBOL_SECTION_BSDF      2u
+#define SOBOL_SECTION_RR        3u
+
+#define SOBOL_PIXEL_DIMS    2u
+#define SOBOL_BOUNCE_STRIDE 18u
+
+void SobolRebaseForBounce(inout RngState rng, uint bounce, uint section)
+{
+    if (rng.mode != RNG_MODE_SOBOL)
+        return; // PCG streams keep their sequential counter - rebasing would change them
+
+    uint offset = 0u;
+    uint budget = 4u;
+    if (section == SOBOL_SECTION_NEE_ENV) { offset = 4u;  budget = 5u; }
+    if (section == SOBOL_SECTION_BSDF)    { offset = 9u;  budget = 8u; }
+    if (section == SOBOL_SECTION_RR)      { offset = 17u; budget = 1u; }
+
+    uint base       = SOBOL_PIXEL_DIMS + (bounce - 1u) * SOBOL_BOUNCE_STRIDE + offset;
+    rng.counter     = base;
+    rng.sobolLimit  = base + budget;
 }
 
 
@@ -66,7 +129,6 @@ float NextFloat(inout RngState rng)
     // Keeping only 24 bits avoids float32 rounding the largest uint values
     // to exactly 1.0, which would violate the half-open sampling contract.
     return UintToUnitFloat(NextUint(rng));
-
 }
 
 

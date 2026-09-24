@@ -729,11 +729,9 @@ float3 EvaluateFresnel(float cosTheta, float3 reflectionF0, float3 reflectionF90
     float baseF0 = sq((eta - 1.0) / (eta + 1.0));
     float exactF = Fresnel::Dielectric(cosTheta, 1.0, eta);
 
-    float3 boundedF90 = saturate(reflectionF90);
-    float3 boundedF0  = min(saturate(reflectionF0), boundedF90);
-    float normalizedF = baseF0 < 1.0 - 1.0e-6
-        ? saturate((exactF - baseF0) / max(1.0 - baseF0, 1.0e-6))
-        : 1.0;
+    float3 boundedF90  = saturate(reflectionF90);
+    float3 boundedF0   = min(saturate(reflectionF0), boundedF90);
+    float  normalizedF = baseF0 < 1.0 - 1.0e-6 ? saturate((exactF - baseF0) / max(1.0 - baseF0, 1.0e-6)) : 1.0;
     return lerp(boundedF0, boundedF90, normalizedF);
 }
 

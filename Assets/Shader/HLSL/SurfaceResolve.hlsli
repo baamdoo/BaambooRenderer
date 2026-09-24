@@ -173,32 +173,46 @@ ResolvedSurface ResolveMeshSurface(uint v0, uint v1, float2 pixelCenter, float2 
 
     float3x3 normalTransform = transpose((float3x3)t.mWorldToLocal);
 
-    float3 edge01          = t.position[1] - t.position[0];
-    float3 edge02          = t.position[2] - t.position[0];
-    float3 geometricNormal = cross(edge01, edge02);
-    
-    float3 geometricNormalWS    = mul(normalTransform, geometricNormal);
-    float geometricNormalWSLen2 = dot(geometricNormalWS, geometricNormalWS);
-    geometricNormalWS = geometricNormalWSLen2 > EPSILON_MIN
-        ? geometricNormalWS * rsqrt(geometricNormalWSLen2)
-        : float3(0.0, 1.0, 0.0);
+    float3 edge01              = t.position[1] - t.position[0];
+    float3 edge02              = t.position[2] - t.position[0];
+    float3 geometricNormal     = cross(edge01, edge02);
+    float  geometricNormalLen2 = dot(geometricNormal, geometricNormal);
+    float  edgeScale2          = dot(edge01, edge01) * dot(edge02, edge02);
 
-    float3 shadingNormalWS     = mul(normalTransform, normal);
-    float  shadingNormalWSLen2 = dot(shadingNormalWS, shadingNormalWS);
-    shadingNormalWS = shadingNormalWSLen2 > EPSILON_MIN
-        ? shadingNormalWS * rsqrt(shadingNormalWSLen2)
-        : geometricNormalWS;
+    float3 geometricNormalWS = float3(0.0, 1.0, 0.0);
+    if (geometricNormalLen2 > edgeScale2 * DEGENERATE_SIN2)
+    {
+        geometricNormalWS = mul(normalTransform, geometricNormal * rsqrt(geometricNormalLen2));
+        float len2 = dot(geometricNormalWS, geometricNormalWS);
+        geometricNormalWS = len2 > 0.0 ? geometricNormalWS * rsqrt(len2) : float3(0.0, 1.0, 0.0);
+    }
+
+    // Shading normal: vertex normals are unit-length in local space, so test there before the transform.
+    float  normalLen2      = dot(normal, normal);
+    float3 shadingNormalWS = geometricNormalWS;
+    if (normalLen2 > DEGENERATE_LEN2)
+    {
+        shadingNormalWS = mul(normalTransform, normal * rsqrt(normalLen2));
+        float len2 = dot(shadingNormalWS, shadingNormalWS);
+        shadingNormalWS = len2 > 0.0 ? shadingNormalWS * rsqrt(len2) : geometricNormalWS;
+    }
     if (dot(shadingNormalWS, geometricNormalWS) < 0.0)
         shadingNormalWS = -shadingNormalWS;
 
-    float3 tangentWS = mul((float3x3)t.mLocalToWorld, tangent);
-    tangentWS -= shadingNormalWS * dot(tangentWS, shadingNormalWS); // gram-schmidt
-    float tangentWSLen2 = dot(tangentWS, tangentWS);
-    if (tangentWSLen2 > EPSILON_MIN)
+    float  tangentLen2   = dot(tangent, tangent);
+    bool   bValidTangent = tangentLen2 > DEGENERATE_LEN2;
+    float3 tangentWS     = float3(0.0, 0.0, 0.0);
+    if (bValidTangent)
     {
-        tangentWS *= rsqrt(tangentWSLen2);
+        tangentWS = mul((float3x3)t.mLocalToWorld, tangent * rsqrt(tangentLen2));
+        float tangentWSLen2 = dot(tangentWS, tangentWS);
+        tangentWS -= shadingNormalWS * dot(tangentWS, shadingNormalWS); // gram-schmidt
+        float orthoLen2 = dot(tangentWS, tangentWS);
+        bValidTangent = orthoLen2 > tangentWSLen2 * DEGENERATE_SIN2 && orthoLen2 > 0.0;
+        if (bValidTangent)
+            tangentWS *= rsqrt(orthoLen2);
     }
-    else
+    if (!bValidTangent)
     {
         float3 axis = abs(shadingNormalWS.z) < 0.999
             ? float3(0.0, 0.0, 1.0)

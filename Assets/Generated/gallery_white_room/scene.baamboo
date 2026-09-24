@@ -243,7 +243,7 @@ mesh path=Generated/gallery_white_room/meshes/0181_shape_0181.obj name=shape_018
 mesh path=Generated/gallery_white_room/meshes/0182_shape_0182.obj name=shape_0182 faceNormals=0 tint=0,0,0,1 metallic=0 roughness=1 ior=1 transmission=0 specularColor=0,0,0 specularStrength=0 emissionColor=17.777,17.777,17.777 emissivePower=1 alphaCutoff=0 albedoTex=-
 mesh path=Generated/gallery_white_room/meshes/0183_shape_0183.obj name=shape_0183 faceNormals=0 tint=0,0,0,1 metallic=0 roughness=1 ior=1 transmission=0 specularColor=0,0,0 specularStrength=0 emissionColor=17.777,17.777,17.777 emissivePower=1 alphaCutoff=0 albedoTex=-
 mesh path=Generated/gallery_white_room/meshes/0184_shape_0184.obj name=shape_0184 faceNormals=0 tint=0,0,0,1 metallic=0 roughness=1 ior=1 transmission=0 specularColor=0,0,0 specularStrength=0 emissionColor=1.08059,1.08059,1.08059 emissivePower=1 alphaCutoff=0 albedoTex=-
-areaLight name=shape_0181 position=-0.213572,1.96307,0.383951 rotation=1.61147818e-06,-180,0 scale=0.845294,1.643438,1 color=1,1,1 flux=59.9998973
-areaLight name=shape_0182 position=1.03113,1.96592,0.659918 rotation=2.0166749e-06,151.26402,0 scale=0.638702008,1.682074,1 color=1,1,1 flux=60.0000655
-areaLight name=shape_0183 position=-1.45584,1.96592,0.658936 rotation=2.00902963e-06,-151.630248,0 scale=0.638702598,1.682074,1 color=1,1,1 flux=60.0001209
-areaLight name=shape_0184 position=0.149774,2.03104,8.14201 rotation=7.33662143e-06,8.65142206e-06,0 scale=3.05348,1.929402,1 color=1,1,1 flux=19.9999367
+areaLight name=shape_0181 position=-0.213572,1.96307,0.383951 rotation=9.8055307e-07,180,-0 scale=0.845294,1.643438,1 color=1,1,1 flux=59.9998973
+areaLight name=shape_0182 position=1.03113,1.96592,0.659918 rotation=7.07112547e-07,-151.263965,-1.20408671e-06 scale=0.638702008,1.682074,1 color=1,1,1 flux=60.0000655
+areaLight name=shape_0183 position=-1.45584,1.96592,0.658936 rotation=7.147687e-07,151.630224,1.1900268e-06 scale=0.638702598,1.682074,1 color=1,1,1 flux=60.0001209
+areaLight name=shape_0184 position=0.149774,2.03104,8.14201 rotation=-3.80253645e-06,-8.65144729e-06,-3.78167757e-13 scale=3.05348,1.929402,1 color=1,1,1 flux=19.9999367

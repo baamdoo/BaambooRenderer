@@ -55,6 +55,7 @@
   "lights": [
     {
       "id": "ceiling_light",
+      "kind": "area_quad",
       "L": [
         17.0,
         12.0,

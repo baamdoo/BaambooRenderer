@@ -1126,8 +1126,12 @@ RngState InitDirectionalQueryRng(
     seed = PCGHash(seed ^ PCGHash(streamIndex + 0x9E3779B9u));
 
     RngState rng;
-    rng.seed    = seed;
-    rng.counter = 0u;
+    rng.seed        = seed;
+    rng.counter     = 0u;
+    rng.sobolIndex  = 0u;
+    rng.scrambleKey = seed;
+    rng.sobolLimit  = 0u;
+    rng.mode        = RNG_MODE_PCG; // fixed-endpoint queries stay on the hash stream
     return rng;
 }
 

@@ -192,10 +192,34 @@ uint DirectLightCount()
     return g_Lights.numDirectionals + g_Lights.numSpots + g_Lights.numAreas + g_Lights.numDisks + g_Lights.numSpheres + g_Lights.numTubes;
 }
 
-float DirectLightSelectionPDF()
+// Inverse-transform sampling
+uint LightSelectionCDFLowerBound(uint count, float u)
 {
-    uint lightCount = DirectLightCount();
-    return lightCount > 0u ? rcp((float)lightCount) : 0.0;
+    StructuredBuffer< float > LightCDF = GetResource(g_LightSelectionCDF.index);
+
+    float target = clamp(u, 0.0, 0.99999994);
+
+    uint lo = 0u, hi = count;
+    [loop]
+    while (lo < hi)
+    {
+        uint mid = (lo + hi) >> 1u;
+        if (LightCDF[mid] < target)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+
+    return min(lo, count - 1u);
+}
+
+float LightSelectionPMF(uint lightIndex)
+{
+    StructuredBuffer< float > LightCDF = GetResource(g_LightSelectionCDF.index);
+
+    float cdf1 = LightCDF[lightIndex];
+    float cdf0 = (lightIndex > 0u) ? LightCDF[lightIndex - 1u] : 0.0;
+    return max(cdf1 - cdf0, 0.0);
 }
 
 float PdfAreaToSolidAngle(float pdfA, float distSq, float cosLight)
@@ -213,18 +237,23 @@ struct LightSample
     float3 Le;           // area types: emitted radiance; delta types: intensity term
     float  deltaScale;   // delta extras (spot falloff*attenuation); 1 for directional
     float  pdfW;         // selection-weighted solid-angle pdf (area types); 0 for delta
-    
+    float  selectionPdf; // this light's selection PMF (power CDF segment)
+
     uint isDelta;       // 1 -> Dirac pdf: no MIS competition (directional/spot)
     uint isDirectional; // 1 -> visibility is a direction test (no endpoint)
     uint valid;
 };
 
-LightSample SampleOneLight(float3 p, float selectionPdf, inout RngState rng)
+LightSample SampleOneLight(float3 p, inout RngState rng)
 {
     LightSample ls = (LightSample)0;
 
     uint lightCount = DirectLightCount();
-    uint lightIndex = min((uint)(NextFloat(rng) * (float)lightCount), lightCount - 1u);
+    uint lightIndex = LightSelectionCDFLowerBound(lightCount, NextFloat(rng));
+    float selectionPdf = LightSelectionPMF(lightIndex);
+    if (selectionPdf <= 0.0)
+        return ls;
+    ls.selectionPdf = selectionPdf;
 
     if (lightIndex < g_Lights.numDirectionals)
     {
@@ -421,10 +450,8 @@ float3 EstimateDirectLighting(
     if (lightCount == 0u)
         return direct;
 
-    float selectionPdf = DirectLightSelectionPDF();
-
-    // Sample: pick one light and one point on it
-    LightSample ls = SampleOneLight(p, selectionPdf, rng);
+    // Sample: pick one light (power-proportional CDF) and one point on it
+    LightSample ls = SampleOneLight(p, rng);
     if (ls.valid == 0u)
         return direct;
 
@@ -496,7 +523,7 @@ float3 EstimateDirectLighting(
     if (ls.isDelta != 0u)
     {
         // Dirac pdf: the whole contribution belongs to NEE (note 02, delta).
-        lightScale = ls.Le * (ls.deltaScale * cosSurface) / selectionPdf;
+        lightScale = ls.Le * (ls.deltaScale * cosSurface) / ls.selectionPdf;
     }
     else
     {
@@ -705,9 +732,14 @@ float3 EstimateEnvironmentDirectLighting(
 float AreaLightPDFAtHit(float3 refP, float3 hitP, float3 wiWS)
 {
     float pdfW = 0.0;
-    float selectionPdf = DirectLightSelectionPDF();
-    if (selectionPdf <= 0.0)
+    if (DirectLightCount() == 0u)
         return pdfW;
+
+    // Per-light selection PMF (power CDF)
+    uint areaBase   = g_Lights.numDirectionals + g_Lights.numSpots;
+    uint diskBase   = areaBase + g_Lights.numAreas;
+    uint sphereBase = diskBase + g_Lights.numDisks;
+    uint tubeBase   = sphereBase + g_Lights.numSpheres;
 
     [loop]
     for (uint i = 0u; i < g_Lights.numAreas; ++i)
@@ -734,6 +766,7 @@ float AreaLightPDFAtHit(float3 refP, float3 hitP, float3 wiWS)
         float3 toLight = hitP - refP;
         float dist2 = dot(toLight, toLight);
         float pdfA = 1.0 / max(4.0 * light.halfWidth * light.halfHeight, EPSILON_MIN);
+        float selectionPdf = LightSelectionPMF(areaBase + i);
         pdfW += PdfAreaToSolidAngle(selectionPdf * pdfA, dist2, cosLight);
     }
 
@@ -762,6 +795,7 @@ float AreaLightPDFAtHit(float3 refP, float3 hitP, float3 wiWS)
         float3 toLight = hitP - refP;
         float dist2 = dot(toLight, toLight);
         float pdfA = 1.0 / max(PI * light.radius * light.radius, EPSILON_MIN);
+        float selectionPdf = LightSelectionPMF(diskBase + i);
         pdfW += PdfAreaToSolidAngle(selectionPdf * pdfA, dist2, cosLight);
     }
 
@@ -783,6 +817,7 @@ float AreaLightPDFAtHit(float3 refP, float3 hitP, float3 wiWS)
         float3 toLight = hitP - refP;
         float dist2 = dot(toLight, toLight);
         float pdfA = 1.0 / max(4.0 * PI * light.radius * light.radius, EPSILON_MIN);
+        float selectionPdf = LightSelectionPMF(sphereBase + i);
         pdfW += PdfAreaToSolidAngle(selectionPdf * pdfA, dist2, cosLight);
     }
 
@@ -816,6 +851,7 @@ float AreaLightPDFAtHit(float3 refP, float3 hitP, float3 wiWS)
         float3 toLight = hitP - refP;
         float dist2 = dot(toLight, toLight);
         float pdfA = 1.0 / max(2.0 * PI * light.radius * lengthTube, EPSILON_MIN);
+        float selectionPdf = LightSelectionPMF(tubeBase + i);
         pdfW += PdfAreaToSolidAngle(selectionPdf * pdfA, dist2, cosLight);
     }
 

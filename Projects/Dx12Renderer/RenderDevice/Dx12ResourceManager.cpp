@@ -136,7 +136,7 @@ Dx12ResourceManager::Dx12ResourceManager(Dx12RenderDevice& rd)
     m_pGlobalRootSignature->AddConstants(0, kCommandSignatureSpace, 1);
     // Root Constant: space100, b0
     m_pGlobalRootSignature->AddConstants(0, kMaxLocalRootConstants - 1);
-    // DescriptorHeapIndices: space100, b1 ~ b19
+    // DescriptorHeapIndices: space100, b1 ~ b22 (kMaxDescriptorHeapIndices)
     for (u32 i = 1; i < kMaxDescriptorHeapIndices + 1; ++i)
     {
         m_pGlobalRootSignature->AddConstants(i, 1);

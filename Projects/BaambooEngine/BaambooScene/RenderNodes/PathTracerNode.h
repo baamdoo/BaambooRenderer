@@ -7,6 +7,7 @@
 #include <atomic>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace baamboo
 {
@@ -47,6 +48,7 @@ private:
 	void ResetEnvironmentDistribution();
 	bool LoadEnvironmentDistribution(const std::filesystem::path& environmentMapPath);
 	bool RebuildMaterialSlabBuffer(const std::vector< MaterialSlabData >& slabs);
+	bool UpdateLightSelectionDistribution(const SceneRenderView& renderView);
 
 private:
 	Arc< render::Texture > m_pAccumulation;
@@ -60,6 +62,7 @@ private:
 #endif // PT_VALIDATION
 	Arc< render::Texture > m_pEnvironmentMap;
 	Arc< render::Buffer >  m_pEnvironmentDistribution;
+	Arc< render::Buffer >  m_pLightSelectionCDF;
 	Arc< render::Buffer >  m_pMaterialSlabs;
 	Arc< render::Buffer >  m_pPrimaryRayMediumSeed;
 
@@ -94,6 +97,8 @@ private:
 	bool   m_bUseEnvironmentSampling = false;
 	u32    m_EnvironmentDistributionWidth  = 0;
 	u32    m_EnvironmentDistributionHeight = 0;
+	std::vector< f32 > m_LightSelectionCDFData;
+	u32    m_LightSelectionBufferCount = 0;
 	std::string m_EnvironmentMapPath;
 	std::string m_ReferenceSceneName = "cornell_box";
 	u64 m_MaterialSlabRevision = ~u64(0);
