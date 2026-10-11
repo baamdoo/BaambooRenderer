@@ -1,6 +1,7 @@
 #pragma once
 #include "MathTypes.h"
 #include "ComponentTypes.h"
+#include <cstddef>
 
 struct MeshLOD
 {
@@ -27,15 +28,20 @@ struct MeshData
 static_assert(sizeof(MeshLOD) == 24);
 static_assert(sizeof(MeshData) == 4 + 12 + 4 + 4 + LOD_COUNT * sizeof(MeshLOD));
 
-struct InstanceData
+struct alignas(16) InstanceData
 {
     u32 meshID;
     u32 transformID;
     u32 materialID;
+    u32 mediumID;
 
     u32 visOffset;
     u32 isVoxel;
+    u32 padding0;
+    u32 padding1;
 };
+static_assert(sizeof(InstanceData) == 32);
+static_assert(alignof(InstanceData) == 16);
 
 constexpr u32 kVoxelChunkInstanceBase = 0u;
 constexpr u32 kMaxVoxelChunkSlots     = 1024u; // Reserved voxel instance slots (= max concurrent resident chunks)
@@ -47,6 +53,25 @@ struct VoxelChunkID
 };
 constexpr u64 VoxelChunkKey(int3 coords, u32 lod) { return (static_cast<u64>(lod & 0xFFFF) << 48u) | (static_cast<u64>(coords.x & 0xFFFF) << 32u) | (static_cast<u64>(coords.y & 0xFFFF) << 16u) | static_cast<u64>(coords.z & 0xFFFF); }
 constexpr u64 VoxelChunkKey(VoxelChunkID id) { return VoxelChunkKey(id.coord, id.lod); }
+
+static constexpr u32 MEDIUM_FLAG_AIR_CONTRIBUTOR = 1u << 0u;
+
+struct alignas(16) MediumData
+{
+    mat4 mWorldToDensity = mat4(1.0f);
+
+    float3 sigmaA = float3(0.0f);
+    float  densityScale = 1.0f;
+    float3 sigmaS = float3(0.0f);
+    float  phaseG = 0.0f;
+
+    float ior               = 1.0f;
+    float majorant          = 0.0f; // Upper bound on every RGB extinction channel, per world length.
+    u32   mediumFlags       = 0u;   // Zero retains the existing replacement-medium behavior.
+    u32   densityByteOffset = kInvalidIndex;
+};
+static_assert(sizeof(MediumData) == 112);
+static_assert(alignof(MediumData) == 16);
 
 struct IndirectCommandData
 {
@@ -245,12 +270,14 @@ struct alignas(16) PrimaryRayMediumStackSeedData
 {
     u32 status;
     u32 count;
+    u32 airCount;
     u32 padding0;
-    u32 padding1;
 
     PrimaryRayMediumSeedEntryData entries[kPrimaryRayMediumStackCapacity];
+    PrimaryRayMediumSeedEntryData airEntries[kPrimaryRayMediumStackCapacity];
 };
-static_assert(sizeof(PrimaryRayMediumStackSeedData) == 144);
+static_assert(sizeof(PrimaryRayMediumStackSeedData) == 272);
+static_assert(alignof(PrimaryRayMediumStackSeedData) == 16);
 
 static constexpr u32 MATERIAL_FLAG_FACE_NORMALS           = 1u << 0u;
 static constexpr u32 MATERIAL_FLAG_ALPHA_MASK             = 1u << 1u;
@@ -258,6 +285,7 @@ static constexpr u32 MATERIAL_FLAG_ALPHA_BLEND            = 1u << 2u;
 static constexpr u32 MATERIAL_FLAG_DOUBLE_SIDED           = 1u << 3u;
 static constexpr u32 MATERIAL_FLAG_THIN_WALLED            = 1u << 4u;
 static constexpr u32 MATERIAL_FLAG_RELATIVE_IOR_INTERFACE = 1u << 5u;
+static constexpr u32 MATERIAL_FLAG_MEDIUM_BOUNDARY        = 1u << 6u;
 
 struct DirectionalLight
 {

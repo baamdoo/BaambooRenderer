@@ -142,6 +142,17 @@ struct CloudData
     float padding2;
 };
 
+#ifdef _MEDIUM
+layout(std430, set = DESCRIPTORSET_COMMON, binding = 14) readonly buffer MediumBuffer
+{
+    MediumData g_Media[];
+};
+layout(std430, set = DESCRIPTORSET_COMMON, binding = 15) readonly buffer MediumDensityBuffer
+{
+    uint pnanovdb_buf_data[];
+};
+#endif
+
 #ifdef _LIGHT
 layout(set = DESCRIPTORSET_COMMON, binding = 10) readonly buffer LightBuffer
 {

@@ -73,7 +73,7 @@ bool RefractConeBoundary(float2 incidentDir, float2 normal, float etaIOverT, out
             return false;
 
         transmittedDir *= rsqrt(tangentLenSq);
-        return IsPathFinite(transmittedDir.x) && IsPathFinite(transmittedDir.y);
+        return true;
     }
     transmittedDir = etaIOverT * incidentDir - normal * (etaIOverT * NoI + safeSqrt(max(k, 0.0)));
 
@@ -82,7 +82,7 @@ bool RefractConeBoundary(float2 incidentDir, float2 normal, float etaIOverT, out
         return false;
 
     transmittedDir *= rsqrt(transmittedLenSq);
-    return IsPathFinite(transmittedDir.x) && IsPathFinite(transmittedDir.y);
+    return true;
 }
 
 // Reference: https://raw.githubusercontent.com/NVIDIAGameWorks/Falcor/master/Source/Falcor/Rendering/Materials/TexLODHelpers.slang
@@ -330,6 +330,9 @@ float3 ResolveConductorF0(SurfaceMaterial sm)
 float ResolveConductorScale(SurfaceMaterial sm)
 {
     float scale = saturate(sm.metallic);
+            
+    if (!IsPrincipledMaterial(sm))
+        scale *= saturate(sm.specularStrength);
     return scale > PT_LOBE_EPS ? scale : 0.0;
 }
 
@@ -804,7 +807,7 @@ Layered::LayerEvent SampleLayerEvent(
 
 bool TryResolveTerminalMedium(
     SurfaceMaterial rootMaterial,
-    uint rootMaterialID,
+    uint interiorMediumID,
     float2 uv,
     float2 ddxUV,
     float2 ddyUV,
@@ -812,20 +815,18 @@ bool TryResolveTerminalMedium(
     out bool isTerminalMedium)
 {
     isTerminalMedium = HasTransmissionLobe(rootMaterial);
+    terminalMedium = (Medium)0;
+    terminalMedium.mediumID = interiorMediumID;
+    if (interiorMediumID == INVALID_INDEX)
+        return false;
 
     uint count = max(rootMaterial.layerCount, 1u);
-    if (count == 1u)
-    {
-        terminalMedium.mediumID = rootMaterialID;
-        terminalMedium.ior      = rootMaterial.ior;
-    }
-    else
+    if (count > 1u)
     {
         if (rootMaterial.layerOffset == INVALID_INDEX)
             return false;
 
         StructuredBuffer< MaterialSlabData > Slabs = GetResource(g_MaterialSlabs.index);
-        StructuredBuffer< MaterialData > Materials = GetResource(g_Materials.index);
 
         [loop]
         for (uint boundary = 1u; boundary < count; ++boundary)
@@ -844,13 +845,13 @@ bool TryResolveTerminalMedium(
                 return false;
 
             isTerminalMedium = isTerminalMedium && HasTransmissionLobe(boundaryMaterial);
-            if (boundary == count - 1u)
-            {
-                terminalMedium.mediumID = slab.materialID;
-                terminalMedium.ior      = max(Materials[slab.materialID].ior, 1.0e-4);
-            }
         }
     }
+
+    MediumData opticalMedium;
+    if (!TryLoadMedium(interiorMediumID, opticalMedium))
+        return false;
+    terminalMedium.ior = opticalMedium.ior;
 
     if (!IsPathFinite(terminalMedium.ior) || terminalMedium.ior <= 0.0)
         return false;
@@ -2026,7 +2027,7 @@ float MarginalPDF(
 
 
                 reverseW = reverseEvent.wi;
-                if (!IsPathFinite3(reverseW) || abs(reverseW.z) <= EPSILON_MIN)
+                if (abs(reverseW.z) <= EPSILON_MIN)
                     break;
 
                 int nextBoundary = reverseBoundary + (reverseW.z < 0.0 ? 1 : -1);
@@ -2173,7 +2174,7 @@ float MarginalPDF(
                 }
 
                 reverseW = reverseEvent.wi;
-                if (!IsPathFinite3(reverseW) || abs(reverseW.z) <= EPSILON_MIN)
+                if (abs(reverseW.z) <= EPSILON_MIN)
                     break;
 
                 int nextBoundary = reverseBoundary + (reverseW.z < 0.0 ? 1 : -1);
@@ -2271,7 +2272,7 @@ float MarginalPDF(
 
 
         forwardW = forwardEvent.wi;
-        if (!IsPathFinite3(forwardW) || abs(forwardW.z) <= EPSILON_MIN)
+        if (abs(forwardW.z) <= EPSILON_MIN)
             break;
 
         int nextBoundary = forwardBoundary + (forwardW.z < 0.0 ? 1 : -1);

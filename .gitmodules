@@ -43,3 +43,6 @@
 [submodule "Projects/ThirdParties/tinyexr"]
 	path = Projects/ThirdParties/tinyexr
 	url = https://github.com/syoyo/tinyexr.git
+[submodule "Projects/ThirdParties/openvdb"]
+	path = Projects/ThirdParties/openvdb
+	url = https://github.com/AcademySoftwareFoundation/openvdb.git

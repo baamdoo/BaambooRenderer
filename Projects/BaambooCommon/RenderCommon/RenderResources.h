@@ -890,6 +890,13 @@ class BAAMBOO_API SceneResource
 public:
     virtual ~SceneResource() = default;
 
+    struct MediumBuffers
+    {
+        std::vector< MediumData > media;
+        std::vector< u32 > densityWords;
+    };
+    static MediumBuffers BuildMediumBuffers(const SceneRenderView& renderView);
+
     virtual void UpdateSceneResources(const SceneRenderView& renderView, class CommandContext& context) = 0;
     virtual void BindSceneResources(class CommandContext& context) = 0;
 

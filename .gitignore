@@ -59,16 +59,108 @@ Model/
 External/
 Assets/Texture/_synthetic
 
-# README/path-tracing reference geometry (CC BY 4.0; attribution is stored beside it).
+# Runtime models used by the sample apps; keep unselected downloads ignored.
+# Explicit OBJ exceptions distinguish Wavefront models from compiler objects.
 !/Assets/Model/
-/Assets/Model/*
+/Assets/Model/**
+!/Assets/Model/DamagedHelmet/
 !/Assets/Model/USDShaderBallForGltf/
-!/Assets/Model/USDShaderBallForGltf/USDShaderBallForGltf.glb
+!/Assets/Model/DamagedHelmet/DamagedHelmet.bin
+!/Assets/Model/DamagedHelmet/DamagedHelmet.gltf
+!/Assets/Model/DamagedHelmet/Default_AO.jpg
+!/Assets/Model/DamagedHelmet/Default_albedo.jpg
+!/Assets/Model/DamagedHelmet/Default_emissive.jpg
+!/Assets/Model/DamagedHelmet/Default_metalRoughness.jpg
+!/Assets/Model/DamagedHelmet/Default_normal.jpg
 !/Assets/Model/USDShaderBallForGltf/LICENSE.md
 !/Assets/Model/USDShaderBallForGltf/README.md
+!/Assets/Model/USDShaderBallForGltf/USDShaderBallForGltf.glb
+!/Assets/Model/cube.mtl
+!/Assets/Model/cube.obj
+!/Assets/Model/kitten.obj
+!/Assets/Model/sphere.obj
+
+# PathTracer assets shown in README, their shared runtime inputs and provenance.
+# Keep other generated regressions, renderer references and outputs ignored.
+# See Assets/README.md for scene mapping and source records.
+!/Assets/Generated/
+/Assets/Generated/**
+!/Assets/Generated/complex_room/
+!/Assets/Generated/complex_room/meshes/
+!/Assets/Generated/complex_room/textures/
+!/Assets/Generated/gallery_glass_of_water/
+!/Assets/Generated/gallery_glass_of_water/meshes/
+!/Assets/Generated/gallery_medium_stage3_shared/
+!/Assets/Generated/gallery_medium_stage3_shared/lighting_v2/
+!/Assets/Generated/gallery_medium_stage3_shared/meshes/
+!/Assets/Generated/gallery_medium_stage3_showcase_color_dense_v1_hero/
+!/Assets/Generated/gallery_nlayer_killeroo_n4/
+!/Assets/Generated/gallery_nlayer_killeroo_n4/meshes/
+!/Assets/Generated/gallery_nlayer_killeroo_n4_alpha01_bright10x/
+!/Assets/Generated/gallery_nlayer_shaderball_n3/
+!/Assets/Generated/gallery_nlayer_shaderball_shared/
+!/Assets/Generated/gallery_nlayer_shaderball_shared/meshes/
+!/Assets/Generated/volume_smoke_v1/
+!/Assets/Generated/complex_room/meshes/back_wall.ply
+!/Assets/Generated/complex_room/meshes/ball_glass.ply
+!/Assets/Generated/complex_room/meshes/ball_hi.ply
+!/Assets/Generated/complex_room/meshes/ball_metal.ply
+!/Assets/Generated/complex_room/meshes/ball_teal.ply
+!/Assets/Generated/complex_room/meshes/ball_warm.ply
+!/Assets/Generated/complex_room/meshes/ceiling.ply
+!/Assets/Generated/complex_room/meshes/ceiling_light.ply
+!/Assets/Generated/complex_room/meshes/ellip_blue.ply
+!/Assets/Generated/complex_room/meshes/ellip_orange.ply
+!/Assets/Generated/complex_room/meshes/floor.ply
+!/Assets/Generated/complex_room/meshes/left_wall.ply
+!/Assets/Generated/complex_room/meshes/right_wall.ply
+!/Assets/Generated/complex_room/textures/checker.exr
+!/Assets/Generated/gallery_glass_of_water/LICENSE.txt
+!/Assets/Generated/gallery_glass_of_water/meshes/0000_WaterAir_0001.obj
+!/Assets/Generated/gallery_glass_of_water/meshes/0001_WaterAir_0002.obj
+!/Assets/Generated/gallery_glass_of_water/meshes/0002_IceAir_0001.obj
+!/Assets/Generated/gallery_glass_of_water/meshes/0003_AirIce_0001.obj
+!/Assets/Generated/gallery_glass_of_water/meshes/0004_IceAir_0002.obj
+!/Assets/Generated/gallery_glass_of_water/meshes/0005_AirIce_0002.obj
+!/Assets/Generated/gallery_glass_of_water/meshes/0006_AirIce_0003.obj
+!/Assets/Generated/gallery_glass_of_water/meshes/0007_IceAir_0003.obj
+!/Assets/Generated/gallery_glass_of_water/meshes/0008_AirIce_0004.obj
+!/Assets/Generated/gallery_glass_of_water/meshes/0009_IceAir_0004.obj
+!/Assets/Generated/gallery_glass_of_water/meshes/0010_AirIce_0005.obj
+!/Assets/Generated/gallery_glass_of_water/meshes/0011_IceAir_0005.obj
+!/Assets/Generated/gallery_glass_of_water/meshes/0012_Backdrop.obj
+!/Assets/Generated/gallery_glass_of_water/meshes/0013_Floor.obj
+!/Assets/Generated/gallery_glass_of_water/meshes/0014_Glass.obj
+!/Assets/Generated/gallery_glass_of_water/meshes/0015_WaterAir_0003.obj
+!/Assets/Generated/gallery_glass_of_water/meshes/0016_shape_0016.obj
+!/Assets/Generated/gallery_glass_of_water/scene.baamboo
+!/Assets/Generated/gallery_medium_stage3_shared/lighting_v2/uniform_grey_05.envcdf.bin
+!/Assets/Generated/gallery_medium_stage3_shared/lighting_v2/uniform_grey_05.exr
+!/Assets/Generated/gallery_medium_stage3_shared/meshes/backdrop_0.ply
+!/Assets/Generated/gallery_medium_stage3_shared/meshes/backdrop_1.ply
+!/Assets/Generated/gallery_medium_stage3_shared/meshes/backdrop_2.ply
+!/Assets/Generated/gallery_medium_stage3_shared/meshes/checker_0.ply
+!/Assets/Generated/gallery_medium_stage3_shared/meshes/checker_1.ply
+!/Assets/Generated/gallery_medium_stage3_shared/meshes/glass_sphere.ply
+!/Assets/Generated/gallery_medium_stage3_showcase_color_dense_v1_hero/scene.baamboo
+!/Assets/Generated/gallery_nlayer_killeroo_n4/meshes/killeroo-green-rh-world.ply
+!/Assets/Generated/gallery_nlayer_killeroo_n4/meshes/killeroo-red-rh-world.ply
+!/Assets/Generated/gallery_nlayer_killeroo_n4_alpha01_bright10x/scene.baamboo
+!/Assets/Generated/gallery_nlayer_shaderball_n3/scene.baamboo
+!/Assets/Generated/gallery_nlayer_shaderball_shared/meshes/base.ply
+!/Assets/Generated/gallery_nlayer_shaderball_shared/meshes/core.ply
+!/Assets/Generated/gallery_nlayer_shaderball_shared/meshes/material_surface.ply
+!/Assets/Generated/gallery_nlayer_shaderball_shared/meshes/sss_bars.ply
+!/Assets/Generated/volume_smoke_v1/extraction.json
+!/Assets/Generated/volume_smoke_v1/smoke_density.nvdb
+!/Assets/Generated/volume_smoke_v1/source_manifest.json
+
+# Publish the architecture document while keeping working/learning notes local.
+/Docs/*
+/Tests
+!/Docs/Renderer_Architecture.html
 
 # Agents
-Docs/
 shrimp_data/
 .claude/
 CLAUDE.md

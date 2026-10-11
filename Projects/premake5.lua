@@ -111,6 +111,7 @@ project "BaambooEngine"
 		"%{Path.Solution}Projects/ThirdParties/meshoptimizer/src",
 		"%{Path.Solution}Projects/ThirdParties/json/single_include",
 		"%{Path.Solution}Projects/ThirdParties/pugixml/src",
+		"%{Path.Solution}Projects/ThirdParties/openvdb/nanovdb",
 	}
 
 	libdirs {
@@ -259,6 +260,7 @@ project "Dx12Renderer"
 	}
 
 	shadermodel ("6.6")
+	shaderincludedirs { "%{Path.Solution}Projects/ThirdParties/openvdb/nanovdb" }
 	shaderobjectfileoutput (path.join(Path.Cso, "%%(Filename).cso"))
 	filter { "files:**VS.hlsl" }
 		shadertype "Vertex"
@@ -338,7 +340,7 @@ rule "VkShaderCompile"
 	fileextension { ".vert", ".frag", ".geom", ".hull", ".domain", ".task", ".mesh", ".comp" }
 
 	buildmessage 'Compiling %(Filename)%(Extension) to Spv'
-	buildcommands '$(VULKAN_SDK)/Bin/glslangValidator %(FullPath) -V -gVS --target-env vulkan1.4 -o %{Path.Spv}/%(Filename)%(Extension).spv'
+	buildcommands '"$(VULKAN_SDK)/Bin/glslangValidator" "%(FullPath)" -I"%{Path.Solution}Projects/ThirdParties/openvdb/nanovdb" -V -gVS --target-env vulkan1.4 -o "%{Path.Spv}/%(Filename)%(Extension).spv"'
 	buildoutputs '%{Path.Spv}/%(Filename)%(Extension).spv'
 project "VkRenderer"
 	location "VkRenderer"

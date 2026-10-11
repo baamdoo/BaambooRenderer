@@ -2,6 +2,7 @@
 #define _MESH
 #define _TRANSFORM
 #define _MATERIAL
+#define _MEDIUM
 #define _LIGHT
 #define _PATH_TRACING
 #include "Common.hlsli"
@@ -18,39 +19,25 @@ cbuffer PushConstants : register(b0, ROOT_CONSTANT_SPACE)
     uint   g_UseEnvironmentSampling;
     uint   g_EnvironmentDistributionWidth;
     uint   g_EnvironmentDistributionHeight;
-    uint   g_EnvironmentPadding0;
+    uint   g_SobolSeed;
 };
 
-static const uint SOBOL_SEED_OFFSET = 0u;
+cbuffer PathSceneBounds : register(b0, space1)
+{
+    float3 g_SceneBoundsCenter;
+    float  g_SceneBoundsRadius;
+};
+
+static const uint PT_MAX_MEDIUM_BOUNDARY_HITS = 256u;
 
 RaytracingAccelerationStructure g_Scene : register(t0, space1);
 StructuredBuffer< PrimaryRayMediumStackSeedData > g_PrimaryRayMediumSeed : register(t1, space1);
 
 ConstantBuffer< DescriptorHeapIndex > g_Accumulation : register(b1,  ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_Radiance     : register(b2,  ROOT_CONSTANT_SPACE);
-#if PT_VALIDATION
-ConstantBuffer< DescriptorHeapIndex > g_Albedo                : register(b3,  ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_Normal                : register(b4,  ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_Depth                 : register(b5,  ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_GeometricNormal       : register(b6,  ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_MaterialParams        : register(b7,  ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_MaterialExtra         : register(b8,  ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_MaterialSpecularColor : register(b9,  ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_Emission              : register(b10, ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_DiffuseRadiance       : register(b11, ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_SpecularRadiance      : register(b12, ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_TransmissionRadiance  : register(b13, ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_SurfaceLobeMask       : register(b14, ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_SurfaceLobeWeight     : register(b15, ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_SampledLobeFrequency  : register(b16, ROOT_CONSTANT_SPACE);
-ConstantBuffer< DescriptorHeapIndex > g_PrimaryId             : register(b17, ROOT_CONSTANT_SPACE);
-#endif // PT_VALIDATION
 ConstantBuffer< DescriptorHeapIndex > g_EnvironmentMap          : register(b18, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_EnvironmentDistribution : register(b19, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_MaterialSlabs           : register(b20, ROOT_CONSTANT_SPACE);
-#if PT_VALIDATION
-ConstantBuffer< DescriptorHeapIndex > g_PathValidationStats     : register(b21, ROOT_CONSTANT_SPACE);
-#endif
 ConstantBuffer< DescriptorHeapIndex > g_LightSelectionCDF       : register(b22, ROOT_CONSTANT_SPACE);
 
 #include "PathSurface.hlsli"
@@ -93,8 +80,8 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
     primaryBSDFSample = (PathBSDFSample)0;
 #endif
 
-    MediumStack mediumStack;
-    if (!mediumStack.TryInitialize(g_PrimaryRayMediumSeed[0]))
+    MediumStack hostStack, airStack;
+    if (!TryLoadPrimaryMediumState(g_PrimaryRayMediumSeed[0], hostStack, airStack))
         return L;
 
     StructuredBuffer< InstanceData > Instances = GetResource(g_Instances.index);
@@ -110,10 +97,15 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
     uint  prevBSDFFlags   = 0u;
     float prevMarginalPDF = 0.0;
     uint  wasDelta        = 0u;
+    // A pure boundary moves ray.Origin without creating a new sampling vertex.
+    float3 prevVertexPositionWS = primaryRay.Origin;
+    uint boundaryCrossings = 0u;
+
+    RngState alphaRng = InitRng(uint2(0, 0), rng.seed ^ 0x414C5048u, 0u);
 
     uint maxDepth = clamp(g_MaxDepth, 1u, PT_MAX_DEPTH_LIMIT);
     [loop]
-    for (uint depth = 0u; depth < maxDepth; ++depth)
+    for (uint depth = 0u; depth < maxDepth;)
     {
         bool isPrimary = depth == 0u;
 
@@ -123,13 +115,24 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
 
         float hitConeRadius = rayCone.radius;
 
+        AnalyticSphereLightHit sphereHit;
+        bool hasSphereHit = FindClosestAnalyticSphereLight(ray, sphereHit);
+        RayDesc surfaceRay = ray;
+        if (hasSphereHit)
+            surfaceRay.TMax = sphereHit.dist;
+
         [loop]
         for (;;)
         {
+            if (surfaceRay.TMin > surfaceRay.TMax)
+            {
+                hp = (SurfaceData)0;
+                break;
+            }
             SurfacePayload sp = (SurfacePayload)0;
-            TraceRay(g_Scene, RAY_FLAG_NONE, 0xFF, 0, 0, 0, ray, sp);
+            TraceRay(g_Scene, RAY_FLAG_NONE, 0xFF, 0, 0, 0, surfaceRay, sp);
 
-            if (sp.hitKind == 0u)
+            if (sp.hitKind == 0u || (hasSphereHit && sphereHit.dist <= sp.dist))
             {
                 hp = (SurfaceData)0;
                 break;
@@ -139,10 +142,18 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
             hp = ResolvePathSurface(sp, ray.Direction, abs(hitConeRadius));
 
             materialID = Instances[hp.instanceID].materialID;
+            StructuredBuffer< MaterialData > Materials = GetResource(g_Materials.index);
+            if (materialID != INVALID_INDEX && (Materials[materialID].materialFlags & MATERIAL_FLAG_MEDIUM_BOUNDARY) != 0u)
+            {
+                // Artificial enclosures have no surface texture/BSDF/alpha evaluation.
+                sm.materialFlags = Materials[materialID].materialFlags;
+                sm.layerCount = max(Materials[materialID].layerCount, 1u);
+                break;
+            }
             sm = LoadSurfaceMaterial(materialID, hp.uv, hp.ddxUV, hp.ddyUV, hp.tangent.w);
 
             bool isAlphaBlend = (sm.materialFlags & MATERIAL_FLAG_ALPHA_BLEND) != 0;
-            bool isNullBranch = isAlphaBlend && NextFloat(rng) >= sm.opacity;
+            bool isNullBranch = isAlphaBlend && NextFloat(alphaRng) >= sm.opacity;
 
             if (!isNullBranch)
             {
@@ -150,35 +161,199 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
                 break;
             }
 
-            // null intersection event: only ray segment range(min) updated for next trace
-            ray.TMin = hp.dist + PT_RAY_EPS;
+            // Skip only the surface query; medium transport retains the full segment.
+            surfaceRay.TMin = hp.dist + PT_RAY_EPS;
         }
 
+        float segmentEndDistance = hp.hitKind != 0u ? hp.dist : surfaceRay.TMax;
+
+        // The geometric endpoint is provisional until medium transport reaches it.
+        // Reference: https://pbr-book.org/4ed/Light_Transport_II_Volume_Rendering/Volume_Scattering_Integrators
+        Medium currentMedium = hostStack.Current().medium;
+        
+        MediumStack media; media.Initialize();
+        if (hostStack.count > 1u)
+        {
+            if (currentMedium.mediumID != INVALID_INDEX)
+                media.Initialize(currentMedium);
+        }
+        else if (currentMedium.mediumID == INVALID_INDEX)
+        {
+            media = airStack;
+        }
+        else
+        {
+            if (airStack.count != 0u)
+                break;
+
+            media.Initialize(currentMedium);
+        }
+
+        if (media.count != 0u)
+        {
+            uint mediumSeed = rng.seed ^ 0x4D454449u;
+            if (boundaryCrossings != 0u)
+                mediumSeed = PCGHash(mediumSeed ^ PCGHash(boundaryCrossings));
+            RngState mediumRng = InitRng(uint2(0, 0), mediumSeed, depth);
+
+            MediumInteractionSample mediumSample = (MediumInteractionSample)0;
+            if (!SampleMediumInteraction(media, ray.Origin, ray.Direction, segmentEndDistance, mediumRng, mediumSample))
+            {
+                break;
+            }
+
+            float3 betaAfterMedium = beta * mediumSample.weight;
+            if (!IsPathFinite3(betaAfterMedium))
+                break;
+            beta = betaAfterMedium;
+
+            if (mediumSample.eventType == MEDIUM_EVENT_SCATTER)
+            {
+                float3 scatterPosition = ray.Origin + mediumSample.distance * ray.Direction;
+                if (!IsPathFinite3(scatterPosition))
+                    break;
+
+                bool canContinue = (depth + 1u) < maxDepth;
+
+                rayCone.radius += mediumSample.distance * rayCone.tanHalfAngle;
+
+                // No surface exists at this event
+                SurfaceData noSurface         = (SurfaceData)0;
+                SurfaceMaterial noMaterial    = (SurfaceMaterial)0;
+                BoundaryMediumPair noBoundary = (BoundaryMediumPair)0;
+                uint directQuerySeed = PCGHash(rng.seed ^ PCGHash(depth + 0x9E3779B9u));
 #if PT_VALIDATION
-        if (depth == 0u)
-            primaryHit = hp;
+                PathContribution directContribution;
 #endif
-        // ── Case B: miss — the path escapes to the environment ─────────
+                float3 neeContribution;
+                if (!SampleLd(scatterPosition, -ray.Direction, noSurface, noMaterial, noBoundary,
+                        media, hostStack, airStack, false, depth, directQuerySeed, canContinue, rng, neeContribution
+#if PT_VALIDATION
+                        , recordValidationStats, directContribution
+#endif
+                    ))
+                    break;
+
+                float3 mediumContribution = beta * neeContribution;
+                if (!IsPathFinite3(mediumContribution))
+                    break;
+                L += mediumContribution;
+                if (!canContinue)
+                    break;
+
+                SobolRebaseForBounce(rng, depth, SOBOL_SECTION_BSDF);
+                float  constituentU = NextFloat(rng);
+                float2 directionU   = NextFloat2(rng);
+                
+                MediumPhaseSample phaseSample = (MediumPhaseSample)0;
+                bool isPhaseValid = SampleMediumPhase(media, scatterPosition, ray.Direction, float3(constituentU, directionU), phaseSample); // Incoming-direction
+                if (!isPhaseValid)
+                    break;
+
+                float3 betaAfterPhase = beta * phaseSample.value / phaseSample.pdf;
+                if (!IsPathFinite3(betaAfterPhase))
+                    break;
+                beta = betaAfterPhase;
+
+                // medium scatter changes no IOR.
+                const float rrThreshold = 0.05;
+                if (depth >= 3u)
+                {
+                    SobolRebaseForBounce(rng, depth, SOBOL_SECTION_RR);
+                    float3 rrBeta = beta * rrEtaScale;
+                    float qSurvive = clamp(max(rrBeta.r, max(rrBeta.g, rrBeta.b)), rrThreshold, 1.0 - rrThreshold);
+                    if (NextFloat(rng) >= qSurvive)
+                        break;
+                    beta /= qSurvive;
+                }
+
+                wasDelta             = 0u;
+                prevBSDFFlags        = 0u;
+                prevMarginalPDF      = phaseSample.pdf;
+                prevVertexPositionWS = scatterPosition;
+
+                ray.Origin    = scatterPosition;
+                ray.Direction = phaseSample.directionWS;
+                ray.TMin      = 0.0; // There is no surface at this volume event to offset from.
+                ray.TMax      = GetSceneRayLength(ray.Origin, g_SceneBoundsCenter, g_SceneBoundsRadius);
+                if (ray.TMax <= ray.TMin)
+                    break;
+                // Keep the medium stack; discard the provisional geometric endpoint.
+                ++depth;
+
+                continue;
+            }
+            else if (mediumSample.eventType == MEDIUM_EVENT_ABSORB)
+            {
+                break;
+            }
+        }
+
+        // ── Case B: no mesh — reach the analytic emitter or environment ──
+        // Medium transport must reach this endpoint before emission is added.
         if (hp.hitKind == 0u)
         {
-            float misWeight = (depth > 0u)
-                ? CalculateMISWeight(prevMarginalPDF, EnvironmentPDF(ray.Direction), wasDelta)
-                : 1.0; // depth 0: camera ray looked straight at the sky
-
-            float3 environmentContribution = beta * EvaluateEnvironmentRadiance(ray.Direction) * misWeight;
-            if (IsPathFinite3(environmentContribution))
+            float3 emittedContribution;
+            if (hasSphereHit)
             {
-                L += environmentContribution;
+                float3 lightPosition = ray.Origin + segmentEndDistance * ray.Direction;
+                emittedContribution = beta * EvaluateAnalyticSphereEmission(
+                    sphereHit, prevVertexPositionWS, lightPosition, ray.Direction,
+                    depth, prevMarginalPDF, wasDelta);
+            }
+            else
+            {
+                float misWeight = (depth > 0u)
+                    ? CalculateMISWeight(prevMarginalPDF, EnvironmentPDF(ray.Direction), wasDelta)
+                    : 1.0; // depth 0: camera ray looked straight at the sky
+                emittedContribution = beta * EvaluateEnvironmentRadiance(ray.Direction) * misWeight;
+            }
+
+            if (IsPathFinite3(emittedContribution))
+            {
+                L += emittedContribution;
 #if PT_VALIDATION
-                AccumulatePathContribution(contribution, prevBSDFFlags, environmentContribution);
+                AccumulatePathContribution(contribution, prevBSDFFlags, emittedContribution);
 #endif
             }
+            // Black/back-facing spheres also terminate the path and hide the sky.
             break;
         }
 
         rayCone.radius = hitConeRadius;
 
         const float3 surfacePosition = ray.Origin + ray.Direction * hp.dist;
+        // Enter to the medium boundary
+        if ((sm.materialFlags & MATERIAL_FLAG_MEDIUM_BOUNDARY) != 0u)
+        {
+            // Reference: https://pbr-book.org/4ed/Light_Transport_II_Volume_Rendering/Volume_Scattering_Integrators
+            if (++boundaryCrossings > PT_MAX_MEDIUM_BOUNDARY_HITS || sm.layerCount != 1u ||
+                (sm.materialFlags & (MATERIAL_FLAG_ALPHA_MASK | MATERIAL_FLAG_ALPHA_BLEND | MATERIAL_FLAG_THIN_WALLED | MATERIAL_FLAG_RELATIVE_IOR_INTERFACE)) != 0u)
+                break;
+
+            MediumData interiorData;
+            Medium toMedium;
+            toMedium.mediumID = Instances[hp.instanceID].mediumID;
+            toMedium.ior      = currentMedium.ior; // A pure boundary does not change IOR.
+
+            if (!TryLoadMedium(toMedium.mediumID, interiorData) ||
+                !TryCrossPureMediumBoundary(hp.instanceID, toMedium, interiorData.mediumFlags, dot(hp.geometricNormal, -ray.Direction), hostStack, airStack))
+                break;
+
+            float remainingSegmentLength = ray.TMax - hp.dist;
+            if (!IsPathFinite3(surfacePosition) || remainingSegmentLength <= PT_RAY_EPS)
+                break;
+
+            ray.Origin = surfacePosition;
+            ray.TMax   = remainingSegmentLength;
+            ray.TMin   = PT_RAY_EPS;
+            continue;
+        }
+
+#if PT_VALIDATION
+        if (depth == 0u)
+            primaryHit = hp;
+#endif
         // ── Case A: the random walk hit an emitter ─────────────────────
         if (any(sm.emission > 0.0) && dot(hp.geometricNormal, -ray.Direction) > 0.0)
         {
@@ -190,7 +365,7 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
             }
             else
             {
-                float pdfLight  = AreaLightPDFAtHit(ray.Origin, surfacePosition, ray.Direction);
+                float pdfLight  = AreaLightPDFAtHit(prevVertexPositionWS, surfacePosition, ray.Direction);
                 float misWeight = CalculateMISWeight(prevMarginalPDF, pdfLight, wasDelta);
                 emittedContribution *= misWeight;
 
@@ -218,7 +393,7 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
         BoundaryMediumPair boundaryPair;
         if (shouldPreservesPathMedium)
         {
-            boundaryPair.mediumI    = mediumStack.Current().medium;
+            boundaryPair.mediumI    = hostStack.Current().medium;
             boundaryPair.mediumT    = boundaryPair.mediumI;
             boundaryPair.isEntering = NgoWo > 0.0 ? 1u : 0u;
         }
@@ -227,7 +402,7 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
             Medium toMedium;
             if (!BxDF::LayerComposite::TryResolveTerminalMedium(
                     sm,
-                    materialID,
+                    Instances[hp.instanceID].mediumID,
                     hp.uv,
                     hp.ddxUV,
                     hp.ddyUV,
@@ -239,11 +414,11 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
 
             if (!canChangePathMedium)
             {
-                boundaryPair.mediumI    = mediumStack.Current().medium;
+                boundaryPair.mediumI    = hostStack.Current().medium;
                 boundaryPair.mediumT    = boundaryPair.mediumI;
                 boundaryPair.isEntering = 1u;
             }
-            else if (!mediumStack.TryResolveBoundaryMediums(
+            else if (!hostStack.TryResolveBoundaryMediums(
                          hp.instanceID,
                          toMedium,
                          NgoWo,
@@ -255,78 +430,25 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
 
         // Fixed-endpoint queries must not consume or depend on the transport RNG counter.
         uint directionalQuerySeed = PCGHash(rng.seed ^ PCGHash(depth + 0x9E3779B9u) ^ PCGHash(materialID + 0x85EBCA6Bu));
-        SobolRebaseForBounce(rng, depth, SOBOL_SECTION_NEE_LIGHT);
 #if PT_VALIDATION
         PathContribution directContribution;
-        float3 directLighting = EstimateDirectLighting(
-            surfacePosition,
-            hp.geometricNormal,
-            frame,
-            woWS,
-            sm,
-            hp.uv,
-            hp.ddxUV,
-            hp.ddyUV,
-            boundaryPair,
-            directionalQuerySeed,
-            (depth + 1u) < maxDepth,
-            rng,
-            recordValidationStats,
-            directContribution);
-
-        SobolRebaseForBounce(rng, depth, SOBOL_SECTION_NEE_ENV);
-        PathContribution environmentDirectContribution;
-        float3 environmentDirectLighting = EstimateEnvironmentDirectLighting(
-            surfacePosition,
-            hp.geometricNormal,
-            frame,
-            woWS,
-            sm,
-            hp.uv,
-            hp.ddxUV,
-            hp.ddyUV,
-            boundaryPair,
-            directionalQuerySeed,
-            (depth + 1u) < maxDepth,
-            rng,
-            recordValidationStats,
-            environmentDirectContribution);
-#else
-        float3 directLighting = EstimateDirectLighting(
-            surfacePosition,
-            hp.geometricNormal,
-            frame,
-            woWS,
-            sm,
-            hp.uv,
-            hp.ddxUV,
-            hp.ddyUV,
-            boundaryPair,
-            directionalQuerySeed,
-            (depth + 1u) < maxDepth,
-            rng);
-        SobolRebaseForBounce(rng, depth, SOBOL_SECTION_NEE_ENV);
-        float3 environmentDirectLighting = EstimateEnvironmentDirectLighting(
-            surfacePosition,
-            hp.geometricNormal,
-            frame,
-            woWS,
-            sm,
-            hp.uv,
-            hp.ddxUV,
-            hp.ddyUV,
-            boundaryPair,
-            directionalQuerySeed,
-            (depth + 1u) < maxDepth,
-            rng);
 #endif
-        float3 directContributionSum = beta * (directLighting + environmentDirectLighting);
+        float3 directLighting;
+        if (!SampleLd(surfacePosition, woWS, hp, sm, boundaryPair,
+                media, hostStack, airStack, canChangePathMedium, depth, directionalQuerySeed,
+                (depth + 1u) < maxDepth, rng, directLighting
+#if PT_VALIDATION
+                , recordValidationStats, directContribution
+#endif
+            ))
+            break;
+        float3 directContributionSum = beta * directLighting;
         if (IsPathFinite3(directContributionSum))
             L += directContributionSum;
 #if PT_VALIDATION
-        contribution.diffuse      += beta * (directContribution.diffuse + environmentDirectContribution.diffuse);
-        contribution.specular     += beta * (directContribution.specular + environmentDirectContribution.specular);
-        contribution.transmission += beta * (directContribution.transmission + environmentDirectContribution.transmission);
+        contribution.diffuse      += beta * directContribution.diffuse;
+        contribution.specular     += beta * directContribution.specular;
+        contribution.transmission += beta * directContribution.transmission;
 #endif
 
         RayCone sampledCone = rayCone;
@@ -406,12 +528,9 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
         if (s.valid == 0u)
             break;
 
-        if (!IsPathFinite3(s.wi) || !IsPathFinite3(s.weight) || !IsPathFinite(marginalPDF))
-            break;
-
         float3 wiWSUnnormalized = BxDF::ToWorld(frame, s.wi);
         float  wiLength2        = dot(wiWSUnnormalized, wiWSUnnormalized);
-        if (!IsPathFinite3(wiWSUnnormalized) || !IsPathFinite(wiLength2) || wiLength2 <= EPSILON_MIN)
+        if (!IsPathFinite(wiLength2) || wiLength2 <= EPSILON_MIN)
         {
             break;
         }
@@ -442,11 +561,11 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
                 entry.boundaryInstanceID = hp.instanceID;
                 entry.medium             = boundaryPair.mediumT;
 
-                committed = mediumStack.TryPush(entry);
+                committed = hostStack.TryPush(entry);
             }
             else
             {
-                committed = mediumStack.TryPop(hp.instanceID);
+                committed = hostStack.TryPop(hp.instanceID);
             }
 
             if (!committed)
@@ -470,16 +589,20 @@ float3 TracePath(RayDesc primaryRay, inout RngState rng
             beta /= qSurvive;
         }
 
-        prevBSDFFlags   = s.flags;
-        prevMarginalPDF = marginalPDF;
-        wasDelta        = s.isDelta;
+        wasDelta             = s.isDelta;
+        prevBSDFFlags        = s.flags;
+        prevMarginalPDF      = marginalPDF;
+        prevVertexPositionWS = surfacePosition;
 
         rayCone = sampledCone;
 
         ray.Origin    = OffsetRay(surfacePosition, hp.geometricNormal, wiWS);
         ray.Direction = wiWS;
         ray.TMin      = PT_RAY_EPS;
-        ray.TMax      = g_Camera.zFar;
+        ray.TMax      = GetSceneRayLength(ray.Origin, g_SceneBoundsCenter, g_SceneBoundsRadius);
+        if (ray.TMax <= ray.TMin)
+            break;
+        ++depth;
     }
 
     return L;
@@ -490,27 +613,6 @@ void RayGen()
 {
     RWTexture2D< float4 > Accumulation = GetResource(g_Accumulation.index);
     RWTexture2D< float4 > Radiance     = GetResource(g_Radiance.index);
-
-#if PT_VALIDATION
-    RWTexture2D< float4 > Albedo          = GetResource(g_Albedo.index);
-    RWTexture2D< float4 > Normal          = GetResource(g_Normal.index);
-    RWTexture2D< float4 > Depth           = GetResource(g_Depth.index);
-    RWTexture2D< float4 > GeometricNormal = GetResource(g_GeometricNormal.index);
-
-    RWTexture2D< float4 > MaterialParams        = GetResource(g_MaterialParams.index);
-    RWTexture2D< float4 > MaterialExtra         = GetResource(g_MaterialExtra.index);
-    RWTexture2D< float4 > MaterialSpecularColor = GetResource(g_MaterialSpecularColor.index);
-
-    RWTexture2D< float4 > Emission             = GetResource(g_Emission.index);
-    RWTexture2D< float4 > DiffuseRadiance      = GetResource(g_DiffuseRadiance.index);
-    RWTexture2D< float4 > SpecularRadiance     = GetResource(g_SpecularRadiance.index);
-    RWTexture2D< float4 > TransmissionRadiance = GetResource(g_TransmissionRadiance.index);
-
-    RWTexture2D< float4 > SurfaceLobeMaskAOV      = GetResource(g_SurfaceLobeMask.index);
-    RWTexture2D< float4 > SurfaceLobeWeightAOV    = GetResource(g_SurfaceLobeWeight.index);
-    RWTexture2D< float4 > SampledLobeFrequencyAOV = GetResource(g_SampledLobeFrequency.index);
-    RWTexture2D< float4 > PrimaryIdAOV             = GetResource(g_PrimaryId.index);
-#endif
 
     RayDesc ray;
     uint2 rayIndex      = DispatchRaysIndex().xy;
@@ -527,7 +629,7 @@ void RayGen()
     for (uint sampleOffset = 0u; sampleOffset < numSamples; ++sampleOffset)
     {
         uint sampleIndex = g_AccumulatedSampleCount + sampleOffset;
-        RngState rng = InitSobolRng(rayIndex, SOBOL_SEED_OFFSET, sampleIndex);
+        RngState rng = InitSobolRng(rayIndex, g_SobolSeed, sampleIndex);
 
         float2 pixelJitter = SamplePixelTent(NextFloat2(rng));
         float2 pathUV      = (float2(rayIndex) + 0.5 + pixelJitter) / float2(rayDimensions);
@@ -536,7 +638,10 @@ void RayGen()
         ray.Origin    = g_Camera.posWORLD;
         ray.Direction = normalize(pathTarget - g_Camera.posWORLD);
         ray.TMin      = g_Camera.zNear;
-        ray.TMax      = g_Camera.zFar;
+        // Physical transport uses the complete bounded scene
+        ray.TMax      = GetSceneRayLength(ray.Origin, g_SceneBoundsCenter, g_SceneBoundsRadius);
+        if (ray.TMax <= ray.TMin)
+            continue;
 
 #if PT_VALIDATION
         SurfaceData primaryHit = (SurfaceData)0;
@@ -560,29 +665,7 @@ void RayGen()
     }
 
 #if PT_VALIDATION
-    PathValidationSums primaryValidation = ZeroPathValidationSums();
-    {
-        RayDesc primaryValidationRay;
-        float2 primaryValidationUV = (float2(rayIndex) + 0.5) / float2(rayDimensions);
-        float3 primaryValidationTarget = ReconstructWorldPos(primaryValidationUV, 1.0, g_Camera.mViewProjInv);
-
-        primaryValidationRay.Origin    = g_Camera.posWORLD;
-        primaryValidationRay.Direction = normalize(primaryValidationTarget - g_Camera.posWORLD);
-        primaryValidationRay.TMin      = g_Camera.zNear;
-        primaryValidationRay.TMax      = g_Camera.zFar;
-
-        SurfaceData primaryValidationHit = (SurfaceData)0;
-        PathContribution unusedPrimaryContribution;
-        PathBSDFSample primaryValidationBSDFSample = (PathBSDFSample)0;
-        RngState validationRng = InitRng(rayIndex, 0u, 0u);
-        validationRng.seed = PCGHash(validationRng.seed ^ 0xD1B54A35u);
-        TracePath(primaryValidationRay, validationRng, 0u, primaryValidationHit, unusedPrimaryContribution, primaryValidationBSDFSample);
-
-        if (primaryValidationHit.hitKind == 0u)
-            AccumulatePrimaryMissValidation(primaryValidation);
-        else
-            AccumulatePrimaryHitValidation(primaryValidation, primaryValidationHit, primaryValidationRay, primaryValidationBSDFSample);
-    }
+    PathValidationSums primaryValidation = TracePrimaryValidation(rayIndex, rayDimensions);
 #endif
 
     bool bReset = (g_ResetAccumulation != 0u) || (g_AccumulatedSampleCount == 0u);
@@ -602,46 +685,7 @@ void RayGen()
     Radiance[rayIndex]     = float4(accumulatedRadiance * invAccumulatedSamples, 1.0);
 
 #if PT_VALIDATION
-    float previousSamples = previousAccumulation.a;
-
-    PathValidationSums accumulatedValidation = ZeroPathValidationSums();
-    accumulatedValidation.albedo          = AccumulatedValidationAverage(bReset, Albedo[rayIndex].rgb, previousSamples, validationSums.albedo);
-    accumulatedValidation.normal          = AccumulatedValidationAverage(bReset, Normal[rayIndex].rgb, previousSamples, validationSums.normal);
-    accumulatedValidation.depth           = AccumulatedValidationAverage(bReset, Depth[rayIndex].rgb, previousSamples, validationSums.depth);
-    accumulatedValidation.geometricNormal = AccumulatedValidationAverage(bReset, GeometricNormal[rayIndex].rgb, previousSamples, validationSums.geometricNormal);
-
-    accumulatedValidation.materialParams        = AccumulatedValidationAverage(bReset, MaterialParams[rayIndex].rgb, previousSamples, validationSums.materialParams);
-    accumulatedValidation.materialExtra         = AccumulatedValidationAverage(bReset, MaterialExtra[rayIndex].rgb, previousSamples, validationSums.materialExtra);
-    accumulatedValidation.materialSpecularColor = AccumulatedValidationAverage(bReset, MaterialSpecularColor[rayIndex].rgb, previousSamples, validationSums.materialSpecularColor);
-
-    accumulatedValidation.emission             = AccumulatedValidationAverage(bReset, Emission[rayIndex].rgb, previousSamples, validationSums.emission);
-    accumulatedValidation.diffuseRadiance      = AccumulatedValidationAverage(bReset, DiffuseRadiance[rayIndex].rgb, previousSamples, validationSums.diffuseRadiance);
-    accumulatedValidation.specularRadiance     = AccumulatedValidationAverage(bReset, SpecularRadiance[rayIndex].rgb, previousSamples, validationSums.specularRadiance);
-    accumulatedValidation.transmissionRadiance = AccumulatedValidationAverage(bReset, TransmissionRadiance[rayIndex].rgb, previousSamples, validationSums.transmissionRadiance);
-
-    accumulatedValidation.surfaceLobeMask      = AccumulatedValidationAverage(bReset, SurfaceLobeMaskAOV[rayIndex].rgb, previousSamples, validationSums.surfaceLobeMask);
-    accumulatedValidation.surfaceLobeWeight    = AccumulatedValidationAverage(bReset, SurfaceLobeWeightAOV[rayIndex].rgb, previousSamples, validationSums.surfaceLobeWeight);
-    accumulatedValidation.sampledLobeFrequency = AccumulatedValidationAverage(bReset, SampledLobeFrequencyAOV[rayIndex].rgb, previousSamples, validationSums.sampledLobeFrequency);
-    accumulatedValidation.primaryId            = AccumulatedValidationAverage(bReset, PrimaryIdAOV[rayIndex].rgb, previousSamples, validationSums.primaryId);
-
-    Albedo[rayIndex]          = float4(primaryValidation.albedo, 1.0);
-    Normal[rayIndex]          = float4(primaryValidation.normal, 1.0);
-    Depth[rayIndex]           = float4(primaryValidation.depth, 1.0);
-    GeometricNormal[rayIndex] = float4(primaryValidation.geometricNormal, 1.0);
-
-    MaterialParams[rayIndex]        = float4(primaryValidation.materialParams, 1.0);
-    MaterialExtra[rayIndex]         = float4(primaryValidation.materialExtra, 1.0);
-    MaterialSpecularColor[rayIndex] = float4(primaryValidation.materialSpecularColor, 1.0);
-
-    Emission[rayIndex]             = float4(primaryValidation.emission, 1.0);
-    DiffuseRadiance[rayIndex]      = float4(accumulatedValidation.diffuseRadiance * invAccumulatedSamples, 1.0);
-    SpecularRadiance[rayIndex]     = float4(accumulatedValidation.specularRadiance * invAccumulatedSamples, 1.0);
-    TransmissionRadiance[rayIndex] = float4(accumulatedValidation.transmissionRadiance * invAccumulatedSamples, 1.0);
-
-    SurfaceLobeMaskAOV[rayIndex]      = float4(primaryValidation.surfaceLobeMask, 1.0);
-    SurfaceLobeWeightAOV[rayIndex]    = float4(primaryValidation.surfaceLobeWeight, 1.0);
-    SampledLobeFrequencyAOV[rayIndex] = float4(accumulatedValidation.sampledLobeFrequency * invAccumulatedSamples, 1.0);
-    PrimaryIdAOV[rayIndex]            = float4(primaryValidation.primaryId, 1.0);
+    WritePathValidationAOVs(rayIndex, validationSums, primaryValidation, bReset, previousAccumulation.a, invAccumulatedSamples);
 #endif
 }
 

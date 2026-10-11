@@ -34,6 +34,8 @@ void Dx12SceneResource::PerFrameData::Reset()
         pMaterialAllocator->Reset();
     if (pMaterialTextureAllocator)
         pMaterialTextureAllocator->Reset();
+    if (pMediumAllocator) pMediumAllocator->Reset();
+    if (pMediumDensityAllocator) pMediumDensityAllocator->Reset();
     if (pLightAllocator)
         pLightAllocator->Reset();
 }
@@ -61,11 +63,13 @@ Dx12SceneResource::Dx12SceneResource(Dx12RenderDevice& rd)
         frameData.pMaterialTextureAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MaterialTexturePool", sizeof(MaterialTextureData), kMaxEntityCount);
         frameData.pLightAllocator           = MakeBox< StaticBufferAllocator >(m_RenderDevice, "LightPool", sizeof(LightData), 1);
 
+        frameData.pMediumAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MediumPool", sizeof(MediumData), kMaxEntityCount);
+        frameData.pMediumDensityAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, "MediumDensityPool", sizeof(u32), _KB(1LL));
         frameData.pCameraBuffer           = Dx12ConstantBuffer::Create(m_RenderDevice, "CameraBuffer", sizeof(CameraData));
         frameData.pCullBuffer             = Dx12ConstantBuffer::Create(m_RenderDevice, "CullBuffer", sizeof(CullData));
         frameData.pSceneEnvironmentBuffer = Dx12ConstantBuffer::Create(m_RenderDevice, "SceneEnvironmentBuffer", sizeof(SceneEnvironmentData));
         frameData.pFrozenCameraBuffer     = Dx12ConstantBuffer::Create(m_RenderDevice, "FrozenCameraBuffer", sizeof(FrozenCameraData));
-        frameData.pMeshStreamsBuffer      = Dx12ConstantBuffer::Create(m_RenderDevice, "MeshStreamsCBV", sizeof(u32) * 5);
+        frameData.pMeshStreamsBuffer      = Dx12ConstantBuffer::Create(m_RenderDevice, "MeshStreamsCBV", sizeof(u32) * 8);
     }
 
     m_pTLAS = Dx12TopLevelAS::Create(m_RenderDevice, "SceneTLAS");
@@ -373,10 +377,13 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
                 instance.transformID = data.transform;
 
                 instance.materialID = kInvalidIndex;
+                instance.mediumID   = kInvalidIndex;
                 if (IsValidIndex(data.material))
                 {
                     assert(data.material < sceneView.materials.size());
                     instance.materialID = data.material;
+                    // One interior identity per instance; include the prepended voxel slots.
+                    instance.mediumID = numVoxelSlots + static_cast<u32>(instances.size());
                 }
 
                 instance.visOffset = m_NumMeshletVisibilitySlots;
@@ -434,6 +441,7 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
             voxelInstances[i].meshID      = voxelMeshBase + i;
             voxelInstances[i].transformID = voxelTransformID;
             voxelInstances[i].materialID  = kInvalidIndex;
+            voxelInstances[i].mediumID    = kInvalidIndex;
             voxelInstances[i].visOffset   = 0; // unused: voxel skips per-meshlet cull
             voxelInstances[i].isVoxel     = 1;
         }
@@ -448,6 +456,10 @@ void Dx12SceneResource::UpdateSceneResources(const SceneRenderView& sceneView, r
     BuildAccelerationStructures();
 
     UpdateFrameBuffer(ctx, instances.data(), (u32)instances.size(), sizeof(InstanceData), *m_FrameData[m_ContextIndex].pInstanceAllocator, BarrierStates::ShaderResource);
+    const auto mediumBuffers = BuildMediumBuffers(sceneView);
+    m_FrameData[m_ContextIndex].mediumCount = static_cast<u32>(mediumBuffers.media.size());
+    UpdateFrameBuffer(ctx, mediumBuffers.media.data(), static_cast<u32>(mediumBuffers.media.size()), sizeof(MediumData), *m_FrameData[m_ContextIndex].pMediumAllocator, BarrierStates::ShaderResource);
+    UpdateFrameBuffer(ctx, mediumBuffers.densityWords.data(), static_cast<u32>(mediumBuffers.densityWords.size()), sizeof(u32), *m_FrameData[m_ContextIndex].pMediumDensityAllocator, BarrierStates::ShaderResource);
     UpdateFrameBuffer(ctx, &sceneView.light, 1, sizeof(LightData), *m_FrameData[m_ContextIndex].pLightAllocator, BarrierStates::ConstantBuffer);
 
     UpdateCameraAndEnvironment(sceneView, ctx);
@@ -467,12 +479,15 @@ void Dx12SceneResource::BindSceneResources(render::CommandContext& context)
     d3d12CommandList2->SetComputeRootConstantBufferView(cameraRootIdx, m_FrameData[m_ContextIndex].pCameraBuffer->GpuAddress());
     d3d12CommandList2->SetGraphicsRootConstantBufferView(cameraRootIdx, m_FrameData[m_ContextIndex].pCameraBuffer->GpuAddress());
 
-    const u32 meshStreams[5] = {
+    const u32 meshStreams[8] = {
         m_pVertexAllocator->GetBuffer()->GetShaderResourceHandle(),
         m_pIndexAllocator->GetBuffer()->GetShaderResourceHandle(),
         m_pMeshletAllocator->GetBuffer()->GetShaderResourceHandle(),
         m_pMeshletVertexAllocator->GetBuffer()->GetShaderResourceHandle(),
         m_pMeshletTriangleAllocator->GetBuffer()->GetShaderResourceHandle(),
+        m_FrameData[m_ContextIndex].pMediumAllocator->GetBuffer()->GetShaderResourceHandle(),
+        m_FrameData[m_ContextIndex].pMediumDensityAllocator->GetBuffer()->GetShaderResourceHandle(),
+        m_FrameData[m_ContextIndex].mediumCount
     };
     memcpy(m_FrameData[m_ContextIndex].pMeshStreamsBuffer->MappedMemory(), meshStreams, sizeof(meshStreams));
     auto meshStreamsRootIdx = pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_CBV, kGlobalDescriptorSpace, 1);

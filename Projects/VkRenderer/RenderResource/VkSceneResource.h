@@ -89,6 +89,8 @@ private:
         Box< StaticBufferAllocator > pTransformAllocator;
         Box< StaticBufferAllocator > pMaterialAllocator;
         Box< StaticBufferAllocator > pMaterialTextureAllocator;
+        Box< StaticBufferAllocator > pMediumAllocator;
+        Box< StaticBufferAllocator > pMediumDensityAllocator;
         Box< StaticBufferAllocator > pLightAllocator;
 
         Arc< VulkanUniformBuffer > pCameraBuffer;
@@ -96,6 +98,7 @@ private:
         Arc< VulkanUniformBuffer > pSceneEnvironmentBuffer;
         Arc< VulkanUniformBuffer > pFrozenCameraBuffer;
 
+        u32 mediumCount = 0;
         bool bInitialized = false;
 
         void Reset();

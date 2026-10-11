@@ -1,0 +1,31 @@
+{
+  "source_file": "source_fire.nvdb",
+  "source_sha256": "1740797cbf2388ae7dd2f7bd3b5c37c5bafc104661fd90a8c0d5a6de0fdbd3d2",
+  "source_grids": [
+    {
+      "name": "density",
+      "grid_size_bytes": 27563712,
+      "file_size_bytes": 11232258,
+      "active_voxels": 4458790,
+      "grid_type_enum": 1,
+      "grid_class_enum": 2,
+      "nanovdb_version": "32.3.3",
+      "source_codec": 1,
+      "grid_payload_sha256": "80b5c51d9de0a7b796675351fc907b0e250bc734922b5e8575984b2be7adf179"
+    },
+    {
+      "name": "temperature",
+      "grid_size_bytes": 25799200,
+      "file_size_bytes": 16482808,
+      "active_voxels": 4139727,
+      "grid_type_enum": 1,
+      "grid_class_enum": 2,
+      "nanovdb_version": "32.3.3",
+      "source_codec": 1
+    }
+  ],
+  "output_file": "smoke_density.nvdb",
+  "output_size_bytes": 27563912,
+  "output_sha256": "8e61891af773293a8480942537b4f5f4b91957f9f580b61bf7d6b096221b488c",
+  "conversion": "Extract density only, decode ZIP to NONE; preserve NanoVDB grid memory payload byte for byte"
+}

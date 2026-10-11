@@ -2,6 +2,7 @@
 #define _MESH
 #define _TRANSFORM
 #define _MATERIAL
+#define _MEDIUM
 #define _PATH_TRACING
 #include "Common.hlsli"
 
@@ -32,7 +33,7 @@ void ResetPrimaryMediumSeed(uint status, out PrimaryRayMediumStackSeedData seed)
     seed.status   = status;
     seed.count    = 0u;
     seed.padding0 = 0u;
-    seed.padding1 = 0u;
+    seed.airCount = 0u;
 
     [unroll]
     for (uint i = 0u; i < PRIMARY_RAY_MEDIUM_STACK_CAPACITY; ++i)
@@ -41,6 +42,7 @@ void ResetPrimaryMediumSeed(uint status, out PrimaryRayMediumStackSeedData seed)
         seed.entries[i].mediumID            = INVALID_INDEX;
         seed.entries[i].ior                 = 0.0;
         seed.entries[i].padding0            = 0u;
+        seed.airEntries[i] = seed.entries[i];
     }
 }
 
@@ -127,20 +129,25 @@ bool HasQueryTransmissionLobe(MaterialData material, float2 uv)
 
 bool TryResolveQueryTerminalMedium(
     MaterialData rootMaterial,
-    uint rootMaterialID,
+    uint interiorMediumID,
     float2 uv,
     out Medium terminalMedium,
     out bool isTerminalMedium)
 {
-    isTerminalMedium = HasQueryTransmissionLobe(rootMaterial, uv);
+    bool isMediumBoundary = (rootMaterial.materialFlags & MATERIAL_FLAG_MEDIUM_BOUNDARY) != 0u;
+    isTerminalMedium = isMediumBoundary || HasQueryTransmissionLobe(rootMaterial, uv);
+    terminalMedium = (Medium)0;
+    terminalMedium.mediumID = interiorMediumID;
+    if (interiorMediumID == INVALID_INDEX)
+        return false;
 
     uint layerCount = max(rootMaterial.layerCount, 1u);
-    if (layerCount == 1u)
-    {
-        terminalMedium.mediumID = rootMaterialID;
-        terminalMedium.ior      = max(rootMaterial.ior, 1.0e-4);
-    }
-    else
+    if (isMediumBoundary && (layerCount > 1u ||
+        (rootMaterial.materialFlags & (MATERIAL_FLAG_ALPHA_MASK | MATERIAL_FLAG_ALPHA_BLEND |
+            MATERIAL_FLAG_THIN_WALLED | MATERIAL_FLAG_RELATIVE_IOR_INTERFACE)) != 0u))
+        return false;
+
+    if (layerCount > 1u)
     {
         if (rootMaterial.layerOffset == INVALID_INDEX)
             return false;
@@ -160,16 +167,15 @@ bool TryResolveQueryTerminalMedium(
                 return false;
 
             isTerminalMedium = isTerminalMedium && HasQueryTransmissionLobe(boundaryMaterial, uv);
-            if (boundary == layerCount - 1u)
-            {
-                terminalMedium.mediumID = slab.materialID;
-                terminalMedium.ior      = max(boundaryMaterial.ior, 1.0e-4);
-            }
         }
     }
 
-    return terminalMedium.mediumID != INVALID_INDEX &&
-           IsPathFinite(terminalMedium.ior) &&
+    MediumData opticalMedium;
+    if (!TryLoadMedium(interiorMediumID, opticalMedium))
+        return false;
+    terminalMedium.ior = opticalMedium.ior;
+
+    return IsPathFinite(terminalMedium.ior) &&
            terminalMedium.ior > 0.0;
 }
 
@@ -205,9 +211,10 @@ bool FindNextMediumBoundary(RayDesc ray, out PrimaryMediumBoundaryHit hit)
             geometricNormal);
         if (!validTriangle)
         {
-            // Commit malformed, potentially transmissive solids so replay fails closed.
-            if ((material.materialFlags & (MATERIAL_FLAG_THIN_WALLED | MATERIAL_FLAG_ALPHA_BLEND | MATERIAL_FLAG_RELATIVE_IOR_INTERFACE)) == 0u &&
-                material.transmission > PT_LOBE_EPS)
+            // Commit malformed boundaries so replay reports failure instead of vacuum.
+            if ((material.materialFlags & MATERIAL_FLAG_MEDIUM_BOUNDARY) != 0u ||
+                ((material.materialFlags & (MATERIAL_FLAG_THIN_WALLED | MATERIAL_FLAG_ALPHA_BLEND | MATERIAL_FLAG_RELATIVE_IOR_INTERFACE)) == 0u &&
+                    material.transmission > PT_LOBE_EPS))
             {
                 query.CommitNonOpaqueTriangleHit();
             }
@@ -216,7 +223,9 @@ bool FindNextMediumBoundary(RayDesc ray, out PrimaryMediumBoundaryHit hit)
 
         Medium terminalMedium;
         bool isTerminalMedium;
-        if (TryResolveQueryTerminalMedium(material, materialID, uv, terminalMedium, isTerminalMedium) && isTerminalMedium)
+        // Even an invalid flagged boundary must be replayed and rejected explicitly.
+        if ((material.materialFlags & MATERIAL_FLAG_MEDIUM_BOUNDARY) != 0u ||
+            (TryResolveQueryTerminalMedium(material, Instances[instanceID].mediumID, uv, terminalMedium, isTerminalMedium) && isTerminalMedium))
         {
             query.CommitNonOpaqueTriangleHit();
         }
@@ -235,13 +244,14 @@ bool FindNextMediumBoundary(RayDesc ray, out PrimaryMediumBoundaryHit hit)
     return true;
 }
 
-uint ReplayMediumCrossings(float3 anchor, float3 cameraPosition, Medium exteriorMedium, uint maxTraceHits, out MediumStack stack)
+uint ReplayMediumCrossings(float3 anchor, float3 cameraPosition, Medium exteriorMedium, uint maxTraceHits, out MediumStack stack, out MediumStack airStack)
 {
     stack.Initialize(exteriorMedium);
+    airStack.Initialize();
 
     float3 anchorToCamera = cameraPosition - anchor;
     float segmentLength2 = dot(anchorToCamera, anchorToCamera);
-    if (!IsPathFinite3(anchorToCamera) || !IsPathFinite(segmentLength2) || segmentLength2 <= sq(2.0 * PT_RAY_EPS))
+    if (!IsPathFinite(segmentLength2) || segmentLength2 <= sq(2.0 * PT_RAY_EPS))
         return PRIMARY_RAY_MEDIUM_SEED_STATUS_INVALID_PARAMS;
 
     float segmentLength = sqrt(segmentLength2);
@@ -264,35 +274,51 @@ uint ReplayMediumCrossings(float3 anchor, float3 cameraPosition, Medium exterior
             return PRIMARY_RAY_MEDIUM_SEED_STATUS_TRACE_FAILED;
 
         StructuredBuffer< MaterialData > Materials = GetResource(g_Materials.index);
+        StructuredBuffer< InstanceData > Instances = GetResource(g_Instances.index);
         MaterialData rootMaterial = Materials[hit.materialID];
 
         Medium toMedium;
         bool isTerminalMedium;
         float NoW = dot(geometricNormal, -ray.Direction);
-        BoundaryMediumPair pair;
         if (!IsPathFinite(NoW) || abs(NoW) <= EPSILON_MIN ||
             !TryResolveQueryTerminalMedium(
                 rootMaterial,
-                hit.materialID,
+                Instances[hit.instanceID].mediumID,
                 uv,
                 toMedium,
-                isTerminalMedium) || !isTerminalMedium ||
-            !stack.TryResolveBoundaryMediums(hit.instanceID, toMedium, NoW, pair))
+                isTerminalMedium) || !isTerminalMedium)
         {
             return PRIMARY_RAY_MEDIUM_SEED_STATUS_TRACE_FAILED;
         }
 
+        // No optical interface at an artificial enclosure; preserve the incident IOR.
+        // Reference: https://www.pbrt.org/fileformat-v4#participating-media
         bool committed;
-        if (pair.isEntering != 0u)
+        if ((rootMaterial.materialFlags & MATERIAL_FLAG_MEDIUM_BOUNDARY) != 0u)
         {
-            MediumEntry entry;
-            entry.boundaryInstanceID = hit.instanceID;
-            entry.medium             = pair.mediumT;
-            committed = stack.TryPush(entry);
+            MediumData data;
+            if (!TryLoadMedium(toMedium.mediumID, data))
+                return PRIMARY_RAY_MEDIUM_SEED_STATUS_TRACE_FAILED;
+            committed = TryCrossPureMediumBoundary(
+                hit.instanceID, toMedium, data.mediumFlags, NoW, stack, airStack);
         }
         else
         {
-            committed = stack.TryPop(hit.instanceID);
+            BoundaryMediumPair pair;
+            if (!stack.TryResolveBoundaryMediums(hit.instanceID, toMedium, NoW, pair))
+                return PRIMARY_RAY_MEDIUM_SEED_STATUS_TRACE_FAILED;
+
+            if (pair.isEntering != 0u)
+            {
+                MediumEntry entry;
+                entry.boundaryInstanceID = hit.instanceID;
+                entry.medium             = pair.mediumT;
+                committed = stack.TryPush(entry);
+            }
+            else
+            {
+                committed = stack.TryPop(hit.instanceID);
+            }
         }
 
         if (!committed)
@@ -309,23 +335,31 @@ uint ReplayMediumCrossings(float3 anchor, float3 cameraPosition, Medium exterior
         : PRIMARY_RAY_MEDIUM_SEED_STATUS_VALID;
 }
 
-bool MediumStacksEqual(MediumStack a, MediumStack b)
+// Host order defines nesting. Air equality is membership equality; its stored IOR has no optical role.
+bool MediumStacksEqual(MediumStack a, MediumStack b, bool bAirMembership)
 {
     if (a.count != b.count)
         return false;
 
-    [unroll]
-    for (uint i = 0u; i < PRIMARY_RAY_MEDIUM_STACK_CAPACITY; ++i)
+    for (uint i = 0u; i < a.count; ++i)
     {
-        if (i >= a.count)
-            break;
-
-        if (a.entries[i].boundaryInstanceID != b.entries[i].boundaryInstanceID ||
-            a.entries[i].medium.mediumID != b.entries[i].medium.mediumID ||
-            asuint(a.entries[i].medium.ior) != asuint(b.entries[i].medium.ior))
+        uint match = i;
+        if (bAirMembership)
         {
-            return false;
+            match = INVALID_INDEX;
+            for (uint j = 0u; j < b.count; ++j)
+                if (a.entries[i].boundaryInstanceID == b.entries[j].boundaryInstanceID)
+                {
+                    match = j;
+                    break;
+                }
+            if (match == INVALID_INDEX)
+                return false;
         }
+        if (a.entries[i].boundaryInstanceID != b.entries[match].boundaryInstanceID ||
+            a.entries[i].medium.mediumID != b.entries[match].medium.mediumID ||
+            (!bAirMembership && asuint(a.entries[i].medium.ior) != asuint(b.entries[match].medium.ior)))
+            return false;
     }
     return true;
 }
@@ -349,20 +383,27 @@ void CopyMediumStack(MediumStack source, out MediumStack destination)
     }
 }
 
-void CopyStackToSeed(MediumStack stack, inout PrimaryRayMediumStackSeedData seed)
+void CopyStackToSeed(MediumStack stack, MediumStack airStack, inout PrimaryRayMediumStackSeedData seed)
 {
     seed.status = PRIMARY_RAY_MEDIUM_SEED_STATUS_VALID;
     seed.count  = stack.count;
+    seed.airCount = airStack.count;
 
     [unroll]
     for (uint i = 0u; i < PRIMARY_RAY_MEDIUM_STACK_CAPACITY; ++i)
     {
-        if (i >= stack.count)
-            break;
-
-        seed.entries[i].boundaryInstanceID = stack.entries[i].boundaryInstanceID;
-        seed.entries[i].mediumID            = stack.entries[i].medium.mediumID;
-        seed.entries[i].ior                 = stack.entries[i].medium.ior;
+        if (i < stack.count)
+        {
+            seed.entries[i].boundaryInstanceID = stack.entries[i].boundaryInstanceID;
+            seed.entries[i].mediumID            = stack.entries[i].medium.mediumID;
+            seed.entries[i].ior                 = stack.entries[i].medium.ior;
+        }
+        if (i < airStack.count)
+        {
+            seed.airEntries[i].boundaryInstanceID = airStack.entries[i].boundaryInstanceID;
+            seed.airEntries[i].mediumID            = airStack.entries[i].medium.mediumID;
+            seed.airEntries[i].ior                 = airStack.entries[i].medium.ior;
+        }
     }
 }
 
@@ -406,18 +447,18 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     exteriorMedium.mediumID = g_PrimaryMediumQueryParams.worldExteriorMediumID;
     exteriorMedium.ior      = worldExteriorIOR;
 
-    MediumStack referenceStack;
+    MediumStack referenceStack, referenceAirStack;
     [unroll]
     for (uint anchorIndex = 0u; anchorIndex < PRIMARY_MEDIUM_QUERY_ANCHOR_COUNT; ++anchorIndex)
     {
         float3 anchor = sceneBoundsCenter + anchorDirections[anchorIndex] * anchorDistance;
-        MediumStack candidateStack;
+        MediumStack candidateStack, candidateAirStack;
         uint traceStatus = ReplayMediumCrossings(
             anchor,
             g_Camera.posWORLD,
             exteriorMedium,
             maxTraceHits,
-            candidateStack);
+            candidateStack, candidateAirStack);
         if (traceStatus != PRIMARY_RAY_MEDIUM_SEED_STATUS_VALID)
         {
             ResetPrimaryMediumSeed(traceStatus, seed);
@@ -428,8 +469,10 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
         if (anchorIndex == 0u)
         {
             CopyMediumStack(candidateStack, referenceStack);
+            CopyMediumStack(candidateAirStack, referenceAirStack);
         }
-        else if (!MediumStacksEqual(referenceStack, candidateStack))
+        else if (!MediumStacksEqual(referenceStack, candidateStack, false) ||
+                 !MediumStacksEqual(referenceAirStack, candidateAirStack, true))
         {
             ResetPrimaryMediumSeed(PRIMARY_RAY_MEDIUM_SEED_STATUS_CONSENSUS_MISMATCH, seed);
             g_PrimaryRayMediumSeedOut[0] = seed;
@@ -437,6 +480,12 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
         }
     }
 
-    CopyStackToSeed(referenceStack, seed);
+    if (referenceStack.count == 1u && exteriorMedium.mediumID != INVALID_INDEX && referenceAirStack.count != 0u)
+    {
+        ResetPrimaryMediumSeed(PRIMARY_RAY_MEDIUM_SEED_STATUS_INVALID_PARAMS, seed);
+        g_PrimaryRayMediumSeedOut[0] = seed;
+        return;
+    }
+    CopyStackToSeed(referenceStack, referenceAirStack, seed);
     g_PrimaryRayMediumSeedOut[0] = seed;
 }

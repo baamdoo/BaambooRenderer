@@ -1,3 +1,4 @@
+#define _MESH
 #define _MATERIAL
 #include "Common.hlsli"
 #include "VisibilityBuffer.hlsli"
@@ -23,6 +24,16 @@ struct PSOutput
 PSOutput main(PSInput input)
 {
     PSOutput output = (PSOutput)0;
+
+    if (VisIsMesh(input.visID0))
+    {
+        StructuredBuffer< InstanceData > Instances = GetResource(g_Instances.index);
+        StructuredBuffer< MaterialData > Materials = GetResource(g_Materials.index);
+        uint materialID = Instances[VisInstanceID(input.visID0)].materialID;
+        if (materialID != INVALID_INDEX &&
+            (Materials[materialID].materialFlags & MATERIAL_FLAG_MEDIUM_BOUNDARY) != 0u)
+            clip(-1);
+    }
 
     if (VisIsVoxel(input.visID0))
     {

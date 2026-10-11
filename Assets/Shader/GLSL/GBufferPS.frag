@@ -3,6 +3,7 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_mesh_shader : require
 
+#define _MESH
 #define _MATERIAL
 #include "DescriptorCommon.hg"
 #include "VisibilityBuffer.hg"
@@ -19,6 +20,14 @@ const uint s_BayerMatrix[16] = uint[16](0u, 8u, 2u, 10u, 12u, 4u, 14u, 6u, 3u, 1
 
 void main()
 {
+    if (VisIsMesh(inVisID0))
+    {
+        uint materialID = g_Instances[VisInstanceID(inVisID0)].materialID;
+        if (materialID != INVALID_INDEX &&
+            (g_MaterialBuffer.materials[materialID].materialFlags & MATERIAL_FLAG_MEDIUM_BOUNDARY) != 0u)
+            discard;
+    }
+
     if (VisIsVoxel(inVisID0))
     {
         VoxelChunkDesc chunk = g_VoxelChunkDescs[VisChunkIndex(inVisID0) - VOXEL_CHUNK_INSTANCE_BASE];

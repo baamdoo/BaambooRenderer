@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "source_repository": "https://github.com/mmp/pbrt-v4-scenes",
+  "source_commit": "30cf4a0346ae5a80a2d7a530a3ef7d0fa4f70572",
+  "source_path": "explosion/fire.nvdb",
+  "source_url": "https://raw.githubusercontent.com/mmp/pbrt-v4-scenes/30cf4a0346ae5a80a2d7a530a3ef7d0fa4f70572/explosion/fire.nvdb",
+  "local_file": "source_fire.nvdb",
+  "size_bytes": 27715470,
+  "sha256": "1740797cbf2388ae7dd2f7bd3b5c37c5bafc104661fd90a8c0d5a6de0fdbd3d2",
+  "provenance": "Official PBRT-v4 explosion scene; PBRT README attributes its NanoVDB volume to an OpenVDB sample conversion.",
+  "provenance_url": "https://github.com/mmp/pbrt-v4-scenes/blob/30cf4a0346ae5a80a2d7a530a3ef7d0fa4f70572/README.md#explosion",
+  "original_sample_page": "https://www.openvdb.org/download/",
+  "license_status": "PBRT README and OpenVDB sample download page do not state a separate sample-data license. OpenVDB software MPL-2.0 must not be assumed to license this data. Kept as local downloaded reference data; redistribution rights are not asserted.",
+  "usage": "Use only grid density for non-emissive smoke; ignore temperature and disable blackbody emission.",
+  "container_header": {
+    "version_packed": 67111939,
+    "grid_count": 1,
+    "codec": 1
+  }
+}

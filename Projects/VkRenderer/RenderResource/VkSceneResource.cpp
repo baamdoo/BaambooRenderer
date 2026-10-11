@@ -37,6 +37,8 @@ enum
 	eCommonSetBindingIndex_Environment  = 11,
 	eCommonSetBindingIndex_FrozenCamera    = 12,
 	eCommonSetBindingIndex_MaterialTexture = 13,
+    eCommonSetBindingIndex_Medium = 14,
+    eCommonSetBindingIndex_MediumDensity = 15,
 };
 
 static std::string MakeTextureCacheKey(const std::string& filepath, render::eTextureColorSpace colorSpace)
@@ -57,6 +59,8 @@ void VkSceneResource::PerFrameData::Reset()
 		pMaterialAllocator->Reset();
 	if (pMaterialTextureAllocator)
 		pMaterialTextureAllocator->Reset();
+    if (pMediumAllocator) pMediumAllocator->Reset();
+    if (pMediumDensityAllocator) pMediumDensityAllocator->Reset();
 	if (pLightAllocator) 
 		pLightAllocator->Reset();
 	/*if (pIndirectCommandAllocator) 
@@ -88,6 +92,8 @@ VkSceneResource::VkSceneResource(VkRenderDevice& rd)
 		frameData.pMaterialTextureAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(MaterialTextureData) * kMaxEntityCount, VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
 		frameData.pLightAllocator     = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(LightData), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
 
+        frameData.pMediumAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(MediumData) * kMaxEntityCount, VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
+        frameData.pMediumDensityAllocator = MakeBox< StaticBufferAllocator >(m_RenderDevice, sizeof(u32) * _KB(1LL), VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT);
 		frameData.pCameraBuffer           = VulkanUniformBuffer::Create(m_RenderDevice, "CameraBuffer", sizeof(CameraData));
 		frameData.pCullBuffer             = VulkanUniformBuffer::Create(m_RenderDevice, "CullBuffer", sizeof(CullData));
 		frameData.pSceneEnvironmentBuffer = VulkanUniformBuffer::Create(m_RenderDevice, "SceneEnvironmentBuffer", sizeof(SceneEnvironmentData));
@@ -114,6 +120,8 @@ VkSceneResource::VkSceneResource(VkRenderDevice& rd)
 		{ eCommonSetBindingIndex_Environment, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, VK_NULL_HANDLE },
 		{ eCommonSetBindingIndex_FrozenCamera, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_ALL, VK_NULL_HANDLE },
 		{ eCommonSetBindingIndex_MaterialTexture, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, VK_NULL_HANDLE },
+        { eCommonSetBindingIndex_Medium, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, VK_NULL_HANDLE },
+        { eCommonSetBindingIndex_MediumDensity, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, VK_NULL_HANDLE },
 		{ eCommonSetBindingIndex_SceneTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kMaxBindlessDescriptorResourceCount, VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, VK_NULL_HANDLE },
 	};
 
@@ -149,6 +157,8 @@ VkSceneResource::VkSceneResource(VkRenderDevice& rd)
 		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT,
 		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT,
 		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT,
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT,
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT,
 		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT | VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT,
 	};
 
@@ -292,6 +302,10 @@ void VkSceneResource::UpdateCameraAndEnvironment(const SceneRenderView& sceneVie
 
 	descriptorSet.StageDescriptor(m_FrameData[m_ContextIndex].pMaterialAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Material, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 	descriptorSet.StageDescriptor(m_FrameData[m_ContextIndex].pMaterialTextureAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_MaterialTexture, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    auto mediumInfo = m_FrameData[m_ContextIndex].pMediumAllocator->GetDescriptorInfo();
+    mediumInfo.range = static_cast<VkDeviceSize>(m_FrameData[m_ContextIndex].mediumCount) * sizeof(MediumData);
+    descriptorSet.StageDescriptor(mediumInfo, eCommonSetBindingIndex_Medium, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    descriptorSet.StageDescriptor(m_FrameData[m_ContextIndex].pMediumDensityAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_MediumDensity, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 	descriptorSet.StageDescriptor(m_FrameData[m_ContextIndex].pLightAllocator->GetDescriptorInfo(), eCommonSetBindingIndex_Light, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 }
 
@@ -470,6 +484,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 	UpdateFrameBuffer(ctx, meshes.data(), (u32)meshes.size(), sizeof(MeshData), *m_FrameData[m_ContextIndex].pMeshDataAllocator, VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 
 	u32 meshletVisibilityCursor = 0;
+	const u32 numVoxelSlots = sceneView.voxelTerrain.bValid ? kMaxVoxelChunkSlots : 0u;
 	std::vector< InstanceData > instances;
 	for (auto& [id, data] : sceneView.draws)
 	{
@@ -486,10 +501,13 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 				instance.transformID = data.transform;
 
 				instance.materialID = kInvalidIndex;
+				instance.mediumID   = kInvalidIndex;
 				if (data.material != kInvalidIndex)
 				{
 					assert(data.material < sceneView.materials.size());
 					instance.materialID = data.material;
+					// One interior identity per instance; include the prepended voxel slots.
+					instance.mediumID = numVoxelSlots + static_cast<u32>(instances.size());
 				}
 
 				instance.visOffset = meshletVisibilityCursor;
@@ -518,6 +536,7 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 			voxelInstances[i].meshID      = voxelMeshBase + i;
 			voxelInstances[i].transformID = voxelTransformID;
 			voxelInstances[i].materialID  = kInvalidIndex;
+			voxelInstances[i].mediumID    = kInvalidIndex;
 			voxelInstances[i].visOffset   = 0; // unused: voxel skips per-meshlet cull
 			voxelInstances[i].isVoxel     = 1;
 		}
@@ -527,6 +546,10 @@ void VkSceneResource::UpdateSceneResources(const SceneRenderView& sceneView, ren
 	UpdateFrameBuffer(ctx, instances.data(), (u32)instances.size(), sizeof(InstanceData), *m_FrameData[m_ContextIndex].pInstanceAllocator, VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 	//UpdateFrameBuffer(ctx, indirects.data(), (u32)indirects.size(), sizeof(IndirectCommandData), *m_FrameData[m_ContextIndex].pIndirectCommandAllocator, VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 
+    const auto mediumBuffers = BuildMediumBuffers(sceneView);
+    m_FrameData[m_ContextIndex].mediumCount = static_cast<u32>(mediumBuffers.media.size());
+    UpdateFrameBuffer(ctx, mediumBuffers.media.data(), static_cast<u32>(mediumBuffers.media.size()), sizeof(MediumData), *m_FrameData[m_ContextIndex].pMediumAllocator, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
+    UpdateFrameBuffer(ctx, mediumBuffers.densityWords.data(), static_cast<u32>(mediumBuffers.densityWords.size()), sizeof(u32), *m_FrameData[m_ContextIndex].pMediumDensityAllocator, VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
 	UpdateFrameBuffer(ctx, &sceneView.light, 1, sizeof(LightData), *m_FrameData[m_ContextIndex].pLightAllocator, VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
 	ctx.FlushBarriers();
 

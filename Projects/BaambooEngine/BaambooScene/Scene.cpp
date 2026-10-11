@@ -5,6 +5,7 @@
 #include "Camera.h"
 #include "Systems/TransformSystem.h"
 #include "Systems/MeshSystem.h"
+#include "Systems/MediumSystem.h"
 #include "Systems/LightSystem.h"
 #include "Systems/AtmosphereSystem.h"
 #include "Systems/CloudSystem.h"
@@ -28,6 +29,7 @@ Scene::Scene(const std::string& name)
 	m_pTransformSystem   = new TransformSystem(m_Registry);
 	m_pVoxelTerrainSystem = new VoxelTerrainSystem(m_Registry);
 	m_pStaticMeshSystem  = new StaticMeshSystem(m_Registry);
+	m_pMediumSystem      = new MediumSystem(m_Registry);
 	m_pSkyLightSystem    = new SkyLightSystem(m_Registry, m_pTransformSystem);
 	m_pAtmosphereSystem  = new AtmosphereSystem(m_Registry, m_pSkyLightSystem);
 	m_pCloudSystem       = new CloudSystem(m_Registry, m_pAtmosphereSystem);
@@ -50,6 +52,7 @@ Scene::~Scene()
 	RELEASE(m_pCloudSystem);
 	RELEASE(m_pAtmosphereSystem);
 	RELEASE(m_pSkyLightSystem);
+	RELEASE(m_pMediumSystem);
 	RELEASE(m_pStaticMeshSystem);
 	RELEASE(m_pTransformSystem);
 }
@@ -293,6 +296,7 @@ void Scene::Update(f32 dt, const EditorCamera& edCamera)
 		changedComponents |= 1ULL << eComponentType::CMaterial;
 	}
 
+	updateSystem(m_pMediumSystem, eComponentType::CMedium);
 	updateSystem(m_pSkyLightSystem, eComponentType::CSkyLight);
 	updateSystem(m_pAtmosphereSystem, eComponentType::CAtmosphere);
 	updateSystem(m_pCloudSystem, eComponentType::CCloud);
@@ -402,6 +406,7 @@ SceneRenderView Scene::RenderView(const EditorCamera& edCamera, float2 viewport,
 
 	m_pTransformSystem->CollectRenderData(view);
 	m_pStaticMeshSystem->CollectRenderData(view);
+	m_pMediumSystem->CollectRenderData(view);
 	m_pSkyLightSystem->CollectRenderData(view);
 	m_pLocalLightSystem->CollectRenderData(view);
 	m_pAtmosphereSystem->CollectRenderData(view);

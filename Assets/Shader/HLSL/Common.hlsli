@@ -16,6 +16,9 @@ struct GeometryStreams
     uint meshlets;
     uint meshletVertices;
     uint meshletTriangles;
+    uint media;
+    uint density;
+    uint mediumCount;
 };
 
 #ifdef _CAMERA
@@ -53,7 +56,7 @@ struct FrozenCameraData
 }; ConstantBuffer< FrozenCameraData > g_FrozenCamera : register(b13, space0);
 #endif // _FROZENCAMERA
 
-#ifdef _MESH
+#if defined(_MESH) || defined(_MEDIUM)
 // Geometry stream handles (vertex / index / meshlet / meshlet-vertex / meshlet-triangle pools)
 ConstantBuffer< GeometryStreams >     g_MeshStreams : register(b1, space0);
 ConstantBuffer< DescriptorHeapIndex > g_Meshes      : register(b6, space0);
@@ -72,6 +75,10 @@ ConstantBuffer< DescriptorHeapIndex > g_Transforms : register(b9, space0);
 ConstantBuffer< DescriptorHeapIndex > g_Materials        : register(b10, space0);
 ConstantBuffer< DescriptorHeapIndex > g_MaterialTextures : register(b14, space0);
 #endif // _MATERIAL
+
+#ifdef _MEDIUM
+#define g_MediumResources g_MeshStreams
+#endif
 
 #ifdef _LIGHT
 ConstantBuffer< LightingData > g_Lights : register(b11, space0);

@@ -16,7 +16,9 @@
 #include <array>
 #include <cmath>
 #include <fstream>
+#include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <unordered_map>
 
 using namespace baamboo;
@@ -55,6 +57,7 @@ struct GalleryMaterialEntry
 	std::string path;
 	std::string name;
 	std::vector< baamboo::MaterialLayer > layers;
+	std::optional< MediumComponent > medium;
 	bool bFaceNormals = false;
 };
 
@@ -82,6 +85,7 @@ struct GallerySceneData
 	u32 samplesPerFrame = 8u;
 	u32 dumpTargetSamples = 4096u;
 	u32 maxDepth = 12u;
+	float3 environmentColor = float3(0.0f);
 	std::string environmentMapPath;
 	std::vector< GalleryMaterialEntry > meshes;
 	std::vector< GalleryLightEntry > lights;
@@ -261,6 +265,7 @@ GallerySceneData LoadGallerySceneManifest(std::string_view sceneName)
 		else if (tokens[0] == "environment")
 		{
 			auto values = ParseKeyValues(tokens, 1);
+			data.environmentColor = ParseFloat3Value(values, "color", data.environmentColor);
 			if (auto it = values.find("path"); it != values.end())
 				data.environmentMapPath = AssetRelativeToString(it->second);
 		}
@@ -274,6 +279,27 @@ GallerySceneData LoadGallerySceneManifest(std::string_view sceneName)
 				entry.name = it->second;
 			entry.bFaceNormals = ParseU32(values, "faceNormals", 0u) != 0u;
 			entry.layers.push_back(ParseGalleryMaterialLayer(values, entry.name));
+			const bool bMediumBoundary = ParseU32(values, "mediumBoundary", 0u) != 0u;
+			const auto mediumMode = values.find("mediumMode");
+			const bool bMediumHost = mediumMode != values.end() && mediumMode->second == "host";
+			if ((mediumMode != values.end() && !bMediumHost) || (bMediumHost && bMediumBoundary))
+				throw std::runtime_error("Gallery mediumMode must be host and cannot be combined with mediumBoundary: " + entry.name);
+			if (bMediumHost && entry.layers.front().material.transmission <= 0.0f)
+				throw std::runtime_error("Gallery medium host requires a transmissive material: " + entry.name);
+			if (bMediumBoundary || bMediumHost)
+			{
+				// A host keeps its dielectric BSDF; only an artificial enclosure is BSDF-less.
+				if (bMediumBoundary)
+					entry.layers.front().material.materialFlags |= baamboo::eMaterialFlag_MediumBoundary;
+				auto& medium = entry.medium.emplace();
+				medium.bAirContributor = bMediumBoundary;
+				medium.sigmaA = ParseFloat3Value(values, "mediumSigmaA", medium.sigmaA);
+				medium.sigmaS = ParseFloat3Value(values, "mediumSigmaS", medium.sigmaS);
+				medium.phaseG = ParseFloat(values, "mediumPhaseG", medium.phaseG);
+				medium.densityScale = ParseFloat(values, "densityScale", medium.densityScale);
+				if (auto it = values.find("densityFile"); it != values.end())
+					medium.densityFile = AssetRelativeToString(it->second);
+			}
 			if (!entry.path.empty())
 				data.meshes.push_back(entry);
 		}
@@ -350,9 +376,14 @@ bool IsShaderBallLayerScene(std::string_view sceneName)
 		sceneName == "usd_shaderball_n3";
 }
 
+bool IsManyLightReferenceScene(std::string_view sceneName)
+{
+	return sceneName == "cornell_many_lights" || sceneName == "cornell_many_lights_matched";
+}
+
 bool IsSupportedPathTracerScene(std::string_view sceneName)
 {
-	return sceneName == "cornell_box" || sceneName == "cornell_open" || sceneName == "cornell_sphere_light" || sceneName == "cornell_directional_light" || sceneName == "cornell_disk_light" || sceneName == "cornell_spot_light" || sceneName == "cornell_tube_light" || sceneName == "cornell_many_lights" || sceneName == "cornell_textured" || sceneName == "cornell_material_maps" || sceneName == "cornell_normal_map" || sceneName == "ray_cone_mip_ladder" || sceneName == "ray_cone_secondary_mip" ||
+	return sceneName == "cornell_box" || sceneName == "cornell_open" || sceneName == "cornell_sphere_light" || sceneName == "cornell_directional_light" || sceneName == "cornell_disk_light" || sceneName == "cornell_spot_light" || sceneName == "cornell_tube_light" || IsManyLightReferenceScene(sceneName) || sceneName == "cornell_textured" || sceneName == "cornell_material_maps" || sceneName == "cornell_normal_map" || sceneName == "ray_cone_mip_ladder" || sceneName == "ray_cone_secondary_mip" ||
 		sceneName == "cornell_mesh" || sceneName == "cornell_transform" || sceneName == "cornell_transform_rot" ||
 		sceneName == "cornell_transform_model" || IsEnvironmentMapTestScene(sceneName) || sceneName == "dining_room" || IsComplexRoomTestScene(sceneName) ||
 		sceneName == "cornell_box_conductor" || sceneName == "cornell_box_conductor_smooth" || sceneName == "cornell_anisotropic_conductor" ||
@@ -452,10 +483,10 @@ void RayTracingApp::Update(float dt)
 
 	m_CameraController.Update(dt);
 
-	if (m_bExitAfterAOVDump && m_pPathTracerNode.valid())
+	if ((m_bExitAfterAOVDump || !m_PathTracerSeeds.empty() || !m_PathTracerSampleLevels.empty()) && m_pPathTracerNode.valid())
 	{
 		auto pPathTracerNode = m_pPathTracerNode.lock();
-		if (pPathTracerNode && pPathTracerNode->IsAOVDumpComplete())
+		if (pPathTracerNode && ((m_bExitAfterAOVDump && pPathTracerNode->IsAOVDumpComplete()) || pPathTracerNode->HasAutomationFailed()))
 			glfwSetWindowShouldClose(m_pWindow->Handle(), GLFW_TRUE);
 	}
 }
@@ -468,11 +499,29 @@ void RayTracingApp::Release()
 	m_pPathTracerNode = Weak< PathTracerNode >();
 }
 
-void RayTracingApp::ConfigurePathTracerAutomation(bool bDumpAOV, bool bExitAfterDump, std::string_view referenceSceneName)
+void RayTracingApp::ConfigurePathTracerAutomation(bool bDumpAOV, bool bExitAfterDump, std::string_view referenceSceneName,
+	u32 seed, u32 targetSamples, u32 samplesPerFrame, u32 maxDepth, const std::string& outputDir)
 {
 	m_bAutoDumpAOV      = bDumpAOV;
 	m_bExitAfterAOVDump = bExitAfterDump;
 	m_PathTracerReferenceScene = IsSupportedPathTracerScene(referenceSceneName) ? std::string(referenceSceneName) : std::string(s_DefaultPathTracerScene);
+	m_PathTracerSeed = seed;
+	m_PathTracerTargetSamples = targetSamples;
+	m_PathTracerSamplesPerFrame = samplesPerFrame;
+	m_PathTracerMaxDepth = maxDepth;
+	m_PathTracerOutputDir = outputDir;
+}
+
+void RayTracingApp::ConfigurePathTracerBatch(const std::vector<u32>& seeds, const std::vector<u32>& sampleLevels)
+{
+	m_PathTracerSeeds = seeds;
+	m_PathTracerSampleLevels = sampleLevels;
+}
+
+bool RayTracingApp::HasPathTracerAutomationFailed() const
+{
+	auto pPathTracerNode = m_pPathTracerNode.lock();
+	return pPathTracerNode && pPathTracerNode->HasAutomationFailed();
 }
 
 bool RayTracingApp::InitWindow()
@@ -741,7 +790,7 @@ void RayTracingApp::ConfigureRenderGraph()
 	{
 		const auto gallery = LoadGallerySceneManifest(m_PathTracerReferenceScene);
 		if (gallery.bValid)
-			pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), gallery.samplesPerFrame, gallery.dumpTargetSamples, gallery.maxDepth, gallery.environmentMapPath);
+			pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, gallery.environmentColor, gallery.samplesPerFrame, gallery.dumpTargetSamples, gallery.maxDepth, gallery.environmentMapPath);
 		else
 			pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 4u, 1024u, 12u);
 	}
@@ -761,7 +810,7 @@ void RayTracingApp::ConfigureRenderGraph()
 		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(1.0f), 1u, 128u, 1u);
 	else if (m_PathTracerReferenceScene == "ray_cone_secondary_mip")
 		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 1u, 128u, 2u);
-	else if (m_PathTracerReferenceScene == "cornell_many_lights")
+	else if (IsManyLightReferenceScene(m_PathTracerReferenceScene))
 		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 4u, 4096u, 1u);
 	else if (m_PathTracerReferenceScene == "cornell_tube_light")
 		pPathTracerNode->ConfigureReferenceScene(m_PathTracerReferenceScene, float3(0.0f), 4u, 4096u, 1u);
@@ -816,6 +865,10 @@ void RayTracingApp::ConfigureRenderGraph()
 	else
 		pPathTracerNode->ConfigureReferenceScene("cornell_box", float3(0.0f), 1u, 128u);
 
+	pPathTracerNode->ConfigureAutomation(m_PathTracerSeed, m_PathTracerTargetSamples,
+		m_PathTracerSamplesPerFrame, m_PathTracerMaxDepth, m_PathTracerOutputDir);
+	if (!m_PathTracerSeeds.empty() || !m_PathTracerSampleLevels.empty())
+		pPathTracerNode->ConfigureAutomationBatch(m_PathTracerSeeds, m_PathTracerSampleLevels);
 	m_pPathTracerNode = pPathTracerNode;
 	if (m_bAutoDumpAOV)
 		pPathTracerNode->RequestAOVDump();
@@ -905,6 +958,16 @@ void RayTracingApp::ConfigureSceneObjects()
 						materialComponent.bFaceNormals = meshEntry.bFaceNormals;
 						materialComponent.layers = meshEntry.layers;
 					});
+					if (meshEntry.medium)
+					{
+						// MediumSystem binds density to mesh draws, not the imported model root.
+						auto& registry = m_pScene->Registry();
+						for (auto meshEntity : registry.view< StaticMeshComponent >())
+						{
+							if (registry.get< StaticMeshComponent >(meshEntity).path == meshPath.string())
+								registry.emplace_or_replace< MediumComponent >(meshEntity, *meshEntry.medium);
+						}
+					}
 				}
 
 				for (const auto& lightEntry : gallery.lights)
@@ -1499,8 +1562,8 @@ void RayTracingApp::ConfigureSceneObjects()
 		loadWall("ceiling.ply",   white);
 		if (m_PathTracerReferenceScene != "cornell_open")
 			loadWall("back_wall.ply", white);
-		loadWall("left_wall.ply", (m_PathTracerReferenceScene == "cornell_sphere_light" || m_PathTracerReferenceScene == "cornell_directional_light" || m_PathTracerReferenceScene == "cornell_disk_light" || m_PathTracerReferenceScene == "cornell_spot_light" || m_PathTracerReferenceScene == "cornell_tube_light" || m_PathTracerReferenceScene == "cornell_many_lights") ? white : red);
-		loadWall("right_wall.ply", (m_PathTracerReferenceScene == "cornell_sphere_light" || m_PathTracerReferenceScene == "cornell_directional_light" || m_PathTracerReferenceScene == "cornell_disk_light" || m_PathTracerReferenceScene == "cornell_spot_light" || m_PathTracerReferenceScene == "cornell_tube_light" || m_PathTracerReferenceScene == "cornell_many_lights") ? white : green);
+		loadWall("left_wall.ply", (m_PathTracerReferenceScene == "cornell_sphere_light" || m_PathTracerReferenceScene == "cornell_directional_light" || m_PathTracerReferenceScene == "cornell_disk_light" || m_PathTracerReferenceScene == "cornell_spot_light" || m_PathTracerReferenceScene == "cornell_tube_light" || IsManyLightReferenceScene(m_PathTracerReferenceScene)) ? white : red);
+		loadWall("right_wall.ply", (m_PathTracerReferenceScene == "cornell_sphere_light" || m_PathTracerReferenceScene == "cornell_directional_light" || m_PathTracerReferenceScene == "cornell_disk_light" || m_PathTracerReferenceScene == "cornell_spot_light" || m_PathTracerReferenceScene == "cornell_tube_light" || IsManyLightReferenceScene(m_PathTracerReferenceScene)) ? white : green);
 		if (bAnisotropicConductorScene)
 		{
 			const fs::path panelPath = meshDir / "anisotropic_panel.ply";
@@ -1753,7 +1816,7 @@ void RayTracingApp::ConfigureSceneObjects()
 			});
 		}
 		else if (m_PathTracerReferenceScene == "cornell_box_conductor" || m_PathTracerReferenceScene == "cornell_box_conductor_smooth" ||
-			m_PathTracerReferenceScene == "cornell_box_mixed_metallic" || m_PathTracerReferenceScene == "cornell_box_opaque_dielectric" || m_PathTracerReferenceScene == "cornell_box_mixed_transmission" || m_PathTracerReferenceScene == "cornell_directional_light" || m_PathTracerReferenceScene == "cornell_disk_light" || m_PathTracerReferenceScene == "cornell_spot_light" || m_PathTracerReferenceScene == "cornell_tube_light" || m_PathTracerReferenceScene == "cornell_many_lights" ||
+			m_PathTracerReferenceScene == "cornell_box_mixed_metallic" || m_PathTracerReferenceScene == "cornell_box_opaque_dielectric" || m_PathTracerReferenceScene == "cornell_box_mixed_transmission" || m_PathTracerReferenceScene == "cornell_directional_light" || m_PathTracerReferenceScene == "cornell_disk_light" || m_PathTracerReferenceScene == "cornell_spot_light" || m_PathTracerReferenceScene == "cornell_tube_light" || IsManyLightReferenceScene(m_PathTracerReferenceScene) ||
 			m_PathTracerReferenceScene == "cornell_box_dielectric" || m_PathTracerReferenceScene == "cornell_box_dielectric_smooth" || m_PathTracerReferenceScene == "cornell_box_dielectric_thin" ||
 			IsPrincipledMaterialTestScene(m_PathTracerReferenceScene) ||
 			m_PathTracerReferenceScene == "cornell_emissive_reflective" ||
@@ -1766,7 +1829,7 @@ void RayTracingApp::ConfigureSceneObjects()
 			sphereTransform.transform.scale    = float3(0.4f);
 			m_pScene->Registry().patch< TransformComponent >(sphereEntity.ID(), [](auto&) {});
 
-			if (m_PathTracerReferenceScene == "cornell_directional_light" || m_PathTracerReferenceScene == "cornell_disk_light" || m_PathTracerReferenceScene == "cornell_spot_light" || m_PathTracerReferenceScene == "cornell_tube_light" || m_PathTracerReferenceScene == "cornell_many_lights")
+			if (m_PathTracerReferenceScene == "cornell_directional_light" || m_PathTracerReferenceScene == "cornell_disk_light" || m_PathTracerReferenceScene == "cornell_spot_light" || m_PathTracerReferenceScene == "cornell_tube_light" || IsManyLightReferenceScene(m_PathTracerReferenceScene))
 			{
 				forEachMaterialByMeshPath(spherePath, [](baamboo::MaterialData& mat, MaterialComponent&)
 				{
@@ -2027,8 +2090,11 @@ void RayTracingApp::ConfigureSceneObjects()
 			}
 		}
 
-		if (m_PathTracerReferenceScene == "cornell_many_lights")
+		if (IsManyLightReferenceScene(m_PathTracerReferenceScene))
 		{
+			// The original fixture is preserved. This variant separates finite emitter
+			// geometry from all other direct-light connections (see its CPU contract).
+			const bool bMatchedVisibility = m_PathTracerReferenceScene == "cornell_many_lights_matched";
 			constexpr f32 kPi = 3.14159265358979323846f;
 			constexpr f32 kDegToRad = kPi / 180.0f;
 
@@ -2079,7 +2145,7 @@ void RayTracingApp::ConfigureSceneObjects()
 				light.luminousFluxLm = kPi * kPi * diskRadius * diskRadius;
 
 				auto& transformComponent = diskLight.GetComponent< TransformComponent >();
-				transformComponent.transform.position = float3(-0.45f, 2.35f, 1.35f);
+				transformComponent.transform.position = bMatchedVisibility ? float3(-2.5f, 4.0f, 4.0f) : float3(-0.45f, 2.35f, 1.35f);
 				transformComponent.transform.rotation = float3(90.0f, 0.0f, 0.0f);
 			}
 
@@ -2097,7 +2163,7 @@ void RayTracingApp::ConfigureSceneObjects()
 				light.luminousFluxLm = kPi * 4.0f * kPi * sphereRadius * sphereRadius;
 
 				auto& transformComponent = sphereLight.GetComponent< TransformComponent >();
-				transformComponent.transform.position = float3(0.45f, 2.35f, 1.35f);
+				transformComponent.transform.position = bMatchedVisibility ? float3(2.5f, 4.0f, 4.0f) : float3(0.45f, 2.35f, 1.35f);
 			}
 
 			{
@@ -2116,7 +2182,7 @@ void RayTracingApp::ConfigureSceneObjects()
 				light.luminousFluxLm = 2.0f * kPi * kPi * tubeRadius * tubeLength;
 
 				auto& transformComponent = tubeLight.GetComponent< TransformComponent >();
-				transformComponent.transform.position = float3(0.0f, 2.42f, 1.45f);
+				transformComponent.transform.position = bMatchedVisibility ? float3(0.0f, 4.0f, 4.0f) : float3(0.0f, 2.42f, 1.45f);
 				transformComponent.transform.rotation = float3(0.0f, 90.0f, 0.0f);
 			}
 		}

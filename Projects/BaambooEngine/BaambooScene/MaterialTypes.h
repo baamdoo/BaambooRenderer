@@ -18,7 +18,10 @@ enum eMaterialFlags : u32
 	eMaterialFlag_DoubleSided          = 1 << 3,
 	eMaterialFlag_ThinWalled           = 1 << 4,
 	eMaterialFlag_RelativeIORInterface = 1 << 5,
+	eMaterialFlag_MediumBoundary       = 1 << 6,
 };
+
+static_assert(eMaterialFlag_MediumBoundary == MATERIAL_FLAG_MEDIUM_BOUNDARY);
 
 enum eMaterialType : u32
 {

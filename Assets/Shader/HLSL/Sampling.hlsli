@@ -19,9 +19,9 @@ uint PCGHash(uint input)
 // Stateful RNG. Two modes behind one NextFloat() interface:
 //  - PCG:   hash(seed + counter) - the original independent sampler
 //  - SOBOL: Owen-scrambled Sobol, counter = dimension index, with PCG fallback
-//           past SOBOL_DIMS. The fallback reuses `seed`, which carries the same
-//           (pixel, sample) mixing as PCG mode, so overflow dims stay decorrelated
-//           across samples.
+//           past SOBOL_DIMS. Fallback mixes the section limit into the per-sample
+//           seed so a variable-length layer walk cannot reuse a later section's
+//           PCG stream when their absolute dimension counters overlap.
 struct RngState
 {
     uint seed;        // per-(pixel, sample) hash - PCG stream base in both modes
@@ -45,7 +45,7 @@ RngState InitRng(uint2 pixel, uint seedOffset, uint sampleIndex)
     uint seed = PCGHash(pixelSeed ^ (seedOffset * 0x9E3779B9u));
 
     // Stage 3: mix sampleIndex via a second PCG round.
-    seed      = PCGHash(seed + sampleIndex);
+    seed = PCGHash(seed + sampleIndex);
 
     RngState rng;
     rng.seed        = seed;
@@ -59,7 +59,7 @@ RngState InitRng(uint2 pixel, uint seedOffset, uint sampleIndex)
 
 
 // Owen-scrambled Sobol state for the outer transport loop.
-// Layer-walk and fixed-endpoint MIS-query streams stay PCG.
+// Budget overflow and fixed-endpoint MIS queries use PCG streams.
 RngState InitSobolRng(uint2 pixel, uint seedOffset, uint sampleIndex)
 {
     uint pixelSeed = (pixel.y << 16u) | (pixel.x & 0xFFFFu);
@@ -75,7 +75,6 @@ RngState InitSobolRng(uint2 pixel, uint seedOffset, uint sampleIndex)
     return rng;
 }
 
-
 // Return the next raw random bits and advance the RNG to the next dimension.
 uint NextUint(inout RngState rng)
 {
@@ -85,7 +84,10 @@ uint NextUint(inout RngState rng)
         rng.counter++;
         return bits;
     }
-    uint hashed = PCGHash(rng.seed + rng.counter);
+    uint fallbackSeed = (rng.mode == RNG_MODE_SOBOL)
+        ? PCGHash(rng.seed ^ PCGHash(rng.sobolLimit))
+        : rng.seed;
+    uint hashed = PCGHash(fallbackSeed + rng.counter);
     rng.counter++;
     return hashed;
 }
@@ -99,7 +101,8 @@ uint NextUint(inout RngState rng)
 #define SOBOL_PIXEL_DIMS    2u
 #define SOBOL_BOUNCE_STRIDE 18u
 
-void SobolRebaseForBounce(inout RngState rng, uint bounce, uint section)
+// Transport depth is zero-based; dimensions 0 and 1 belong to camera jitter.
+void SobolRebaseForBounce(inout RngState rng, uint depth, uint section)
 {
     if (rng.mode != RNG_MODE_SOBOL)
         return; // PCG streams keep their sequential counter - rebasing would change them
@@ -110,7 +113,7 @@ void SobolRebaseForBounce(inout RngState rng, uint bounce, uint section)
     if (section == SOBOL_SECTION_BSDF)    { offset = 9u;  budget = 8u; }
     if (section == SOBOL_SECTION_RR)      { offset = 17u; budget = 1u; }
 
-    uint base       = SOBOL_PIXEL_DIMS + (bounce - 1u) * SOBOL_BOUNCE_STRIDE + offset;
+    uint base       = SOBOL_PIXEL_DIMS + depth * SOBOL_BOUNCE_STRIDE + offset;
     rng.counter     = base;
     rng.sobolLimit  = base + budget;
 }
@@ -163,13 +166,8 @@ void BuildONB(float3 n, out float3 t, out float3 b)
     const float a = -1.0 / (sign + n.z);
     const float h = n.x * n.y * a;
 
-    t = float3(1.0 + sign * n.x * n.x * a,
-               sign * h,
-               -sign * n.x);
-
-    b = float3(h,
-               sign + n.y * n.y * a,
-               -n.y);
+    t = float3(1.0 + sign * n.x * n.x * a, sign * h, -sign * n.x);
+    b = float3(h, sign + n.y * n.y * a, -n.y);
 }
 
 
@@ -315,23 +313,39 @@ bool IntersectRayAreaLight(float3 origin, float3 dir, AreaLight light, out float
     return true;
 }
 
-bool IntersectRaySphereLight(float3 origin, float3 dir, SphereLight light, out float tHit, out float3 normalAtHit)
+bool IntersectRaySphereLight(RayDesc ray, SphereLight light, out float tHit, out float3 normalAtHit)
 {
-    float3 c  = float3(light.posX, light.posY, light.posZ);
-    float3 oc = origin - c;
-    float  b  = dot(oc, dir);                              // half-b form
-    float  cc = dot(oc, oc) - light.radius * light.radius;
-    float  disc = b * b - cc;
-    if (disc < 0.0) { tHit = -1.0; normalAtHit = float3(0, 0, 0); return false; }
+    tHit = -1.0;
+    normalAtHit = 0.0;
+    float3 center = float3(light.posX, light.posY, light.posZ);
+    float directionLength2 = dot(ray.Direction, ray.Direction);
+    if (!all(isfinite(ray.Origin)) || !all(isfinite(ray.Direction)) || !all(isfinite(center)) ||
+        !isfinite(ray.TMin) || !isfinite(ray.TMax) || ray.TMin > ray.TMax ||
+        !isfinite(directionLength2) || directionLength2 <= 0.0 ||
+        !isfinite(light.radius) || light.radius <= 0.0)
+        return false;
 
-    float s = sqrt(disc);
-    float t = -b - s;              // entry point (front face for external rays)
-    if (t <= 0.001) t = -b + s;    // origin inside the sphere -> exit point
-    if (t <= 0.001) { tHit = -1.0; normalAtHit = float3(0, 0, 0); return false; }
+    float3 offset = ray.Origin - center;
+    float centerT = -dot(offset, ray.Direction) / directionLength2;
+    float3 closestOffset = offset + centerT * ray.Direction;
+    float radialLength2 = light.radius * light.radius - dot(closestOffset, closestOffset);
+    if (!isfinite(radialLength2) || radialLength2 < 0.0)
+        return false;
 
-    float3 p = origin + t * dir;
-    tHit        = t;
-    normalAtHit = normalize(p - c);
+    float halfChordT = sqrt(radialLength2 / directionLength2);
+    float entryT = centerT - halfChordT;
+    float exitT = centerT + halfChordT;
+    float t = entryT >= ray.TMin ? entryT : exitT;
+    if (!isfinite(t) || t < ray.TMin || t > ray.TMax)
+        return false;
+
+    // Back faces still intersect: a one-sided emitter is opaque from inside.
+    float3 localHit = closestOffset + (t - centerT) * ray.Direction;
+    float normalLength2 = dot(localHit, localHit);
+    if (!isfinite(normalLength2) || normalLength2 <= 0.0)
+        return false;
+    tHit = t;
+    normalAtHit = localHit * rsqrt(normalLength2);
     return true;
 }
 

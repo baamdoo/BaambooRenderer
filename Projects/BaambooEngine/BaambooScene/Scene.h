@@ -14,6 +14,7 @@ class RenderGraph;
 class EditorCamera;
 class TransformSystem;
 class StaticMeshSystem;
+class MediumSystem;
 class MaterialSystem;
 class SkyLightSystem;
 class LocalLightSystem;
@@ -212,6 +213,7 @@ private:
 	// systems
 	TransformSystem*    m_pTransformSystem   = nullptr;
 	StaticMeshSystem*   m_pStaticMeshSystem  = nullptr;
+	MediumSystem*       m_pMediumSystem      = nullptr;
 	SkyLightSystem*     m_pSkyLightSystem    = nullptr;
 	LocalLightSystem*   m_pLocalLightSystem  = nullptr;
 	AtmosphereSystem*   m_pAtmosphereSystem  = nullptr;

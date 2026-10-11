@@ -2,6 +2,23 @@
 #define _HLSL_PATHVALIDATION_HEADER
 
 #if PT_VALIDATION
+ConstantBuffer< DescriptorHeapIndex > g_Albedo                : register(b3,  ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_Normal                : register(b4,  ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_Depth                 : register(b5,  ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_GeometricNormal       : register(b6,  ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_MaterialParams        : register(b7,  ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_MaterialExtra         : register(b8,  ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_MaterialSpecularColor : register(b9,  ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_Emission              : register(b10, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_DiffuseRadiance       : register(b11, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_SpecularRadiance      : register(b12, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_TransmissionRadiance  : register(b13, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_SurfaceLobeMask       : register(b14, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_SurfaceLobeWeight     : register(b15, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_SampledLobeFrequency  : register(b16, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_PrimaryId             : register(b17, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_PathValidationStats   : register(b21, ROOT_CONSTANT_SPACE);
+
 static const uint PT_VALIDATION_BSDF_DIFFUSE           = 1u;
 static const uint PT_VALIDATION_BSDF_CONDUCTOR         = 2u;
 static const uint PT_VALIDATION_BSDF_DIELECTRIC        = 3u;
@@ -318,6 +335,104 @@ void AccumulatePrimaryHitValidation(inout PathValidationSums sums, SurfaceData p
 float3 AccumulatedValidationAverage(bool bReset, float3 previousAverage, float previousSamples, float3 sampleSum)
 {
     return (bReset ? float3(0.0, 0.0, 0.0) : previousAverage * previousSamples) + sampleSum;
+}
+
+// Implemented by the integrator; validation replay keeps its RNG and counters separate.
+float3 TracePath(RayDesc primaryRay, inout RngState rng,
+    uint recordValidationStats, out SurfaceData primaryHit,
+    out PathContribution contribution, out PathBSDFSample primaryBSDFSample);
+
+PathValidationSums TracePrimaryValidation(uint2 rayIndex, uint2 rayDimensions)
+{
+    PathValidationSums primaryValidation = ZeroPathValidationSums();
+    RayDesc primaryValidationRay;
+    float2 primaryValidationUV = (float2(rayIndex) + 0.5) / float2(rayDimensions);
+    float3 primaryValidationTarget = ReconstructWorldPos(primaryValidationUV, 1.0, g_Camera.mViewProjInv);
+
+    primaryValidationRay.Origin    = g_Camera.posWORLD;
+    primaryValidationRay.Direction = normalize(primaryValidationTarget - g_Camera.posWORLD);
+    primaryValidationRay.TMin      = g_Camera.zNear;
+    primaryValidationRay.TMax      = g_Camera.zFar;
+
+    SurfaceData primaryValidationHit = (SurfaceData)0;
+    PathContribution unusedPrimaryContribution;
+    PathBSDFSample primaryValidationBSDFSample = (PathBSDFSample)0;
+    RngState validationRng = InitRng(rayIndex, 0u, 0u);
+    validationRng.seed = PCGHash(validationRng.seed ^ 0xD1B54A35u);
+    TracePath(primaryValidationRay, validationRng, 0u, primaryValidationHit, unusedPrimaryContribution, primaryValidationBSDFSample);
+
+    if (primaryValidationHit.hitKind == 0u)
+        AccumulatePrimaryMissValidation(primaryValidation);
+    else
+        AccumulatePrimaryHitValidation(primaryValidation, primaryValidationHit, primaryValidationRay, primaryValidationBSDFSample);
+    return primaryValidation;
+}
+
+void WritePathValidationAOVs(
+    uint2 rayIndex,
+    PathValidationSums validationSums,
+    PathValidationSums primaryValidation,
+    bool bReset,
+    float previousSamples,
+    float invAccumulatedSamples)
+{
+    RWTexture2D< float4 > Albedo          = GetResource(g_Albedo.index);
+    RWTexture2D< float4 > Normal          = GetResource(g_Normal.index);
+    RWTexture2D< float4 > Depth           = GetResource(g_Depth.index);
+    RWTexture2D< float4 > GeometricNormal = GetResource(g_GeometricNormal.index);
+
+    RWTexture2D< float4 > MaterialParams        = GetResource(g_MaterialParams.index);
+    RWTexture2D< float4 > MaterialExtra         = GetResource(g_MaterialExtra.index);
+    RWTexture2D< float4 > MaterialSpecularColor = GetResource(g_MaterialSpecularColor.index);
+
+    RWTexture2D< float4 > Emission             = GetResource(g_Emission.index);
+    RWTexture2D< float4 > DiffuseRadiance      = GetResource(g_DiffuseRadiance.index);
+    RWTexture2D< float4 > SpecularRadiance     = GetResource(g_SpecularRadiance.index);
+    RWTexture2D< float4 > TransmissionRadiance = GetResource(g_TransmissionRadiance.index);
+
+    RWTexture2D< float4 > SurfaceLobeMaskAOV      = GetResource(g_SurfaceLobeMask.index);
+    RWTexture2D< float4 > SurfaceLobeWeightAOV    = GetResource(g_SurfaceLobeWeight.index);
+    RWTexture2D< float4 > SampledLobeFrequencyAOV = GetResource(g_SampledLobeFrequency.index);
+    RWTexture2D< float4 > PrimaryIdAOV           = GetResource(g_PrimaryId.index);
+
+    PathValidationSums accumulatedValidation = ZeroPathValidationSums();
+    accumulatedValidation.albedo          = AccumulatedValidationAverage(bReset, Albedo[rayIndex].rgb, previousSamples, validationSums.albedo);
+    accumulatedValidation.normal          = AccumulatedValidationAverage(bReset, Normal[rayIndex].rgb, previousSamples, validationSums.normal);
+    accumulatedValidation.depth           = AccumulatedValidationAverage(bReset, Depth[rayIndex].rgb, previousSamples, validationSums.depth);
+    accumulatedValidation.geometricNormal = AccumulatedValidationAverage(bReset, GeometricNormal[rayIndex].rgb, previousSamples, validationSums.geometricNormal);
+
+    accumulatedValidation.materialParams        = AccumulatedValidationAverage(bReset, MaterialParams[rayIndex].rgb, previousSamples, validationSums.materialParams);
+    accumulatedValidation.materialExtra         = AccumulatedValidationAverage(bReset, MaterialExtra[rayIndex].rgb, previousSamples, validationSums.materialExtra);
+    accumulatedValidation.materialSpecularColor = AccumulatedValidationAverage(bReset, MaterialSpecularColor[rayIndex].rgb, previousSamples, validationSums.materialSpecularColor);
+
+    accumulatedValidation.emission             = AccumulatedValidationAverage(bReset, Emission[rayIndex].rgb, previousSamples, validationSums.emission);
+    accumulatedValidation.diffuseRadiance      = AccumulatedValidationAverage(bReset, DiffuseRadiance[rayIndex].rgb, previousSamples, validationSums.diffuseRadiance);
+    accumulatedValidation.specularRadiance     = AccumulatedValidationAverage(bReset, SpecularRadiance[rayIndex].rgb, previousSamples, validationSums.specularRadiance);
+    accumulatedValidation.transmissionRadiance = AccumulatedValidationAverage(bReset, TransmissionRadiance[rayIndex].rgb, previousSamples, validationSums.transmissionRadiance);
+
+    accumulatedValidation.surfaceLobeMask      = AccumulatedValidationAverage(bReset, SurfaceLobeMaskAOV[rayIndex].rgb, previousSamples, validationSums.surfaceLobeMask);
+    accumulatedValidation.surfaceLobeWeight    = AccumulatedValidationAverage(bReset, SurfaceLobeWeightAOV[rayIndex].rgb, previousSamples, validationSums.surfaceLobeWeight);
+    accumulatedValidation.sampledLobeFrequency = AccumulatedValidationAverage(bReset, SampledLobeFrequencyAOV[rayIndex].rgb, previousSamples, validationSums.sampledLobeFrequency);
+    accumulatedValidation.primaryId            = AccumulatedValidationAverage(bReset, PrimaryIdAOV[rayIndex].rgb, previousSamples, validationSums.primaryId);
+
+    Albedo[rayIndex]          = float4(primaryValidation.albedo, 1.0);
+    Normal[rayIndex]          = float4(primaryValidation.normal, 1.0);
+    Depth[rayIndex]           = float4(primaryValidation.depth, 1.0);
+    GeometricNormal[rayIndex] = float4(primaryValidation.geometricNormal, 1.0);
+
+    MaterialParams[rayIndex]        = float4(primaryValidation.materialParams, 1.0);
+    MaterialExtra[rayIndex]         = float4(primaryValidation.materialExtra, 1.0);
+    MaterialSpecularColor[rayIndex] = float4(primaryValidation.materialSpecularColor, 1.0);
+
+    Emission[rayIndex]             = float4(primaryValidation.emission, 1.0);
+    DiffuseRadiance[rayIndex]      = float4(accumulatedValidation.diffuseRadiance * invAccumulatedSamples, 1.0);
+    SpecularRadiance[rayIndex]     = float4(accumulatedValidation.specularRadiance * invAccumulatedSamples, 1.0);
+    TransmissionRadiance[rayIndex] = float4(accumulatedValidation.transmissionRadiance * invAccumulatedSamples, 1.0);
+
+    SurfaceLobeMaskAOV[rayIndex]      = float4(primaryValidation.surfaceLobeMask, 1.0);
+    SurfaceLobeWeightAOV[rayIndex]    = float4(primaryValidation.surfaceLobeWeight, 1.0);
+    SampledLobeFrequencyAOV[rayIndex] = float4(accumulatedValidation.sampledLobeFrequency * invAccumulatedSamples, 1.0);
+    PrimaryIdAOV[rayIndex]            = float4(primaryValidation.primaryId, 1.0);
 }
 
 #endif // PT_VALIDATION

@@ -9,7 +9,7 @@ float2 EnvironmentUVFromDirection(float3 directionWS)
     float3 d = normalize(directionWS);
     
     float u = atan2(d.x, -d.z) / (2.0 * PI); u = frac(u + 1.0);
-    float v = acos(clamp(d.y, -1.0, 1.0)) / PI;
+    float v = atan2(length(d.xz), d.y) / PI;
     return float2(u, v);
 }
 
@@ -28,7 +28,14 @@ float3 EvaluateEnvironmentRadiance(float3 directionWS)
         return g_EnvironmentRadiance;
 
     Texture2D< float4 > EnvMap = GetResource(g_EnvironmentMap.index);
-    return max(EnvMap.SampleLevel(g_LinearClampSampler, EnvironmentUVFromDirection(directionWS), 0).rgb, float3(0.0, 0.0, 0.0));
+    uint width, height;
+    EnvMap.GetDimensions(width, height);
+    float2 uv = EnvironmentUVFromDirection(directionWS);
+    
+    float halfTexelV = 0.5 / float(height);
+    // Longitude is periodic so use wrap sampler for uv.x
+    uv.y = clamp(uv.y, halfTexelV, 1.0 - halfTexelV);
+    return max(EnvMap.SampleLevel(g_LinearWrapSampler, uv, 0).rgb, float3(0.0, 0.0, 0.0));
 }
 
 // Environment importance sampling
@@ -52,7 +59,7 @@ uint EnvironmentCDFLowerBound(uint baseIndex, uint count, float u)
         uint mid = (lo + hi) >> 1u;
 
         float distribution = EnvDistribution[baseIndex + mid];
-        if (distribution < target)
+        if (distribution <= target)
             lo = mid + 1;
         else
             hi = mid;
@@ -70,18 +77,6 @@ float EnvironmentCDFSegmentProbability(uint baseIndex, uint index)
     return max(cdf1 - cdf0, 0.0);
 }
 
-float EnvironmentTexelSolidAngle(uint y)
-{
-    float width  = (float)g_EnvironmentDistributionWidth;
-    float height = (float)g_EnvironmentDistributionHeight;
-    
-    float dPhi     = 2.0 * PI / width;
-    float dTheta   = PI / height;
-    float jacobian = sin(PI * (y + 0.5) / height);
-    
-    return max(jacobian * dPhi * dTheta, EPSILON_MIN);
-}
-
 float EnvironmentPDF(float3 directionW)
 {
     if (!HasEnvironmentDistribution())
@@ -89,6 +84,10 @@ float EnvironmentPDF(float3 directionW)
 
     uint width  = g_EnvironmentDistributionWidth;
     uint height = g_EnvironmentDistributionHeight;
+
+    float sinTheta = length(normalize(directionW).xz);
+    if (!isfinite(sinTheta) || sinTheta == 0.0)
+        return 0.0;
     
     float2 uv = EnvironmentUVFromDirection(directionW);
     uint x = min((uint)(uv.x * (float)width), width - 1u);
@@ -96,7 +95,9 @@ float EnvironmentPDF(float3 directionW)
 
     float rowProb = EnvironmentCDFSegmentProbability(0u, y);
     float colProb = EnvironmentCDFSegmentProbability(height + y * width, x);
-    return (rowProb * colProb) / EnvironmentTexelSolidAngle(y);
+    
+    float jacobian = 2.0 * PI * PI * sinTheta;
+    return (rowProb * colProb) * width * height / jacobian;
 }
 
 bool SampleEnvironmentLight(float4 u, out float3 wiWS, out float3 Lenv, out float pdfW)
@@ -111,15 +112,13 @@ bool SampleEnvironmentLight(float4 u, out float3 wiWS, out float3 Lenv, out floa
     uint height = g_EnvironmentDistributionHeight;
     uint y = EnvironmentCDFLowerBound(0u, height, u.x);
     uint x = EnvironmentCDFLowerBound(height + y * width, width, u.y);
-
-    float rowProb = EnvironmentCDFSegmentProbability(0u, y);
-    float colProb = EnvironmentCDFSegmentProbability(height + y * width, x);
-    pdfW = (rowProb * colProb) / EnvironmentTexelSolidAngle(y);
-    if (pdfW <= 0.0)
-        return false;
-
+    
     float2 uv = (float2((float)x, (float)y) + clamp(u.zw, 0.0, 0.99999994)) / float2((float)width, (float)height);
     wiWS = normalize(EnvironmentDirectionFromUV(uv));
+    
+    pdfW = EnvironmentPDF(wiWS);
+    if (!isfinite(pdfW) || pdfW <= 0.0)
+        return false;
     
     Lenv = EvaluateEnvironmentRadiance(wiWS);
     return any(Lenv > 0.0);
@@ -240,7 +239,7 @@ struct LightSample
     float  selectionPdf; // this light's selection PMF (power CDF segment)
 
     uint isDelta;       // 1 -> Dirac pdf: no MIS competition (directional/spot)
-    uint isDirectional; // 1 -> visibility is a direction test (no endpoint)
+    uint isDirectional; // 1 -> use a scene-bound endpoint along wiWS for transport
     uint valid;
 };
 
@@ -357,6 +356,9 @@ LightSample SampleOneLight(float3 p, inout RngState rng)
     if (lightIndex < g_Lights.numSpheres)
     {
         SphereLight light = g_Lights.spheres[lightIndex];
+        if (!isfinite(light.radius) || light.radius <= 0.0 ||
+            !all(isfinite(float3(light.posX, light.posY, light.posZ))))
+            return ls;
 
         float3 y;
         float3 lightNormal;
@@ -365,7 +367,7 @@ LightSample SampleOneLight(float3 p, inout RngState rng)
 
         float3 toLight = y - p;
         float  dist2   = dot(toLight, toLight);
-        if (dist2 <= EPSILON_MIN || pdfA <= 0.0)
+        if (dist2 <= EPSILON_MIN || !isfinite(pdfA) || pdfA <= 0.0)
             return ls;
 
         float dist = sqrt(dist2);
@@ -414,320 +416,252 @@ LightSample SampleOneLight(float3 p, inout RngState rng)
     return ls;
 }
 
-float3 EstimateDirectLighting(
+// Exact analytic endpoint identity, unlike the positional mesh-emitter matcher.
+float SphereLightPDFAtHit(uint sphereIndex, float3 refP, float3 hitP, float3 normal, float3 wiWS)
+{
+    SphereLight light = g_Lights.spheres[sphereIndex];
+    float cosLight = saturate(dot(normal, -wiWS));
+    float3 toLight = hitP - refP;
+    float dist2 = dot(toLight, toLight);
+    // Match SampleOneLight's near-field rejection: no competing NEE density
+    // exists there, so the BSDF-hit branch must retain unit MIS weight.
+    if (!isfinite(dist2) || dist2 <= EPSILON_MIN || !isfinite(cosLight) || cosLight <= 0.0 || light.radius <= 0.0)
+        return 0.0;
+    uint sphereBase = g_Lights.numDirectionals + g_Lights.numSpots + g_Lights.numAreas + g_Lights.numDisks;
+    float selectionPdf = LightSelectionPMF(sphereBase + sphereIndex);
+    float pdfA = 1.0 / (4.0 * PI * light.radius * light.radius); // Same density as SampleSphereLight.
+    if (!isfinite(pdfA) || pdfA <= 0.0)
+        return 0.0;
+    return PdfAreaToSolidAngle(selectionPdf * pdfA, dist2, cosLight);
+}
+
+float3 EvaluateAnalyticSphereEmission(
+    AnalyticSphereLightHit hit, float3 refP, float3 hitP, float3 wiWS,
+    uint depth, float scatterPDF, uint wasDelta)
+{
+    if (dot(hit.normal, -wiWS) <= 0.0)
+        return 0.0;
+
+    SphereLight endpoint = g_Lights.spheres[hit.sphereIndex];
+    float3 result = 0.0;
+    [loop]
+    for (uint i = 0u; i < g_Lights.numSpheres; ++i)
+    {
+        SphereLight light = g_Lights.spheres[i];
+        // Exactly coincident LightComponents remain separate emission terms.
+        // Each has its own unchanged NEE selection PMF and complementary MIS
+        // weight; they share one opaque endpoint, not two path vertices.
+        if (light.posX != endpoint.posX || light.posY != endpoint.posY ||
+            light.posZ != endpoint.posZ || light.radius != endpoint.radius)
+            continue;
+        float pdfLight = SphereLightPDFAtHit(i, refP, hitP, hit.normal, wiWS);
+        float misWeight = depth == 0u ? 1.0 : CalculateMISWeight(scatterPDF, pdfLight, wasDelta);
+        result += SphereLightRadiance(light) * misWeight;
+    }
+    return result;
+}
+
+// Direct lighting at either a surface or a volume scattering vertex
+bool SampleLd(
     float3 p,
-    float3 visibilityNormal,
-    BxDF::Frame frame,
     float3 woWS,
+    SurfaceData surface,
     SurfaceMaterial material,
-    float2 materialUV,
-    float2 ddxUV,
-    float2 ddyUV,
     BoundaryMediumPair boundaryPair,
+    MediumStack media,
+    MediumStack hostStack,
+    MediumStack airStack,
+    bool canChangePathMedium,
+    uint depth,
     uint directionalQuerySeed,
     bool bUseMIS,
-    inout RngState rng
+    inout RngState rng,
+    out float3 direct
 #if PT_VALIDATION
     , uint recordValidationStats
     , out PathContribution contribution
 #endif
 )
 {
+    direct = 0.0;
 #if PT_VALIDATION
     contribution = ZeroPathContribution();
 #endif
-
-    float3 wo = BxDF::ToLocal(frame, woWS);
-
-    bool bHasTransmission = HasTransmissionLobe(material);
-    if ((!bHasTransmission && wo.z <= 0.0) || (bHasTransmission && wo.z == 0.0))
-        return float3(0.0, 0.0, 0.0);
-    if (BxDF::LayerComposite::IsSmoothConductor(material))
-        return float3(0.0, 0.0, 0.0);
-
-    float3 direct = float3(0.0, 0.0, 0.0);
-    uint lightCount = DirectLightCount();
-    if (lightCount == 0u)
-        return direct;
-
-    // Sample: pick one light (power-proportional CDF) and one point on it
-    LightSample ls = SampleOneLight(p, rng);
-    if (ls.valid == 0u)
-        return direct;
-
-    // Shared shading tail - identical for all six light types
-    // cos check -> shadow ray -> BSDF eval -> (MIS) -> contribution.
-    float3 wi = BxDF::ToLocal(frame, ls.wiWS);
-    float cosSurface = bHasTransmission ? BxDF::AbsCosTheta(wi) : saturate(wi.z);
-    if (cosSurface <= 0.0)
-        return direct;
-
-    uint alphaSeed = NextUint(rng);
-    Medium shadowStartMedium;
-    if (!BxDF::DirectionalComposite::TryResolveShadowStartMedium(
-            visibilityNormal,
-            woWS,
-            ls.wiWS,
-            wo,
-            wi,
-            boundaryPair,
-            shadowStartMedium))
-        return direct;
-
-    bool bVisible = (ls.isDirectional != 0u)
-        ? IsDirectionVisible(p, visibilityNormal, ls.wiWS, shadowStartMedium, alphaSeed)
-        : IsVisible(p, visibilityNormal, ls.shadowTarget, shadowStartMedium, alphaSeed);
-    if (!bVisible)
-        return direct;
-
-#if PT_VALIDATION
-    BxDF::LayerWalkerAudit evaluateAudit;
-#endif
-    float3 f = BxDF::DirectionalComposite::Evaluate(
-        material,
-        materialUV,
-        ddxUV,
-        ddyUV,
-        wo,
-        wi,
-        boundaryPair,
-        directionalQuerySeed
-#if PT_VALIDATION
-        , evaluateAudit
-#endif
-    );
-#if PT_VALIDATION
-    if (recordValidationStats != 0u)
-        RecordValidationWalkerAudit(PT_VALIDATION_WALKER_EVALUATE, material.layerCount, evaluateAudit);
-#endif
-    if (!any(f > 0.0))
-        return direct;
-#if PT_VALIDATION
-    float iorExterior = boundaryPair.isEntering != 0u ? boundaryPair.mediumI.ior : boundaryPair.mediumT.ior;
-
-    PathContribution bsdfLobes = ZeroPathContribution();
-    if (material.layerCount <= 1u)
+    const bool bSurface = surface.hitKind != 0u;
+    BxDF::Frame frame = (BxDF::Frame)0;
+    float3 wo = 0.0;
+    bool bHasTransmission = false;
+    if (bSurface)
     {
-        float incidentFrameSign = BxDF::LayerComposite::GetIncidentFrameSign(wo, boundaryPair.isEntering);
-        bsdfLobes = BxDF::LayerComposite::EvaluateBoundaryLobes(
-            material,
-            incidentFrameSign * wo,
-            incidentFrameSign * wi,
-            iorExterior,
-            material.ior);
+        frame = MakeSurfaceFrame(surface);
+        wo = BxDF::ToLocal(frame, woWS);
+        bHasTransmission = HasTransmissionLobe(material);
+        if ((!bHasTransmission && wo.z <= 0.0) || (bHasTransmission && wo.z == 0.0) ||
+            BxDF::LayerComposite::IsSmoothConductor(material))
+            return true;
     }
-    // N-layer contribution provenance is intentionally not inferred from a terminal history event.
-#endif
 
-    float3 lightScale;
-    if (ls.isDelta != 0u)
+    // one local light and one environment direction
+    [loop]
+    for (uint source = 0u; source < 2u; ++source)
     {
-        // Dirac pdf: the whole contribution belongs to NEE (note 02, delta).
-        lightScale = ls.Le * (ls.deltaScale * cosSurface) / ls.selectionPdf;
-    }
-    else
-    {
-        float misWeight = 1.0;
-        if (bUseMIS)
+        const bool bEnvironment = source == 1u;
+        LightSample ls = (LightSample)0;
+        if (bEnvironment)
+        {
+            if (!HasEnvironmentDistribution())
+                continue;
+            SobolRebaseForBounce(rng, depth, SOBOL_SECTION_NEE_ENV);
+            float2 cellU = NextFloat2(rng);
+            float2 directionU = NextFloat2(rng);
+            if (!SampleEnvironmentLight(float4(cellU, directionU), ls.wiWS, ls.Le, ls.pdfW))
+                continue;
+        }
+        else
+        {
+            if (DirectLightCount() == 0u)
+                continue;
+            SobolRebaseForBounce(rng, depth, SOBOL_SECTION_NEE_LIGHT);
+            ls = SampleOneLight(p, rng);
+            if (ls.valid == 0u)
+                continue;
+        }
+
+        float3 wi = 0.0;
+        float cosSurface = 1.0;
+        float3 shadowOrigin = p;
+        MediumStack shadowStack = hostStack;
+        if (bSurface)
+        {
+            wi = BxDF::ToLocal(frame, ls.wiWS);
+            cosSurface = bHasTransmission ? BxDF::AbsCosTheta(wi) : saturate(wi.z);
+            if (cosSurface <= 0.0)
+                continue;
+        }
+
+        uint alphaSeed = NextUint(rng);
+        if (bSurface)
+        {
+            Medium shadowStartMedium;
+            if (!BxDF::DirectionalComposite::TryResolveShadowStartMedium(
+                    surface.geometricNormal, woWS, ls.wiWS, wo, wi, boundaryPair, shadowStartMedium))
+                continue;
+            // crossing changes only this connection's host copy; it does not change the main path.
+            if (!TryPrepareShadowMediumStack(hostStack, surface.instanceID, boundaryPair,
+                    canChangePathMedium, surface.geometricNormal, woWS, ls.wiWS, shadowStack))
+                return false;
+            shadowOrigin = OffsetRay(p, surface.geometricNormal, ls.wiWS);
+        }
+
+        float3 shadowTarget = ls.shadowTarget;
+        if (bEnvironment || ls.isDirectional != 0u)
+        {
+            float distance = GetSceneRayLength(shadowOrigin, g_SceneBoundsCenter, g_SceneBoundsRadius);
+            if (distance <= 0.0)
+                return false;
+            shadowTarget = shadowOrigin + distance * ls.wiWS;
+        }
+
+        uint shadowSalt = bEnvironment ? 0x45534844u : 0x53534844u;
+        RngState transmittanceRng = InitRng(uint2(0, 0), PCGHash(directionalQuerySeed ^ alphaSeed ^ shadowSalt), 0u);
+        float3 transmittance;
+        if (!EstimateShadowTransmittance(shadowOrigin, shadowTarget, shadowStack, airStack,
+                alphaSeed, transmittanceRng, transmittance))
+            return false;
+        if (!any(transmittance > 0.0))
+            continue;
+
+        float3 response;
+        float scatterPDF = 0.0;
+#if PT_VALIDATION
+        PathContribution bsdfLobes = ZeroPathContribution();
+#endif
+        if (bSurface)
         {
 #if PT_VALIDATION
-            BxDF::MarginalPDFAudit marginalAudit;
+            BxDF::LayerWalkerAudit evaluateAudit;
 #endif
-            float materialMarginalPDF = BxDF::DirectionalComposite::MarginalPDF(
-                material,
-                materialUV,
-                ddxUV,
-                ddyUV,
-                wo,
-                wi,
-                boundaryPair,
-                directionalQuerySeed
+            response = BxDF::DirectionalComposite::Evaluate(
+                material, surface.uv, surface.ddxUV, surface.ddyUV, wo, wi,
+                boundaryPair, directionalQuerySeed
 #if PT_VALIDATION
-                , marginalAudit
+                , evaluateAudit
 #endif
             );
 #if PT_VALIDATION
             if (recordValidationStats != 0u)
+                RecordValidationWalkerAudit(PT_VALIDATION_WALKER_EVALUATE, material.layerCount, evaluateAudit);
+#endif
+            if (!any(response > 0.0))
+                continue;
+            response *= cosSurface;
+
+#if PT_VALIDATION
+            if (material.layerCount <= 1u)
             {
-                uint retryClassification = DiagnoseValidationMarginalPDFZero(
-                    material,
-                    materialUV,
-                    ddxUV,
-                    ddyUV,
-                    wo,
-                    wi,
-                    boundaryPair,
-                    directionalQuerySeed,
-                    marginalAudit);
-                RecordValidationMarginalPDF(
-                    PT_VALIDATION_QUERY_FINITE_NEE,
-                    material.layerCount,
-                    materialMarginalPDF,
-                    marginalAudit,
-                    retryClassification);
+                float iorExterior = boundaryPair.isEntering != 0u ? boundaryPair.mediumI.ior : boundaryPair.mediumT.ior;
+                float incidentFrameSign = BxDF::LayerComposite::GetIncidentFrameSign(wo, boundaryPair.isEntering);
+                bsdfLobes = BxDF::LayerComposite::EvaluateBoundaryLobes(material,
+                    incidentFrameSign * wo, incidentFrameSign * wi, iorExterior, material.ior);
             }
 #endif
-            misWeight = PowerHeuristic(ls.pdfW, materialMarginalPDF);
+            if (bUseMIS && ls.isDelta == 0u)
+            {
+#if PT_VALIDATION
+                BxDF::MarginalPDFAudit marginalAudit;
+#endif
+                scatterPDF = BxDF::DirectionalComposite::MarginalPDF(
+                    material, surface.uv, surface.ddxUV, surface.ddyUV, wo, wi,
+                    boundaryPair, directionalQuerySeed
+#if PT_VALIDATION
+                    , marginalAudit
+#endif
+                );
+#if PT_VALIDATION
+                if (recordValidationStats != 0u)
+                {
+                    uint retryClassification = DiagnoseValidationMarginalPDFZero(
+                        material, surface.uv, surface.ddxUV, surface.ddyUV, wo, wi,
+                        boundaryPair, directionalQuerySeed, marginalAudit);
+                    RecordValidationMarginalPDF(
+                        bEnvironment ? PT_VALIDATION_QUERY_ENVIRONMENT_NEE : PT_VALIDATION_QUERY_FINITE_NEE,
+                        material.layerCount, scatterPDF, marginalAudit, retryClassification);
+                }
+#endif
+            }
         }
-        lightScale = misWeight * ls.Le * cosSurface / ls.pdfW;
-    }
-    direct += f * lightScale;
-#if PT_VALIDATION
-    contribution.diffuse      += bsdfLobes.diffuse * lightScale;
-    contribution.specular     += bsdfLobes.specular * lightScale;
-    contribution.transmission += bsdfLobes.transmission * lightScale;
-#endif
-    return direct;
-}
-
-float3 EstimateEnvironmentDirectLighting(
-    float3 p,
-    float3 visibilityNormal,
-    BxDF::Frame frame,
-    float3 woWS,
-    SurfaceMaterial material,
-    float2 materialUV,
-    float2 ddxUV,
-    float2 ddyUV,
-    BoundaryMediumPair boundaryPair,
-    uint directionalQuerySeed,
-    bool bUseMIS,
-    inout RngState rng
-#if PT_VALIDATION
-    , uint recordValidationStats
-    , out PathContribution contribution
-#endif
-)
-{
-#if PT_VALIDATION
-    contribution = ZeroPathContribution();
-#endif
-
-    if (!HasEnvironmentDistribution())
-        return float3(0.0, 0.0, 0.0);
-    float3 wo = BxDF::ToLocal(frame, woWS);
-    
-    bool bHasTransmission = HasTransmissionLobe(material);
-    if ((!bHasTransmission && wo.z <= 0.0) || (bHasTransmission && wo.z == 0.0))
-        return float3(0.0, 0.0, 0.0);
-    if (BxDF::LayerComposite::IsSmoothConductor(material))
-        return float3(0.0, 0.0, 0.0);
-
-    float3 wiWS;
-    float3 Le;
-    float  pdfLightW;
-    if (!SampleEnvironmentLight(float4(NextFloat2(rng), NextFloat2(rng)), wiWS, Le, pdfLightW))
-        return float3(0.0, 0.0, 0.0);
-
-    float3 wi = BxDF::ToLocal(frame, wiWS);
-    float cosSurface = bHasTransmission ? BxDF::AbsCosTheta(wi) : saturate(wi.z);
-    if (cosSurface <= 0.0)
-        return float3(0.0, 0.0, 0.0);
-
-    uint alphaSeed = NextUint(rng);
-    Medium shadowStartMedium;
-    if (!BxDF::DirectionalComposite::TryResolveShadowStartMedium(
-            visibilityNormal,
-            woWS,
-            wiWS,
-            wo,
-            wi,
-            boundaryPair,
-            shadowStartMedium))
-        return float3(0.0, 0.0, 0.0);
-
-    if (!IsDirectionVisible(p, visibilityNormal, wiWS, shadowStartMedium, alphaSeed))
-        return float3(0.0, 0.0, 0.0);
-
-#if PT_VALIDATION
-    BxDF::LayerWalkerAudit evaluateAudit;
-#endif
-    float3 f = BxDF::DirectionalComposite::Evaluate(
-        material,
-        materialUV,
-        ddxUV,
-        ddyUV,
-        wo,
-        wi,
-        boundaryPair,
-        directionalQuerySeed
-#if PT_VALIDATION
-        , evaluateAudit
-#endif
-    );
-#if PT_VALIDATION
-    if (recordValidationStats != 0u)
-        RecordValidationWalkerAudit(PT_VALIDATION_WALKER_EVALUATE, material.layerCount, evaluateAudit);
-#endif
-    if (!any(f > 0.0))
-        return float3(0.0, 0.0, 0.0);
-#if PT_VALIDATION
-    float iorExterior = boundaryPair.isEntering != 0u ? boundaryPair.mediumI.ior : boundaryPair.mediumT.ior;
-
-    PathContribution bsdfLobes = ZeroPathContribution();
-    if (material.layerCount <= 1u)
-    {
-        float incidentFrameSign = BxDF::LayerComposite::GetIncidentFrameSign(wo, boundaryPair.isEntering);
-        bsdfLobes = BxDF::LayerComposite::EvaluateBoundaryLobes(
-            material,
-            incidentFrameSign * wo,
-            incidentFrameSign * wi,
-            iorExterior,
-            material.ior);
-    }
-    // N-layer contribution provenance is intentionally not inferred from a terminal history event.
-#endif
-
-    float misWeight = 1.0;
-    if (bUseMIS)
-    {
-#if PT_VALIDATION
-        BxDF::MarginalPDFAudit marginalAudit;
-#endif
-        float materialMarginalPDF = BxDF::DirectionalComposite::MarginalPDF(
-            material,
-            materialUV,
-            ddxUV,
-            ddyUV,
-            wo,
-            wi,
-            boundaryPair,
-            directionalQuerySeed
-#if PT_VALIDATION
-            , marginalAudit
-#endif
-        );
-#if PT_VALIDATION
-        if (recordValidationStats != 0u)
+        else
         {
-            uint retryClassification = DiagnoseValidationMarginalPDFZero(
-                material,
-                materialUV,
-                ddxUV,
-                ddyUV,
-                wo,
-                wi,
-                boundaryPair,
-                directionalQuerySeed,
-                marginalAudit);
-            RecordValidationMarginalPDF(
-                PT_VALIDATION_QUERY_ENVIRONMENT_NEE,
-                material.layerCount,
-                materialMarginalPDF,
-                marginalAudit,
-                retryClassification);
+            // HG helpers use the incoming travel direction
+            if (!EvaluateMediumPhase(media, p, dot(ls.wiWS, -woWS), response, scatterPDF))
+                return false;
         }
-#endif
-        misWeight = PowerHeuristic(pdfLightW, materialMarginalPDF);
-    }
-    float3 lightScale = misWeight * Le * cosSurface / pdfLightW;
+
+        float3 lightScale;
+        if (ls.isDelta != 0u)
+        {
+            if (ls.selectionPdf <= 0.0)
+                return false;
+            lightScale = ls.Le * ls.deltaScale / ls.selectionPdf;
+        }
+        else
+        {
+            if (ls.pdfW <= 0.0)
+                return false;
+            float misWeight = bUseMIS ? PowerHeuristic(ls.pdfW, scatterPDF) : 1.0;
+            lightScale = misWeight * ls.Le / ls.pdfW;
+        }
+        lightScale *= transmittance;
+        direct += response * lightScale;
 #if PT_VALIDATION
-    contribution.diffuse      += bsdfLobes.diffuse * lightScale;
-    contribution.specular     += bsdfLobes.specular * lightScale;
-    contribution.transmission += bsdfLobes.transmission * lightScale;
+        contribution.diffuse      += bsdfLobes.diffuse * cosSurface * lightScale;
+        contribution.specular     += bsdfLobes.specular * cosSurface * lightScale;
+        contribution.transmission += bsdfLobes.transmission * cosSurface * lightScale;
 #endif
-    return f * lightScale;
+    }
+    return true;
 }
+
 
 float AreaLightPDFAtHit(float3 refP, float3 hitP, float3 wiWS)
 {

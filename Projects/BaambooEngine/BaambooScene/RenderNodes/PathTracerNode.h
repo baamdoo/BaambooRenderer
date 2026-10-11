@@ -5,6 +5,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -25,6 +26,7 @@ public:
 
 	void RequestAOVDump();
 	bool IsAOVDumpComplete() const;
+	bool HasAutomationFailed() const;
 
 #if PT_VALIDATION
 	static constexpr u32 VALIDATION_AOV_COUNT = 15;
@@ -32,12 +34,25 @@ public:
 	static constexpr u32 VALIDATION_READBACK_SLOT_COUNT = kMaxFramesInFlight;
 #endif
 	void ConfigureReferenceScene(const std::string& sceneName, const float3& environmentRadiance, u32 samplesPerFrame, u32 dumpTargetSamples, u32 maxDepth = 12u, const std::string& environmentMapPath = std::string());
+	// Zero counts/depth retain the scene's settings; an empty path retains the standard dump directory.
+	void ConfigureAutomation(u32 seed, u32 targetSamples, u32 samplesPerFrame, u32 maxDepth, const std::filesystem::path& outputDir);
+	void ConfigureAutomationBatch(const std::vector<u32>& seeds, const std::vector<u32>& sampleLevels);
 
 private:
 	std::filesystem::path ReferenceOutputDir() const;
-	bool DumpAOVs();
-	void DumpRenderViewDebug(const SceneRenderView& renderView) const;
+	bool DumpAOVs(f32 renderLoopWallSeconds);
+	void FinishAOVDump(bool bSucceeded);
+	bool AdvanceAutomationBatch();
+	bool CheckAutomationSceneReset();
+	void FailAutomationBatch(const char* reason);
+	void ResetRenderTiming();
+	void BeginRenderTiming();
+	bool DumpRenderMetadata(f32 wallSeconds, f32 renderLoopWallSeconds) const;
+	void DumpRenderViewDebug(const SceneRenderView& renderView, u64 sceneDirtyMask) const;
 #if PT_VALIDATION
+	void InitializeValidationResources();
+	void BindValidationResources(render::CommandContext& context);
+	void ResizeValidationResources(u32 width, u32 height);
 	bool DumpLayeredValidationStats() const;
 	void PublishValidationReadbackSlot();
 	void SubmitValidationReadback(render::CommandContext& context);
@@ -65,14 +80,20 @@ private:
 	Arc< render::Buffer >  m_pLightSelectionCDF;
 	Arc< render::Buffer >  m_pMaterialSlabs;
 	Arc< render::Buffer >  m_pPrimaryRayMediumSeed;
-
 	Arc< render::ShaderBindingTable > m_pSBT;
 	Box< render::ComputePipeline >     m_pPrimaryMediumQueryPSO;
 	Box< render::RaytracingPipeline > m_pPSO;
 
 	std::atomic_bool m_bDumpRequested = false;
 	std::atomic_bool m_bDumpCompleted = false;
+	std::atomic_bool m_bAutomationFailed = false;
 	bool             m_bHasRendered   = false;
+	bool m_bAutomationBatch = false;
+	std::vector<u32> m_BatchSeeds;
+	std::vector<u32> m_BatchSampleLevels;
+	size_t m_BatchSeedIndex = 0;
+	size_t m_BatchSampleLevelIndex = 0;
+	size_t m_CompletedBatchCheckpoints = 0;
 
 #if PT_VALIDATION
 	std::array< u64, VALIDATION_STAT_COUNT > m_PathValidationStatTotals = {};
@@ -92,20 +113,34 @@ private:
 	u32    m_SamplesPerFrame         = 1;
 	u32    m_DumpTargetSamples       = 128;
 	u32    m_MaxDepth                = 12;
+	u32    m_SobolSeed               = 0;
+	bool   m_bOverrideTargetSamples  = false;
+	std::filesystem::path m_ReferenceOutputDirOverride;
+	std::chrono::steady_clock::time_point m_RenderStartTime;
+	bool m_bHasRenderStartTime = false;
 	float3 m_EnvironmentRadiance     = float3(0.0f);
 	bool   m_bUseEnvironmentMap     = false;
 	bool   m_bUseEnvironmentSampling = false;
 	u32    m_EnvironmentDistributionWidth  = 0;
 	u32    m_EnvironmentDistributionHeight = 0;
+
 	std::vector< f32 > m_LightSelectionCDFData;
+
 	u32    m_LightSelectionBufferCount = 0;
+
 	std::string m_EnvironmentMapPath;
 	std::string m_ReferenceSceneName = "cornell_box";
+
 	u64 m_MaterialSlabRevision = ~u64(0);
+
+	float4 m_SceneBounds = float4(0.0f); // Center.xyz and radius
+
 	bool   m_bHasPrimaryMediumQueryState = false;
 	float3 m_LastPrimaryMediumQueryPosition = float3(0.0f);
 	bool   m_bHasCameraState        = false;
+
 	std::array< u64, NumComponents > m_LastComponentRevisions = {};
+
 	mat4   m_LastView               = mat4(1.0f);
 	mat4   m_LastProj               = mat4(1.0f);
 	float2 m_LastViewport           = float2(0.0f);

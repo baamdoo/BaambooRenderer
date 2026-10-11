@@ -1,0 +1,4 @@
+# Neutral sidecar for cube.obj; raster samples override material settings.
+newmtl Material
+Kd 1.0 1.0 1.0
+d 1.0

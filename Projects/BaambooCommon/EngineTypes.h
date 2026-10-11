@@ -1,5 +1,9 @@
 #pragma once
 #include "Primitives.h"
+#include "MathTypes.h"
+#include "Pointer.hpp"
+
+#include <vector>
 
 // CPU-side authoring types shared between engine and common
 struct VoxelDiceSettings
@@ -18,4 +22,13 @@ struct VoxelDiceSettings
     float microCreaseBoost         = 1.0f;   // erosion crease/ridge amplitude modulation strength
     float microSharpness           = -0.6f;  // -1 = ridged .. 0 = plain .. +1 = billowed
     u32   microOctaves             = 4u;
+};
+
+// CPU density payload shared by medium instances and render snapshots
+struct MediumDensityAsset : public ArcBase
+{
+    std::vector< u32 > words;
+
+    mat4  mLocalToIndex = mat4(1.0f);
+    float maxDensity    = 0.0f;
 };

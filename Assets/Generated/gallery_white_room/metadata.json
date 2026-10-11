@@ -55,7 +55,7 @@
     "BlackRaughtIronBSDF: conductor eta/k is reduced to normal-incidence F0 for engine material params",
     "BlackRaughtIronBSDF: twosided wrapper ignored; nested BSDF is used",
     "BlindEndsBSDF: twosided wrapper ignored; nested BSDF is used",
-    "BlindMaterialBSDF: scalar mask opacity is kept opaque in engine import",
+    "BlindMaterialBSDF: scalar mask opacity mapped to stochastic alpha blend",
     "BlindStringBSDF: twosided wrapper ignored; nested BSDF is used",
     "BlindStringKnobBSDF: twosided wrapper ignored; nested BSDF is used",
     "BlindWoodStripBSDF: twosided wrapper ignored; nested BSDF is used",
@@ -63,7 +63,7 @@
     "BushLogoBSDF: conductor eta/k is reduced to normal-incidence F0 for engine material params",
     "BushLogoBSDF: twosided wrapper ignored; nested BSDF is used",
     "CarpetBSDF: twosided wrapper ignored; nested BSDF is used",
-    "CeilingLampshadeBSDF: scalar mask opacity is kept opaque in engine import",
+    "CeilingLampshadeBSDF: scalar mask opacity mapped to stochastic alpha blend",
     "CeilingShadeWireBSDF: twosided wrapper ignored; nested BSDF is used",
     "CeramicBSDF: twosided wrapper ignored; nested BSDF is used",
     "ChromeHandleBSDF: conductor eta/k is reduced to normal-incidence F0 for engine material params",
@@ -123,5 +123,9 @@
     "__inline_0182_shape_0182: twosided wrapper ignored; nested BSDF is used",
     "__inline_0183_shape_0183: twosided wrapper ignored; nested BSDF is used",
     "__inline_0184_shape_0184: twosided wrapper ignored; nested BSDF is used"
-  ]
+  ],
+  "scalar_mask_opacity": {
+    "BlindMaterialBSDF": 0.978132,
+    "CeilingLampshadeBSDF": 0.893289
+  }
 }

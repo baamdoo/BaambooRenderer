@@ -120,6 +120,23 @@ struct VoxelTerrainComponent
 };
 
 //-------------------------------------------------------------------------
+// MediumComponent : Binds optical properties to a closed mesh interior
+//-------------------------------------------------------------------------
+struct MediumComponent
+{
+    // Baseline coefficients per world length unit.
+    float3 sigmaA = float3(0.0f);
+    float3 sigmaS = float3(0.0f);
+    float  phaseG = 0.0f;
+    float  densityScale = 1.0f;
+
+    bool bAirContributor = false;
+
+    // Empty means a homogeneous field
+    std::string densityFile;
+};
+
+//-------------------------------------------------------------------------
 // MaterialComponent : Determines surface of mesh (mesh-dependent)
 //-------------------------------------------------------------------------
 struct MaterialComponent

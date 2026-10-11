@@ -19,6 +19,22 @@ float3 sq(float3 x)
     return x * x;
 }
 
+float min2(float2 v)
+{
+    return min(v.x, v.y);
+}
+
+float min3(float v1, float v2, float v3)
+{
+    return min(min(v1, v2), v3);
+}
+
+
+float min3(float3 v)
+{
+    return min(min(v.x, v.y), v.z);
+}
+
 float max2(float2 v)
 {
     return max(v.x, v.y);
@@ -69,6 +85,11 @@ float clampedRemap(float value, float oldMin, float oldMax, float newMin, float 
 float safeSqrt(float a)
 {
     return sqrt(max(a, 0.0));
+}
+
+float mean3(float3 v)
+{
+    return (v.x + v.y + v.z) / 3.0;
 }
 
 // Reference: https://github.com/EpicGames/UnrealEngine/blob/release/Engine/Shaders/Private/FastMath.ush
@@ -397,5 +418,11 @@ uint VoxelTriSortKey(float3 posLocal, float chunkSizeMeter)
     return MortonEncode3D(blk);
 }
 // ---------------- //
+
+
+bool IsPathFinite(float v)
+{
+    return (v == v) && abs(v) < 3.402823e+38;
+}
 
 #endif // _HLSL_HELPER_FUNCTION_HEADER

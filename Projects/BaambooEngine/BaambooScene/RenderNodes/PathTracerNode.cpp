@@ -8,11 +8,9 @@
 
 #include "Utils/Math.hpp"
 
-#include <imgui.h>
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
-#include <iomanip>
 #include <cstring>
 #include <cmath>
 #include <limits>
@@ -31,6 +29,7 @@ constexpr u64 PATH_TRACER_SCENE_DIRTY_MASK =
     (1ULL << eComponentType::CStaticMesh) |
     (1ULL << eComponentType::CDynamicMesh) |
     (1ULL << eComponentType::CMaterial)   |
+    (1ULL << eComponentType::CMedium)     |
     (1ULL << eComponentType::CSkyLight)   |
     (1ULL << eComponentType::CAtmosphere) |
     (1ULL << eComponentType::CCloud)      |
@@ -40,7 +39,8 @@ constexpr u64 PATH_TRACER_PRIMARY_MEDIUM_DIRTY_MASK =
     (1ULL << eComponentType::CTransform)   |
     (1ULL << eComponentType::CStaticMesh)  |
     (1ULL << eComponentType::CDynamicMesh) |
-    (1ULL << eComponentType::CMaterial);
+    (1ULL << eComponentType::CMaterial) |
+    (1ULL << eComponentType::CMedium);
 
 constexpr u32 PRIMARY_MEDIUM_QUERY_MAX_TRACE_HITS = 64u;
 constexpr f32 PRIMARY_MEDIUM_QUERY_MIN_SCENE_RADIUS = 1.0f;
@@ -134,63 +134,6 @@ bool TryBuildPrimaryMediumQueryParams(const SceneRenderView& renderView, Primary
     return true;
 }
 
-#if PT_VALIDATION
-// One row per validation AOV: GPU debug name / PathTracerLIB.hlsl binding /
-// EXR filename under engine_aov/. Creation, barriers, descriptor staging,
-// resize and dumping all iterate this table — add a row, get all five.
-struct ValidationAOVDesc
-{
-    const char* textureName;
-    const char* shaderName;
-    const char* fileName;
-};
-
-constexpr ValidationAOVDesc VALIDATION_AOVS[] =
-{
-    { "PathTracer::Albedo",                "g_Albedo",                "albedo.exr" },
-    { "PathTracer::Normal",                "g_Normal",                "normal.exr" },
-    { "PathTracer::Depth",                 "g_Depth",                 "depth.exr" },
-    { "PathTracer::GeometricNormal",       "g_GeometricNormal",       "geometric_normal.exr" },
-    { "PathTracer::MaterialParams",        "g_MaterialParams",        "material_params.exr" },
-    { "PathTracer::MaterialExtra",         "g_MaterialExtra",         "material_extra.exr" },
-    { "PathTracer::MaterialSpecularColor", "g_MaterialSpecularColor", "material_specular_color.exr" },
-    { "PathTracer::Emission",              "g_Emission",              "emission.exr" },
-    { "PathTracer::DiffuseRadiance",       "g_DiffuseRadiance",       "diffuse_radiance.exr" },
-    { "PathTracer::SpecularRadiance",      "g_SpecularRadiance",      "specular_radiance.exr" },
-    { "PathTracer::TransmissionRadiance",  "g_TransmissionRadiance",  "transmission_radiance.exr" },
-    { "PathTracer::SurfaceLobeMask",       "g_SurfaceLobeMask",       "surface_lobe_mask.exr" },
-    { "PathTracer::SurfaceLobeWeight",     "g_SurfaceLobeWeight",     "surface_lobe_weight.exr" },
-    { "PathTracer::SampledLobeFrequency",  "g_SampledLobeFrequency",  "sampled_lobe_frequency.exr" },
-    { "PathTracer::PrimaryId",             "g_PrimaryId",             "primary_id.exr" },
-};
-
-static_assert(sizeof(VALIDATION_AOVS) / sizeof(VALIDATION_AOVS[0]) == PathTracerNode::VALIDATION_AOV_COUNT,
-              "VALIDATION_AOVS table must match PathTracerNode::VALIDATION_AOV_COUNT");
-
-constexpr const char* PATH_VALIDATION_STAT_NAMES[] =
-{
-    "continuation_total", "continuation_zero", "continuation_near_zero",
-    "finite_nee_total", "finite_nee_zero", "finite_nee_near_zero",
-    "environment_nee_total", "environment_nee_zero", "environment_nee_near_zero",
-    "no_continuous_proposal", "single_layer_zero", "nlayer_zero_candidate",
-    "nlayer_retry_any_positive", "nlayer_retry_all_zero", "nonfinite", "nlayer_positive",
-    "sample_history_0_3", "sample_history_4_7", "sample_history_8_15",
-    "sample_history_16_31", "sample_history_32_63", "sample_history_64_127", "sample_history_128_plus",
-    "evaluate_history_0_3", "evaluate_history_4_7", "evaluate_history_8_15",
-    "evaluate_history_16_31", "evaluate_history_32_63", "evaluate_history_64_127", "evaluate_history_128_plus",
-    "marginal_pdf_history_0_3", "marginal_pdf_history_4_7", "marginal_pdf_history_8_15",
-    "marginal_pdf_history_16_31", "marginal_pdf_history_32_63",
-    "marginal_pdf_history_64_127", "marginal_pdf_history_128_plus",
-    "sample_forward_sum", "evaluate_forward_sum", "evaluate_reverse_continuous_sum",
-    "evaluate_reverse_delta_sum", "pdf_support_probe_sum", "pdf_forward_sum",
-    "pdf_reverse_continuous_sum", "pdf_reverse_delta_sum",
-    "sample_max_total", "evaluate_max_total", "pdf_max_total", "counter_overflow",
-};
-
-static_assert(sizeof(PATH_VALIDATION_STAT_NAMES) / sizeof(PATH_VALIDATION_STAT_NAMES[0]) == PathTracerNode::VALIDATION_STAT_COUNT,
-              "PATH_VALIDATION_STAT_NAMES must match the shader validation-stat contract");
-#endif // PT_VALIDATION
-
 u64 GatherPathTracerDirtyMask(const SceneRenderView& renderView, const std::array< u64, NumComponents >& lastComponentRevisions)
 {
     u64 dirtyMask = 0;
@@ -281,35 +224,7 @@ PathTracerNode::PathTracerNode(render::RenderDevice& rd)
     m_pAccumulation = makeAOV("PathTracer::Accumulation");
     m_pRadiance     = makeAOV("PathTracer::Radiance");
 #if PT_VALIDATION
-    for (u32 i = 0; i < VALIDATION_AOV_COUNT; ++i)
-        m_ValidationAOVs[i] = makeAOV(VALIDATION_AOVS[i].textureName);
-
-    m_pPathValidationStats = Buffer::Create(
-        m_RenderDevice,
-        "PathTracer::PathValidationStats",
-        {
-            .count              = VALIDATION_STAT_COUNT,
-            .elementSizeInBytes = sizeof(u32),
-            .bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferSource | eBufferUsage_TransferDest,
-        });
-    m_pPathValidationStatsReadback = Buffer::Create(
-        m_RenderDevice,
-        "PathTracer::PathValidationStatsReadback",
-        {
-            .count              = VALIDATION_READBACK_SLOT_COUNT * VALIDATION_STAT_COUNT,
-            .elementSizeInBytes = sizeof(u32),
-            .mapDirection       = 2,
-            .bufferUsage        = eBufferUsage_TransferDest,
-        });
-    m_pPrimaryRayMediumSeedReadback = Buffer::Create(
-        m_RenderDevice,
-        "PathTracer::PrimaryRayMediumSeedReadback",
-        {
-            .count              = VALIDATION_READBACK_SLOT_COUNT,
-            .elementSizeInBytes = sizeof(PrimaryRayMediumStackSeedData),
-            .mapDirection       = 2,
-            .bufferUsage        = eBufferUsage_TransferDest,
-        });
+    InitializeValidationResources();
 #endif // PT_VALIDATION
 
     m_pEnvironmentDistribution = Buffer::Create(
@@ -340,6 +255,7 @@ PathTracerNode::PathTracerNode(render::RenderDevice& rd)
     }
     RebuildMaterialSlabBuffer({});
 
+    // The camera containment query writes the initial medium stack for every primary path.
     m_pPrimaryRayMediumSeed = Buffer::Create(
         m_RenderDevice,
         "PathTracer::PrimaryRayMediumSeed",
@@ -405,6 +321,12 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
         return;
     }
 
+    if (m_bAutomationBatch && (HasAutomationFailed() || IsAOVDumpComplete()))
+    {
+        g_FrameData.pColor = m_pRadiance;
+        return;
+    }
+
 #if PT_VALIDATION
     PublishValidationReadbackSlot();
 #endif
@@ -436,12 +358,18 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
 
     if (bCameraChanged || bSceneChanged || bLightSelectionChanged)
     {
+        if (!CheckAutomationSceneReset())
+        {
+            g_FrameData.pColor = m_pRadiance;
+            return;
+        }
         m_LastView        = renderView.camera.mView;
         m_LastProj        = renderView.camera.mProj;
         m_LastViewport    = renderView.viewport;
         m_bHasCameraState = true;
 
         m_AccumulatedSampleCount = 0;
+        ResetRenderTiming();
         m_LastResetDirtyMask      = sceneDirtyMask;
         m_bHasRendered           = false;
         m_bDumpCompleted.store(false, std::memory_order_release);
@@ -470,17 +398,19 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
             return;
         }
 #endif
-        DumpRenderViewDebug(renderView);
+        // The last accumulation dispatch was submitted by the previous frame.
+        // Wait for its completion before stopping the render-loop wall clock;
+        // scene debug, readback and EXR output are outside this new interval.
+        m_RenderDevice.Flush();
+        const f32 renderLoopWallSeconds = std::chrono::duration<f32>(
+            std::chrono::steady_clock::now() - m_RenderStartTime).count();
+        DumpRenderViewDebug(renderView, PATH_TRACER_SCENE_DIRTY_MASK);
         bool bDumpOk = true;
 #if PT_VALIDATION
         bDumpOk = DumpLayeredValidationStats();
 #endif
-        bDumpOk = DumpAOVs() && bDumpOk;
-        if (bDumpOk)
-        {
-            m_bDumpRequested.store(false, std::memory_order_release);
-            m_bDumpCompleted.store(true, std::memory_order_release);
-        }
+        bDumpOk = DumpAOVs(renderLoopWallSeconds) && bDumpOk;
+        FinishAOVDump(bDumpOk);
 
         g_FrameData.pColor = m_pRadiance;
         return;
@@ -491,6 +421,7 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
         PrimaryMediumQueryParams queryParams;
         if (!TryBuildPrimaryMediumQueryParams(renderView, queryParams))
             queryParams.sceneBoundsRadius = 0.0f;
+        m_SceneBounds = float4(queryParams.sceneBoundsCenter, queryParams.sceneBoundsRadius);
 
         context.SetRenderPipeline(m_pPrimaryMediumQueryPSO.get());
         context.TransitionBufferToWrite(m_pPrimaryRayMediumSeed, ePipelineStage::ComputeShader);
@@ -506,17 +437,14 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
     }
 
     context.SetRenderPipeline(m_pPSO.get());
+    context.SetComputeDynamicUniformBuffer("PathSceneBounds", m_SceneBounds);
 
-#if PT_VALIDATION
-    context.ClearBuffer(m_pPathValidationStats, 0u);
-    context.TransitionBufferToWrite(m_pPathValidationStats, ePipelineStage::RayTracingShader);
-#endif
     context.TransitionTextureToWrite(m_pAccumulation, ePipelineStage::RayTracingShader);
     context.TransitionTextureToWrite(m_pRadiance, ePipelineStage::RayTracingShader);
-#if PT_VALIDATION
-    for (const auto& pAOV : m_ValidationAOVs)
-        context.TransitionTextureToWrite(pAOV, ePipelineStage::RayTracingShader);
-#endif // PT_VALIDATION
+
+    u32 samplesThisFrame = m_SamplesPerFrame;
+    if (m_bOverrideTargetSamples && m_bDumpRequested.load(std::memory_order_acquire))
+        samplesThisFrame = std::min(samplesThisFrame, m_DumpTargetSamples - m_AccumulatedSampleCount);
 
     struct PathTracerPushConstants
     {
@@ -529,11 +457,11 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
         u32    bUseEnvironmentSampling;
         u32    environmentDistributionWidth;
         u32    environmentDistributionHeight;
-        u32    padding0;
+        u32    sobolSeed;
     } constants =
     {
         m_AccumulatedSampleCount,
-        m_SamplesPerFrame,
+        samplesThisFrame,
         m_AccumulatedSampleCount == 0 ? 1u : 0u,
         m_MaxDepth,
         m_EnvironmentRadiance,
@@ -541,8 +469,9 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
         m_bUseEnvironmentSampling && m_pEnvironmentDistribution ? 1u : 0u,
         m_EnvironmentDistributionWidth,
         m_EnvironmentDistributionHeight,
-        0u
+        m_SobolSeed
     };
+    static_assert(sizeof(PathTracerPushConstants) == 48);
 
     context.SetComputeConstants(sizeof(constants), &constants);
     context.SetAccelerationStructure("g_Scene", *pTLAS);
@@ -550,15 +479,15 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
     context.StageDescriptor("g_Accumulation", m_pAccumulation);
     context.StageDescriptor("g_Radiance", m_pRadiance);
 #if PT_VALIDATION
-    for (u32 i = 0; i < VALIDATION_AOV_COUNT; ++i)
-        context.StageDescriptor(VALIDATION_AOVS[i].shaderName, m_ValidationAOVs[i]);
-    context.StageDescriptor("g_PathValidationStats", m_pPathValidationStats);
+    BindValidationResources(context);
 #endif // PT_VALIDATION
     context.StageDescriptor("g_EnvironmentMap", m_pEnvironmentMap ? m_pEnvironmentMap : rm.GetFlatBlackTexture(), g_FrameData.pLinearClamp);
     context.StageDescriptor("g_EnvironmentDistribution", m_pEnvironmentDistribution);
     context.StageDescriptor("g_LightSelectionCDF", m_pLightSelectionCDF);
 
     context.StageDescriptor("g_MaterialSlabs", m_pMaterialSlabs);
+    if (m_AccumulatedSampleCount == 0)
+        BeginRenderTiming();
     context.DispatchRays(*m_pSBT, m_pRadiance->Width(), m_pRadiance->Height());
 
 #if PT_VALIDATION
@@ -566,7 +495,7 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
     AdvanceValidationReadbackSlot();
 #endif
 
-    m_AccumulatedSampleCount += m_SamplesPerFrame;
+    m_AccumulatedSampleCount += samplesThisFrame;
     m_bHasRendered            = true;
     g_FrameData.pColor        = m_pRadiance;
 }
@@ -597,6 +526,7 @@ void PathTracerNode::ConfigureReferenceScene(const std::string& sceneName, const
 #endif
     m_MaxDepth                = std::max(maxDepth, 1u);
     m_AccumulatedSampleCount  = 0;
+    ResetRenderTiming();
     m_LastResetDirtyMask      = 0;
     m_bHasRendered            = false;
     m_bHasPrimaryMediumQueryState = false;
@@ -604,6 +534,19 @@ void PathTracerNode::ConfigureReferenceScene(const std::string& sceneName, const
     ResetValidationReadbackAggregation();
 #endif
     m_bDumpCompleted.store(false, std::memory_order_release);
+}
+
+void PathTracerNode::ConfigureAutomation(u32 seed, u32 targetSamples, u32 samplesPerFrame, u32 maxDepth, const std::filesystem::path& outputDir)
+{
+    m_SobolSeed = seed;
+    m_bOverrideTargetSamples = targetSamples != 0;
+    if (m_bOverrideTargetSamples)
+        m_DumpTargetSamples = targetSamples;
+    if (samplesPerFrame != 0)
+        m_SamplesPerFrame = samplesPerFrame;
+    if (maxDepth != 0)
+        m_MaxDepth = maxDepth;
+    m_ReferenceOutputDirOverride = outputDir;
 }
 
 bool PathTracerNode::RebuildMaterialSlabBuffer(const std::vector< MaterialSlabData >& slabs)
@@ -728,18 +671,15 @@ bool PathTracerNode::UpdateLightSelectionDistribution(const SceneRenderView& ren
     ComputeLightPowerWeights(light, boundsParams.sceneBoundsRadius, weights);
 
     float total         = 0.0f;
-    bool  bValidWeights = weights.size() == lightCount;
-    if (bValidWeights)
+    bool  bValidWeights = true;
+    for (float w : weights)
     {
-        for (float w : weights)
+        if (!std::isfinite(w) || w < 0.0f)
         {
-            if (!std::isfinite(w) || w < 0.0f)
-            {
-                bValidWeights = false;
-                break;
-            }
-            total += w;
+            bValidWeights = false;
+            break;
         }
+        total += w;
     }
     if (!bValidWeights || !(total > 0.0f))
     {
@@ -781,396 +721,20 @@ bool PathTracerNode::UpdateLightSelectionDistribution(const SceneRenderView& ren
     return true;
 }
 
-void PathTracerNode::RequestAOVDump()
-{
-    m_bDumpCompleted.store(false, std::memory_order_release);
-    m_bDumpRequested.store(true, std::memory_order_release);
-}
-
-bool PathTracerNode::IsAOVDumpComplete() const
-{
-    return m_bDumpCompleted.load(std::memory_order_acquire);
-}
-
-std::filesystem::path PathTracerNode::ReferenceOutputDir() const
-{
-    return std::filesystem::path("Output") / "References" / "Generated" / m_ReferenceSceneName / "engine_aov";
-}
-
-#if PT_VALIDATION
-void PathTracerNode::PublishValidationReadbackSlot()
-{
-    const u32 slot = m_ValidationReadbackIndex;
-    if (!m_ValidationReadbackPending[slot])
-        return;
-
-    const u64 statsBytes  = VALIDATION_STAT_COUNT * sizeof(u32);
-    const u64 statsOffset = slot * statsBytes;
-    m_pPathValidationStatsReadback->InvalidateMappedRange(statsOffset, statsBytes);
-
-    const u64 seedBytes  = sizeof(PrimaryRayMediumStackSeedData);
-    const u64 seedOffset = slot * seedBytes;
-    m_pPrimaryRayMediumSeedReadback->InvalidateMappedRange(seedOffset, seedBytes);
-
-    if (m_ValidationReadbackGenerations[slot] == m_ValidationReadbackGeneration)
-    {
-        if (const auto* stats = static_cast< const u32* >(m_pPathValidationStatsReadback->MappedMemory()))
-        {
-            const u32 base = slot * VALIDATION_STAT_COUNT;
-            constexpr u32 maxStatBegin = VALIDATION_STAT_COUNT - 4u;
-            constexpr u32 maxStatEnd   = VALIDATION_STAT_COUNT - 1u;
-            for (u32 i = 0u; i < VALIDATION_STAT_COUNT; ++i)
-            {
-                const u64 frameValue = stats[base + i];
-                if (i >= maxStatBegin && i < maxStatEnd)
-                    m_PathValidationStatTotals[i] = std::max(m_PathValidationStatTotals[i], frameValue);
-                else
-                    m_PathValidationStatTotals[i] += frameValue;
-            }
-        }
-
-        if (const auto* seeds = static_cast< const PrimaryRayMediumStackSeedData* >(m_pPrimaryRayMediumSeedReadback->MappedMemory()))
-        {
-            m_PrimaryRayMediumSeedDebug = seeds[slot];
-            m_PrimaryRayMediumSeedDebugGeneration = m_ValidationReadbackGeneration;
-            m_bHasPrimaryRayMediumSeedDebug = true;
-        }
-        ++m_ValidationReadbackPublishedFrameCount;
-    }
-
-    m_ValidationReadbackPending[slot] = false;
-}
-
-void PathTracerNode::SubmitValidationReadback(render::CommandContext& context)
-{
-    const u32 slot = m_ValidationReadbackIndex;
-    const u64 statsBytes  = VALIDATION_STAT_COUNT * sizeof(u32);
-    const u64 statsOffset = slot * statsBytes;
-    context.TransitionBufferToRead(m_pPathValidationStats, render::ePipelineStage::Copy);
-    context.CopyBufferRegion(m_pPathValidationStatsReadback, m_pPathValidationStats, statsBytes, statsOffset, 0u);
-
-    const u64 seedBytes  = sizeof(PrimaryRayMediumStackSeedData);
-    const u64 seedOffset = slot * seedBytes;
-    context.TransitionBufferToRead(m_pPrimaryRayMediumSeed, render::ePipelineStage::Copy);
-    context.CopyBufferRegion(m_pPrimaryRayMediumSeedReadback, m_pPrimaryRayMediumSeed, seedBytes, seedOffset, 0u);
-    context.TransitionBufferToRead(m_pPrimaryRayMediumSeed, render::ePipelineStage::RayTracingShader);
-
-    m_ValidationReadbackGenerations[slot] = m_ValidationReadbackGeneration;
-    m_ValidationReadbackPending[slot] = true;
-    ++m_ValidationReadbackSubmittedFrameCount;
-}
-
-void PathTracerNode::AdvanceValidationReadbackSlot()
-{
-    m_ValidationReadbackIndex = (m_ValidationReadbackIndex + 1u) % VALIDATION_READBACK_SLOT_COUNT;
-}
-
-void PathTracerNode::ResetValidationReadbackAggregation()
-{
-    ++m_ValidationReadbackGeneration;
-    m_PathValidationStatTotals.fill(0u);
-    m_PrimaryRayMediumSeedDebug = {};
-    m_PrimaryRayMediumSeedDebugGeneration = 0u;
-    m_ValidationReadbackSubmittedFrameCount = 0u;
-    m_ValidationReadbackPublishedFrameCount = 0u;
-    m_bHasPrimaryRayMediumSeedDebug = false;
-}
-
-bool PathTracerNode::HasPendingValidationReadback() const
-{
-    for (u32 slot = 0u; slot < VALIDATION_READBACK_SLOT_COUNT; ++slot)
-    {
-        if (m_ValidationReadbackPending[slot] &&
-            m_ValidationReadbackGenerations[slot] == m_ValidationReadbackGeneration)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-bool PathTracerNode::DumpLayeredValidationStats() const
-{
-    namespace fs = std::filesystem;
-
-    std::error_code ec;
-    const fs::path dir = ReferenceOutputDir();
-    fs::create_directories(dir, ec);
-
-    std::ofstream out(dir / "layered_stats.txt", std::ios::trunc);
-    if (!out)
-        return false;
-
-    out << "version=2\n";
-    out << "samplesPerPixel=" << m_AccumulatedSampleCount << '\n';
-    out << "samplesPerFrame=" << m_SamplesPerFrame << '\n';
-    out << "submittedFrameCount=" << m_ValidationReadbackSubmittedFrameCount << '\n';
-    out << "publishedFrameCount=" << m_ValidationReadbackPublishedFrameCount << '\n';
-    out << "width=" << m_pRadiance->Width() << '\n';
-    out << "height=" << m_pRadiance->Height() << '\n';
-    for (u32 i = 0u; i < VALIDATION_STAT_COUNT; ++i)
-        out << "stat." << PATH_VALIDATION_STAT_NAMES[i] << '=' << m_PathValidationStatTotals[i] << '\n';
-    return out.good();
-}
-#endif // PT_VALIDATION
-
-bool PathTracerNode::DumpAOVs()
-{
-    namespace fs = std::filesystem;
-
-    std::error_code ec;
-    const fs::path dir = ReferenceOutputDir();
-    fs::create_directories(dir, ec);
-
-    bool bOk = m_RenderDevice.SaveTextureToEXR(m_pRadiance, (dir / "radiance.exr").string().c_str());
-#if PT_VALIDATION
-    // Save every AOV even if an earlier one failed — partial dumps are easier
-    // to diagnose than an early-out that hides which files were written.
-    for (u32 i = 0; i < VALIDATION_AOV_COUNT; ++i)
-        bOk = m_RenderDevice.SaveTextureToEXR(m_ValidationAOVs[i], (dir / VALIDATION_AOVS[i].fileName).string().c_str()) && bOk;
-#endif // PT_VALIDATION
-
-    std::error_code removeEc;
-    fs::remove(dir / "material_specular.exr", removeEc);
-
-    printf("[PathTracer] AOV dump %s: %s\n", bOk ? "complete" : "failed", fs::absolute(dir, ec).string().c_str());
-    return bOk;
-}
-
-void PathTracerNode::DumpRenderViewDebug(const SceneRenderView& renderView) const
-{
-    namespace fs = std::filesystem;
-
-    std::error_code ec;
-    const fs::path dir = ReferenceOutputDir();
-    fs::create_directories(dir, ec);
-
-    std::ofstream out(dir / "scene_debug.txt", std::ios::trunc);
-    if (!out)
-        return;
-
-    out << "producerSequence " << renderView.producerSequence << '\n';
-    out << "scene " << m_ReferenceSceneName << '\n';
-    out << "viewport " << renderView.viewport.x << ' ' << renderView.viewport.y << '\n';
-    out << "accumulatedSamples " << m_AccumulatedSampleCount << '\n';
-    out << "lastResetDirtyMask " << m_LastResetDirtyMask << '\n';
-    out << "pathTracerSceneDirtyMask " << PATH_TRACER_SCENE_DIRTY_MASK << '\n';
-    out << "samplesPerFrame " << m_SamplesPerFrame << '\n';
-    out << "dumpTargetSamples " << m_DumpTargetSamples << '\n';
-    out << "maxDepth " << m_MaxDepth << '\n';
-    out << "environmentRadiance "
-        << m_EnvironmentRadiance.x << ' '
-        << m_EnvironmentRadiance.y << ' '
-        << m_EnvironmentRadiance.z << '\n';
-    out << "environmentMap " << (m_bUseEnvironmentMap ? m_EnvironmentMapPath : std::string()) << '\n';
-    out << "environmentSampling " << (m_bUseEnvironmentSampling ? 1 : 0) << '\n';
-    out << "environmentDistribution " << m_EnvironmentDistributionWidth << ' ' << m_EnvironmentDistributionHeight << '\n';
-#if PT_VALIDATION
-    const bool bSeedAvailable = m_bHasPrimaryRayMediumSeedDebug &&
-        m_PrimaryRayMediumSeedDebugGeneration == m_ValidationReadbackGeneration;
-    out << "primaryMediumSeedAvailable " << (bSeedAvailable ? 1 : 0) << '\n';
-    out << "primaryMediumSeedStatus " << m_PrimaryRayMediumSeedDebug.status << '\n';
-    out << "primaryMediumSeedCount " << m_PrimaryRayMediumSeedDebug.count << '\n';
-    out << std::setprecision(std::numeric_limits<f32>::max_digits10);
-    for (u32 i = 0u; i < kPrimaryRayMediumStackCapacity; ++i)
-    {
-        const auto& entry = m_PrimaryRayMediumSeedDebug.entries[i];
-        out << "primaryMediumSeedEntry[" << i << "]"
-            << " boundaryInstanceID=" << entry.boundaryInstanceID
-            << " mediumID=" << entry.mediumID
-            << " ior=" << entry.ior
-            << '\n';
-    }
-    out << std::setprecision(6);
-#endif
-    out << "meshes " << renderView.meshes.size() << '\n';
-    out << "materials " << renderView.materials.size() << '\n';
-    out << "draws " << renderView.draws.size() << '\n';
-    out << "directionalLights " << renderView.light.numDirectionals << '\n';
-    out << "spotLights " << renderView.light.numSpots << '\n';
-    out << "materialSlabs " << renderView.materialSlabs.size() << '\n';
-    out << "areaLights " << renderView.light.numAreas << '\n';
-    out << "diskLights " << renderView.light.numDisks << '\n';
-    out << "tubeLights " << renderView.light.numTubes << '\n';
-	out << "sphereLights " << renderView.light.numSpheres << '\n';
-    out << '\n';
-
-    u32 materialIndex = 0;
-    for (const auto& material : renderView.materials)
-    {
-        out << "material[" << materialIndex++ << "]"
-            << " id=" << material.id
-            << " tint=" << material.tint.x << ',' << material.tint.y << ',' << material.tint.z
-            << " opacity=" << material.opacity
-            << " metallic=" << material.metallic
-            << " roughness=" << material.roughness
-            << " alphaCutoff=" << material.alphaCutoff
-            << " ior=" << material.ior
-            << " transmission=" << material.transmission
-            << " materialType=" << material.materialType
-            << " materialFlags=" << material.materialFlags
-            << " clearcoat=" << material.clearcoat
-            << " clearcoatRoughness=" << material.clearcoatRoughness
-            << " anisotropy=" << material.anisotropy
-            << " anisotropyRotation=" << material.anisotropyRotation
-            << " sheenColor=" << material.sheenColor.x << ',' << material.sheenColor.y << ',' << material.sheenColor.z
-            << " sheenRoughness=" << material.sheenRoughness
-            << " specularColor=" << material.specularColor.x << ',' << material.specularColor.y << ',' << material.specularColor.z
-            << " specularStrength=" << material.specularStrength
-            << " emission=" << material.emissionColor.x << ',' << material.emissionColor.y << ',' << material.emissionColor.z
-            << " emissivePower=" << material.emissivePower
-            << " layerOffset=" << material.layerOffset
-            << " layerCount=" << material.layerCount
-            << '\n';
-    }
-
-    out << '\n';
-    for (u32 i = 0; i < renderView.materialSlabs.size(); ++i)
-    {
-        const auto& slab = renderView.materialSlabs[i];
-        out << "materialSlab[" << i << "]"
-            << " materialID=" << slab.materialID
-            << " sigmaA=" << slab.sigmaA.x << ',' << slab.sigmaA.y << ',' << slab.sigmaA.z
-            << " sigmaS=" << slab.sigmaS.x << ',' << slab.sigmaS.y << ',' << slab.sigmaS.z
-            << " thickness=" << slab.thickness
-            << " phaseG=" << slab.phaseG
-            << '\n';
-    }
-
-    out << '\n';
-    for (u32 i = 0; i < renderView.light.numDirectionals; ++i)
-    {
-        const auto& light = renderView.light.directionals[i];
-        out << "directionalLight[" << i << "]"
-            << " direction=" << light.direction.x << ',' << light.direction.y << ',' << light.direction.z
-            << " color=" << light.color.x << ',' << light.color.y << ',' << light.color.z
-            << " illuminance=" << light.illuminanceLux
-            << " angularRadius=" << light.angularRadiusRad
-            << '\n';
-    }
-
-    for (u32 i = 0; i < renderView.light.numSpots; ++i)
-    {
-        const auto& light = renderView.light.spots[i];
-        out << "spotLight[" << i << "]"
-            << " pos=" << light.position.x << ',' << light.position.y << ',' << light.position.z
-            << " direction=" << light.direction.x << ',' << light.direction.y << ',' << light.direction.z
-            << " color=" << light.color.x << ',' << light.color.y << ',' << light.color.z
-            << " flux=" << light.luminousFluxLm
-            << " radius=" << light.radiusM
-            << " inner=" << light.innerConeAngleRad
-            << " outer=" << light.outerConeAngleRad
-            << '\n';
-    }
-
-
-    for (u32 i = 0; i < renderView.light.numAreas; ++i)
-    {
-        const auto& light = renderView.light.areas[i];
-        out << "areaLight[" << i << "]"
-            << " pos=" << light.position.x << ',' << light.position.y << ',' << light.position.z
-            << " half=" << light.halfWidth << ',' << light.halfHeight
-            << " normal=" << light.normal.x << ',' << light.normal.y << ',' << light.normal.z
-            << " tangent=" << light.tangent.x << ',' << light.tangent.y << ',' << light.tangent.z
-            << " color=" << light.color.x << ',' << light.color.y << ',' << light.color.z
-            << " flux=" << light.luminousFluxLm
-            << '\n';
-    }
-
-	for (u32 i = 0; i < renderView.light.numDisks; ++i)
-	{
-		const auto& light = renderView.light.disks[i];
-		out << "diskLight[" << i << "]"
-			<< " pos=" << light.position.x << ',' << light.position.y << ',' << light.position.z
-			<< " radius=" << light.radius
-			<< " normal=" << light.normal.x << ',' << light.normal.y << ',' << light.normal.z
-			<< " tangent=" << light.tangent.x << ',' << light.tangent.y << ',' << light.tangent.z
-			<< " color=" << light.color.x << ',' << light.color.y << ',' << light.color.z
-			<< " flux=" << light.luminousFluxLm
-			<< '\n';
-	}
-
-    for (u32 i = 0; i < renderView.light.numTubes; ++i)
-    {
-        const auto& light = renderView.light.tubes[i];
-        out << "tubeLight[" << i << "]"
-            << " a=" << light.positionA.x << ',' << light.positionA.y << ',' << light.positionA.z
-            << " b=" << light.positionB.x << ',' << light.positionB.y << ',' << light.positionB.z
-            << " radius=" << light.radius
-            << " color=" << light.color.x << ',' << light.color.y << ',' << light.color.z
-            << " flux=" << light.luminousFluxLm
-            << '\n';
-    }
-
-
-	for (u32 i = 0; i < renderView.light.numSpheres; ++i)
-	{
-		const auto& light = renderView.light.spheres[i];
-		out << "sphereLight[" << i << "]"
-			<< " pos=" << light.position.x << ',' << light.position.y << ',' << light.position.z
-			<< " radius=" << light.radius
-			<< " color=" << light.color.x << ',' << light.color.y << ',' << light.color.z
-			<< " flux=" << light.luminousFluxLm
-			<< '\n';
-	}
-
-
-    out << '\n';
-    for (const auto& [entityId, draw] : renderView.draws)
-    {
-        out << "draw[" << entityId << "]"
-            << " mesh=" << draw.mesh
-            << " transform=" << draw.transform
-            << " material=" << draw.material
-            << '\n';
-    }
-}
-
-void PathTracerNode::DrawUI()
-{
-    if (ImGui::Begin("Path Tracer (AOV)"))
-    {
-        ImGui::TextUnformatted("PathTracer validation");
-        ImGui::Text("Reference scene: %s", m_ReferenceSceneName.c_str());
-        ImGui::Text("Accumulated samples: %u", m_AccumulatedSampleCount);
-        ImGui::Text("Samples/frame: %u", m_SamplesPerFrame);
-        ImGui::Text("Dump target samples: %u", m_DumpTargetSamples);
-        ImGui::Text("Max depth: %u", m_MaxDepth);
-        ImGui::Text("Environment radiance: %.3f %.3f %.3f", m_EnvironmentRadiance.x, m_EnvironmentRadiance.y, m_EnvironmentRadiance.z);
-        ImGui::Text("Environment map: %s", m_bUseEnvironmentMap ? m_EnvironmentMapPath.c_str() : "<none>");
-        ImGui::Text("Last reset dirty mask: 0x%llx", static_cast<unsigned long long>(m_LastResetDirtyMask));
-        ImGui::Separator();
-
-        if (ImGui::Button("Dump AOV EXRs"))
-            RequestAOVDump();
-
-#if PT_VALIDATION
-        ImGui::TextDisabled("radiance / geometry / material / contribution / lobe AOVs ->");
-#else
-        ImGui::TextDisabled("radiance only (PT_VALIDATION=0) ->");
-#endif
-        const std::string outputDir = ReferenceOutputDir().generic_string();
-        ImGui::TextDisabled("%s", outputDir.c_str());
-        if (m_bDumpRequested.load(std::memory_order_acquire))
-            ImGui::TextDisabled("Dump requested; waiting for %u accumulated samples.", m_DumpTargetSamples);
-        else if (m_bDumpCompleted.load(std::memory_order_acquire))
-            ImGui::TextDisabled("Last dump completed.");
-    }
-    ImGui::End();
-}
-
 void PathTracerNode::Resize(u32 width, u32 height, u32 depth)
 {
     UNUSED(depth);
 
+    CheckAutomationSceneReset();
+
     if (m_pAccumulation) m_pAccumulation->Resize(width, height, 1);
     if (m_pRadiance)     m_pRadiance->Resize(width, height, 1);
 #if PT_VALIDATION
-    for (auto& pAOV : m_ValidationAOVs)
-        if (pAOV) pAOV->Resize(width, height, 1);
+    ResizeValidationResources(width, height);
 #endif // PT_VALIDATION
 
     m_AccumulatedSampleCount = 0;
+    ResetRenderTiming();
     m_LastResetDirtyMask      = 0;
     m_bHasCameraState        = false;
     m_bHasRendered           = false;

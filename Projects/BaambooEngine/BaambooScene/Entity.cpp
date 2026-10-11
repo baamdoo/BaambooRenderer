@@ -54,6 +54,9 @@ Entity Entity::Clone()
 				newComponent = orgComponent;
 			}
 
+			if (original.HasAll< MediumComponent >())
+				cloned.AttachComponent< MediumComponent >(original.GetComponent< MediumComponent >());
+
 			if (original.HasAll< DynamicMeshComponent >())
 			{
 				auto& orgComponent = original.GetComponent< DynamicMeshComponent >();

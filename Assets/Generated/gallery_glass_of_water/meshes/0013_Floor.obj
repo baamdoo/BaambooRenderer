@@ -1,0 +1,15 @@
+# Baked from D:/JS/Projects/BaambooRenderer/Tools/GalleryScenes/Extracted/glass-of-water/glass-of-water/models/Mesh011.obj
+v 10.809473 0 -10.809481
+v 10.809478 0 10.809475
+v -10.809476 0 10.809476
+v -10.809476 0 -10.809476
+vn 0 1 0
+vn 0 1 0
+vn 0 1 0
+vn 0 1 0
+vt 0 1
+vt 0 1
+vt 0 1
+vt 0 1
+f 1/1/1 3/3/3 2/2/2
+f 4/4/4 3/3/3 1/1/1

@@ -10,6 +10,9 @@
 #define MATERIAL_FLAG_DOUBLE_SIDED (1u << 3u)
 #define MATERIAL_FLAG_THIN_WALLED  (1u << 4u)
 #define MATERIAL_FLAG_RELATIVE_IOR_INTERFACE (1u << 5u)
+#define MATERIAL_FLAG_MEDIUM_BOUNDARY (1u << 6u)
+
+#define MEDIUM_FLAG_AIR_CONTRIBUTOR (1u << 0u)
 
 #define MATERIAL_TEXTURE_SEMANTIC_BASE_COLOR           0u
 #define MATERIAL_TEXTURE_SEMANTIC_OPACITY              1u
@@ -138,9 +141,34 @@ struct InstanceData
 	uint meshID;
 	uint transformID;
 	uint materialID;
+	uint mediumID;
 
 	uint visOffset;
 	uint isVoxel;
+	uint padding0;
+	uint padding1;
+};
+
+struct MediumData
+{
+#ifdef _HLSL
+    float4x4 mWorldToDensity;
+    float3 sigmaA;
+#else
+    mat4 mWorldToDensity;
+    vec3 sigmaA;
+#endif
+    float densityScale;
+#ifdef _HLSL
+    float3 sigmaS;
+#else
+    vec3 sigmaS;
+#endif
+    float phaseG;
+    uint densityByteOffset;
+    float ior;
+    float majorant; // Upper bound on every RGB extinction channel, per world length.
+    uint mediumFlags; // Zero retains the existing replacement-medium behavior.
 };
 
 struct IndirectCommandData
@@ -358,10 +386,11 @@ struct PrimaryRayMediumStackSeedData
 {
     uint status;
     uint count;
+    uint airCount;
     uint padding0;
-    uint padding1;
 
     PrimaryRayMediumSeedEntryData entries[PRIMARY_RAY_MEDIUM_STACK_CAPACITY];
+    PrimaryRayMediumSeedEntryData airEntries[PRIMARY_RAY_MEDIUM_STACK_CAPACITY];
 };
 
 

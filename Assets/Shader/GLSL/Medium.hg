@@ -1,0 +1,106 @@
+#ifndef _GLSL_MEDIUM_HEADER
+#define _GLSL_MEDIUM_HEADER
+#define PNANOVDB_GLSL
+#define PNANOVDB_ADDRESS_32
+#include "../NanoVDB/PNanoVDB.h"
+
+float SampleMediumDensity(pnanovdb_buf_t gridBuffer, pnanovdb_address_t gridAddress, pnanovdb_vec3_t q)
+{
+    pnanovdb_grid_handle_t grid;
+    grid.address = gridAddress;
+
+    pnanovdb_tree_handle_t tree = pnanovdb_grid_get_tree(gridBuffer, grid);
+    pnanovdb_root_handle_t root = pnanovdb_tree_get_root(gridBuffer, tree);
+
+    pnanovdb_coord_t lower = pnanovdb_root_get_bbox_min(gridBuffer, root);
+    pnanovdb_coord_t upper = pnanovdb_root_get_bbox_max(gridBuffer, root);
+    if (q.x < float(lower.x) - 1.0f || q.y < float(lower.y) - 1.0f || q.z < float(lower.z) - 1.0f ||
+        q.x > float(upper.x) + 1.0f || q.y > float(upper.y) + 1.0f || q.z > float(upper.z) + 1.0f)
+        return 0.0f;
+
+    pnanovdb_coord_t base;
+    base.x = int(floor(q.x)); base.y = int(floor(q.y)); base.z = int(floor(q.z));
+
+    float fx = q.x - float(base.x), fy = q.y - float(base.y), fz = q.z - float(base.z);
+
+    pnanovdb_readaccessor_t accessor;
+    pnanovdb_readaccessor_init(PNANOVDB_REF(accessor), root);
+
+    float density = 0.0f;
+    float maxDensity = 0.0f;
+    for (int z = 0; z < 2; ++z)
+    {
+        for (int y = 0; y < 2; ++y)
+        {
+            for (int x = 0; x < 2; ++x)
+            {
+                pnanovdb_coord_t ijk;
+                ijk.x = base.x + x; ijk.y = base.y + y; ijk.z = base.z + z;
+
+                pnanovdb_address_t address = pnanovdb_readaccessor_get_value_address(
+                    PNANOVDB_GRID_TYPE_FLOAT, gridBuffer, PNANOVDB_REF(accessor), PNANOVDB_REF(ijk));
+
+                float weight = (x == 0 ? 1.0f - fx : fx) * (y == 0 ? 1.0f - fy : fy) * (z == 0 ? 1.0f - fz : fz);
+                float value = pnanovdb_read_float(gridBuffer, address);
+                maxDensity = max(maxDensity, value);
+                density += weight * value;
+            }
+        }
+    }
+
+    return min(density, maxDensity);
+}
+
+struct MediumProperties
+{
+    vec3 sigmaA;
+    vec3 sigmaS;
+    float phaseG;
+    float relativeDensity;
+};
+
+bool TryLoadMedium(uint mediumID, out MediumData data)
+{
+    if (mediumID >= uint(g_Media.length())) 
+        return false;
+
+    data = g_Media[mediumID];
+    return true;
+}
+
+bool EvaluateMedium(uint mediumID, vec3 positionWS, out MediumProperties properties)
+{
+    properties = MediumProperties(vec3(0.0), vec3(0.0), 0.0, 0.0);
+    if (mediumID == INVALID_INDEX) 
+        return true; // Current exterior is vacuum
+
+    MediumData data;
+    if (!TryLoadMedium(mediumID, data) || any(isnan(positionWS)) || any(isinf(positionWS))) 
+        return false;
+
+    float density = data.densityScale;
+    if (data.densityByteOffset != INVALID_INDEX)
+    {
+        vec3 q = (data.mWorldToDensity * vec4(positionWS, 1.0)).xyz;
+        if (any(isnan(q)) || any(isinf(q)) || any(greaterThan(abs(q), vec3(2147483000.0)))) 
+            return false;
+
+        pnanovdb_buf_t gridBuffer; gridBuffer.unused = 0u;
+        pnanovdb_address_t address = pnanovdb_address_offset(pnanovdb_address_null(), data.densityByteOffset);
+
+        density *= SampleMediumDensity(gridBuffer, address, q);
+    }
+
+    // Match the separately rounded products used to construct MediumData.majorant.
+    precise vec3 sigmaA = data.sigmaA * density;
+    precise vec3 sigmaS = data.sigmaS * density;
+    properties.sigmaA          = sigmaA;
+    properties.sigmaS          = sigmaS;
+    properties.phaseG          = data.phaseG;
+    properties.relativeDensity = density;
+
+    return !isnan(density) && !isinf(density) && density >= 0.0 &&
+        !any(isnan(properties.sigmaA)) && !any(isinf(properties.sigmaA)) &&
+        !any(isnan(properties.sigmaS)) && !any(isinf(properties.sigmaS));
+}
+#endif

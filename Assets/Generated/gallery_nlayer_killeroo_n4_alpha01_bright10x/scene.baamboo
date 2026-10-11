@@ -1,0 +1,27 @@
+# Local-only arbitrary-N validation scene. Killeroo is used with permission in
+# pbrt-v4-scenes; do not redistribute the copied geometry from this directory.
+scene gallery_nlayer_killeroo_n4_alpha01_bright10x
+resolution 700 700
+
+# Keep the canonical N=4 camera, material stack, and environment unchanged.
+camera pos=4,0.2,0.3 target=0,0.63,-1.1 up=0,0,1 fovY=39
+pathtracer spp=8 dumpSamples=64 maxDepth=16
+environment path=Texture/studio_small.exr
+
+# Broad key and fill sphere emitters. Engine sphere-light radiance is
+# L = color * flux / (4*pi^2*r^2), so these evaluate to
+# key L=(20,19,17) and fill L=(11,12,13.5).
+sphereLight name=nlayer_key position=3,-2,3.2 radius=0.9 scale=1,1,1 color=1,0.95,0.85 flux=639.55036
+sphereLight name=nlayer_fill position=-2.3,2.2,2.1 radius=1.1 scale=1,1,1 color=0.814814815,0.888888889,1 flux=644.87995
+
+mesh path=Generated/gallery_nlayer_killeroo_n4/meshes/killeroo-red-rh-world.ply name=killeroo_red_n4 faceNormals=0 tint=1,1,1,1 metallic=0 roughness=0.01 ior=1.5 transmission=1 specularColor=1,1,1 specularStrength=1 thickness=0.25 sigmaA=1,1,1 sigmaS=0,0,0 phaseG=0
+layer name=red_interface_1 tint=1,1,1,1 metallic=0 roughness=0.1 ior=1.1 transmission=1 specularColor=1,1,1 specularStrength=1 thickness=0.15 sigmaA=1,1,1 sigmaS=0,0,0 phaseG=0
+layer name=red_interface_2 tint=1,1,1,1 metallic=0 roughness=0.1 ior=1.5 transmission=1 specularColor=1,1,1 specularStrength=1 thickness=0.1 sigmaA=1,1,1 sigmaS=0,0,0 phaseG=0
+layer name=red_diffuse_terminal tint=0.65,0.08,0.015,1 metallic=0 roughness=1 ior=1.5 transmission=0 specularColor=0,0,0 specularStrength=0 thickness=0 sigmaA=0,0,0 sigmaS=0,0,0 phaseG=0
+
+mesh path=Generated/gallery_nlayer_killeroo_n4/meshes/killeroo-green-rh-world.ply name=killeroo_green_n4 faceNormals=0 tint=1,1,1,1 metallic=0 roughness=0.01 ior=1.5 transmission=1 specularColor=1,1,1 specularStrength=1 thickness=0.25 sigmaA=1,1,1 sigmaS=0,0,0 phaseG=0
+layer name=green_interface_1 tint=1,1,1,1 metallic=0 roughness=0.1 ior=1.1 transmission=1 specularColor=1,1,1 specularStrength=1 thickness=0.15 sigmaA=1,1,1 sigmaS=0,0,0 phaseG=0
+layer name=green_interface_2 tint=1,1,1,1 metallic=0 roughness=0.1 ior=1.5 transmission=1 specularColor=1,1,1 specularStrength=1 thickness=0.1 sigmaA=1,1,1 sigmaS=0,0,0 phaseG=0
+layer name=green_diffuse_terminal tint=0.08,0.42,0.06,1 metallic=0 roughness=1 ior=1.5 transmission=0 specularColor=0,0,0 specularStrength=0 thickness=0 sigmaA=0,0,0 sigmaS=0,0,0 phaseG=0
+
+

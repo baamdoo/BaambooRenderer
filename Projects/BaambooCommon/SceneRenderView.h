@@ -21,6 +21,7 @@ enum eComponentType
 	CLocalLight   = 7,
 	CPostProcess  = 8,
 	CVoxelTerrain = 9,
+	CMedium       = 10,
 
 	// ...
 	NumComponents
@@ -117,11 +118,18 @@ struct MaterialRenderView
 	std::vector< MaterialTextureRenderView > textures;
 };
 
+struct MediumRenderView
+{
+    MediumData data = {};
+    Arc< const MediumDensityAsset > pDensity;
+};
+
 struct DrawRenderView
 {
 	u32 transform = kInvalidIndex;
 	u32 mesh      = kInvalidIndex;
 	u32 material  = kInvalidIndex;
+	u32 medium    = kInvalidIndex;
 };
 
 using LightRenderView = LightData;
@@ -272,6 +280,7 @@ struct SceneRenderView
 	std::vector< StaticMeshRenderView > meshes; 
 	std::vector< MaterialRenderView > materials;
     std::vector< MaterialSlabData > materialSlabs;
+    std::vector< MediumRenderView > media;
 
 	std::unordered_map< u32, DrawRenderView > draws;
 

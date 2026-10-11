@@ -85,14 +85,17 @@ private:
         Box< StaticBufferAllocator > pTransformAllocator;
         Box< StaticBufferAllocator > pMaterialAllocator;
         Box< StaticBufferAllocator > pMaterialTextureAllocator;
+        Box< StaticBufferAllocator > pMediumAllocator;
+        Box< StaticBufferAllocator > pMediumDensityAllocator;
         Box< StaticBufferAllocator > pLightAllocator;
 
         Arc< Dx12ConstantBuffer > pCameraBuffer;
         Arc< Dx12ConstantBuffer > pCullBuffer;
         Arc< Dx12ConstantBuffer > pSceneEnvironmentBuffer;
         Arc< Dx12ConstantBuffer > pFrozenCameraBuffer;
-        Arc< Dx12ConstantBuffer > pMeshStreamsBuffer; // CBV holding the 5 geometry-pool heap indices (g_MeshStreams)
+        Arc< Dx12ConstantBuffer > pMeshStreamsBuffer; // CBV holding geometry/medium resource indices and medium count
 
+        u32 mediumCount = 0;
         bool bInitialized = false;
 
         void Reset();
