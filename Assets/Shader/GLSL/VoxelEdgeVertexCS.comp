@@ -1,0 +1,67 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "DescriptorCommon.hg"
+
+layout(push_constant) uniform ExtractPushConstants
+{
+    uint  g_CellsPerAxis;   // C; volume dim = C + 1 + 2A
+    uint  g_Apron;          // A apron texels per side
+    float g_VoxelSizeMeter;
+    uint  g_VertexSlabBase; // this chunk's base offset into the vertex pool (in vertices)
+    uint  g_MaxTriangles;
+    float g_GeomorphRadiusMeter;
+    uint  g_MaxVertices;
+} pc;
+
+layout(set = 1, binding = 0) readonly buffer DensityFieldBuffer { float       g_DensityField[]; };
+layout(set = 1, binding = 1)          buffer McCounterBuffer    { uint        g_MCCounter[]; };
+layout(set = 1, binding = 2)          buffer OutVertexBuffer    { VoxelVertex g_OutVertices[]; };
+layout(set = 1, binding = 3) readonly buffer TriTableBuffer     { int         g_TriTable[]; };
+layout(set = 1, binding = 4) readonly buffer EdgeListBuffer     { uint        g_EdgeList[]; };
+
+#define VOXEL_GEOMORPH_BUILD
+#include "VoxelTerrainCommon.hg"
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+    uvec3 dt = gl_GlobalInvocationID;
+    if (dt.x >= g_MCCounter[4]) // E = list entries that own a vertex slot
+        return;
+
+    const uint C   = pc.g_CellsPerAxis;
+    const uint dim = C + 1u + 2u * pc.g_Apron;
+
+    uint key  = g_EdgeList[dt.x];
+    uint axis = key % 3u;
+    uint cidx = key / 3u;
+
+    uvec3 corner0 = uvec3(cidx % (C + 1u), (cidx / (C + 1u)) % (C + 1u), cidx / ((C + 1u) * (C + 1u)));
+    uvec3 corner1 = corner0 + uvec3(axis == 0u, axis == 1u, axis == 2u); // max endpoint = +1 along the edge axis
+
+    uvec3 t0 = corner0 + pc.g_Apron;
+    uvec3 t1 = corner1 + pc.g_Apron;
+
+    // sample 2-end corners along an edge + a central-difference gradient at each (apron guarantees the neighbours)
+    float cornerVal0  = g_DensityField[FlatTexel(t0, dim)];
+    float cornerVal1  = g_DensityField[FlatTexel(t1, dim)];
+    vec3  cornerPos0  = vec3(corner0) * pc.g_VoxelSizeMeter;
+    vec3  cornerPos1  = vec3(corner1) * pc.g_VoxelSizeMeter;
+    vec3  cornerGrad0 = vec3(
+            g_DensityField[FlatTexel(t0 + uvec3(1u, 0u, 0u), dim)] - g_DensityField[FlatTexel(t0 - uvec3(1u, 0u, 0u), dim)],
+            g_DensityField[FlatTexel(t0 + uvec3(0u, 1u, 0u), dim)] - g_DensityField[FlatTexel(t0 - uvec3(0u, 1u, 0u), dim)],
+            g_DensityField[FlatTexel(t0 + uvec3(0u, 0u, 1u), dim)] - g_DensityField[FlatTexel(t0 - uvec3(0u, 0u, 1u), dim)]);
+    vec3  cornerGrad1 = vec3(
+            g_DensityField[FlatTexel(t1 + uvec3(1u, 0u, 0u), dim)] - g_DensityField[FlatTexel(t1 - uvec3(1u, 0u, 0u), dim)],
+            g_DensityField[FlatTexel(t1 + uvec3(0u, 1u, 0u), dim)] - g_DensityField[FlatTexel(t1 - uvec3(0u, 1u, 0u), dim)],
+            g_DensityField[FlatTexel(t1 + uvec3(0u, 0u, 1u), dim)] - g_DensityField[FlatTexel(t1 - uvec3(0u, 0u, 1u), dim)]);
+
+    VoxelTerrainGenParams gp;
+    gp.cellsPerAxis   = C;
+    gp.apron          = pc.g_Apron;
+    gp.voxelSizeMeter = pc.g_VoxelSizeMeter;
+
+    g_OutVertices[pc.g_VertexSlabBase + dt.x] =
+        VoxelMakeEdgeVertex(gp, cornerVal0, cornerVal1, cornerPos0, cornerPos1, cornerGrad0, cornerGrad1, pc.g_GeomorphRadiusMeter, float(C) * pc.g_VoxelSizeMeter, false);
+}

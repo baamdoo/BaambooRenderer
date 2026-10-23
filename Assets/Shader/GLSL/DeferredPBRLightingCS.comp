@@ -243,7 +243,7 @@ void main()
 
         // Aerial perspective
         {
-            float viewDistance = max(0.0, length(posWORLD));
+            float viewDistance = length(posWORLD - g_Camera.posWORLD);
 
             ivec3 texSize = textureSize(g_AerialPerspectiveLUT, 0);
             float slice   = viewDistance * (1.0 / AP_KM_PER_SLICE) * M_TO_KM;

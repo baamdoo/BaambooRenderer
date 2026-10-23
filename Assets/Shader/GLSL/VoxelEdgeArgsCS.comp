@@ -1,0 +1,29 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "DescriptorCommon.hg"
+
+layout(push_constant) uniform ExtractPushConstants
+{
+    uint  g_CellsPerAxis;   // C; volume dim = C + 1 + 2A
+    uint  g_Apron;          // A apron texels per side
+    float g_VoxelSizeMeter;
+    uint  g_VertexSlabBase; // this chunk's base offset into the vertex pool (in vertices)
+    uint  g_MaxTriangles;
+    float g_GeomorphRadiusMeter;
+    uint  g_MaxVertices;
+} pc;
+
+layout(set = 1, binding = 0) buffer McCounterBuffer { uint g_MCCounter[]; };
+layout(set = 1, binding = 1) buffer EdgeArgsBuffer  { uint g_EdgeArgs[]; };
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+    uint E = min(g_MCCounter[2], pc.g_MaxVertices); // active edges that own a vertex slot
+    g_MCCounter[4] = E;
+
+    g_EdgeArgs[0] = (E + 63u) / 64u; // one 64-thread edge-vertex group per 64 list entries
+    g_EdgeArgs[1] = 1u;
+    g_EdgeArgs[2] = 1u;
+}

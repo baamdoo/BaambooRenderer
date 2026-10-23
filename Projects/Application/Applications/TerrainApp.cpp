@@ -6,20 +6,16 @@
 
 #include "BaambooScene/Entity.h"
 #include "BaambooScene/Components.h"
+#include "BaambooScene/RenderNodes/AtmosphereNode.h"
 #include "BaambooScene/RenderNodes/GBufferNode.h"
 #include "BaambooScene/RenderNodes/CullingNode.h"
 #include "BaambooScene/RenderNodes/VoxelChunkRenderNode.h"
-#include "BaambooScene/RenderNodes/SkyboxNode.h"
 #include "BaambooScene/RenderNodes/LightingNode.h"
 #include "BaambooScene/RenderNodes/SurfaceResolveNode.h"
 #include "BaambooScene/RenderNodes/DebugDrawNode.h"
 #include "BaambooScene/RenderNodes/PostProcessNode.h"
 #include "BaambooScene/Systems/TransformSystem.h"
 #include "BaambooScene/Systems/VoxelTerrainSystem.h"
-
-#include <algorithm>
-#include <cstdio>
-#include <string>
 
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui/backends/imgui_impl_glfw.h>
@@ -254,7 +250,7 @@ void TerrainApp::DrawUI()
 				// Live, no rebuild.
 				ImGui::SliderInt  ("Dice Max Level",  &diceMaxLevel,           0,    3           );
 				ImGui::SliderFloat("Target Px",       &dice.targetPx,          2.0f, 16.0f, "%.1f");
-				ImGui::SliderFloat("Dice Radius (m)", &dice.radiusM,           5.0f, 80.0f, "%.0f");
+				ImGui::SliderFloat("Dice Radius (m)", &dice.radiusM,           5.0f, 64.0f, "%.0f");
 				ImGui::SetItemTooltip("Subdivision and displacement only within this distance");
 				ImGui::SliderFloat("Dice Fade (m)",   &dice.fadeWidthMeter,    1.0f, 20.0f, "%.0f");
 				ImGui::SetItemTooltip("Fade-out band width inside the radius");
@@ -262,7 +258,7 @@ void TerrainApp::DrawUI()
 				ImGui::SetItemTooltip("Multiplier on the baked erosion detail displacement");
 
 				int microOctaves = (int)dice.microOctaves;
-				ImGui::SliderFloat("Micro Amp (m)",      &dice.microAmplitudeMeter,      0.0f,  0.10f, "%.3f");
+				ImGui::SliderFloat("Micro Amp (m)",      &dice.microAmplitudeMeter,      0.0f,  0.50f, "%.3f");
 				ImGui::SliderFloat("Micro Base WL (m)",  &dice.microBaseWaveLengthMeter, 0.05f, 1.0f,  "%.2f");
 				ImGui::SliderFloat("Micro Lacunarity",   &dice.microLacunarity,  1.5f,  4.0f,  "%.2f");
 				ImGui::SliderFloat("Micro Gain",         &dice.microGain,        0.1f,  0.9f,  "%.2f");
@@ -389,7 +385,7 @@ void TerrainApp::ConfigureRenderGraph()
 {
 	auto& device = *m_pRendererBackend->GetDevice();
 
-	m_pScene->AddRenderNode(MakeArc< StaticSkyboxNode >(device));
+	m_pScene->AddRenderNode(MakeArc< AtmosphereNode >(device));
 	{
 		auto pGBufferNode = MakeArc< GBufferNode >(device);
 		auto pCullingNode = MakeArc< CullingNode >(device);
@@ -420,16 +416,14 @@ void TerrainApp::ConfigureSceneObjects()
 	}
 
 	{
-		auto skybox = m_pScene->CreateEntity("Skybox");
-		auto& transform = skybox.GetComponent< TransformComponent >();
+		auto environment = m_pScene->CreateEntity("Environment");
+		auto& transform = environment.GetComponent< TransformComponent >();
 		transform.transform.position = float3(0.0f, 1.0f, 0.0f);
 
-		auto& light = skybox.AttachComponent< LightComponent >();
+		auto& light = environment.AttachComponent< LightComponent >();
 		light.SetDefaultDirectionalLight();
 
-		auto& atmosphere = skybox.AttachComponent< AtmosphereComponent >();
-		atmosphere.skybox = TEXTURE_PATH.string() + "Skybox_Field.jpg";
-
+		environment.AttachComponent< AtmosphereComponent >();
 	}
 
 	{

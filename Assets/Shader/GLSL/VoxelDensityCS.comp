@@ -13,6 +13,11 @@ layout(set = 1, binding = 1) writeonly buffer DensityBuffer
     float g_OutDensity[];
 };
 
+layout(set = 1, binding = 2) readonly buffer HeightTileBuffer
+{
+    float g_HeightTile[];
+};
+
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 void main()
 {
@@ -23,8 +28,8 @@ void main()
     if (tID.x >= dim || tID.y >= dim || tID.z >= dim)
         return;
 
-    vec3  worldPos = VoxelTexelToWorld(gp, tID);
-    float density  = VoxelTerrainDensity(gp, worldPos);
+    vec3  posWS  = VoxelTexelToWorld(gp, tID);
+    float height = g_HeightTile[FlatTexel(tID.xz, dim)];
 
-    g_OutDensity[(tID.z * dim + tID.y) * dim + tID.x] = density;
+    g_OutDensity[FlatTexel(tID, dim)] = VoxelTerrainDensityFromSurface(posWS.y, height);
 }

@@ -236,10 +236,11 @@ void main(
     {
         StructuredBuffer< VoxelVertex > DVertices        = GetResource(sh_VtxHeapIdx);
         StructuredBuffer< uint >        DMeshletVertices = GetResource(sh_MvHeapIdx);
+        StructuredBuffer< uint >        DMeshletTris     = GetResource(sh_MtHeapIdx);
         for (uint c = ti; c < numTris * 3u; c += 32)
         {
-            // base tri t's corner c sits at meshlet-local slot t*3+c
-            uint local = (triBase + c / 3u) * 3u + (c % 3u);
+            // base tri's corner c -> its meshlet-local vertex, byte c%3 of the packed local triplet
+            uint local = (DMeshletTris[sh_MtOffset + sh_TriangleOffset + triBase + c / 3u] >> (8u * (c % 3u))) & 0xFFu;
             uint vi    = sh_VOffset + DMeshletVertices[sh_MvOffset + sh_VertexOffset + local];
 
             VoxelVertex vv = DVertices[vi];

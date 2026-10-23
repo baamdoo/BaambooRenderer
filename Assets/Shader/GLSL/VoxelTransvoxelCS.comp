@@ -17,6 +17,7 @@ layout(push_constant) uniform TvPushConstants
     uint  g_VertexSlabBase;
     uint  g_MaxTriangles;
     float g_GeomorphRadiusMeter;
+    uint  g_MaxVertices;
 } pc;
 
 layout(set = 1, binding = 0) readonly buffer DensityFieldBuffer { float       g_DensityField[]; };
@@ -24,6 +25,7 @@ layout(set = 1, binding = 1)          buffer McCounterBuffer    { uint        g_
 layout(set = 1, binding = 2)          buffer OutVertexBuffer    { VoxelVertex g_OutVertices[]; };
 layout(set = 1, binding = 3) readonly buffer TvTableBuffer      { uint        g_TvTables[]; };
 layout(set = 1, binding = 4) readonly buffer TriTableBuffer     { int         g_TriTable[]; };
+layout(set = 1, binding = 5)          buffer TripletBuffer      { uint        g_Triplets[]; };
 
 #define VOXEL_GEOMORPH_BUILD
 #include "VoxelTerrainCommon.hg"
@@ -53,44 +55,6 @@ uint TvVertexData(uint caseCode, uint i)
 {
     uint w = g_TvTables[TV_VERTEXDATA_BASE + caseCode * TV_VERTEXDATA_STRIDE + i / 2u];
     return (w >> ((i % 2u) * 16u)) & 0xFFFFu;
-}
-
-// Isosurface vertex on `edge`: position interpolates the two corner samples
-VoxelVertex MakeEdgeVertex(uvec2 edge, float cornerVal[13], uvec3 cornerPos[13], vec3 cornerGrad[13], float chunkSizeMeter)
-{
-    bool bCoarse = (edge.x >= 9u && edge.y >= 9u);
-
-    float v0 = cornerVal[edge.x], v1 = cornerVal[edge.y];
-    vec3  p0 = vec3(cornerPos[edge.x]), p1 = vec3(cornerPos[edge.y]);
-    vec3  g0 = cornerGrad[edge.x], g1 = cornerGrad[edge.y];
-
-    float tt = (abs(v0 - v1) < 1e-6) ? 0.0 : v0 / (v0 - v1); // zero crossing along the edge
-
-    vec3  pos = mix(p0, p1, tt) * pc.g_VoxelSizeMeter;
-    vec3  g   = mix(g0, g1, tt);
-    float gSq = dot(g, g);
-    vec3  n   = (gSq > 1e-12) ? g * inversesqrt(gSq) : vec3(0.0, 1.0, 0.0);
-
-    // Should use the exact same normal value(decoded) as the rendering point(GBuffer) for consistency
-    vec3 nq = VoxelQuantizeNormal(n);
-
-    VoxelTerrainGenParams gp;
-    gp.cellsPerAxis   = pc.g_CellsPerAxis;
-    gp.apron          = pc.g_Apron;
-    gp.voxelSizeMeter = pc.g_VoxelSizeMeter;
-    VoxelProjectResult pr1 = VoxelProjectStage(gp, pos, nq, pc.g_GeomorphRadiusMeter, 2u);       // s1 = to the parent mesh
-    VoxelProjectResult pr2 = VoxelProjectStage(gp, pos, nq, 2.0 * pc.g_GeomorphRadiusMeter, 4u); // s2 = to the grandparent
-    VoxelProjectResult pr3 = VoxelProjectStage(gp, pos, nq, 4.0 * pc.g_GeomorphRadiusMeter, 8u); // s3 = to the great-grandparent
-
-    float s1 = bCoarse ? 0.0 : pr1.sd;         // coarse-side vertices already sit on the parent mesh
-    float s2 = (pr2.code == 0u) ? pr2.sd : s1; // no hit: stay on the previous LOD
-    float s3 = (pr3.code == 0u) ? pr3.sd : s2;
-
-    // normal morph targets: the ancestors' shading normals where the ray hit
-    vec3 nT1 = bCoarse ? nq : pr1.nTarget;
-    vec3 nT2 = (pr2.code == 0u) ? pr2.nTarget : nT1;
-
-    return VoxelPackVertex(pos, nq, nT1, nT2, s1, s2, s3, bCoarse, chunkSizeMeter, pc.g_VoxelSizeMeter);
 }
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
@@ -203,9 +167,16 @@ void main()
 
     const float chunkSize = float(C) * pc.g_VoxelSizeMeter;
 
-    uint baseTri = atomicAdd(g_MCCounter[0], triCount); // reserve a contiguous triangle range
+    VoxelTerrainGenParams gp;
+    gp.cellsPerAxis   = C;
+    gp.apron          = pc.g_Apron;
+    gp.voxelSizeMeter = pc.g_VoxelSizeMeter;
 
-    for (uint t = 0u; t < triCount; ++t)
+    uint vb      = atomicAdd(g_MCCounter[2], 3u * triCount); // reserve 3 private vertices per tri
+    uint fitTris = min(triCount, (pc.g_MaxVertices - min(vb, pc.g_MaxVertices)) / 3u); // tris whose vertices fit under the cap
+    uint baseTri = atomicAdd(g_MCCounter[0], fitTris); // reserve a contiguous triangle range
+
+    for (uint t = 0u; t < fitTris; ++t)
     {
         if (baseTri + t >= pc.g_MaxTriangles)
             break;
@@ -222,20 +193,15 @@ void main()
         uvec2 e1 = uvec2((p1 >> 4u) & 0xFu, (p1 >> 0u) & 0xFu);
         uvec2 e2 = uvec2((p2 >> 4u) & 0xFu, (p2 >> 0u) & 0xFu);
 
-        uint v0 = pc.g_VertexSlabBase + (baseTri + t) * 3u + 0u;
-        uint v1 = pc.g_VertexSlabBase + (baseTri + t) * 3u + 1u;
-        uint v2 = pc.g_VertexSlabBase + (baseTri + t) * 3u + 2u;
-        if (winding == 0u)
+        uvec2 edges[3] = uvec2[3](e0, (winding == 0u) ? e2 : e1, (winding == 0u) ? e1 : e2); // winding order: e0, e2, e1; reversed-winding classes keep table order
+
+        uint v0 = vb + t * 3u; // page-relative
+        for (uint k = 0u; k < 3u; ++k)
         {
-            g_OutVertices[v0] = MakeEdgeVertex(e0, cornerVal, patchPoints, cornerGrad, chunkSize);
-            g_OutVertices[v1] = MakeEdgeVertex(e2, cornerVal, patchPoints, cornerGrad, chunkSize);
-            g_OutVertices[v2] = MakeEdgeVertex(e1, cornerVal, patchPoints, cornerGrad, chunkSize);
-        }
-        else
-        {
-            g_OutVertices[v0] = MakeEdgeVertex(e0, cornerVal, patchPoints, cornerGrad, chunkSize);
-            g_OutVertices[v2] = MakeEdgeVertex(e2, cornerVal, patchPoints, cornerGrad, chunkSize);
-            g_OutVertices[v1] = MakeEdgeVertex(e1, cornerVal, patchPoints, cornerGrad, chunkSize);
+            uvec2 e = edges[k]; // table endpoints are already in min -> max order
+            g_OutVertices[pc.g_VertexSlabBase + v0 + k] = VoxelMakeEdgeVertex(gp, cornerVal[e.x], cornerVal[e.y], vec3(patchPoints[e.x]) * pc.g_VoxelSizeMeter, vec3(patchPoints[e.y]) * pc.g_VoxelSizeMeter,
+                                                        cornerGrad[e.x], cornerGrad[e.y], pc.g_GeomorphRadiusMeter, chunkSize, e.x >= 9u && e.y >= 9u);
+            g_Triplets[(baseTri + t) * 3u + k] = v0 + k; // identity triplet
         }
     }
 }

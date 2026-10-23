@@ -19,12 +19,7 @@ public:
 private:
     u32 m_MeshRevision = 0u;
 
-    struct DesiredChunk
-    {
-        VoxelChunkID id;
-        u32 mask;
-	};
-	std::vector< DesiredChunk > m_DesiredChunks;
+	std::vector< VoxelChunkID > m_DesiredChunks;
 	// Per-level snap pair-cell (x, z), kept across frames for the 0.5*S_k deadband
 	std::vector< int2 >         m_SnapCells;
 };

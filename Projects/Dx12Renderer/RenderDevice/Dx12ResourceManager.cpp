@@ -3,6 +3,7 @@
 #include "Dx12DescriptorPool.h"
 #include "Dx12CommandContext.h"
 #include "Dx12RootSignature.h"
+#include "Dx12CommandSignature.h"
 #include "RenderResource/Dx12Buffer.h"
 #include "RenderResource/Dx12Texture.h"
 #include "RenderResource/Dx12SceneResource.h"
@@ -174,6 +175,12 @@ Dx12ResourceManager::Dx12ResourceManager(Dx12RenderDevice& rd)
     m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(eSamplerIndex::LinearClampMin));
 
     m_pGlobalRootSignature->Build();
+
+    m_pDispatchSignature = MakeBox< CommandSignature >(
+        m_RenderDevice,
+        CommandSignatureDesc(1, sizeof(D3D12_DISPATCH_ARGUMENTS))
+            .AddDispatch(),
+        nullptr);
 }
 
 Dx12ResourceManager::~Dx12ResourceManager()
@@ -624,6 +631,11 @@ Arc< Dx12RootSignature > Dx12ResourceManager::GetGlobalRootSignature() const
 Arc< DescriptorPool > Dx12ResourceManager::GetGlobalDescriptorHeap() const
 {
     return m_pGlobalDescriptorHeap;
+}
+
+ID3D12CommandSignature* Dx12ResourceManager::GetDispatchD3D12CommandSignature() const
+{
+    return m_pDispatchSignature->GetD3D12CommandSignature();
 }
 
 Arc< Dx12Texture > Dx12ResourceManager::CreateFlat2DTexture(const char* name, u32 color)

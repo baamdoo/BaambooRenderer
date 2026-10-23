@@ -8,14 +8,13 @@
 layout(push_constant) uniform TriSortPushConstants
 {
     uint  g_VertexSlabBase;
-    uint  g_MeshletVertexSlabBase;
     uint  g_MaxTriangles;
-    float g_ChunkSizeMeter;
 } pc;
 
 layout(set = 1, binding = 0) buffer McCounterBuffer { uint g_MCCounter[]; };
 layout(set = 1, binding = 1) readonly buffer VertexPoolBuffer { VoxelVertex g_Vertices[]; };
 layout(set = 1, binding = 2) buffer SortBinBuffer { uint g_SortBins[]; };
+layout(set = 1, binding = 3) readonly buffer TripletBuffer { uint g_Triplets[]; };
 
 layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 void main()
@@ -26,10 +25,13 @@ void main()
     if (t >= totalTris)
         return;
 
-    vec3 c = vec3(0.0);
+    uvec3 posQSum = uvec3(0u);
     for (uint k = 0u; k < 3u; ++k)
-        c += VoxelUnpackPos(g_Vertices[pc.g_VertexSlabBase + t * 3u + k], pc.g_ChunkSizeMeter);
+    {
+        VoxelVertex v = g_Vertices[pc.g_VertexSlabBase + g_Triplets[t * 3u + k]];
+        posQSum += uvec3(v.posXY >> 16u, v.posXY & 0xFFFFu, v.posZnormal >> 16u);
+    }
 
-    uint key = VoxelTriSortKey(c / 3.0, pc.g_ChunkSizeMeter);
+    uint key = VoxelTriSortKey(posQSum);
     atomicAdd(g_SortBins[key], 1u);
 }

@@ -93,6 +93,14 @@ CommandSignatureDesc& CommandSignatureDesc::AddUnorderedAccessView(UINT rootInde
 	return *this;
 }
 
+CommandSignatureDesc& CommandSignatureDesc::AddDispatch()
+{
+	D3D12_INDIRECT_ARGUMENT_DESC& Desc = m_Parameters.emplace_back();
+	Desc.Type = D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH;
+
+	return *this;
+}
+
 CommandSignatureDesc& CommandSignatureDesc::AddDispatchMesh()
 {
 	D3D12_INDIRECT_ARGUMENT_DESC& Desc = m_Parameters.emplace_back();

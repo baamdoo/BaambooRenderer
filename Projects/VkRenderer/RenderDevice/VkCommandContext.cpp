@@ -146,6 +146,7 @@ public:
 	void DrawMeshTasksIndirectCount(const Arc< VulkanBuffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< VulkanBuffer >& pCountBuffer, u32 numDraws, u32 strideInBytes);
 
 	void Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ);
+	void DispatchIndirect(const Arc< VulkanBuffer >& pArgumentBuffer, u64 offsetInBytes);
 
 	[[nodiscard]]
 	bool IsReady() const;
@@ -1194,6 +1195,14 @@ void VkCommandContext::Impl::Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGro
 	vkCmdDispatch(m_vkCommandBuffer, numGroupsX, numGroupsY, numGroupsZ);
 }
 
+void VkCommandContext::Impl::DispatchIndirect(const Arc< VulkanBuffer >& pArgumentBuffer, u64 offsetInBytes)
+{
+	FlushBarriers();
+	BindShaderResources(VK_PIPELINE_BIND_POINT_COMPUTE, m_pComputePipeline->vkPipelineLayout());
+
+	vkCmdDispatchIndirect(m_vkCommandBuffer, pArgumentBuffer->vkBuffer(), offsetInBytes);
+}
+
 double VkCommandContext::Impl::GetElapsedTime() const
 {
 	return m_Timer.GetLastFrameTotalNs();
@@ -1720,6 +1729,13 @@ void VkCommandContext::DrawMeshTasksIndirectCount(const Arc< render::Buffer >& p
 void VkCommandContext::Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ)
 {
 	m_Impl->Dispatch(numGroupsX, numGroupsY, numGroupsZ);
+}
+
+void VkCommandContext::DispatchIndirect(const Arc< render::Buffer >& pArgumentBuffer, u64 offsetInBytes)
+{
+	const auto& rhiArgBuffer = StaticCast< VulkanBuffer >(pArgumentBuffer);
+
+	m_Impl->DispatchIndirect(rhiArgBuffer, offsetInBytes);
 }
 
 void VkCommandContext::DispatchRays(render::ShaderBindingTable& sbt, u32 width, u32 height, u32 depth)

@@ -1,0 +1,29 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "VoxelTerrainCommon.hg"
+
+layout(set = 1, binding = 0, std140) uniform VoxelGenParamsUBO
+{
+    VoxelTerrainGenParams gp;
+} g_VoxelGenParams;
+
+layout(set = 1, binding = 1) writeonly buffer HeightRawBuffer
+{
+    float g_OutHeightRaw[];
+};
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+void main()
+{
+    VoxelTerrainGenParams gp = g_VoxelGenParams.gp;
+
+    uint  dim = gp.samplesPerAxis + 2u * gp.apron; // C+1+2A
+    uvec3 tID = gl_GlobalInvocationID;
+    if (tID.x >= dim || tID.y >= dim)
+        return;
+
+    vec3 posWS = VoxelTexelToWorld(gp, uvec3(tID.x, 0u, tID.y));
+
+    g_OutHeightRaw[FlatTexel(tID.xy, dim)] = VoxelTerrainSurfaceY(gp, posWS.xz);
+}

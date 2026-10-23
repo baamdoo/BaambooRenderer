@@ -13,6 +13,7 @@ class Dx12Buffer;
 class Dx12ConstantBuffer;
 class Dx12Texture;
 class Dx12RootSignature;
+class CommandSignature;
 
 class Dx12ResourceManager : public render::ResourceManager
 {
@@ -44,6 +45,7 @@ public:
 
     Arc< Dx12RootSignature > GetGlobalRootSignature() const;
     Arc< DescriptorPool > GetGlobalDescriptorHeap() const;
+    ID3D12CommandSignature* GetDispatchD3D12CommandSignature() const;
 
 
 private:
@@ -64,6 +66,8 @@ private:
     Arc< DescriptorPool > m_pGlobalDescriptorHeap;
 
     Arc< Dx12RootSignature > m_pGlobalRootSignature;
+
+    Box< CommandSignature > m_pDispatchSignature; // compute indirect: DISPATCH arguments only
 };
 
 }

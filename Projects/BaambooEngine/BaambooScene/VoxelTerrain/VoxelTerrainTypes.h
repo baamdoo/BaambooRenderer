@@ -45,17 +45,26 @@ constexpr u32 MakeVoxelPageID(u32 classId, u32 idx) { return (classId << 24u) | 
 constexpr u32 VoxelPageClassId(u32 pageID)          { return pageID >> 24u; }
 constexpr u32 VoxelPageIdx(u32 pageID)              { return pageID & 0x00FFFFFFu; }
 
-// Per-class capacities: v = 3t, mv = 4t, mt = 4t/3, meshlets = t/12
+// Meshlet window: 21 tris * 3 = 63 verts fits the 64-vertex mesh-shader limit
+constexpr u32 kVoxelTrianglesPerMeshlet = 21u;
+
+// Vertex and meshlet-vertex slots per 1000 triangle slots of a page
+constexpr u32 kVoxelVertexCapPermille        = 650u;
+constexpr u32 kVoxelMeshletVertexCapPermille = 1450u;
+
+// Per-class capacities: v and mv by permille of t, mt = t, meshlets = ceil(t/K)
 constexpr u32 VoxelClassTriCap(u32 c)           { return kVoxelPageClasses[c].triCapacity; }
 constexpr u32 VoxelClassPageCount(u32 c)        { return kVoxelPageClasses[c].pageCount; }
-constexpr u32 VoxelClassVertexCap(u32 c)        { return VoxelClassTriCap(c) * 3u; }
-constexpr u32 VoxelClassMeshletVertexCap(u32 c) { return VoxelClassTriCap(c) * 4u; }
-constexpr u32 VoxelClassMeshletTriCap(u32 c)    { return VoxelClassTriCap(c) * 4u / 3u; }
-constexpr u32 VoxelClassMeshletCap(u32 c)       { return VoxelClassTriCap(c) / 12u; }
+constexpr u32 VoxelClassVertexCap(u32 c)        { return VoxelClassTriCap(c) * kVoxelVertexCapPermille / 1000u; }
+constexpr u32 VoxelClassMeshletVertexCap(u32 c) { return VoxelClassTriCap(c) * kVoxelMeshletVertexCapPermille / 1000u; }
+constexpr u32 VoxelClassMeshletTriCap(u32 c)    { return VoxelClassTriCap(c); }
+constexpr u32 VoxelClassMeshletCap(u32 c)       { return (VoxelClassTriCap(c) + kVoxelTrianglesPerMeshlet - 1u) / kVoxelTrianglesPerMeshlet; }
+
+// Largest per-class capacities: sizes of the per-build extraction scratch
+constexpr u32 VoxelMaxClassTriCap()             { u32 m = 0u; for (u32 i = 0u; i < kVoxelPageClassCount; ++i) m = VoxelClassTriCap(i) > m ? VoxelClassTriCap(i) : m; return m; }
+constexpr u32 VoxelMaxClassVertexCap()          { u32 m = 0u; for (u32 i = 0u; i < kVoxelPageClassCount; ++i) m = VoxelClassVertexCap(i) > m ? VoxelClassVertexCap(i) : m; return m; }
 
 // Pool bases: classes packed back-to-back, page idx strided by the class capacity
-constexpr u32 VoxelClassPageBase(u32 c)         { u32 s = 0u; for (u32 i = 0u; i < c; ++i) s += VoxelClassPageCount(i); return s; }
-constexpr u32 VoxelTotalPages()                 { return VoxelClassPageBase(kVoxelPageClassCount); }
 constexpr u32 VoxelClassVertexBase(u32 c)       { u32 s = 0u; for (u32 i = 0u; i < c; ++i) s += VoxelClassPageCount(i) * VoxelClassVertexCap(i); return s; }
 constexpr u32 VoxelClassMeshletVertexBase(u32 c){ u32 s = 0u; for (u32 i = 0u; i < c; ++i) s += VoxelClassPageCount(i) * VoxelClassMeshletVertexCap(i); return s; }
 constexpr u32 VoxelClassMeshletTriBase(u32 c)   { u32 s = 0u; for (u32 i = 0u; i < c; ++i) s += VoxelClassPageCount(i) * VoxelClassMeshletTriCap(i); return s; }

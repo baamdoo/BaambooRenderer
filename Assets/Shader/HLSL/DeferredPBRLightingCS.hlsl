@@ -258,7 +258,7 @@ void main(uint3 tID : SV_DispatchThreadID)
         {
             Texture3D< float4 > AerialPerspectiveLUT = GetResource(g_AerialPerspectiveLUT.index);
 
-            float viewDistance = max(0.0, length(posWORLD));
+            float viewDistance = length(posWORLD - g_Camera.posWORLD);
 
             uint3 texSize;
             AerialPerspectiveLUT.GetDimensions(texSize.x, texSize.y, texSize.z);

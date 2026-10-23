@@ -149,7 +149,7 @@ public:
 
     // === Compute Commands ===
     virtual void Dispatch(u32 threadGroupCountX, u32 threadGroupCountY, u32 threadGroupCountZ) = 0;
-    //virtual void DispatchIndirect(Arc< Buffer > argumentBuffer, u32 argumentBufferOffset = 0) = 0;
+    virtual void DispatchIndirect(const Arc< Buffer >& pArgumentBuffer, u64 offsetInBytes = 0) = 0;
     virtual void DispatchRays(ShaderBindingTable& sbt, u32 width, u32 height, u32 depth = 1) = 0;
 
     template< u32 numThreadsPerGroupX >

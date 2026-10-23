@@ -27,6 +27,7 @@ public:
 	CommandSignatureDesc& AddShaderResourceView(UINT rootIndex);
 	CommandSignatureDesc& AddUnorderedAccessView(UINT rootIndex);
 
+	CommandSignatureDesc& AddDispatch();
 	CommandSignatureDesc& AddDispatchMesh();
 
 	CommandSignatureDesc& AddDispatchRays();

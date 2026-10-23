@@ -463,14 +463,15 @@ void main()
         g_Camera.posWORLD + vec3(0.0, planetRadiusMeter, 0.0);
 
     vec3 posWORLD     = ReconstructWorldPos(uv, depth, g_Camera.mViewProjInv);
-    vec3 rayDirection = normalize(posWORLD);
+    vec3 viewVec      = depth == 0.0 ? posWORLD : posWORLD - g_Camera.posWORLD; // sky depth reconstructs a direction at infinity
+    vec3 rayDirection = normalize(viewVec);
     vec3 rayOrigin    = cameraPosAbovePlanet;
 
-    float maxDistance = depth == 0.0 ? RAY_MARCHING_MAX_DISTANCE : length(posWORLD);
+    float maxDistance = depth == 0.0 ? RAY_MARCHING_MAX_DISTANCE : length(viewVec);
     float rayAltitude = inverseLerp(rayOrigin.y - planetRadiusMeter, bottomLayerMeter, topLayerMeter);
-    if (rayAltitude > 1.0)
+    if (depth == 0.0 && rayAltitude > 1.0)
     {
-        // More cloud sight range as higher view
+        // More cloud sight range as higher view (sky pixels only; geometry keeps its surface clamp)
         maxDistance = mix(maxDistance, 1e8, rayAltitude * 0.1);
     }
 

@@ -309,7 +309,7 @@ void LightingNode::Apply(render::CommandContext& context, const SceneRenderView&
 	context.StageDescriptor("g_CoreNormal", g_FrameData.pCoreNormal.lock(), g_FrameData.pPointClamp);
 	context.StageDescriptor("g_CoreMaterial", g_FrameData.pCoreMaterial.lock(), g_FrameData.pPointClamp);
 	context.StageDescriptor("g_AerialPerspectiveLUT", g_FrameData.pAerialPerspectiveLUT ?
-		g_FrameData.pAerialPerspectiveLUT.lock() : rm.GetFlatBlackTexture3D(), g_FrameData.pLinearWrap);
+		g_FrameData.pAerialPerspectiveLUT.lock() : rm.GetFlatBlackTexture3D(), g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_CloudScatteringLUT", g_FrameData.pCloudScatteringLUT ?
 		g_FrameData.pCloudScatteringLUT.lock() : rm.GetFlatBlackTexture(), g_FrameData.pLinearClamp);
 	context.StageDescriptor("g_SkyboxLUT", g_FrameData.pSkyboxLUT ?

@@ -5,14 +5,13 @@
 cbuffer TriSortPushConstants : register(b0, ROOT_CONSTANT_SPACE)
 {
     uint  g_VertexSlabBase;
-    uint  g_MeshletVertexSlabBase;
     uint  g_MaxTriangles;
-    float g_ChunkSizeMeter;
 };
 
 ConstantBuffer< DescriptorHeapIndex > g_MCCounter : register(b1, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_Vertices  : register(b2, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_SortBins  : register(b3, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_Triplets  : register(b4, ROOT_CONSTANT_SPACE);
 
 [numthreads(256, 1, 1)]
 void main(uint3 dt : SV_DispatchThreadID)
@@ -25,11 +24,15 @@ void main(uint3 dt : SV_DispatchThreadID)
         return;
 
     StructuredBuffer< VoxelVertex > Verts = GetResource(g_Vertices.index);
-    float3 c = float3(0.0, 0.0, 0.0);
+    StructuredBuffer< uint >        Tri   = GetResource(g_Triplets.index);
+    uint3 posQSum = uint3(0u, 0u, 0u);
     [unroll] for (uint k = 0u; k < 3u; ++k)
-        c += VoxelUnpackPos(Verts[g_VertexSlabBase + t * 3u + k], g_ChunkSizeMeter);
+    {
+        VoxelVertex v = Verts[g_VertexSlabBase + Tri[t * 3u + k]];
+        posQSum += uint3(v.posXY >> 16u, v.posXY & 0xFFFFu, v.posZnormal >> 16u);
+    }
 
-    uint key = VoxelTriSortKey(c / 3.0, g_ChunkSizeMeter);
+    uint key = VoxelTriSortKey(posQSum);
 
     RWStructuredBuffer< uint > Bins = GetResource(g_SortBins.index);
     InterlockedAdd(Bins[key], 1u);

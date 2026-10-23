@@ -9,46 +9,18 @@ layout(push_constant) uniform McPushConstants
     uint  g_Apron;          // A apron texels per side
     float g_VoxelSizeMeter;
     uint  g_VertexSlabBase; // this chunk's base offset into the vertex pool (in vertices)
-    uint  g_MaxTriangles;   // slab capacity in triangles -- overflow guard
+    uint  g_MaxTriangles;
     float g_GeomorphRadiusMeter;
+    uint  g_MaxVertices;
 } pc;
 
-layout(set = 1, binding = 0) readonly buffer DensityFieldBuffer { float       g_DensityField[]; };
-layout(set = 1, binding = 1)          buffer McCounterBuffer    { uint        g_MCCounter[]; };
-layout(set = 1, binding = 2)          buffer OutVertexBuffer    { VoxelVertex g_OutVertices[]; };
-layout(set = 1, binding = 3) readonly buffer TriTableBuffer     { int         g_TriTable[]; };
+layout(set = 1, binding = 0) readonly buffer DensityFieldBuffer { float g_DensityField[]; };
+layout(set = 1, binding = 1)          buffer McCounterBuffer    { uint  g_MCCounter[]; };
+layout(set = 1, binding = 2) readonly buffer TriTableBuffer     { int   g_TriTable[]; };
+layout(set = 1, binding = 3) readonly buffer EdgeMapBuffer      { uint  g_EdgeMap[]; };
+layout(set = 1, binding = 4)          buffer TripletBuffer      { uint  g_Triplets[]; };
 
-#define VOXEL_GEOMORPH_BUILD
 #include "VoxelTerrainCommon.hg"
-
-// Isosurface vertex on `edge`: position interpolates the two corner samples along the density gradient
-VoxelVertex MakeEdgeVertex(int edge, float cornerVal[8], vec3 cornerPos[8], vec3 cornerGrad[8], float chunkSizeMeter)
-{
-    uvec2 ec = kEdgeCorners[edge];
-    vec3  pos, n;
-    VoxelEdgePoint(cornerVal[ec.x], cornerVal[ec.y], cornerPos[ec.x], cornerPos[ec.y], cornerGrad[ec.x], cornerGrad[ec.y], pos, n);
-
-    // Should use the exact same normal value(decoded) as the rendering point(GBuffer) for consistency
-    vec3 nq = VoxelQuantizeNormal(n);
-
-    VoxelTerrainGenParams gp;
-    gp.cellsPerAxis   = pc.g_CellsPerAxis;
-    gp.apron          = pc.g_Apron;
-    gp.voxelSizeMeter = pc.g_VoxelSizeMeter;
-    VoxelProjectResult pr1 = VoxelProjectStage(gp, pos, nq, pc.g_GeomorphRadiusMeter, 2u);       // s1 = hit point on parent mesh
-    VoxelProjectResult pr2 = VoxelProjectStage(gp, pos, nq, 2.0 * pc.g_GeomorphRadiusMeter, 4u); // s2 = hit point on grandparent
-    VoxelProjectResult pr3 = VoxelProjectStage(gp, pos, nq, 4.0 * pc.g_GeomorphRadiusMeter, 8u); // s3 = hit point on great-grandparent
-
-    float s1 = pr1.sd;
-    float s2 = (pr2.code == 0u) ? pr2.sd : s1; // no hit: stay on the previous LOD
-    float s3 = (pr3.code == 0u) ? pr3.sd : s2;
-
-    // normal morph targets: the ancestors' shading normals where the ray hit
-    vec3 nT1 = pr1.nTarget;
-    vec3 nT2 = (pr2.code == 0u) ? pr2.nTarget : nT1;
-
-    return VoxelPackVertex(pos, nq, nT1, nT2, s1, s2, s3, false, chunkSizeMeter, pc.g_VoxelSizeMeter);
-}
 
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 void main()
@@ -60,25 +32,11 @@ void main()
 
     const uint dim = C + 1u + 2u * pc.g_Apron;
 
-    // sample 8 corners + a central-difference gradient at each (apron guarantees the neighbours)
-    float cornerVal[8];
-    vec3  cornerPos[8];
-    vec3  cornerGrad[8];
-    uint  cubeIndex = 0u;
+    uint cubeIndex = 0u;
     for (uint i = 0u; i < 8u; ++i)
     {
-        uvec3 gc = cell + kCornerOffset[i];
-        uvec3 tx = gc + pc.g_Apron;
-        float d  = g_DensityField[FlatTexel(tx, dim)];
-
-        cornerVal[i]  = d;
-        cornerPos[i]  = vec3(gc) * pc.g_VoxelSizeMeter;
-        cornerGrad[i] = vec3(
-            g_DensityField[FlatTexel(tx + uvec3(1u, 0u, 0u), dim)] - g_DensityField[FlatTexel(tx - uvec3(1u, 0u, 0u), dim)],
-            g_DensityField[FlatTexel(tx + uvec3(0u, 1u, 0u), dim)] - g_DensityField[FlatTexel(tx - uvec3(0u, 1u, 0u), dim)],
-            g_DensityField[FlatTexel(tx + uvec3(0u, 0u, 1u), dim)] - g_DensityField[FlatTexel(tx - uvec3(0u, 0u, 1u), dim)]);
-
-        if (d < 0.0)
+        uvec3 tx = cell + kCornerOffset[i] + pc.g_Apron;
+        if (g_DensityField[FlatTexel(tx, dim)] < 0.0)
             cubeIndex |= (1u << i); // solid corner sets the bit
     }
 
@@ -94,23 +52,54 @@ void main()
         ++triCount;
     }
 
-    uint baseTri = atomicAdd(g_MCCounter[0], triCount); // reserve a contiguous triangle range
-    atomicAdd(g_MCCounter[1], 1u);                      // active-cell tally
+    atomicAdd(g_MCCounter[1], 1u); // active-cell tally
 
-    const float chunkSize = float(C) * pc.g_VoxelSizeMeter;
-
-    for (uint t = 0u; t < triCount; ++t)
+    // Look up every triangle's 3 vertex numbers at the owner grid points of its edges
+    uint nums[15];
+    uint validMask  = 0u;
+    uint validCount = 0u;
+    for (uint t = 0u; t < 5u; ++t)
     {
-        if (baseTri + t >= pc.g_MaxTriangles)
-            break;
+        if (t < triCount)
+        {
+            int edges[3] = int[3](
+                g_TriTable[cubeIndex * 16u + t * 3u + 0u],
+                g_TriTable[cubeIndex * 16u + t * 3u + 2u],
+                g_TriTable[cubeIndex * 16u + t * 3u + 1u]); // winding order: eA, eC, eB
 
-        int eA = g_TriTable[cubeIndex * 16u + t * 3u + 0u];
-        int eB = g_TriTable[cubeIndex * 16u + t * 3u + 1u];
-        int eC = g_TriTable[cubeIndex * 16u + t * 3u + 2u];
+            bool valid = true;
+            for (uint k = 0u; k < 3u; ++k)
+            {
+                uvec3 eo    = kEdgeOwner[edges[k]]; // (owner corner, far corner, axis)
+                uvec3 owner = cell + kCornerOffset[eo.x];
+                uint  n     = g_EdgeMap[FlatTexel(owner, C + 1u) * 3u + eo.z];
 
-        uint v0 = pc.g_VertexSlabBase + (baseTri + t) * 3u;
-        g_OutVertices[v0 + 0u] = MakeEdgeVertex(eA, cornerVal, cornerPos, cornerGrad, chunkSize);
-        g_OutVertices[v0 + 1u] = MakeEdgeVertex(eC, cornerVal, cornerPos, cornerGrad, chunkSize); // winding order: eA, eC, eB
-        g_OutVertices[v0 + 2u] = MakeEdgeVertex(eB, cornerVal, cornerPos, cornerGrad, chunkSize);
+                nums[t * 3u + k] = n;
+                valid = valid && (n < pc.g_MaxVertices); // sentinel and vertex overflow both fail
+            }
+            if (valid)
+            {
+                validMask |= 1u << t;
+                ++validCount;
+            }
+        }
+    }
+
+    uint baseTri = atomicAdd(g_MCCounter[0], validCount); // reserve only triangles whose 3 vertices exist
+
+    // Pack the kept triangles contiguously from baseTri
+    uint s = baseTri;
+    for (uint t = 0u; t < 5u; ++t)
+    {
+        if (((validMask >> t) & 1u) != 0u)
+        {
+            if (s < pc.g_MaxTriangles)
+            {
+                g_Triplets[s * 3u + 0u] = nums[t * 3u + 0u];
+                g_Triplets[s * 3u + 1u] = nums[t * 3u + 1u];
+                g_Triplets[s * 3u + 2u] = nums[t * 3u + 2u];
+            }
+            ++s;
+        }
     }
 }

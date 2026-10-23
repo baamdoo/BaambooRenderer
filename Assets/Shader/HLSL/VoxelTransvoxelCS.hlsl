@@ -16,6 +16,7 @@ cbuffer TvPushConstants : register(b0, ROOT_CONSTANT_SPACE)
     uint  g_VertexSlabBase;
     uint  g_MaxTriangles;
     float g_GeomorphRadiusMeter;
+    uint  g_MaxVertices;
 };
 
 ConstantBuffer< DescriptorHeapIndex > g_DensityField : register(b1, ROOT_CONSTANT_SPACE);
@@ -23,6 +24,7 @@ ConstantBuffer< DescriptorHeapIndex > g_MCCounter    : register(b2, ROOT_CONSTAN
 ConstantBuffer< DescriptorHeapIndex > g_OutVertices  : register(b3, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_TvTables     : register(b4, ROOT_CONSTANT_SPACE);
 ConstantBuffer< DescriptorHeapIndex > g_TriTable     : register(b5, ROOT_CONSTANT_SPACE);
+ConstantBuffer< DescriptorHeapIndex > g_Triplets     : register(b6, ROOT_CONSTANT_SPACE);
 
 static StructuredBuffer<float> Density = GetResource(g_DensityField.index);
 static StructuredBuffer<uint>  TvTable  = GetResource(g_TvTables.index);
@@ -53,44 +55,6 @@ uint TvVertexData(uint caseCode, uint i)
 {
     uint w = TvTable[TV_VERTEXDATA_BASE + caseCode * TV_VERTEXDATA_STRIDE + i / 2u];
     return (w >> ((i % 2u) * 16u)) & 0xFFFFu;
-}
-
-// Isosurface vertex on `edge`: position interpolates the two corner samples
-VoxelVertex MakeEdgeVertex(uint2 edge, float cornerVal[13], uint3 cornerPos[13], float3 cornerGrad[13], float chunkSizeMeter)
-{
-    bool bCoarse = (edge.x >= 9u && edge.y >= 9u);
-
-    float  v0 = cornerVal[edge.x], v1 = cornerVal[edge.y];
-    float3 p0 = float3(cornerPos[edge.x]), p1 = float3(cornerPos[edge.y]);
-    float3 g0 = cornerGrad[edge.x], g1 = cornerGrad[edge.y];
-
-    float  tt = (abs(v0 - v1) < 1e-6) ? 0.0 : v0 / (v0 - v1); // zero crossing along the edge
-
-    float3 pos = lerp(p0, p1, tt) * g_VoxelSizeMeter;
-    float3 g   = lerp(g0, g1, tt);
-    float  gSq = dot(g, g);
-    float3 n   = (gSq > 1e-12) ? g * rsqrt(gSq) : float3(0.0, 1.0, 0.0);
-
-    // Should use the exact same normal value(decoded) as the rendering point(GBuffer) for consistency
-    float3 nq = VoxelQuantizeNormal(n);
-
-    VoxelTerrainGenParams gp = (VoxelTerrainGenParams) 0;
-    gp.cellsPerAxis   = g_CellsPerAxis;
-    gp.apron          = g_Apron;
-    gp.voxelSizeMeter = g_VoxelSizeMeter;
-    VoxelProjectResult pr1 = VoxelProjectStage(gp, pos, nq, g_GeomorphRadiusMeter, 2u, Density, TriTable);       // s1 = to the parent mesh
-    VoxelProjectResult pr2 = VoxelProjectStage(gp, pos, nq, 2.0 * g_GeomorphRadiusMeter, 4u, Density, TriTable); // s2 = to the grandparent
-    VoxelProjectResult pr3 = VoxelProjectStage(gp, pos, nq, 4.0 * g_GeomorphRadiusMeter, 8u, Density, TriTable); // s3 = to the great-grandparent
-
-    float s1 = bCoarse ? 0.0 : pr1.sd;         // coarse-side vertices already sit on the parent mesh
-    float s2 = (pr2.code == 0u) ? pr2.sd : s1; // no hit: stay on the previous LOD
-    float s3 = (pr3.code == 0u) ? pr3.sd : s2;
-
-    // normal morph targets: the ancestors' shading normals where the ray hit
-    float3 nT1 = bCoarse ? nq : pr1.nTarget;
-    float3 nT2 = (pr2.code == 0u) ? pr2.nTarget : nT1;
-
-    return VoxelPackVertex(pos, nq, nT1, nT2, s1, s2, s3, bCoarse, chunkSizeMeter, g_VoxelSizeMeter);
 }
 
 [numthreads(8, 8, 1)]
@@ -203,12 +167,21 @@ void main(uint3 DTid : SV_DispatchThreadID)
 
     const float chunkSize = float(C) * g_VoxelSizeMeter;
 
-    RWByteAddressBuffer Counter = GetResource(g_MCCounter.index);
-    uint baseTri;
-    Counter.InterlockedAdd(0u, triCount, baseTri); // reserve a contiguous triangle range
+    VoxelTerrainGenParams gp = (VoxelTerrainGenParams) 0;
+    gp.cellsPerAxis   = C;
+    gp.apron          = g_Apron;
+    gp.voxelSizeMeter = g_VoxelSizeMeter;
 
-    RWStructuredBuffer< VoxelVertex > OutV = GetResource(g_OutVertices.index);
-    for (uint t = 0u; t < triCount; ++t)
+    RWByteAddressBuffer Counter = GetResource(g_MCCounter.index);
+    uint vb;
+    Counter.InterlockedAdd(8u, 3u * triCount, vb); // reserve 3 private vertices per tri
+    uint fitTris = min(triCount, (g_MaxVertices - min(vb, g_MaxVertices)) / 3u); // tris whose vertices fit under the cap
+    uint baseTri;
+    Counter.InterlockedAdd(0u, fitTris, baseTri); // reserve a contiguous triangle range
+
+    RWStructuredBuffer< VoxelVertex > OutV     = GetResource(g_OutVertices.index);
+    RWStructuredBuffer< uint >        Triplets = GetResource(g_Triplets.index);
+    for (uint t = 0u; t < fitTris; ++t)
     {
         if (baseTri + t >= g_MaxTriangles)
             break;
@@ -225,20 +198,15 @@ void main(uint3 DTid : SV_DispatchThreadID)
         uint2 e1 = uint2((p1 >> 4u) & 0xF, (p1 >> 0u) & 0xF);
         uint2 e2 = uint2((p2 >> 4u) & 0xF, (p2 >> 0u) & 0xF);
 
-        uint v0 = g_VertexSlabBase + (baseTri + t) * 3u + 0u;
-        uint v1 = g_VertexSlabBase + (baseTri + t) * 3u + 1u;
-        uint v2 = g_VertexSlabBase + (baseTri + t) * 3u + 2u;
-        if (winding == 0u)
+        uint2 edges[3] = { e0, (winding == 0u) ? e2 : e1, (winding == 0u) ? e1 : e2 }; // winding order: e0, e2, e1; reversed-winding classes keep table order
+
+        uint v0 = vb + t * 3u; // page-relative
+        [unroll] for (uint k = 0u; k < 3u; ++k)
         {
-            OutV[v0] = MakeEdgeVertex(e0, cornerVal, patchPoints, cornerGrad, chunkSize);
-            OutV[v1] = MakeEdgeVertex(e2, cornerVal, patchPoints, cornerGrad, chunkSize);
-            OutV[v2] = MakeEdgeVertex(e1, cornerVal, patchPoints, cornerGrad, chunkSize);
-        }
-        else
-        {
-            OutV[v0] = MakeEdgeVertex(e0, cornerVal, patchPoints, cornerGrad, chunkSize);
-            OutV[v2] = MakeEdgeVertex(e2, cornerVal, patchPoints, cornerGrad, chunkSize);
-            OutV[v1] = MakeEdgeVertex(e1, cornerVal, patchPoints, cornerGrad, chunkSize);
+            uint2 e = edges[k]; // table endpoints are already in min -> max order
+            OutV[g_VertexSlabBase + v0 + k] = VoxelMakeEdgeVertex(gp, cornerVal[e.x], cornerVal[e.y], float3(patchPoints[e.x]) * g_VoxelSizeMeter, float3(patchPoints[e.y]) * g_VoxelSizeMeter,
+                                               cornerGrad[e.x], cornerGrad[e.y], g_GeomorphRadiusMeter, chunkSize, e.x >= 9u && e.y >= 9u, Density, TriTable);
+            Triplets[(baseTri + t) * 3u + k] = v0 + k; // identity triplet
         }
     }
 }

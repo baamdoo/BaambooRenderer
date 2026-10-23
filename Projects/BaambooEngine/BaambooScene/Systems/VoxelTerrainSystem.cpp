@@ -78,16 +78,8 @@ std::vector< u64 > VoxelTerrainSystem::UpdateRenderData(const float3& cameraPos)
                     if (lod > 0u && x >= hxB && x < hxE && z >= hzB && z < hzE)
                         continue;
 
-                    u32 mask = 0u;
-                    if (lod + 1u < numLevels)
-                    {
-                        if (x == span.xBegin)   mask |= 1u << 0u; // -x
-                        if (x == span.xEnd - 1) mask |= 1u << 1u; // +x
-                        if (z == span.zBegin)   mask |= 1u << 4u; // -z
-                        if (z == span.zEnd - 1) mask |= 1u << 5u; // +z
-                    }
                     for (i32 y = yBegin; y <= yEnd; ++y)
-                        m_DesiredChunks.push_back({ VoxelChunkID{ int3(x, y, z), lod }, mask });
+                        m_DesiredChunks.push_back(VoxelChunkID{ int3(x, y, z), lod });
                 }
             }
         }
@@ -123,6 +115,7 @@ void VoxelTerrainSystem::CollectRenderData(SceneRenderView& outView) const
 
         vt.dice          = s.dice;
         vt.dice.maxLevel = s.dice.maxLevel > 3u ? 3u : s.dice.maxLevel;
+        vt.dice.radiusM  = std::min(s.dice.radiusM, s.chunkWorldSizeMeter); // dicing ends where the LOD0 geomorph band begins (d = S0)
 
         VoxelTerrainGenParams& gp = vt.genParams;
         gp = {};
@@ -158,14 +151,13 @@ void VoxelTerrainSystem::CollectRenderData(SceneRenderView& outView) const
         gp.erosionSlopeScale    = s.erosionSlopeScale;
         gp.erosionOctaves       = s.erosionOctaves;
 
-        for (const DesiredChunk& desired : m_DesiredChunks)
+        for (const VoxelChunkID& id : m_DesiredChunks)
         {
             vt.chunks.emplace_back();
 
             VoxelChunkView& chunk = vt.chunks.back();
-            chunk.id       = desired.id;
-            chunk.originWS = float3(desired.id.coord * (i32)s.cellsPerAxis) * (s.voxelSizeMeter * float(1u << desired.id.lod));
-            chunk.mask     = desired.mask;
+            chunk.id       = id;
+            chunk.originWS = float3(id.coord * (i32)s.cellsPerAxis) * (s.voxelSizeMeter * float(1u << id.lod));
 		}
 
 		break; // terrain system only supports a single entity with terrain component

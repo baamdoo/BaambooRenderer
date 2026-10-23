@@ -209,7 +209,6 @@ struct VoxelChunkView
 {
 	VoxelChunkID id;
 	float3       originWS;
-	u32          mask = 0u; // Transvoxel transition-face mask (bit per face)
 };
 
 struct VoxelTerrainRenderView

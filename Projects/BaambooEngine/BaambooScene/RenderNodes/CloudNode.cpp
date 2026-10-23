@@ -289,7 +289,7 @@ void CloudScatteringNode::Apply(render::CommandContext& context, const SceneRend
         context.StageDescriptor("g_CloudProfileLUT", g_FrameData.pCloudProfileLUT.lock(), g_FrameData.pLinearWrap);
         context.StageDescriptor("g_DepthBuffer", g_FrameData.pDepth.lock(), g_FrameData.pPointClamp);
         context.StageDescriptor("g_TransmittanceLUT", g_FrameData.pTransmittanceLUT.lock(), g_FrameData.pLinearClamp);
-        context.StageDescriptor("g_AerialPerspectiveLUT", g_FrameData.pAerialPerspectiveLUT.lock(), g_FrameData.pLinearWrap);
+        context.StageDescriptor("g_AerialPerspectiveLUT", g_FrameData.pAerialPerspectiveLUT.lock(), g_FrameData.pLinearClamp);
         context.StageDescriptor("g_AtmosphereAmbientLUT", g_FrameData.pAtmosphereAmbientLUT.lock(), g_FrameData.pLinearWrap);
         context.StageDescriptor("g_BlueNoiseLUT", m_pBlueNoiseTexture, g_FrameData.pLinearClamp);
         context.StageDescriptor("g_OutCloudScatteringLUT", m_pCloudScatteringLUT);

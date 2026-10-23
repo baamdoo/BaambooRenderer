@@ -351,16 +351,20 @@ float VoxelTerrainErodedHeight01(VoxelTerrainGenParams gp, float2 xz)
     return saturate(heightSlope.x + d.x / amp); // delta meters -> h01
 }
 
-// Density at a world position (SDF: solid < 0, air > 0)
-float VoxelTerrainDensity(VoxelTerrainGenParams gp, float3 worldPos)
+float VoxelTerrainSurfaceY(VoxelTerrainGenParams gp, float2 xzWS)
 {
-    float h01        = VoxelTerrainErodedHeight01(gp, worldPos.xz);
-    float surfaceY   = gp.surfaceBaseYMeter + (h01 - 0.5) * gp.mountainAmplitude;
-    surfaceY         = max(surfaceY, VOXEL_WORLD_FLOOR_Y_METER + 0.25); // keeps the y=0 sample solid at every LOD
-    float surfaceSDF = worldPos.y - surfaceY; // solid (<0) below the surface
-    float floorSDF   = (VOXEL_WORLD_FLOOR_Y_METER - 64.0) - worldPos.y; // one chunk below the visible world
+    float h01 = VoxelTerrainErodedHeight01(gp, xzWS);
+    return gp.surfaceBaseYMeter + (h01 - 0.5) * gp.mountainAmplitude;
+}
 
-    return max(surfaceSDF, floorSDF); // intersection: below surface AND above the terrain base floor
+// Density at a world position (SDF: solid < 0, air > 0)
+float VoxelTerrainDensityFromSurface(float posY, float surfaceY)
+{
+    surfaceY = max(surfaceY, VOXEL_WORLD_FLOOR_Y_METER + 0.25); // keeps the y=0 sample solid at every LOD
+    
+    float surfaceSDF = posY - surfaceY;                           // solid (<0) below the surface
+    float floorSDF   = (VOXEL_WORLD_FLOOR_Y_METER - 64.0) - posY; // one chunk below the visible world
+    return max(surfaceSDF, floorSDF);                             // intersection: below surface AND above the terrain base floor
 }
 
 // ---- Dicing helpers --------------------------------------------------------------
@@ -781,6 +785,14 @@ static const uint2 kEdgeCorners[12] =
     uint2(0, 4), uint2(1, 5), uint2(2, 6), uint2(3, 7)
 };
 
+// edge -> (min corner = owner grid point offset, max corner, axis x:0 y:1 z:2)
+static const uint3 kEdgeOwner[12] =
+{
+    uint3(0, 1, 0), uint3(1, 2, 1), uint3(3, 2, 0), uint3(0, 3, 1),
+    uint3(4, 5, 0), uint3(5, 6, 1), uint3(7, 6, 0), uint3(4, 7, 1),
+    uint3(0, 4, 2), uint3(1, 5, 2), uint3(2, 6, 2), uint3(3, 7, 2)
+};
+
 // Isosurface point on the edge (v0, v1): position interpolates the two corner samples, normal = density gradient.
 void VoxelEdgePoint(float v0, float v1, float3 p0, float3 p1, float3 g0, float3 g1, out float3 pos, out float3 n)
 {
@@ -791,6 +803,35 @@ void VoxelEdgePoint(float v0, float v1, float3 p0, float3 p1, float3 g0, float3 
     pos = lerp(p0, p1, tt);
     n   = (gl2 > 1e-12) ? g * rsqrt(gl2) : float3(0.0, 1.0, 0.0);
 }
+
+
+// -------------------------- //
+// Morton / spatial-sort keys //
+// -------------------------- //
+// Spread the low 10 bits of x so two zero bits separate each source bit.
+uint MortonPart1By2(uint x)
+{
+    x &= 0x000003FFu;
+    x = (x | (x << 16)) & 0x030000FFu;
+    x = (x | (x << 8)) & 0x0300F00Fu;
+    x = (x | (x << 4)) & 0x030C30C3u;
+    x = (x | (x << 2)) & 0x09249249u;
+    return x;
+}
+
+uint MortonEncode3D(uint3 v)
+{
+    return (MortonPart1By2(v.z) << 2) | (MortonPart1By2(v.y) << 1) | MortonPart1By2(v.x);
+}
+
+// Voxel triangle spatial-sort key: the centroid of three uint16 positions (given as their sum) in 32^3 blocks over the chunk cube -> 15-bit Morton code.
+uint VoxelTriSortKey(uint3 posQSum)
+{
+    uint3 blk = min(posQSum * 32u / (3u * 65535u), uint3(31u, 31u, 31u));
+    return MortonEncode3D(blk);
+}
+// -------------------------- //
+
 
 // ---- Geomorphing ------------------------------------------------------------------
 bool RayTriangle(float3 o, float3 d, float3 t0, float3 t1, float3 t2, out float s, out float3 bary)
@@ -974,6 +1015,33 @@ VoxelProjectResult VoxelProjectStage(VoxelTerrainGenParams gp, float3 pos, float
         }
     }
     return pr1;
+}
+
+// Isosurface vertex on the edge (v0 = min endpoint -> v1 = max endpoint): interpolated position/normal + 3-stage geomorph targets
+// pinned: coarse-side transition vertex that already sits on the parent mesh
+VoxelVertex VoxelMakeEdgeVertex(VoxelTerrainGenParams gp, float v0, float v1, float3 p0, float3 p1, float3 g0, float3 g1,
+                                float morphRadiusMeter, float chunkSizeMeter, bool pinned,
+                                StructuredBuffer< float > Density, StructuredBuffer< int > TriTable)
+{
+    float3 pos, n;
+    VoxelEdgePoint(v0, v1, p0, p1, g0, g1, pos, n);
+
+    // Should use the exact same normal value(decoded) as the rendering point(GBuffer) for consistency
+    float3 nq = VoxelQuantizeNormal(n);
+
+    VoxelProjectResult pr1 = VoxelProjectStage(gp, pos, nq, morphRadiusMeter, 2u, Density, TriTable);       // s1 = hit point on parent mesh
+    VoxelProjectResult pr2 = VoxelProjectStage(gp, pos, nq, 2.0 * morphRadiusMeter, 4u, Density, TriTable); // s2 = hit point on grandparent
+    VoxelProjectResult pr3 = VoxelProjectStage(gp, pos, nq, 4.0 * morphRadiusMeter, 8u, Density, TriTable); // s3 = hit point on great-grandparent
+
+    float s1 = pinned ? 0.0 : pr1.sd;
+    float s2 = (pr2.code == 0u) ? pr2.sd : s1; // no hit: stay on the previous LOD
+    float s3 = (pr3.code == 0u) ? pr3.sd : s2;
+
+    // normal morph targets: the ancestors' shading normals where the ray hit
+    float3 nT1 = pinned ? nq : pr1.nTarget;
+    float3 nT2 = (pr2.code == 0u) ? pr2.nTarget : nT1;
+
+    return VoxelPackVertex(pos, nq, nT1, nT2, s1, s2, s3, pinned, chunkSizeMeter, gp.voxelSizeMeter);
 }
 
 #endif // _HLSL_VOXEL_TERRAIN_COMMON_HEADER

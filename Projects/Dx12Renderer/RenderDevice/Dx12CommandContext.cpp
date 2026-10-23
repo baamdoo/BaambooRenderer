@@ -129,6 +129,7 @@ public:
 	void DrawIndirectWithCount(const Arc< Dx12Buffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< Dx12Buffer >& pCountBuffer, u32 numDraws);
 
 	void Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ);
+	void DispatchIndirect(const Arc< Dx12Buffer >& pArgumentBuffer, u64 offsetInBytes);
 	void DispatchRays(Dx12ShaderBindingTable& sbt, u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ);
 
 	bool IsComputeContext() const { return m_pComputePipeline != nullptr; }
@@ -1132,6 +1133,21 @@ void Dx12CommandContext::Impl::Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numG
 	m_d3d12CommandList10->Dispatch(numGroupsX, numGroupsY, numGroupsZ);
 }
 
+void Dx12CommandContext::Impl::DispatchIndirect(const Arc< Dx12Buffer >& pArgumentBuffer, u64 offsetInBytes)
+{
+	FlushBarriers();
+
+	auto& rm = static_cast< Dx12ResourceManager& >(m_RenderDevice.GetResourceManager());
+	m_d3d12CommandList10->ExecuteIndirect(
+		rm.GetDispatchD3D12CommandSignature(),
+		1,
+		pArgumentBuffer->GetD3D12Resource(),
+		offsetInBytes,
+		nullptr,
+		0
+	);
+}
+
 void Dx12CommandContext::Impl::DispatchRays(Dx12ShaderBindingTable& sbt, u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ)
 {
 	FlushBarriers();
@@ -1677,6 +1693,11 @@ void Dx12CommandContext::DrawMeshTasksIndirectCount(const Arc< render::Buffer >&
 void Dx12CommandContext::Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ)
 {
 	m_Impl->Dispatch(numGroupsX, numGroupsY, numGroupsZ);
+}
+
+void Dx12CommandContext::DispatchIndirect(const Arc< render::Buffer >& pArgumentBuffer, u64 offsetInBytes)
+{
+	m_Impl->DispatchIndirect(StaticCast<Dx12Buffer>(pArgumentBuffer), offsetInBytes);
 }
 
 void Dx12CommandContext::DispatchRays(render::ShaderBindingTable& sbt, u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ)

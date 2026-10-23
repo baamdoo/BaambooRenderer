@@ -2,6 +2,7 @@
 #extension GL_GOOGLE_include_directive : require
 
 #include "DescriptorCommon.hg"
+#include "VisibilityBuffer.hg"
 #include "VoxelTerrainCommon.hg"
 
 layout(push_constant) uniform MeshletBuildPushConstants
@@ -14,13 +15,18 @@ layout(push_constant) uniform MeshletBuildPushConstants
     uint  g_VertexSlabBase;
     uint  g_MeshletVertexSlabBase;
     float g_ChunkSizeMeter;
+    uint  g_MeshletTriSlabBase;
+    uint  g_MaxVertices;
+    uint  g_MaxMeshletVertices;
 } pc;
 
 layout(set = 1, binding = 0) buffer McCounterBuffer  { uint g_MCCounter[]; };
 layout(set = 1, binding = 1) buffer OutMeshletBuffer { Meshlet g_OutMeshlets[]; };
 layout(set = 1, binding = 2) buffer OutCountsBuffer  { VoxelChunkCounts g_OutCounts[]; };
 layout(set = 1, binding = 3) readonly buffer VertexPoolBuffer { VoxelVertex g_Vertices[]; };
-layout(set = 1, binding = 4) readonly buffer MeshletVertexIndexBuffer { uint g_MeshletVerts[]; };
+layout(set = 1, binding = 4) buffer OutMeshletVertexBuffer   { uint g_OutMeshletVerts[]; };
+layout(set = 1, binding = 5) buffer OutMeshletTriangleBuffer { uint g_OutMeshletTris[]; };
+layout(set = 1, binding = 6) readonly buffer SortedTripletBuffer { uint g_SortedTriplets[]; };
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 void main()
@@ -29,6 +35,7 @@ void main()
     if (m >= pc.g_MaxMeshlets)
         return;
 
+    // clamp to slab capacity
     uint totalTris   = min(g_MCCounter[0], pc.g_MaxTriangles);
     uint K           = pc.g_TrianglesPerMeshlet;
     uint numMeshlets = min((totalTris + K - 1u) / K, pc.g_MaxMeshlets);
@@ -43,26 +50,69 @@ void main()
 
     uint triBase  = m * K;
     uint triCount = min(K, totalTris - triBase);
-    uint o        = pc.g_MeshletSlabBase + m;
 
-    // AABB over meshlet vertices
+    // Dedup the window's sorted triplets: global vertex number -> meshlet-local index in first-appearance order
+    uint vLimit = min(g_MCCounter[2], pc.g_MaxVertices); // vertex numbers that were actually written
+
+    uint uniq[3u * VOXEL_TRIS_PER_MESHLET];   // meshlet-local index -> global vertex number
+    uint localTris[VOXEL_TRIS_PER_MESHLET];   // kept triangle -> packed local triplet
+    uint uniqCount = 0u;
+    uint keptCount = 0u;
+    for (uint i = 0u; i < triCount; ++i)
+    {
+        uint tri[3] = uint[3](g_SortedTriplets[(triBase + i) * 3u + 0u], g_SortedTriplets[(triBase + i) * 3u + 1u], g_SortedTriplets[(triBase + i) * 3u + 2u]);
+        if (tri[0] >= vLimit || tri[1] >= vLimit || tri[2] >= vLimit)
+            continue; // skip triangles that reference a vertex this build did not write
+
+        uint packed = 0u;
+        for (uint k = 0u; k < 3u; ++k)
+        {
+            uint local = uniqCount;
+            for (uint j = 0u; j < uniqCount; ++j)
+            {
+                if (uniq[j] == tri[k])
+                {
+                    local = j;
+                    break;
+                }
+            }
+            if (local == uniqCount)
+                uniq[uniqCount++] = tri[k];
+            packed |= local << (8u * k); // winding order kept: slot k of the triplet
+        }
+        localTris[keptCount++] = packed;
+    }
+
+    uint mvBase = atomicAdd(g_MCCounter[3], uniqCount); // reserve this meshlet's slice of the meshlet-vertex pool
+    bool emit   = keptCount > 0u && mvBase + uniqCount <= pc.g_MaxMeshletVertices;
+
+    // Write the vertex indirection, the local triplets and the bounds over the unique vertices
     vec3 bmin = vec3(1e30);
     vec3 bmax = vec3(-1e30);
-    for (uint v = 0u; v < triCount * 3u; ++v)
+    if (emit)
     {
-        uint vLocal = g_MeshletVerts[pc.g_MeshletVertexSlabBase + triBase * 3u + v];
-        vec3 p = VoxelUnpackPos(g_Vertices[pc.g_VertexSlabBase + vLocal], pc.g_ChunkSizeMeter);
-        bmin = min(bmin, p);
-        bmax = max(bmax, p);
-    }
-    vec3 center = 0.5 * (bmin + bmax);
+        for (uint v = 0u; v < uniqCount; ++v)
+        {
+            g_OutMeshletVerts[pc.g_MeshletVertexSlabBase + mvBase + v] = uniq[v];
 
-    g_OutMeshlets[o].vertexOffset   = triBase * 3u;
-    g_OutMeshlets[o].triangleOffset = triBase;
-    g_OutMeshlets[o].vertexCount    = triCount * 3u;
-    g_OutMeshlets[o].triangleCount  = triCount;
-    g_OutMeshlets[o].centerX        = center.x; g_OutMeshlets[o].centerY = center.y; g_OutMeshlets[o].centerZ = center.z;
-    g_OutMeshlets[o].radius         = length(bmax - center) + pc.g_ChunkSizeMeter * (1.0 / 128.0); // transition delta can leave primary bounds by up to a cell
-    g_OutMeshlets[o].coneAxisX      = 0.0; g_OutMeshlets[o].coneAxisY = 0.0; g_OutMeshlets[o].coneAxisZ = 0.0; // cone cull unused
-    g_OutMeshlets[o].coneCutoff     = 1.0;
+            vec3 p = VoxelUnpackPos(g_Vertices[pc.g_VertexSlabBase + uniq[v]], pc.g_ChunkSizeMeter);
+            bmin = min(bmin, p);
+            bmax = max(bmax, p);
+        }
+        for (uint t = 0u; t < keptCount; ++t)
+            g_OutMeshletTris[pc.g_MeshletTriSlabBase + triBase + t] = localTris[t];
+    }
+    vec3 center = emit ? 0.5 * (bmin + bmax) : vec3(0.0);
+
+    Meshlet meshlet;
+    meshlet.vertexOffset   = emit ? mvBase : 0u;
+    meshlet.triangleOffset = triBase;
+    meshlet.vertexCount    = emit ? uniqCount : 0u;
+    meshlet.triangleCount  = emit ? keptCount : 0u; // empty meshlet: the mesh shader emits nothing
+    meshlet.centerX        = center.x; meshlet.centerY = center.y; meshlet.centerZ = center.z;
+    meshlet.radius         = emit ? length(bmax - center) + pc.g_ChunkSizeMeter * (1.0 / 128.0) : 0.0; // transition delta can leave primary bounds by up to a cell
+    meshlet.coneAxisX      = 0.0; meshlet.coneAxisY = 0.0; meshlet.coneAxisZ = 0.0; // cone cull unused
+    meshlet.coneCutoff     = 1.0;
+
+    g_OutMeshlets[pc.g_MeshletSlabBase + m] = meshlet;
 }

@@ -97,6 +97,7 @@ public:
 	virtual void DrawMeshTasksIndirectCount(const Arc< render::Buffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< render::Buffer >& pCountBuffer, u32 numDraws, u32 strideInBytes) override;
 
 	virtual void Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ) override;
+	virtual void DispatchIndirect(const Arc< render::Buffer >& pArgumentBuffer, u64 offsetInBytes = 0) override;
 	virtual void DispatchRays(render::ShaderBindingTable& sbt, u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ = 1) override;
 
 	virtual void BeginGpuMarker(const char* name, bool bWithStats = false) override;
