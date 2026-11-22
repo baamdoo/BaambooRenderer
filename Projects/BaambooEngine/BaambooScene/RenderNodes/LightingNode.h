@@ -1,6 +1,8 @@
 #pragma once
 #include "RenderCommon/RenderNode.h"
 
+namespace baamboo::shader { class PipelineFactory; }
+
 namespace baamboo
 {
 
@@ -11,7 +13,7 @@ class ClusterBuildNode : public render::RenderNode
 {
 using Super = render::RenderNode;
 public:
-	ClusterBuildNode(render::RenderDevice& rd);
+	ClusterBuildNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory);
 	virtual ~ClusterBuildNode() = default;
 
 	virtual void Apply(render::CommandContext& context, const SceneRenderView& renderView) override;
@@ -33,7 +35,7 @@ class LightCullingNode : public render::RenderNode
 {
 	using Super = render::RenderNode;
 public:
-	LightCullingNode(render::RenderDevice& rd);
+	LightCullingNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory);
 	virtual ~LightCullingNode() = default;
 
 	virtual void Apply(render::CommandContext& context, const SceneRenderView& renderView) override;
@@ -59,7 +61,7 @@ class LightingNode : public render::RenderNode
 {
 using Super = render::RenderNode;
 public:
-	LightingNode(render::RenderDevice& rd);
+	LightingNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory);
 	virtual ~LightingNode() = default;
 
 	virtual void Apply(render::CommandContext& context, const SceneRenderView& renderView) override;

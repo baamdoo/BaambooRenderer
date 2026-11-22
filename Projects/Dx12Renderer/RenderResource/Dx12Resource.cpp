@@ -47,8 +47,6 @@ Dx12Resource::Dx12Resource(Dx12RenderDevice& rd, const char* name, Dx12ResourceC
 		m_pClearValue = nullptr;
 		if (info.desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET)
 		{
-			//assert(info.clearValue.Format == info.desc.Format);
-
 			m_pClearValue         = new D3D12_CLEAR_VALUE();
 			m_pClearValue->Format = info.clearValue.Format;
 			memcpy(&(m_pClearValue->Color), &info.clearValue.Color[0], sizeof(info.clearValue.Color));
@@ -97,7 +95,8 @@ Dx12Resource::~Dx12Resource()
 
 void Dx12Resource::Reset()
 {
-	COM_RELEASE(m_d3d12Resource);
+	m_RenderDevice.DeferRelease(m_d3d12Resource);
+	m_d3d12Resource = nullptr;
 }
 
 bool Dx12Resource::IsFormatSupported(D3D12_FORMAT_SUPPORT1 formatSupport) const
@@ -113,7 +112,7 @@ bool Dx12Resource::IsFormatSupported(D3D12_FORMAT_SUPPORT2 formatSupport) const
 void Dx12Resource::SetD3D12Resource(ID3D12Resource2* d3d12Resource, const BarrierState& initialState)
 {
 	assert(d3d12Resource);
-	COM_RELEASE(m_d3d12Resource);
+	m_RenderDevice.DeferRelease(m_d3d12Resource);
 
 	m_d3d12Resource = d3d12Resource;
 	m_ResourceDesc  = m_d3d12Resource->GetDesc1();

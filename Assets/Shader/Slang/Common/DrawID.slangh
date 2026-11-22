@@ -1,0 +1,22 @@
+#pragma once
+
+#if defined(BAAMBOO_DXIL)
+	cbuffer CommandSignatureParam : register(b0, space99)
+	{
+	    uint g_DrawID;
+	};
+
+	uint GetDrawID()
+	{
+		return g_DrawID;
+	}
+#else // SPIR-V
+	uint GetDrawID()
+	{
+		return spirv_asm
+		{
+			OpCapability DrawParameters;
+			result:$$uint = OpLoad builtin(DrawIndex:uint);
+		};
+	}
+#endif

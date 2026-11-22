@@ -1,5 +1,6 @@
 #pragma once
 #include "RenderCommon/RenderResources.h"
+#include "RenderDevice/Dx12DescriptorAllocation.h"
 
 namespace dx12
 {
@@ -67,6 +68,9 @@ public:
 	virtual u64 GetGPUVirtualAddress() const override;
 
 	[[nodiscard]]
+	virtual u32 GetShaderResourceHandle() const override { return m_SRVAllocation.IsValid() ? m_SRVAllocation.Index() : kInvalidIndex; }
+
+	[[nodiscard]]
 	virtual bool IsBuilt() const override { return m_bBuilt; }
 
 	[[nodiscard]]
@@ -80,7 +84,7 @@ public:
 	void MarkBuilt() { m_bBuilt = true; }
 
 private:
-	void AllocateOrResizeBuffer(ID3D12Resource*& pBuffer, u64 requiredSize,
+	bool AllocateOrResizeBuffer(ID3D12Resource*& pBuffer, u64 requiredSize,
 		D3D12_RESOURCE_STATES initialState, D3D12_HEAP_TYPE heapType,
 		D3D12_RESOURCE_FLAGS flags, const wchar_t* debugName);
 
@@ -92,6 +96,8 @@ private:
 	ID3D12Resource* m_d3d12ResultBuffer       = nullptr;
 	ID3D12Resource* m_d3d12ScratchBuffer      = nullptr;
 	ID3D12Resource* m_d3d12InstanceDescBuffer = nullptr;
+
+	DescriptorAllocation m_SRVAllocation = {};
 
 	u64 m_ResultBufferSize  = 0;
 	u64 m_ScratchBufferSize = 0;

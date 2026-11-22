@@ -1,8 +1,10 @@
 #include "BaambooPch.h"
 #include "CloudNode.h"
 #include "RenderCommon/RenderDevice.h"
+#include "RenderCommon/SceneResource.h"
 #include "RenderCommon/CommandContext.h"
 #include "BaambooScene/Scene.h"
+#include "PipelineFactory.h"
 
 namespace baamboo
 {
@@ -24,9 +26,8 @@ static inline uint3 QuatResolution(u32 width, u32 height)
 static constexpr uint3 kBaseNoiseTextureResolution       = { 128, 128, 128 };
 static constexpr uint3 kDetailNoiseTextureResolution     = { 64, 64, 64 };
 static constexpr uint3 kVerticalProfileTextureResolution = { 256, 256, 1 };
-static constexpr uint3 kWeatherMapTextureResolution       = { 2048, 2048, 1 };
 
-CloudShapeNode::CloudShapeNode(render::RenderDevice& rd)
+CloudShapeNode::CloudShapeNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory)
     : Super(rd, "CloudShapePass")
 {
     using namespace render;
@@ -45,21 +46,7 @@ CloudShapeNode::CloudShapeNode(render::RenderDevice& rd)
                 .imageUsage = eTextureUsage_Sample | eTextureUsage_Storage
             });
 
-    /*m_pWeatherMapPSO = ComputePipeline::Create(m_RenderDevice, "CloudWeatherMapPSO");
-    m_pWeatherMapPSO->SetComputeShader(
-        Shader::Create(m_RenderDevice, "CloudWeatherMapCS",
-            {
-                .stage    = eShaderStage::Compute,
-                .filename = "CloudWeatherMapCS"
-            })).Build();*/
-
-    m_pCloudShapeBasePSO = ComputePipeline::Create(m_RenderDevice, "CloudBaseNoisePSO");
-    m_pCloudShapeBasePSO->SetComputeShader(
-        Shader::Create(m_RenderDevice, "CloudShapeBaseCS",
-            {
-                .stage    = eShaderStage::Compute,
-                .filename = "CloudShapeBaseCS"
-            })).Build();
+    m_pCloudShapeBasePSO = pipelineFactory.CreateAndBuildComputePipeline("CloudBaseNoisePSO", { .source = "CloudShapeBaseCS.slang" });
 }
 
 CloudShapeNode::~CloudShapeNode()
@@ -68,45 +55,19 @@ CloudShapeNode::~CloudShapeNode()
 
 void CloudShapeNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)
 {
+    UNUSED(renderView);
     using namespace render;
-    {
-        /*context.SetRenderPipeline(m_pWeatherMapPSO.get());
 
-        context.TransitionBarrier(m_pCloudWeatherMap, eTextureLayout::General);
-
-		//struct
-        //{
-        //    // Perlin
-        //    float fPerlin;
-        //    u32   octaves;
-        //    float persistence;
-        //    float lacunarityPerlin;
-
-        //    // Worley
-        //    float fWorley;
-        //    float lacunarityWorley;
-
-        //    // misc
-        //    float time_s;
-        //} constant = { 4.0, 7, exp(-0.85f), 2.0f, 6.0f, 2.0f, renderView.time };
-        //context.SetComputeConstants(sizeof(constant), &constant);
-        context.StageDescriptor("g_OutWeatherMap", m_pCloudWeatherMap);
-
-        context.Dispatch2D< 8, 8 >(kWeatherMapTextureResolution.x, kWeatherMapTextureResolution.y);*/
-    }
-    const u64 cloudRevision = renderView.componentRevisions[eComponentType::CCloud];
-    const bool cloudDirty = cloudRevision != m_LastCloudRevision;
-    if (!m_bBaseNoiseInitialized || cloudDirty)
+    if (m_BaseNoiseBuildCount != m_pCloudShapeBasePSO->BuildCount())
     {
         context.SetRenderPipeline(m_pCloudShapeBasePSO.get());
 
         context.TransitionBarrier(m_pBaseNoiseTexture, eTextureLayout::General);
 
-        context.StageDescriptor("g_OutBaseNoise", m_pBaseNoiseTexture);
+        context.StageDescriptor("ID_OutBaseNoise", m_pBaseNoiseTexture);
 
         context.Dispatch3D< 8, 8, 8 >(kBaseNoiseTextureResolution.x, kBaseNoiseTextureResolution.y, kBaseNoiseTextureResolution.z);
-        m_LastCloudRevision = cloudRevision;
-        m_bBaseNoiseInitialized = true;
+        m_BaseNoiseBuildCount = m_pCloudShapeBasePSO->BuildCount();
     }
 
     g_FrameData.pCloudWeatherMap   = m_pCloudWeatherMap;
@@ -120,11 +81,10 @@ void CloudShapeNode::Apply(render::CommandContext& context, const SceneRenderVie
 //-------------------------------------------------------------------------
 static constexpr uint3 kCloudShadowMapResolution = { 512, 512, 1 };
 
-CloudScatteringNode::CloudScatteringNode(render::RenderDevice& device)
+CloudScatteringNode::CloudScatteringNode(render::RenderDevice& device, shader::PipelineFactory& pipelineFactory)
     : Super(device, "CloudScatteringPass")
 {
     using namespace render;
-    auto& rm = m_RenderDevice.GetResourceManager();
 
     m_pCloudShadowMap =
         Texture::Create(
@@ -164,29 +124,9 @@ CloudScatteringNode::CloudScatteringNode(render::RenderDevice& device)
             });
 
 
-    m_pCloudShadowPSO = ComputePipeline::Create(m_RenderDevice, "CloudShadowPSO");
-    m_pCloudShadowPSO->SetComputeShader(
-        Shader::Create(m_RenderDevice, "CloudShadowMapCS",
-            {
-                .stage    = eShaderStage::Compute,
-                .filename = "CloudShadowMapCS"
-            })).Build();
-
-    m_pCloudRaymarchPSO = ComputePipeline::Create(m_RenderDevice, "CloudRaymarchPSO");
-    m_pCloudRaymarchPSO->SetComputeShader(
-        Shader::Create(m_RenderDevice, "CloudRaymarchCS",
-            {
-                .stage    = eShaderStage::Compute,
-                .filename = "CloudRaymarchCS"
-            })).Build();
-
-    m_pCloudTemporalUprezPSO = ComputePipeline::Create(m_RenderDevice, "CloudTemporalUprezPSO");
-    m_pCloudTemporalUprezPSO->SetComputeShader(
-        Shader::Create(m_RenderDevice, "CloudTemporalUprezCS",
-            {
-                .stage    = eShaderStage::Compute,
-                .filename = "CloudTemporalUprezCS"
-            })).Build();
+    m_pCloudShadowPSO        = pipelineFactory.CreateAndBuildComputePipeline("CloudShadowPSO", { .source = "CloudShadowMapCS.slang" });
+    m_pCloudRaymarchPSO      = pipelineFactory.CreateAndBuildComputePipeline("CloudRaymarchPSO", { .source = "CloudRaymarchCS.slang" });
+    m_pCloudTemporalUprezPSO = pipelineFactory.CreateAndBuildComputePipeline("CloudTemporalUprezPSO", { .source = "CloudTemporalUprezCS.slang" });
 }
 
 CloudScatteringNode::~CloudScatteringNode()
@@ -226,6 +166,8 @@ void CloudScatteringNode::Apply(render::CommandContext& context, const SceneRend
         m_bHistoryValid = false;
     }
 
+    auto& sr = m_RenderDevice.GetResourceManager().GetSceneResource();
+
     {
         assert(g_FrameData.pCloudProfileLUT && g_FrameData.pCloudBaseNoiseLUT);
 
@@ -236,19 +178,17 @@ void CloudScatteringNode::Apply(render::CommandContext& context, const SceneRend
         context.TransitionBarrier(g_FrameData.pCloudBaseNoiseLUT.lock(), eTextureLayout::ShaderReadOnly);
         context.TransitionBarrier(m_pCloudShadowMap, eTextureLayout::General);
 
-        struct
+        const CloudShadowMapConstants constants =
         {
-            u32 numLightRaymarchSteps;
-
-            float time_s;
-            u64   frame;
-        } constant = { renderView.cloud.numLightRaymarchSteps, renderView.time, context.RenderSequence() };
-        context.SetComputeConstants(sizeof(constant), &constant);
-        context.SetComputeDynamicUniformBuffer("g_CloudShadow", renderView.cloud.shadow);
-        context.StageDescriptor("g_CloudMacroMap", g_FrameData.pCloudWeatherMap.lock(), g_FrameData.pLinearWrap);
-        context.StageDescriptor("g_CloudProfileLUT", g_FrameData.pCloudProfileLUT.lock(), g_FrameData.pLinearWrap);
-        context.StageDescriptor("g_CloudBaseNoise", g_FrameData.pCloudBaseNoiseLUT.lock(), g_FrameData.pLinearWrap);
-        context.StageDescriptor("g_OutCloudShadowMap", m_pCloudShadowMap);
+            .mSunViewProjInv       = renderView.cloud.shadow.mSunViewProjInv,
+            .numLightRaymarchSteps = renderView.cloud.numLightRaymarchSteps
+        };
+        context.SetComputeConstants(sizeof(constants), &constants);
+        context.StageDescriptor("ID_Scene", sr.GetSceneGlobals());
+        context.StageDescriptor("ID_CloudMacroMap", g_FrameData.pCloudWeatherMap.lock(), g_FrameData.pLinearWrap);
+        context.StageDescriptor("ID_CloudProfileLUT", g_FrameData.pCloudProfileLUT.lock(), g_FrameData.pLinearWrap);
+        context.StageDescriptor("ID_CloudBaseNoise", g_FrameData.pCloudBaseNoiseLUT.lock(), g_FrameData.pLinearWrap);
+        context.StageDescriptor("ID_OutCloudShadowMap", m_pCloudShadowMap);
 
         context.Dispatch2D< 8, 8 >(kCloudShadowMapResolution.x, kCloudShadowMapResolution.y);
 
@@ -276,23 +216,23 @@ void CloudScatteringNode::Apply(render::CommandContext& context, const SceneRend
         context.TransitionBarrier(m_pBlueNoiseTexture, eTextureLayout::ShaderReadOnly);
         context.TransitionBarrier(m_pCloudScatteringLUT, eTextureLayout::General);
 
-        struct
+        const CloudRaymarchConstants constants =
         {
-            u32 numCloudRaymarchSteps;
-
-            float time_s;
-            u64   frame;
-        } constant = { renderView.cloud.numCloudRaymarchSteps, renderView.time, context.RenderSequence() };
-        context.SetComputeConstants(sizeof(constant), &constant);
-        context.StageDescriptor("g_CloudMacroMap", g_FrameData.pCloudWeatherMap.lock(), g_FrameData.pLinearWrap);
-        context.StageDescriptor("g_CloudBaseNoise", g_FrameData.pCloudBaseNoiseLUT.lock(), g_FrameData.pLinearWrap);
-        context.StageDescriptor("g_CloudProfileLUT", g_FrameData.pCloudProfileLUT.lock(), g_FrameData.pLinearWrap);
-        context.StageDescriptor("g_DepthBuffer", g_FrameData.pDepth.lock(), g_FrameData.pPointClamp);
-        context.StageDescriptor("g_TransmittanceLUT", g_FrameData.pTransmittanceLUT.lock(), g_FrameData.pLinearClamp);
-        context.StageDescriptor("g_AerialPerspectiveLUT", g_FrameData.pAerialPerspectiveLUT.lock(), g_FrameData.pLinearClamp);
-        context.StageDescriptor("g_AtmosphereAmbientLUT", g_FrameData.pAtmosphereAmbientLUT.lock(), g_FrameData.pLinearWrap);
-        context.StageDescriptor("g_BlueNoiseLUT", m_pBlueNoiseTexture, g_FrameData.pLinearClamp);
-        context.StageDescriptor("g_OutCloudScatteringLUT", m_pCloudScatteringLUT);
+            .numCloudRaymarchSteps = renderView.cloud.numCloudRaymarchSteps,
+            .numLightRaymarchSteps = renderView.cloud.numLightRaymarchSteps,
+            .frameIndex            = static_cast< u32 >(context.RenderSequence())
+        };
+        context.SetComputeConstants(sizeof(constants), &constants);
+        context.StageDescriptor("ID_Scene", sr.GetSceneGlobals());
+        context.StageDescriptor("ID_CloudMacroMap", g_FrameData.pCloudWeatherMap.lock(), g_FrameData.pLinearWrap);
+        context.StageDescriptor("ID_CloudBaseNoise", g_FrameData.pCloudBaseNoiseLUT.lock(), g_FrameData.pLinearWrap);
+        context.StageDescriptor("ID_CloudProfileLUT", g_FrameData.pCloudProfileLUT.lock(), g_FrameData.pLinearWrap);
+        context.StageDescriptor("ID_DepthBuffer", g_FrameData.pDepth.lock(), g_FrameData.pPointClamp);
+        context.StageDescriptor("ID_TransmittanceLUT", g_FrameData.pTransmittanceLUT.lock(), g_FrameData.pLinearClamp);
+        context.StageDescriptor("ID_AerialPerspectiveLUT", g_FrameData.pAerialPerspectiveLUT.lock(), g_FrameData.pLinearClamp);
+        context.StageDescriptor("ID_AtmosphereAmbientLUT", g_FrameData.pAtmosphereAmbientLUT.lock(), g_FrameData.pLinearWrap);
+        context.StageDescriptor("ID_BlueNoiseLUT", m_pBlueNoiseTexture, g_FrameData.pLinearClamp);
+        context.StageDescriptor("ID_OutCloudScatteringLUT", m_pCloudScatteringLUT);
 
         context.Dispatch2D< 8, 8 >(m_pCloudScatteringLUT->Width(), m_pCloudScatteringLUT->Height());
     }
@@ -304,22 +244,17 @@ void CloudScatteringNode::Apply(render::CommandContext& context, const SceneRend
         context.TransitionBarrier(g_FrameData.pDepth.lock(), eTextureLayout::ShaderReadOnly);
         context.TransitionBarrier(m_pUprezzedCloudScatteringLUT, eTextureLayout::General);
 
-        struct
+        const CloudTemporalUprezConstants constants =
         {
-            float  blendAlpha;
-            u32    historyValid;
-            float2 invLowResTexSize;
-        } constant = {
-            renderView.cloud.temporalBlendAlpha,
-            m_bHistoryValid ? 1u : 0u,
-            float2(1.0 / m_pCloudScatteringLUT->Width(), 1.0 / m_pCloudScatteringLUT->Height())
+            .blendAlpha   = renderView.cloud.temporalBlendAlpha,
+            .historyValid = m_bHistoryValid ? 1u : 0u
         };
-        static_assert(sizeof(constant) == 16);
-        context.SetComputeConstants(sizeof(constant), &constant);
-        context.StageDescriptor("g_CloudScatteringLUT", m_pCloudScatteringLUT, g_FrameData.pLinearClamp);
-        context.StageDescriptor("g_PrevUprezzedCloudScatteringLUT", m_pPrevUprezzedCloudScatteringLUT, g_FrameData.pLinearClamp);
-        context.StageDescriptor("g_DepthBuffer", g_FrameData.pDepth.lock(), g_FrameData.pPointClamp);
-        context.StageDescriptor("g_OutUprezzedCloudScatteringLUT", m_pUprezzedCloudScatteringLUT);
+        context.SetComputeConstants(sizeof(constants), &constants);
+        context.StageDescriptor("ID_Scene", sr.GetSceneGlobals());
+        context.StageDescriptor("ID_CloudScatteringLUT", m_pCloudScatteringLUT, g_FrameData.pLinearClamp);
+        context.StageDescriptor("ID_PrevUprezzedCloudScatteringLUT", m_pPrevUprezzedCloudScatteringLUT, g_FrameData.pLinearClamp);
+        context.StageDescriptor("ID_DepthBuffer", g_FrameData.pDepth.lock(), g_FrameData.pPointClamp);
+        context.StageDescriptor("ID_OutUprezzedCloudScatteringLUT", m_pUprezzedCloudScatteringLUT);
 
         context.Dispatch2D< 8, 8 >(m_pUprezzedCloudScatteringLUT->Width(), m_pUprezzedCloudScatteringLUT->Height());
 

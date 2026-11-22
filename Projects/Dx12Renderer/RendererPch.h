@@ -36,5 +36,5 @@
 //-------------------------------------------------------------------------
 #include "Defines.h"
 #include "Pointer.hpp"
-#include "ShaderTypes.h"
+#include "ShaderShared/ShaderShared.h"
 #include "Core/Dx12Core.h"

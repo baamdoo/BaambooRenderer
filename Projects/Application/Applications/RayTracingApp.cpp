@@ -6,7 +6,6 @@
 
 #include "BaambooScene/Entity.h"
 #include "BaambooScene/Components.h"
-#include "BaambooScene/RenderNodes/SkyboxNode.h"
 #include "BaambooScene/RenderNodes/PathTracerNode.h"
 #include "BaambooScene/RenderNodes/PostProcessNode.h"
 
@@ -784,8 +783,7 @@ void RayTracingApp::DrawUI()
 
 void RayTracingApp::ConfigureRenderGraph()
 {
-	m_pScene->AddRenderNode(MakeArc< StaticSkyboxNode >(*m_pRendererBackend->GetDevice()));
-	auto pPathTracerNode = MakeArc< PathTracerNode >(*m_pRendererBackend->GetDevice());
+	auto pPathTracerNode = MakeArc< PathTracerNode >(*m_pRendererBackend->GetDevice(), *m_pPipelineFactory);
 	if (IsGalleryScene(m_PathTracerReferenceScene))
 	{
 		const auto gallery = LoadGallerySceneManifest(m_PathTracerReferenceScene);
@@ -873,7 +871,7 @@ void RayTracingApp::ConfigureRenderGraph()
 	if (m_bAutoDumpAOV)
 		pPathTracerNode->RequestAOVDump();
 	m_pScene->AddRenderNode(pPathTracerNode);
-	m_pScene->AddRenderNode(MakeArc< PostProcessNode >(*m_pRendererBackend->GetDevice()));
+	m_pScene->AddRenderNode(MakeArc< PostProcessNode >(*m_pRendererBackend->GetDevice(), *m_pPipelineFactory));
 }
 
 void RayTracingApp::ConfigureSceneObjects()

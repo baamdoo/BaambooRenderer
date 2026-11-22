@@ -82,67 +82,6 @@ Arc< VulkanSampler > VulkanSampler::Create(VkRenderDevice& rd, const char* name,
 	return MakeArc< VulkanSampler >(rd, name, std::move(info));
 }
 
-Arc< VulkanSampler > VulkanSampler::CreateLinearRepeat(VkRenderDevice& rd, const char* name) {
-    return Create(rd, name,
-        {
-            .filter      = eFilterMode::Linear,
-            .addressMode = eAddressMode::Wrap
-        });
-}
-
-Arc< VulkanSampler > VulkanSampler::CreateLinearClamp(VkRenderDevice& rd, const char* name)
-{
-    return Create(rd, name,
-        {
-            .filter      = eFilterMode::Linear,
-            .addressMode = eAddressMode::ClampEdge
-        });
-}
-
-Arc< VulkanSampler > VulkanSampler::CreatePointRepeat(VkRenderDevice& rd, const char* name)
-{
-    return Create(rd, name,
-        {
-            .filter        = eFilterMode::Point,
-            .addressMode   = eAddressMode::Wrap,
-            .maxAnisotropy = 0.0f
-        });
-}
-
-Arc< VulkanSampler > VulkanSampler::CreatePointClamp(VkRenderDevice& rd, const char* name)
-{
-    return Create(rd, name,
-        {
-            .filter        = eFilterMode::Point,
-            .addressMode   = eAddressMode::ClampEdge,
-            .maxAnisotropy = 0.0f
-        });
-}
-
-Arc< VulkanSampler > VulkanSampler::CreateLinearClampCmp(VkRenderDevice& rd, const char* name)
-{
-    return Create(rd, name,
-        {
-            .filter        = eFilterMode::Linear,
-            .addressMode   = eAddressMode::ClampBorder,
-            .maxAnisotropy = 0.0f,
-            .compareOp     = eCompareOp::LessEqual,
-            .borderColor   = eBorderColor::OpaqueWhite_Float
-        });
-}
-
-Arc< VulkanSampler > VulkanSampler::CreatePointClampMin(VkRenderDevice& rd, const char* name)
-{
-    return Create(rd, name,
-        {
-            .filter        = eFilterMode::Point,
-            .mipmapMode    = eMipmapMode::Nearest,
-            .addressMode   = eAddressMode::ClampEdge,
-            .maxAnisotropy = 0.0f,
-            .reductionMode = eReductionMode::Min
-        });
-}
-
 VulkanSampler::VulkanSampler(VkRenderDevice& rd, const char* name, CreationInfo&& info)
     : render::Sampler(name, std::move(info))
     , VulkanResource(rd, name)
@@ -184,7 +123,7 @@ VulkanSampler::VulkanSampler(VkRenderDevice& rd, const char* name, CreationInfo&
 VulkanSampler::~VulkanSampler()
 {
     if (m_vkSampler)
-	    vkDestroySampler(m_RenderDevice.vkDevice(), m_vkSampler, nullptr);
+	    m_RenderDevice.DeferRelease(m_vkSampler);
 }
 
 } // namespace vk

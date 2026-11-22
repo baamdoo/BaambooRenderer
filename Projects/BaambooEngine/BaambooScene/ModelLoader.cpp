@@ -1,5 +1,6 @@
 #include "BaambooPch.h"
 #include "ModelLoader.h"
+#include "ShaderShared/Mesh.h"
 
 #include <meshoptimizer.h>
 #include <assimp/scene.h>

@@ -1,0 +1,283 @@
+#pragma once
+#include "Common/VoxelTerrain.slangh"
+#include "Common/Math.slangh"
+
+// ---- Marching Cubes shared ----------------------------------------------------------
+
+// corner i -> unit-cube offset
+static const uint3 kCornerOffset[8] =
+{
+    uint3(0, 0, 0), uint3(1, 0, 0), uint3(1, 1, 0), uint3(0, 1, 0),
+    uint3(0, 0, 1), uint3(1, 0, 1), uint3(1, 1, 1), uint3(0, 1, 1)
+};
+
+// edge -> its two corners
+static const uint2 kEdgeCorners[12] =
+{
+    uint2(0, 1), uint2(1, 2), uint2(2, 3), uint2(3, 0),
+    uint2(4, 5), uint2(5, 6), uint2(6, 7), uint2(7, 4),
+    uint2(0, 4), uint2(1, 5), uint2(2, 6), uint2(3, 7)
+};
+
+// Central-difference density gradient at texel t over +-step texels (unnormalized)
+float3 VoxelDensityGradient(StructuredBuffer< float > density, uint3 t, uint step, uint dim)
+{
+    return float3(
+        density[FlatTexel(t + uint3(step, 0u, 0u), dim)] - density[FlatTexel(t - uint3(step, 0u, 0u), dim)],
+        density[FlatTexel(t + uint3(0u, step, 0u), dim)] - density[FlatTexel(t - uint3(0u, step, 0u), dim)],
+        density[FlatTexel(t + uint3(0u, 0u, step), dim)] - density[FlatTexel(t - uint3(0u, 0u, step), dim)]);
+}
+
+// Isosurface point on the edge (v0, v1): position interpolates the two corner samples, normal = density gradient.
+void VoxelEdgePoint(float v0, float v1, float3 p0, float3 p1, float3 g0, float3 g1, out float3 pos, out float3 n)
+{
+    float  tt  = (abs(v0 - v1) < 1e-6) ? 0.0 : v0 / (v0 - v1); // zero crossing along the edge
+    float3 g   = lerp(g0, g1, tt);
+    float  gl2 = dot(g, g);
+
+    pos = lerp(p0, p1, tt);
+    n   = (gl2 > 1e-12) ? g * rsqrt(gl2) : float3(0.0, 1.0, 0.0);
+}
+
+
+// ---- Morton / spatial-sort keys -----------------------------------------------------
+
+// Spread the low 10 bits of x so two zero bits separate each source bit.
+uint MortonPart1By2(uint x)
+{
+    x &= 0x000003FFu;
+    x = (x | (x << 16)) & 0x030000FFu;
+    x = (x | (x << 8)) & 0x0300F00Fu;
+    x = (x | (x << 4)) & 0x030C30C3u;
+    x = (x | (x << 2)) & 0x09249249u;
+    return x;
+}
+
+uint MortonEncode3D(uint3 v)
+{
+    return (MortonPart1By2(v.z) << 2) | (MortonPart1By2(v.y) << 1) | MortonPart1By2(v.x);
+}
+
+// Voxel triangle spatial-sort key: the centroid of three uint16 positions (given as their sum) in sort blocks over the chunk cube -> Morton code.
+uint VoxelTriSortKey(uint3 posQSum)
+{
+    uint3 blk = min(posQSum * kVoxelTriSortBlocksPerAxis / (3u * 65535u), uint3(kVoxelTriSortBlocksPerAxis - 1u));
+    return MortonEncode3D(blk);
+}
+
+
+// ---- Geomorphing ------------------------------------------------------------------
+
+// Moller-Trumbore ray-triangle intersection
+bool RayTriangle(float3 o, float3 d, float3 t0, float3 t1, float3 t2, out float s, out float3 bary)
+{
+    s    = 0.0;
+    bary = float3(0.0, 0.0, 0.0);
+
+    float3 e1 = t1 - t0;
+    float3 e2 = t2 - t0;
+
+    float3 P   = cross(d, e2);
+    float  det = dot(e1, P);
+    if (abs(det) < 1e-6) // parallel
+        return false;
+    float invDet = 1.0 / det;
+
+    float3 T = o - t0;
+
+    float u = dot(T, P) * invDet;
+    if (u < 0.0 || u > 1.0)
+        return false; // out of triangle
+
+    float3 Q = cross(T, e1);
+
+    float v = dot(d, Q) * invDet;
+    if (v < 0.0 || u + v > 1.0)
+        return false; // out of triangle
+
+    s    = dot(e2, Q) * invDet;
+    bary = float3(1.0 - u - v, u, v);
+    return true;
+}
+
+struct VoxelProjectResult
+{
+    float  sd;      // signed distance along the fine normal to the coarse mesh (m)
+    float3 nTarget; // coarse shading normal at the hit (barycentric blend of the coarse vertex normals)
+    float3 nFace;   // coarse triangle face normal at the hit
+    uint   code;    // 0 hit | 1 empty cell | 2 no hit within radius | 3 back-facing only
+};
+
+// Coarse cell (stride^3 fine cells), read as the coarser LOD's MC would see it
+struct VoxelCoarseCell
+{
+    float  density[8];
+    float3 pos[8];
+    float3 grad[8];
+};
+
+int3 VoxelCoarseOrigin(VoxelExtractConstants ex, float3 pos, uint stride)
+{
+    int3 origin = int3(floor(pos / (float(stride) * ex.voxelSizeMeter))) * int(stride);
+    int lo = int(stride) - int(ex.apron);
+    int hi = int(ex.cellsPerAxis) + int(ex.apron) - 2 * int(stride);
+    return clamp(origin, int3(lo, lo, lo), int3(hi, hi, hi));
+}
+
+VoxelCoarseCell GetCoarseGeometry(VoxelExtractConstants ex, int3 coarseOrigin, uint stride, StructuredBuffer< float > density)
+{
+    const uint dim = ex.cellsPerAxis + 1u + 2u * ex.apron;
+
+    VoxelCoarseCell cell;
+    [unroll] for (uint i = 0u; i < 8u; ++i)
+    {
+        int3  gc = coarseOrigin + int(stride) * int3(kCornerOffset[i]);
+        uint3 tx = uint3(gc + int(ex.apron));
+
+        cell.density[i] = density[FlatTexel(tx, dim)];
+        cell.pos[i]     = float3(gc) * ex.voxelSizeMeter;
+        cell.grad[i]    = VoxelDensityGradient(density, tx, stride, dim);
+    }
+    return cell;
+}
+
+// Tests every coarse triangle of one cell against the ray finePos + s*n; keeps the closest same-facing hit in r
+void ProjectTestCell(VoxelExtractConstants ex, int3 coarseOrigin, float3 finePos, float3 n, float radiusMeter, uint stride,
+                     StructuredBuffer< float > density, StructuredBuffer< int > triTable, inout VoxelProjectResult r, inout uint cellFlags)
+{
+    const VoxelCoarseCell cell = GetCoarseGeometry(ex, coarseOrigin, stride, density);
+
+    uint cubeIndex = 0u;
+    [unroll] for (uint i = 0u; i < 8u; ++i)
+    {
+        if (cell.density[i] < 0.0)
+            cubeIndex |= (1u << i); // solid corner sets the bit
+    }
+    if (cubeIndex == 0u || cubeIndex == 255u)
+        return; // fully inside/outside -> no surface
+    cellFlags |= 1u;
+
+    [loop] for (uint e = 0u; e < 15u; e += 3u)
+    {
+        int i0 = triTable[cubeIndex * 16u + e + 0u];
+        int i1 = triTable[cubeIndex * 16u + e + 1u];
+        int i2 = triTable[cubeIndex * 16u + e + 2u];
+        if (i0 < 0 || i1 < 0 || i2 < 0)
+            break;
+
+        uint2 ea = kEdgeCorners[i0], eb = kEdgeCorners[i1], ec = kEdgeCorners[i2];
+        float3 pa, pb, pc;
+        float3 na, nb, nc;
+        VoxelEdgePoint(cell.density[ea.x], cell.density[ea.y], cell.pos[ea.x], cell.pos[ea.y], cell.grad[ea.x], cell.grad[ea.y], pa, na);
+        VoxelEdgePoint(cell.density[eb.x], cell.density[eb.y], cell.pos[eb.x], cell.pos[eb.y], cell.grad[eb.x], cell.grad[eb.y], pb, nb);
+        VoxelEdgePoint(cell.density[ec.x], cell.density[ec.y], cell.pos[ec.x], cell.pos[ec.y], cell.grad[ec.x], cell.grad[ec.y], pc, nc);
+
+        float  sd;
+        float3 bary;
+        if (!RayTriangle(finePos, n, pa, pb, pc, sd, bary) || abs(sd) > radiusMeter)
+            continue;
+
+        float3 nFace = normalize(cross(pc - pa, pb - pa)); // emitted winding (i0, i2, i1)
+        if (dot(nFace, n) <= 0.0)
+        {
+            cellFlags |= 2u;
+            continue;
+        }
+
+        if (abs(sd) < abs(r.sd)) // closest same-facing hit: keep s and its normals together
+        {
+            r.sd      = sd;
+            r.nFace   = nFace;
+            r.nTarget = normalize(bary.x * na + bary.y * nb + bary.z * nc);
+            r.code    = 0u;
+        }
+    }
+}
+
+// Fine vertex (finePos, n) -> nearest same-facing coarse triangle along n within radiusMeter.
+VoxelProjectResult ProjectToCoarseMesh(VoxelExtractConstants ex, float3 finePos, float3 n, float radiusMeter, uint stride, StructuredBuffer< float > density, StructuredBuffer< int > triTable)
+{
+    VoxelProjectResult r;
+    r.sd      = FLT_MAX;
+    r.nTarget = n;
+    r.nFace   = n;
+    r.code    = 1u;
+
+    // every coarse cell the ray segment [-r, +r] can pass through: the box spanned by its two end points
+    uint cellFlags = 0u;
+    float3 pA = finePos - radiusMeter * n;
+    float3 pB = finePos + radiusMeter * n;
+    int3   lo = VoxelCoarseOrigin(ex, min(pA, pB), stride);
+    int3   hi = VoxelCoarseOrigin(ex, max(pA, pB), stride);
+    [loop] for (int z = lo.z; z <= hi.z; z += int(stride))
+    [loop] for (int y = lo.y; y <= hi.y; y += int(stride))
+    [loop] for (int x = lo.x; x <= hi.x; x += int(stride))
+        ProjectTestCell(ex, int3(x, y, z), finePos, n, radiusMeter, stride, density, triTable, r, cellFlags);
+
+    if (r.code != 0u)
+    {
+        r.code = ((cellFlags & 2u) != 0u) ? 3u : (((cellFlags & 1u) != 0u) ? 2u : 1u); // back-facing only | no hit within radius | empty cells
+        r.sd   = 0.0;
+    }
+    return r;
+}
+
+// Coarse-field gradient direction at pos (trilinear blend of the corner gradients)
+float3 VoxelCoarseGradientDir(VoxelExtractConstants ex, float3 pos, uint stride, StructuredBuffer< float > density)
+{
+    const int3            origin = VoxelCoarseOrigin(ex, pos, stride);
+    const VoxelCoarseCell cell   = GetCoarseGeometry(ex, origin, stride, density);
+
+    float3 t   = saturate((pos / ex.voxelSizeMeter - float3(origin)) / float(stride));
+    float3 gx0 = lerp(lerp(cell.grad[0], cell.grad[1], t.x), lerp(cell.grad[3], cell.grad[2], t.x), t.y);
+    float3 gx1 = lerp(lerp(cell.grad[4], cell.grad[5], t.x), lerp(cell.grad[7], cell.grad[6], t.x), t.y);
+    float3 g   = lerp(gx0, gx1, t.z);
+    float  gl2 = dot(g, g);
+    return (gl2 > 1e-12) ? g * rsqrt(gl2) : float3(0.0, 1.0, 0.0);
+}
+
+// One geomorph stage: project along the morph ray; when that misses, find the coarse surface along its gradient and keep the part of that offset the ray can express
+VoxelProjectResult VoxelProjectStage(VoxelExtractConstants ex, float3 pos, float3 n, float radiusMeter, uint stride, StructuredBuffer< float > density, StructuredBuffer< int > triTable)
+{
+    VoxelProjectResult pr1 = ProjectToCoarseMesh(ex, pos, n, radiusMeter, stride, density, triTable);
+    if (pr1.code != 0u)
+    {
+        float3 g = VoxelCoarseGradientDir(ex, pos, stride, density);
+        VoxelProjectResult pr2 = ProjectToCoarseMesh(ex, pos, g, radiusMeter, stride, density, triTable);
+        if (pr2.code == 0u)
+        {
+            pr1.sd      = pr2.sd * dot(g, n);
+            pr1.nTarget = pr2.nTarget;
+            pr1.code    = 0u;
+        }
+    }
+    return pr1;
+}
+
+// Isosurface vertex on the edge (v0 = min endpoint -> v1 = max endpoint): interpolated position/normal + 3-stage geomorph targets
+// pinned: coarse-side transition vertex that already sits on the parent mesh
+VoxelVertex VoxelMakeEdgeVertex(VoxelExtractConstants ex, float v0, float v1, float3 p0, float3 p1, float3 g0, float3 g1, bool pinned,
+                                StructuredBuffer< float > density, StructuredBuffer< int > triTable)
+{
+    float3 pos, n;
+    VoxelEdgePoint(v0, v1, p0, p1, g0, g1, pos, n);
+
+    // Should use the exact same normal value(decoded) as the rendering point(GBuffer) for consistency
+    float3 nq = VoxelQuantizeNormal(n);
+
+    const float morphRadiusMeter = ex.morphRadiusMeter;
+    VoxelProjectResult pr1 = VoxelProjectStage(ex, pos, nq, morphRadiusMeter, 2u, density, triTable);       // s1 = hit point on parent mesh
+    VoxelProjectResult pr2 = VoxelProjectStage(ex, pos, nq, 2.0 * morphRadiusMeter, 4u, density, triTable); // s2 = hit point on grandparent
+    VoxelProjectResult pr3 = VoxelProjectStage(ex, pos, nq, 4.0 * morphRadiusMeter, 8u, density, triTable); // s3 = hit point on great-grandparent
+
+    float s1 = pinned ? 0.0 : pr1.sd;
+    float s2 = (pr2.code == 0u) ? pr2.sd : s1; // no hit: stay on the previous LOD
+    float s3 = (pr3.code == 0u) ? pr3.sd : s2;
+
+    // normal morph targets: the ancestors' shading normals where the ray hit
+    float3 nT1 = pinned ? nq : pr1.nTarget;
+    float3 nT2 = (pr2.code == 0u) ? pr2.nTarget : nT1;
+
+    const float chunkSizeMeter = float(ex.cellsPerAxis) * ex.voxelSizeMeter;
+    return VoxelPackVertex(pos, nq, nT1, nT2, s1, s2, s3, pinned, chunkSizeMeter, ex.voxelSizeMeter);
+}

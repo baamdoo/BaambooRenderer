@@ -34,8 +34,11 @@ VulkanBuffer::VulkanBuffer(VkRenderDevice& rd, const char* name, CreationInfo&& 
 
 VulkanBuffer::~VulkanBuffer()
 {
+	if (IsValidIndex(m_StorageSlot))
+		m_RenderDevice.FreeHeapSlot(m_StorageSlot);
+
 	if (m_vmaAllocation)
-		vmaDestroyBuffer(m_RenderDevice.vmaAllocator(), m_vkBuffer, m_vmaAllocation);
+		m_RenderDevice.DeferRelease(m_vkBuffer, m_vmaAllocation);
 }
 
 void VulkanBuffer::FlushMappedRange(u64 offsetInBytes, u64 sizeInBytes) const
@@ -120,11 +123,7 @@ void VulkanBuffer::Resize(u64 sizeInBytes, bool bReset)
 				m_RenderDevice.ExecuteCommand(pContext); // synchronous — GPU caught up to transfer queue
 			}
 		}
-		else
-		{
-			vkDeviceWaitIdle(m_RenderDevice.vkDevice());
-		}
-		vmaDestroyBuffer(m_RenderDevice.vmaAllocator(), m_vkBuffer, m_vmaAllocation);
+		m_RenderDevice.DeferRelease(m_vkBuffer, m_vmaAllocation);
 	}
 
 	m_vkBuffer       = vkNewBuffer;
@@ -132,33 +131,18 @@ void VulkanBuffer::Resize(u64 sizeInBytes, bool bReset)
 	m_AllocationInfo = allocationInfo;
 	m_DeviceAddress  = deviceAddress;
 
+	if (bufferInfo.usage & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
+	{
+		// a new slot each time: frames in flight still read the old buffer through the old one
+		if (IsValidIndex(m_StorageSlot))
+			m_RenderDevice.FreeHeapSlot(m_StorageSlot);
+
+		m_StorageSlot = m_RenderDevice.AllocateHeapSlot();
+		m_RenderDevice.WriteHeapBuffer(m_StorageSlot, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, m_vkBuffer);
+	}
+
 	m_CreationInfo.count              = 1;
 	m_CreationInfo.elementSizeInBytes = sizeInBytes;
-}
-
-
-//-------------------------------------------------------------------------
-// Vertex Buffer : deprecated under indirect rendering system
-//-------------------------------------------------------------------------
-// 
-//-------------------------------------------------------------------------
-// Index Buffer
-//-------------------------------------------------------------------------
-Arc< VulkanIndexBuffer > VulkanIndexBuffer::Create(VkRenderDevice& rd, const char* name, u32 numIndices, VkIndexType type)
-{
-	return MakeArc< VulkanIndexBuffer >(rd, name, numIndices, type);
-}
-
-VulkanIndexBuffer::VulkanIndexBuffer(VkRenderDevice& rd, const char* name, u32 numIndices, VkIndexType type)
-	: m_IndexType(type)
-	, Super(rd, name,
-		{
-			.count              = numIndices,
-			.elementSizeInBytes = GetIndexSize(),
-			.mapDirection       = 0,
-			.bufferUsage        = VK_BUFFER_USAGE_2_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT | VK_BUFFER_USAGE_2_INDEX_BUFFER_BIT,
-		})
-{
 }
 
 
@@ -177,27 +161,6 @@ VulkanUniformBuffer::VulkanUniformBuffer(VkRenderDevice& rd, const char* name, u
 			.elementSizeInBytes = sizeInBytes,
 			.mapDirection       = 1,
 			.bufferUsage        = additionalUsage | VK_BUFFER_USAGE_2_UNIFORM_BUFFER_BIT
-		})
-{
-}
-
-
-//-------------------------------------------------------------------------
-// Storage Buffer
-//-------------------------------------------------------------------------
-Arc< VulkanStorageBuffer > VulkanStorageBuffer::Create(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags2 usage)
-{
-	return MakeArc< VulkanStorageBuffer >(rd, name, sizeInBytes, usage);
-}
-
-VulkanStorageBuffer::VulkanStorageBuffer(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags2 additionalUsage)
-	: Super(rd, name,
-		{
-			.count              = 1,
-			.elementSizeInBytes = sizeInBytes,
-			.bufferUsage        = additionalUsage
-			                    | VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT 
-		                        | VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT
 		})
 {
 }

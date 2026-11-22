@@ -1,15 +1,21 @@
 #include "RendererPch.h"
 #include "Dx12RenderPipeline.h"
 #include "Dx12RootSignature.h"
-#include "Dx12ResourceManager.h"
 
 #include "RenderResource/Dx12Shader.h"
 #include "RenderResource/Dx12Texture.h"
 #include "RenderResource/Dx12RenderTarget.h"
-#include "RenderResource/Dx12SceneResource.h"
 
 namespace dx12
 {
+
+bool IsSucceeded(HRESULT hr, const IUnknown* d3d12Current)
+{
+    if (FAILED(hr) && !d3d12Current)
+        ThrowIfFailed(hr);
+
+    return SUCCEEDED(hr);
+}
 
 using namespace render;
 
@@ -109,37 +115,6 @@ D3D12_BLEND ConvertToDx12BlendFactor(render::eBlendFactor factor)
 #pragma endregion
 
 
-namespace
-{
-
-DXGI_FORMAT GetDXGIFormat(D3D_REGISTER_COMPONENT_TYPE componentType, BYTE mask)
-{
-    if (componentType == D3D_REGISTER_COMPONENT_FLOAT32)
-    {
-        switch (mask)
-        {
-        case 0x1: return DXGI_FORMAT_R32_FLOAT;
-        case 0x3: return DXGI_FORMAT_R32G32_FLOAT;
-        case 0x7: return DXGI_FORMAT_R32G32B32_FLOAT;
-        case 0xF: return DXGI_FORMAT_R32G32B32A32_FLOAT;
-        }
-    }
-    else if (componentType == D3D_REGISTER_COMPONENT_UINT32)
-    {
-        switch (mask)
-        {
-        case 0x1: return DXGI_FORMAT_R32_UINT;
-        case 0x3: return DXGI_FORMAT_R32G32_UINT;
-        case 0x7: return DXGI_FORMAT_R32G32B32_UINT;
-        case 0xF: return DXGI_FORMAT_R32G32B32A32_UINT;
-        }
-    }
-
-    return DXGI_FORMAT_UNKNOWN;
-}
-
-}
-
 //-------------------------------------------------------------------------
 // Graphics pipeline
 //-------------------------------------------------------------------------
@@ -162,15 +137,12 @@ Dx12GraphicsPipeline::Dx12GraphicsPipeline(Dx12RenderDevice& rd, const char* nam
     m_PipelineDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     m_PipelineDesc.SampleDesc.Count      = 1;
 
-    auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
-    m_pRootSignature = rm.GetGlobalRootSignature();
+    m_pRootSignature = m_RenderDevice.GetGlobalRootSignature();
 }
 
 Dx12GraphicsPipeline::~Dx12GraphicsPipeline()
 {
-    COM_RELEASE(m_d3d12PipelineState);
-
-    m_InputLayoutDesc.clear();
+    m_RenderDevice.DeferRelease(m_d3d12PipelineState);
 }
 
 GraphicsPipeline& Dx12GraphicsPipeline::SetRenderTarget(Arc< render::RenderTarget > pRenderTarget)
@@ -293,15 +265,17 @@ GraphicsPipeline& Dx12GraphicsPipeline::SetBlendEnable(u32 renderTargetIndex, bo
 
 GraphicsPipeline& Dx12GraphicsPipeline::SetColorBlending(u32 renderTargetIndex, render::eBlendFactor srcBlend, render::eBlendFactor dstBlend, render::eBlendOp blendOp)
 {
-    m_PipelineDesc.BlendState.RenderTarget[renderTargetIndex].BlendOp   = DX12_PIPELINE_BLENDOP(blendOp);
-    m_PipelineDesc.BlendState.RenderTarget[renderTargetIndex].SrcBlend  = DX12_PIPELINE_BLENDFACTOR(srcBlend);
-    m_PipelineDesc.BlendState.RenderTarget[renderTargetIndex].DestBlend = DX12_PIPELINE_BLENDFACTOR(dstBlend);
+    m_PipelineDesc.BlendState.RenderTarget[renderTargetIndex].BlendEnable = TRUE;
+    m_PipelineDesc.BlendState.RenderTarget[renderTargetIndex].BlendOp     = DX12_PIPELINE_BLENDOP(blendOp);
+    m_PipelineDesc.BlendState.RenderTarget[renderTargetIndex].SrcBlend    = DX12_PIPELINE_BLENDFACTOR(srcBlend);
+    m_PipelineDesc.BlendState.RenderTarget[renderTargetIndex].DestBlend   = DX12_PIPELINE_BLENDFACTOR(dstBlend);
 
     return *this;
 }
 
 GraphicsPipeline& Dx12GraphicsPipeline::SetAlphaBlending(u32 renderTargetIndex, render::eBlendFactor srcBlend, render::eBlendFactor dstBlend, render::eBlendOp blendOp)
 {
+    m_PipelineDesc.BlendState.RenderTarget[renderTargetIndex].BlendEnable    = TRUE;
     m_PipelineDesc.BlendState.RenderTarget[renderTargetIndex].BlendOpAlpha   = DX12_PIPELINE_BLENDOP(blendOp);
     m_PipelineDesc.BlendState.RenderTarget[renderTargetIndex].SrcBlendAlpha  = DX12_PIPELINE_BLENDFACTOR(srcBlend);
     m_PipelineDesc.BlendState.RenderTarget[renderTargetIndex].DestBlendAlpha = DX12_PIPELINE_BLENDFACTOR(dstBlend);
@@ -309,7 +283,7 @@ GraphicsPipeline& Dx12GraphicsPipeline::SetAlphaBlending(u32 renderTargetIndex, 
     return *this;
 }
 
-void Dx12GraphicsPipeline::Build()
+bool Dx12GraphicsPipeline::Build()
 {
     for (u32 i = 0; i < m_PipelineDesc.NumRenderTargets; ++i)
     {
@@ -318,133 +292,90 @@ void Dx12GraphicsPipeline::Build()
                   "Render target %u cannot enable blending and a logic operation simultaneously", i);
     }
 
-    if (m_bMeshShader)
-    {
-        auto d3d12MS = StaticCast<Dx12Shader>(m_pMS);
-        auto d3d12AS = StaticCast<Dx12Shader>(m_pTS);
-        auto d3d12PS = StaticCast<Dx12Shader>(m_pPS);
-        assert(d3d12MS && d3d12PS);
-
-        MeshPipelineStream Stream;
-
-        Stream.MS = CD3DX12_SHADER_BYTECODE(d3d12MS->GetShaderBufferPointer(), d3d12MS->GetShaderBufferSize());
-        Stream.PS = CD3DX12_SHADER_BYTECODE(d3d12PS->GetShaderBufferPointer(), d3d12PS->GetShaderBufferSize());
-        Stream.AS = d3d12AS ?
-            CD3DX12_SHADER_BYTECODE(d3d12AS->GetShaderBufferPointer(), d3d12AS->GetShaderBufferSize()) : CD3DX12_SHADER_BYTECODE();
-
-        D3D12_RT_FORMAT_ARRAY rtvFormats = {};
-        rtvFormats.NumRenderTargets = m_PipelineDesc.NumRenderTargets;
-        memcpy(rtvFormats.RTFormats, m_PipelineDesc.RTVFormats, sizeof(DXGI_FORMAT) * 8);
-
-        Stream.RTVFormats = rtvFormats;
-        Stream.DSVFormat  = m_PipelineDesc.DSVFormat;
-        Stream.SampleDesc = m_PipelineDesc.SampleDesc;
-
-        Stream.RasterizerState   = CD3DX12_RASTERIZER_DESC(m_PipelineDesc.RasterizerState);
-        Stream.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(m_PipelineDesc.DepthStencilState);
-        Stream.BlendState        = CD3DX12_BLEND_DESC(m_PipelineDesc.BlendState);
-
-        ParseRootParameters(d3d12MS->Reflection());
-        ParseRootParameters(d3d12PS->Reflection());
-        if (d3d12AS) ParseRootParameters(d3d12AS->Reflection());
-        Stream.pRootSignature = m_pRootSignature->GetD3D12RootSignature();
-
-        D3D12_PIPELINE_STATE_STREAM_DESC streamDesc = {};
-        streamDesc.SizeInBytes                   = sizeof(MeshPipelineStream);
-        streamDesc.pPipelineStateSubobjectStream = &Stream;
-
-        auto d3d12Device = m_RenderDevice.GetD3D12Device();
-        ThrowIfFailed(
-            d3d12Device->CreatePipelineState(&streamDesc, IID_PPV_ARGS(&m_d3d12PipelineState))
-        );
-    }
-    else
+    if (!m_bMeshShader)
     {
         auto d3d12VS = StaticCast<Dx12Shader>(m_pVS);
         auto d3d12PS = StaticCast<Dx12Shader>(m_pPS);
-        auto d3d12GS = StaticCast<Dx12Shader>(m_pGS);
-        auto d3d12HS = StaticCast<Dx12Shader>(m_pHS);
-        auto d3d12DS = StaticCast<Dx12Shader>(m_pDS);
         assert(d3d12VS && d3d12PS);
 
+        // InputLayout stays empty: vertex shaders fetch their data from the heap by SV_VertexID
         m_PipelineDesc.VS = CD3DX12_SHADER_BYTECODE(d3d12VS->GetShaderBufferPointer(), d3d12VS->GetShaderBufferSize());
         m_PipelineDesc.PS = CD3DX12_SHADER_BYTECODE(d3d12PS->GetShaderBufferPointer(), d3d12PS->GetShaderBufferSize());
-        m_PipelineDesc.GS = d3d12GS ?
-            CD3DX12_SHADER_BYTECODE(d3d12GS->GetShaderBufferPointer(), d3d12GS->GetShaderBufferSize()) : CD3DX12_SHADER_BYTECODE();
-        m_PipelineDesc.HS = d3d12HS ?
-            CD3DX12_SHADER_BYTECODE(d3d12HS->GetShaderBufferPointer(), d3d12HS->GetShaderBufferSize()) : CD3DX12_SHADER_BYTECODE();
-        m_PipelineDesc.DS = d3d12DS ?
-            CD3DX12_SHADER_BYTECODE(d3d12DS->GetShaderBufferPointer(), d3d12DS->GetShaderBufferSize()) : CD3DX12_SHADER_BYTECODE();
 
-        SetVertexInputLayout(d3d12VS->GetD3D12ShaderReflection());
-
-        // Root Signature
-        ParseRootParameters(d3d12VS->Reflection());
-        ParseRootParameters(d3d12PS->Reflection());
-        if (d3d12GS) ParseRootParameters(d3d12GS->Reflection());
-        if (d3d12HS) ParseRootParameters(d3d12HS->Reflection());
-        if (d3d12DS) ParseRootParameters(d3d12DS->Reflection());
         m_PipelineDesc.pRootSignature = m_pRootSignature->GetD3D12RootSignature();
 
         auto d3d12Device = m_RenderDevice.GetD3D12Device();
-        ThrowIfFailed(
-            d3d12Device->CreateGraphicsPipelineState(&m_PipelineDesc, IID_PPV_ARGS(&m_d3d12PipelineState))
-        );
-    }
-}
+        ID3D12PipelineState* d3d12PipelineState = nullptr;
+        if (!IsSucceeded(d3d12Device->CreateGraphicsPipelineState(&m_PipelineDesc, IID_PPV_ARGS(&d3d12PipelineState)), m_d3d12PipelineState))
+            return false;
 
-void Dx12GraphicsPipeline::SetVertexInputLayout(ID3D12ShaderReflection* d3d12ShaderReflection)
-{
-    D3D12_SHADER_DESC d3d12ShaderDesc;
-    ThrowIfFailed(d3d12ShaderReflection->GetDesc(&d3d12ShaderDesc));
+        m_ResourceBindingMap.clear();
+        ParseRootParameters(*d3d12VS->GetCreationInfo().bindings);
+        ParseRootParameters(*d3d12PS->GetCreationInfo().bindings);
 
-    for (u32 i = 0; i < d3d12ShaderDesc.InputParameters; i++) 
-    {
-        D3D12_SIGNATURE_PARAMETER_DESC paramDesc;
-        ThrowIfFailed(d3d12ShaderReflection->GetInputParameterDesc(i, &paramDesc));
+        m_RenderDevice.DeferRelease(m_d3d12PipelineState);
+        m_d3d12PipelineState = d3d12PipelineState;
 
-        D3D12_INPUT_ELEMENT_DESC elementDesc = {};
-        elementDesc.SemanticName         = paramDesc.SemanticName;
-        elementDesc.SemanticIndex        = paramDesc.SemanticIndex;
-        elementDesc.Format               = GetDXGIFormat(paramDesc.ComponentType, paramDesc.Mask);
-        elementDesc.InputSlot            = 0;
-        elementDesc.AlignedByteOffset    = D3D12_APPEND_ALIGNED_ELEMENT;
-        elementDesc.InputSlotClass       = D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
-        elementDesc.InstanceDataStepRate = 0;
-
-        m_InputLayoutDesc.push_back(elementDesc);
+        ++m_BuildCount;
+        return true;
     }
 
-    m_PipelineDesc.InputLayout = { m_InputLayoutDesc.data(), static_cast<u32>(m_InputLayoutDesc.size())};
+    auto d3d12MS = StaticCast<Dx12Shader>(m_pMS);
+    auto d3d12AS = StaticCast<Dx12Shader>(m_pTS);
+    auto d3d12PS = StaticCast<Dx12Shader>(m_pPS);
+    assert(d3d12MS && d3d12PS);
+
+    MeshPipelineStream Stream;
+
+    Stream.MS = CD3DX12_SHADER_BYTECODE(d3d12MS->GetShaderBufferPointer(), d3d12MS->GetShaderBufferSize());
+    Stream.PS = CD3DX12_SHADER_BYTECODE(d3d12PS->GetShaderBufferPointer(), d3d12PS->GetShaderBufferSize());
+    Stream.AS = d3d12AS ?
+        CD3DX12_SHADER_BYTECODE(d3d12AS->GetShaderBufferPointer(), d3d12AS->GetShaderBufferSize()) : CD3DX12_SHADER_BYTECODE();
+
+    D3D12_RT_FORMAT_ARRAY rtvFormats = {};
+    rtvFormats.NumRenderTargets = m_PipelineDesc.NumRenderTargets;
+    memcpy(rtvFormats.RTFormats, m_PipelineDesc.RTVFormats, sizeof(DXGI_FORMAT) * 8);
+
+    Stream.RTVFormats = rtvFormats;
+    Stream.DSVFormat  = m_PipelineDesc.DSVFormat;
+    Stream.SampleDesc = m_PipelineDesc.SampleDesc;
+
+    Stream.RasterizerState   = CD3DX12_RASTERIZER_DESC(m_PipelineDesc.RasterizerState);
+    Stream.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(m_PipelineDesc.DepthStencilState);
+    Stream.BlendState        = CD3DX12_BLEND_DESC(m_PipelineDesc.BlendState);
+
+    Stream.pRootSignature = m_pRootSignature->GetD3D12RootSignature();
+
+    D3D12_PIPELINE_STATE_STREAM_DESC streamDesc = {};
+    streamDesc.SizeInBytes                   = sizeof(MeshPipelineStream);
+    streamDesc.pPipelineStateSubobjectStream = &Stream;
+
+    auto d3d12Device = m_RenderDevice.GetD3D12Device();
+    ID3D12PipelineState* d3d12PipelineState = nullptr;
+    if (!IsSucceeded(d3d12Device->CreatePipelineState(&streamDesc, IID_PPV_ARGS(&d3d12PipelineState)), m_d3d12PipelineState))
+        return false;
+
+    m_ResourceBindingMap.clear();
+    ParseRootParameters(*d3d12MS->GetCreationInfo().bindings);
+    ParseRootParameters(*d3d12PS->GetCreationInfo().bindings);
+    if (d3d12AS) ParseRootParameters(*d3d12AS->GetCreationInfo().bindings);
+
+    m_RenderDevice.DeferRelease(m_d3d12PipelineState);
+    m_d3d12PipelineState = d3d12PipelineState;
+
+    ++m_BuildCount;
+    return true;
 }
 
-void Dx12GraphicsPipeline::ParseRootParameters(const Dx12Shader::ShaderReflection& reflection)
+void Dx12GraphicsPipeline::ParseRootParameters(const render::ShaderBindingLayout& bindings)
 {
-    for (const auto& [space, descriptors] : reflection.descriptors)
+    BB_ASSERT(bindings.pushBlockSize <= render::kSlangPushBlockBytes, "PushBlockSize is overflowed!");
+
+    for (const auto& [name, offset] : bindings.pushOffsets)
     {
-        for (const auto& descriptor : descriptors)
-        {
-            switch (descriptor.rangeType)
-            {
-            case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
-            case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
-            case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
-            {
-                D3D12_ROOT_PARAMETER_TYPE type = 
-                    space == kRootConstantSpace ? D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS : 
-                    descriptor.rangeType == D3D12_DESCRIPTOR_RANGE_TYPE_CBV ? D3D12_ROOT_PARAMETER_TYPE_CBV :
-                    descriptor.rangeType == D3D12_DESCRIPTOR_RANGE_TYPE_UAV ? D3D12_ROOT_PARAMETER_TYPE_UAV : D3D12_ROOT_PARAMETER_TYPE_SRV;
-
-                auto rootIndex = m_pRootSignature->GetRootIndex(type, space, descriptor.baseRegister);
-
-                auto [it, bInserted] = m_ResourceBindingMap.emplace(descriptor.name, rootIndex);
-                assert((bInserted || it->second == rootIndex) && "resource bound to different registers across stages -- unify the register");
-                break;
-            }
-            case D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER:
-                break;
-            }
-        }
+        u32 rootIndex =
+            m_pRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, render::kSlangPushSpace, render::kSlangPushRegister);
+        m_ResourceBindingMap.emplace(name, (u64(offset) << 32llu) | rootIndex);
     }
 }
 
@@ -456,59 +387,51 @@ Dx12ComputePipeline::Dx12ComputePipeline(Dx12RenderDevice& rd, const char* name)
 	: render::ComputePipeline(name)
     , m_RenderDevice(rd)
 {
-    auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
-    m_pRootSignature = rm.GetGlobalRootSignature();
+    m_pRootSignature = m_RenderDevice.GetGlobalRootSignature();
 }
 
 Dx12ComputePipeline::~Dx12ComputePipeline()
 {
-    COM_RELEASE(m_d3d12PipelineState);
+    m_RenderDevice.DeferRelease(m_d3d12PipelineState);
 }
 
-void Dx12ComputePipeline::Build()
+bool Dx12ComputePipeline::Build()
 {
     auto d3d12CS = StaticCast<Dx12Shader>(m_pCS);
     assert(d3d12CS);
 
+    const auto& bindings = d3d12CS->GetCreationInfo().bindings;
+    BB_ASSERT(bindings, "Compute pipeline '%s': the shader has no Slang bindings. Create it through the PipelineFactory.", m_Name.c_str());
+
     m_PipelineDesc.CS = CD3DX12_SHADER_BYTECODE(d3d12CS->GetShaderBufferPointer(), d3d12CS->GetShaderBufferSize());
 
-    // Root Signature
-    ParseRootParameters(d3d12CS->Reflection());
     m_PipelineDesc.pRootSignature = m_pRootSignature->GetD3D12RootSignature();
 
     auto d3d12Device = m_RenderDevice.GetD3D12Device();
-    ThrowIfFailed(
-        d3d12Device->CreateComputePipelineState(&m_PipelineDesc, IID_PPV_ARGS(&m_d3d12PipelineState))
-    );
+    ID3D12PipelineState* d3d12PipelineState = nullptr;
+    if (!IsSucceeded(d3d12Device->CreateComputePipelineState(&m_PipelineDesc, IID_PPV_ARGS(&d3d12PipelineState)), m_d3d12PipelineState))
+        return false;
+
+    ParseRootParameters(*bindings);
+
+    m_RenderDevice.DeferRelease(m_d3d12PipelineState);
+    m_d3d12PipelineState = d3d12PipelineState;
+
+    ++m_BuildCount;
+    return true;
 }
 
-void Dx12ComputePipeline::ParseRootParameters(const Dx12Shader::ShaderReflection& reflection)
+void Dx12ComputePipeline::ParseRootParameters(const render::ShaderBindingLayout& bindings)
 {
-    for (const auto& [space, descriptors] : reflection.descriptors)
+    BB_ASSERT(bindings.pushBlockSize <= render::kSlangPushBlockBytes, "PushBlockSize is overflowed!");
+
+    m_ResourceBindingMap.clear();
+
+    for (const auto& [name, offset] : bindings.pushOffsets)
     {
-        for (const auto& descriptor : descriptors)
-        {
-            switch (descriptor.rangeType)
-            {
-            case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
-            case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
-            case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
-            {
-                D3D12_ROOT_PARAMETER_TYPE type =
-                    space == kRootConstantSpace ? D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS : 
-                    descriptor.rangeType == D3D12_DESCRIPTOR_RANGE_TYPE_CBV ? D3D12_ROOT_PARAMETER_TYPE_CBV :
-                    descriptor.rangeType == D3D12_DESCRIPTOR_RANGE_TYPE_UAV ? D3D12_ROOT_PARAMETER_TYPE_UAV : D3D12_ROOT_PARAMETER_TYPE_SRV;
-
-                auto rootIndex = m_pRootSignature->GetRootIndex(type, space, descriptor.baseRegister);
-
-                auto [it, bInserted] = m_ResourceBindingMap.emplace(descriptor.name, rootIndex);
-                assert((bInserted || it->second == rootIndex) && "resource bound to different registers across stages -- unify the register");
-                break;
-            }
-            case D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER:
-                break;
-            }
-        }
+        u32 rootIndex = 
+            m_pRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, render::kSlangPushSpace, render::kSlangPushRegister);
+        m_ResourceBindingMap.emplace(name, (u64(offset) << 32llu) | rootIndex);
     }
 }
 
@@ -516,35 +439,34 @@ void Dx12ComputePipeline::ParseRootParameters(const Dx12Shader::ShaderReflection
 //-------------------------------------------------------------------------
 // DXR Pipeline
 //-------------------------------------------------------------------------
-namespace
-{
-    constexpr u64 kSbtTableAlignment  = D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT;  // 64
-    constexpr u64 kSbtRecordAlignment = D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT; // 32
-}
-
 Dx12RaytracingPipeline::Dx12RaytracingPipeline(Dx12RenderDevice& rd, const char* name)
     : render::RaytracingPipeline(name)
     , m_RenderDevice(rd)
 {
-    auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
-    m_pGlobalRootSignature = rm.GetGlobalRootSignature();
+    m_pGlobalRootSignature = m_RenderDevice.GetGlobalRootSignature();
 }
 
 Dx12RaytracingPipeline::~Dx12RaytracingPipeline()
 {
-    COM_RELEASE(m_d3d12StateObjectProperties);
-    COM_RELEASE(m_d3d12StateObject);
+    m_RenderDevice.DeferRelease(m_d3d12StateObjectProperties);
+    m_RenderDevice.DeferRelease(m_d3d12StateObject);
 }
 
-void Dx12RaytracingPipeline::Build()
+bool Dx12RaytracingPipeline::Build()
 {
     auto pLib = StaticCast< Dx12Shader >(m_pShaderLibrary);
     assert(pLib && "Shader library must be set before Build()!");
-    assert(pLib->IsLibrary());
 
-    ParseRootParameters(pLib->Reflection());
-    BuildLocalRootSignature(pLib->Reflection());
-    BuildStateObject();
+    const auto& bindings = pLib->GetCreationInfo().bindings;
+    BB_ASSERT(bindings, "Raytracing pipeline '%s': the library has no Slang bindings. Create it through the PipelineFactory.", m_Name.c_str());
+
+    if (!BuildStateObject())
+        return false;
+
+    ParseRootParameters(*bindings);
+
+    ++m_BuildCount;
+    return true;
 }
 
 const void* Dx12RaytracingPipeline::GetShaderIdentifier(const std::string& exportName) const
@@ -553,12 +475,9 @@ const void* Dx12RaytracingPipeline::GetShaderIdentifier(const std::string& expor
     return m_d3d12StateObjectProperties->GetShaderIdentifier(wName.c_str());
 }
 
-void Dx12RaytracingPipeline::BuildStateObject()
+bool Dx12RaytracingPipeline::BuildStateObject()
 {
     auto d3d12Lib = StaticCast< Dx12Shader >(m_pShaderLibrary);
-    assert(d3d12Lib && "Shader library must be set before Build()!");
-
-    ParseRootParameters(d3d12Lib->Reflection());
 
     std::wstring wRayGenExport = ConvertToWString(m_RayGenExport);
 
@@ -631,152 +550,35 @@ void Dx12RaytracingPipeline::BuildStateObject()
         auto pGlobalRS = stateObjectDesc.CreateSubobject< CD3DX12_GLOBAL_ROOT_SIGNATURE_SUBOBJECT >();
         pGlobalRS->SetRootSignature(m_pGlobalRootSignature->GetD3D12RootSignature());
     }
-    if (m_pMissLocalRootSignature)
-    {
-        auto pLocalRS = stateObjectDesc.CreateSubobject< CD3DX12_LOCAL_ROOT_SIGNATURE_SUBOBJECT >();
-        pLocalRS->SetRootSignature(m_pMissLocalRootSignature->GetD3D12RootSignature());
-
-        auto* pAssociation = stateObjectDesc.CreateSubobject< CD3DX12_SUBOBJECT_TO_EXPORTS_ASSOCIATION_SUBOBJECT >();
-        pAssociation->SetSubobjectToAssociate(*pLocalRS);
-        for (const auto& wName : wMissExports)
-        {
-            pAssociation->AddExport(wName.c_str());
-        }
-    }
-    if (m_pHitGroupLocalRootSignature)
-    {
-        auto pLocalRS = stateObjectDesc.CreateSubobject< CD3DX12_LOCAL_ROOT_SIGNATURE_SUBOBJECT >();
-        pLocalRS->SetRootSignature(m_pHitGroupLocalRootSignature->GetD3D12RootSignature());
-
-        auto* pAssociation = stateObjectDesc.CreateSubobject< CD3DX12_SUBOBJECT_TO_EXPORTS_ASSOCIATION_SUBOBJECT >();
-        pAssociation->SetSubobjectToAssociate(*pLocalRS);
-        for (const auto& wName : wHitGroupExports)
-        {
-            pAssociation->AddExport(wName.c_str());
-        }
-    }
 
     auto d3d12Device = m_RenderDevice.GetD3D12Device();
+    ID3D12StateObject* d3d12StateObject = nullptr;
+    if (!IsSucceeded(d3d12Device->CreateStateObject(stateObjectDesc, IID_PPV_ARGS(&d3d12StateObject)), m_d3d12StateObject))
+        return false;
+
+    ID3D12StateObjectProperties* d3d12StateObjectProperties = nullptr;
     ThrowIfFailed(
-        d3d12Device->CreateStateObject(stateObjectDesc, IID_PPV_ARGS(&m_d3d12StateObject))
+        d3d12StateObject->QueryInterface(IID_PPV_ARGS(&d3d12StateObjectProperties))
     );
 
-    ThrowIfFailed(
-        m_d3d12StateObject->QueryInterface(IID_PPV_ARGS(&m_d3d12StateObjectProperties))
-    );
+    m_RenderDevice.DeferRelease(m_d3d12StateObjectProperties);
+    m_RenderDevice.DeferRelease(m_d3d12StateObject);
+    m_d3d12StateObject           = d3d12StateObject;
+    m_d3d12StateObjectProperties = d3d12StateObjectProperties;
+    return true;
 }
 
-void Dx12RaytracingPipeline::BuildLocalRootSignature(const Dx12Shader::ShaderReflection& reflection)
+void Dx12RaytracingPipeline::ParseRootParameters(const render::ShaderBindingLayout& bindings)
 {
-    auto missIT = reflection.descriptors.find(kMissArgumentSpace);
-    if (missIT != reflection.descriptors.end() && !missIT->second.empty())
+    BB_ASSERT(bindings.pushBlockSize <= render::kSlangPushBlockBytes, "PushBlockSize is overflowed!");
+
+    m_ResourceBindingMap.clear();
+
+    for (const auto& [name, offset] : bindings.pushOffsets)
     {
-        std::vector< Dx12Shader::DescriptorInfo > localDescriptors = missIT->second;
-        std::sort(localDescriptors.begin(), localDescriptors.end(),
-            [](const Dx12Shader::DescriptorInfo& a, const Dx12Shader::DescriptorInfo& b)
-                {
-                    return a.baseRegister < b.baseRegister;
-                });
-
-        m_pMissLocalRootSignature = MakeArc< Dx12RootSignature >(
-            m_RenderDevice,
-            m_Name + "_MissLocalRS",
-            D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE
-        );
-
-        for (const auto& desc : localDescriptors)
-        {
-            switch (desc.rangeType)
-            {
-            case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
-                m_pMissLocalRootSignature->AddSRV(desc.baseRegister, kMissArgumentSpace);
-                break;
-
-            case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
-                m_pMissLocalRootSignature->AddUAV(desc.baseRegister, kMissArgumentSpace);
-                break;
-
-            case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
-                m_pMissLocalRootSignature->AddConstants(desc.baseRegister, kMissArgumentSpace, desc.numDescriptors);
-                break;
-
-            default:
-                assert(false && "Invalid entry!");
-                break;
-            }
-        }
-
-        m_pMissLocalRootSignature->Build();
-    }
-
-    auto hgIT = reflection.descriptors.find(kHitGroupArgumentSpace);
-    if (hgIT != reflection.descriptors.end() && !hgIT->second.empty())
-    {
-        std::vector< Dx12Shader::DescriptorInfo > localDescriptors = hgIT->second;
-        std::sort(localDescriptors.begin(), localDescriptors.end(),
-            [](const Dx12Shader::DescriptorInfo& a, const Dx12Shader::DescriptorInfo& b)
-            {
-                return a.baseRegister < b.baseRegister;
-            });
-
-        m_pHitGroupLocalRootSignature = MakeArc< Dx12RootSignature >(
-            m_RenderDevice,
-            m_Name + "_HitGroupLocalRS",
-            D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE
-        );
-
-        for (const auto& desc : localDescriptors)
-        {
-            switch (desc.rangeType)
-            {
-            case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
-                m_pHitGroupLocalRootSignature->AddSRV(desc.baseRegister, kHitGroupArgumentSpace);
-                break;
-
-            case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
-                m_pHitGroupLocalRootSignature->AddUAV(desc.baseRegister, kHitGroupArgumentSpace);
-                break;
-
-            case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
-                m_pHitGroupLocalRootSignature->AddConstants(desc.baseRegister, kHitGroupArgumentSpace, desc.numDescriptors);
-                break;
-
-            default:
-                assert(false && "Invalid entry!");
-                break;
-            }
-        }
-
-        m_pHitGroupLocalRootSignature->Build();
-    }
-}
-
-void Dx12RaytracingPipeline::ParseRootParameters(const Dx12Shader::ShaderReflection& reflection)
-{
-    for (const auto& [space, descriptors] : reflection.descriptors)
-    {
-        for (const auto& descriptor : descriptors)
-        {
-            switch (descriptor.rangeType)
-            {
-            case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
-            case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
-            case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
-            {
-                D3D12_ROOT_PARAMETER_TYPE type =
-                    space == kRootConstantSpace ? D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS :
-                    descriptor.rangeType == D3D12_DESCRIPTOR_RANGE_TYPE_CBV ? D3D12_ROOT_PARAMETER_TYPE_CBV :
-                    descriptor.rangeType == D3D12_DESCRIPTOR_RANGE_TYPE_UAV ? D3D12_ROOT_PARAMETER_TYPE_UAV : D3D12_ROOT_PARAMETER_TYPE_SRV;
-
-                auto rootIndex = m_pGlobalRootSignature->GetRootIndex(type, space, descriptor.baseRegister);
-
-                m_ResourceBindingMap.emplace(descriptor.name, rootIndex);
-                break;
-            }
-            case D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER:
-                break;
-            }
-        }
+        u32 rootIndex =
+            m_pGlobalRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, render::kSlangPushSpace, render::kSlangPushRegister);
+        m_ResourceBindingMap.emplace(name, (u64(offset) << 32llu) | rootIndex);
     }
 }
 

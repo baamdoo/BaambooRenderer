@@ -282,15 +282,7 @@ VkDebugUtilsMessengerEXT DebugMessengerBuilder::Build(VkInstance instance)
 //-------------------------------------------------------------------------
 DeviceBuilder::DeviceBuilder()
 {
-	physicalDeviceMaintenance3Properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES;
-	m_Supported11Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
-	m_Supported12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-	m_Supported13Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-	m_SupportedMeshShaderFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
 	m_SupportedSwapchainMaintenanceFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT;
-	m_SubgroupProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES;
-	m_DescriptorIndexingProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_PROPERTIES;
-	m_PushDescriptorProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PUSH_DESCRIPTOR_PROPERTIES_KHR;
 }
 
 DeviceBuilder& DeviceBuilder::SetMinimumApiVersion(u32 version)
@@ -355,7 +347,7 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 	std::vector< const char* > enabledExtensions =
 	{
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-		VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
+		VK_EXT_MUTABLE_DESCRIPTOR_TYPE_EXTENSION_NAME,
 	};
 
 	bMeshShaderEnabled = m_bRequireMeshShader;
@@ -384,18 +376,33 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 	enabled12.drawIndirectCount                               = VK_TRUE;
 	enabled12.descriptorIndexing                              = VK_TRUE;
 	enabled12.shaderSampledImageArrayNonUniformIndexing       = VK_TRUE;
+	enabled12.shaderStorageImageArrayNonUniformIndexing       = VK_TRUE;
+	enabled12.shaderStorageBufferArrayNonUniformIndexing      = VK_TRUE;
+	enabled12.shaderUniformBufferArrayNonUniformIndexing      = VK_TRUE;
 	enabled12.runtimeDescriptorArray                          = VK_TRUE;
+	// An update-after-bind binding needs the feature of every type it can hold; the mutable heap holds all four.
 	enabled12.descriptorBindingSampledImageUpdateAfterBind    = VK_TRUE;
+	enabled12.descriptorBindingStorageImageUpdateAfterBind    = VK_TRUE;
+	enabled12.descriptorBindingStorageBufferUpdateAfterBind   = VK_TRUE;
+	enabled12.descriptorBindingUniformBufferUpdateAfterBind   = VK_TRUE;
+	enabled12.descriptorBindingUpdateUnusedWhilePending       = VK_TRUE;
 	enabled12.descriptorBindingPartiallyBound                 = VK_TRUE;
 	enabled12.descriptorBindingVariableDescriptorCount        = VK_TRUE;
 	enabled12.samplerFilterMinmax                             = VK_TRUE;
 	enabled12.bufferDeviceAddress                             = VK_TRUE;
+	enabled12.scalarBlockLayout                               = VK_TRUE; // Slang SPIR-V lays buffers out like C++
 
 	VkPhysicalDeviceVulkan13Features enabled13 = {};
 	enabled13.sType            = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
 	enabled13.dynamicRendering = VK_TRUE;
 	enabled13.synchronization2 = VK_TRUE;
-	enabled13.maintenance4 = VK_TRUE;
+	enabled13.maintenance4     = VK_TRUE;
+	// Slang (SPIR-V 1.6) emits OpDemoteToHelperInvocation for fragment `discard`.
+	enabled13.shaderDemoteToHelperInvocation = VK_TRUE;
+
+	VkPhysicalDeviceMutableDescriptorTypeFeaturesEXT enabledMutableDescriptorType = {};
+	enabledMutableDescriptorType.sType                 = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MUTABLE_DESCRIPTOR_TYPE_FEATURES_EXT;
+	enabledMutableDescriptorType.mutableDescriptorType = VK_TRUE;
 
 	VkPhysicalDeviceMeshShaderFeaturesEXT enabledMeshShader = {};
 	enabledMeshShader.sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
@@ -412,8 +419,9 @@ VkDevice DeviceBuilder::Build(VkInstance instance)
 	enabledFeatures2.pNext    = &enabled11;
 	enabled11.pNext            = &enabled12;
 	enabled12.pNext            = &enabled13;
+	enabled13.pNext            = &enabledMutableDescriptorType;
 
-	void** ppNext = &enabled13.pNext;
+	void** ppNext = &enabledMutableDescriptorType.pNext;
 	if (bMeshShaderEnabled)
 	{
 		*ppNext = &enabledMeshShader;
@@ -449,13 +457,6 @@ VkResult DeviceBuilder::queryPhysicalDevice(VkInstance instance)
 		return result;
 
 	i64 bestScore = std::numeric_limits<i64>::min();
-	constexpr u32 kCommonDescriptorCount = kMaxBindlessDescriptorResourceCount + 13u;
-	constexpr u32 kMaxComputeDescriptorCount = kCommonDescriptorCount + 15u;
-	constexpr u32 kMaxComputeCombinedSamplerCount = kMaxBindlessDescriptorResourceCount + 10u;
-	constexpr u32 kMaxPushDescriptorCount = 15u;
-	constexpr u32 kMaxPushStorageBufferCount = 5u;
-	constexpr u32 kMaxPushStorageImageCount = 13u;
-
 	constexpr u32 kMaxComputeWorkgroupInvocations = 512u;
 	constexpr u32 kMaxComputeWorkgroupSizeX = 256u;
 	constexpr u32 kMaxComputeWorkgroupSizeY = 16u;
@@ -466,7 +467,7 @@ VkResult DeviceBuilder::queryPhysicalDevice(VkInstance instance)
 	constexpr u32 kMeshSharedMemorySize = 928u;
 	constexpr u32 kMaxEmittedMeshWorkgroups = 10752u;
 	constexpr u32 kMeshOutputVertexCount = 64u;
-	constexpr u32 kMeshOutputPrimitiveCount = 124u;
+	constexpr u32 kMeshOutputPrimitiveCount = 126u;
 
 	for (const VkPhysicalDevice gpu : candidates)
 	{
@@ -483,7 +484,7 @@ VkResult DeviceBuilder::queryPhysicalDevice(VkInstance instance)
 				[name](const VkExtensionProperties& extension) { return std::strcmp(extension.extensionName, name) == 0; });
 		};
 		if (!hasExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME) ||
-			!hasExtension(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME) ||
+			!hasExtension(VK_EXT_MUTABLE_DESCRIPTOR_TYPE_EXTENSION_NAME) ||
 			(m_bRequireMeshShader && !hasExtension(VK_EXT_MESH_SHADER_EXTENSION_NAME)))
 		{
 			continue;
@@ -494,23 +495,21 @@ VkResult DeviceBuilder::queryPhysicalDevice(VkInstance instance)
 		if (baseProperties.apiVersion < m_MinimumApiVersion)
 			continue;
 
-		VkPhysicalDeviceMaintenance3Properties maintenance3 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES };
 		VkPhysicalDeviceSubgroupProperties subgroup = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES };
 		VkPhysicalDeviceDescriptorIndexingProperties descriptorIndexing = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_PROPERTIES };
-		VkPhysicalDevicePushDescriptorPropertiesKHR pushDescriptor = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PUSH_DESCRIPTOR_PROPERTIES_KHR };
 		VkPhysicalDeviceMeshShaderPropertiesEXT meshProperties = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT };
-		maintenance3.pNext = &subgroup;
 		subgroup.pNext = &descriptorIndexing;
-		descriptorIndexing.pNext = &pushDescriptor;
 		if (hasExtension(VK_EXT_MESH_SHADER_EXTENSION_NAME))
-			pushDescriptor.pNext = &meshProperties;
+			descriptorIndexing.pNext = &meshProperties;
 
 		VkPhysicalDeviceProperties2 properties2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
-		properties2.pNext = &maintenance3;
+		properties2.pNext = &subgroup;
 		vkGetPhysicalDeviceProperties2(gpu, &properties2);
 		VkPhysicalDeviceVulkan11Features features11 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES };
 		VkPhysicalDeviceVulkan12Features features12 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
 		VkPhysicalDeviceVulkan13Features features13 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+		VkPhysicalDeviceMutableDescriptorTypeFeaturesEXT mutableDescriptorType =
+			{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MUTABLE_DESCRIPTOR_TYPE_FEATURES_EXT };
 		VkPhysicalDeviceMeshShaderFeaturesEXT meshShader = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT };
 		VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT swapchainMaintenance =
 			{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT };
@@ -519,7 +518,8 @@ VkResult DeviceBuilder::queryPhysicalDevice(VkInstance instance)
 		features2.pNext = &features11;
 		features11.pNext = &features12;
 		features12.pNext = &features13;
-		void** ppNext = &features13.pNext;
+		features13.pNext = &mutableDescriptorType;
+		void** ppNext = &mutableDescriptorType.pNext;
 		if (hasExtension(VK_EXT_MESH_SHADER_EXTENSION_NAME))
 		{
 			*ppNext = &meshShader;
@@ -535,38 +535,46 @@ VkResult DeviceBuilder::queryPhysicalDevice(VkInstance instance)
 			core.drawIndirectFirstInstance &&
 			core.shaderInt64 &&
 			core.shaderStorageImageExtendedFormats &&
-			core.shaderStorageImageWriteWithoutFormat;
+			core.shaderStorageImageWriteWithoutFormat &&
+			core.samplerAnisotropy;
 		const bool bRequired11Features = features11.shaderDrawParameters;
 		const bool bRequired12Features =
 			features12.drawIndirectCount &&
 			features12.descriptorIndexing &&
 			features12.shaderSampledImageArrayNonUniformIndexing &&
+			features12.shaderStorageImageArrayNonUniformIndexing &&
+			features12.shaderStorageBufferArrayNonUniformIndexing &&
+			features12.shaderUniformBufferArrayNonUniformIndexing &&
 			features12.runtimeDescriptorArray &&
 			features12.descriptorBindingSampledImageUpdateAfterBind &&
+			features12.descriptorBindingStorageImageUpdateAfterBind &&
+			features12.descriptorBindingStorageBufferUpdateAfterBind &&
+			features12.descriptorBindingUniformBufferUpdateAfterBind &&
+			features12.descriptorBindingUpdateUnusedWhilePending &&
 			features12.descriptorBindingPartiallyBound &&
 			features12.descriptorBindingVariableDescriptorCount &&
 			features12.samplerFilterMinmax &&
-			features12.bufferDeviceAddress;
+			features12.bufferDeviceAddress &&
+			features12.scalarBlockLayout;
 		const bool bRequired13Features =
 			features13.dynamicRendering &&
 			features13.synchronization2 &&
-			features13.maintenance4;
+			features13.maintenance4 &&
+			features13.shaderDemoteToHelperInvocation;
 		const auto& limits = properties2.properties.limits;
-		const bool bDescriptorLimits =
-			maintenance3.maxPerSetDescriptors >= kCommonDescriptorCount &&
-			descriptorIndexing.maxPerStageUpdateAfterBindResources >= kMaxComputeDescriptorCount &&
-			descriptorIndexing.maxPerStageDescriptorUpdateAfterBindSamplers >= kMaxComputeCombinedSamplerCount &&
-			descriptorIndexing.maxPerStageDescriptorUpdateAfterBindSampledImages >= kMaxComputeCombinedSamplerCount &&
-			descriptorIndexing.maxDescriptorSetUpdateAfterBindSamplers >= kMaxComputeCombinedSamplerCount &&
-			descriptorIndexing.maxDescriptorSetUpdateAfterBindSampledImages >= kMaxComputeCombinedSamplerCount &&
-			descriptorIndexing.maxUpdateAfterBindDescriptorsInAllPools >=
-				kCommonDescriptorCount * kMaxFramesInFlight &&
-			limits.maxPerStageResources >= kMaxPushDescriptorCount &&
-			limits.maxPerStageDescriptorStorageBuffers >= kMaxPushStorageBufferCount &&
-			limits.maxDescriptorSetStorageBuffers >= kMaxPushStorageBufferCount &&
-			limits.maxPerStageDescriptorStorageImages >= kMaxPushStorageImageCount &&
-			limits.maxDescriptorSetStorageImages >= kMaxPushStorageImageCount &&
-			pushDescriptor.maxPushDescriptors >= kMaxPushDescriptorCount;
+		const bool bHeapLimits =
+			mutableDescriptorType.mutableDescriptorType &&
+			limits.maxPushConstantsSize >= render::kSlangPushBlockBytes &&
+			descriptorIndexing.maxPerStageUpdateAfterBindResources >= kHeapDescriptorCount &&
+			descriptorIndexing.maxPerStageDescriptorUpdateAfterBindSampledImages >= kHeapDescriptorCount &&
+			descriptorIndexing.maxPerStageDescriptorUpdateAfterBindStorageImages >= kHeapDescriptorCount &&
+			descriptorIndexing.maxPerStageDescriptorUpdateAfterBindStorageBuffers >= kHeapDescriptorCount &&
+			descriptorIndexing.maxPerStageDescriptorUpdateAfterBindUniformBuffers >= kHeapDescriptorCount &&
+			descriptorIndexing.maxDescriptorSetUpdateAfterBindSampledImages >= kHeapDescriptorCount &&
+			descriptorIndexing.maxDescriptorSetUpdateAfterBindStorageImages >= kHeapDescriptorCount &&
+			descriptorIndexing.maxDescriptorSetUpdateAfterBindStorageBuffers >= kHeapDescriptorCount &&
+			descriptorIndexing.maxDescriptorSetUpdateAfterBindUniformBuffers >= kHeapDescriptorCount &&
+			descriptorIndexing.maxUpdateAfterBindDescriptorsInAllPools >= kHeapDescriptorCount;
 		const bool bComputeLimits =
 			limits.maxComputeWorkGroupInvocations >= kMaxComputeWorkgroupInvocations &&
 			limits.maxComputeWorkGroupSize[0] >= kMaxComputeWorkgroupSizeX &&
@@ -607,7 +615,7 @@ VkResult DeviceBuilder::queryPhysicalDevice(VkInstance instance)
 			 subgroup.subgroupSize >= kMeshWorkgroupSize);
 
 		if (!bRequiredCoreFeatures || !bRequired11Features || !bRequired12Features ||
-			!bRequired13Features || !bDescriptorLimits || !bComputeLimits ||
+			!bRequired13Features || !bHeapLimits || !bComputeLimits ||
 			!bComputeSubgroup || !bMeshFeatures || !bMeshLimits || !bTaskSubgroup)
 		{
 			continue;
@@ -624,22 +632,6 @@ VkResult DeviceBuilder::queryPhysicalDevice(VkInstance instance)
 		bestScore = score;
 		physicalDevice = gpu;
 		physicalDeviceProperties = properties2.properties;
-		physicalDeviceMaintenance3Properties = maintenance3;
-		physicalDeviceMaintenance3Properties.pNext = nullptr;
-		m_SubgroupProperties = subgroup;
-		m_SubgroupProperties.pNext = nullptr;
-		m_DescriptorIndexingProperties = descriptorIndexing;
-		m_DescriptorIndexingProperties.pNext = nullptr;
-		m_PushDescriptorProperties = pushDescriptor;
-		m_PushDescriptorProperties.pNext = nullptr;
-		m_Supported11Features = features11;
-		m_Supported11Features.pNext = nullptr;
-		m_Supported12Features = features12;
-		m_Supported12Features.pNext = nullptr;
-		m_Supported13Features = features13;
-		m_Supported13Features.pNext = nullptr;
-		m_SupportedMeshShaderFeatures = meshShader;
-		m_SupportedMeshShaderFeatures.pNext = nullptr;
 		m_SupportedSwapchainMaintenanceFeatures = swapchainMaintenance;
 		m_SupportedSwapchainMaintenanceFeatures.pNext = nullptr;
 		m_SelectedDeviceExtensions = std::move(extensions);
@@ -655,6 +647,7 @@ VkResult DeviceBuilder::queryPhysicalDevice(VkInstance instance)
 		enabledPhysicalDeviceFeatures.shaderInt64 = VK_TRUE;
 		enabledPhysicalDeviceFeatures.shaderStorageImageExtendedFormats = VK_TRUE;
 		enabledPhysicalDeviceFeatures.shaderStorageImageWriteWithoutFormat = VK_TRUE;
+		enabledPhysicalDeviceFeatures.samplerAnisotropy = VK_TRUE;
 		enabledPhysicalDeviceFeatures.pipelineStatisticsQuery = core.pipelineStatisticsQuery;
 	}
 

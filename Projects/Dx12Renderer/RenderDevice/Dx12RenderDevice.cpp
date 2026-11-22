@@ -4,11 +4,13 @@
 #include "Dx12CommandContext.h"
 #include "Dx12DescriptorPool.h"
 #include "Dx12DescriptorAllocation.h"
+#include "Dx12RootSignature.h"
+#include "Dx12CommandSignature.h"
 #include "Dx12RenderPipeline.h"
 #include "Dx12ResourceManager.h"
 
 #include "RenderResource/Dx12Resource.h"
-#include "RenderResource/Dx12SceneResource.h"
+#include "RenderResource/Dx12Sampler.h"
 #include "RenderResource/Dx12RenderTarget.h"
 #include "RenderResource/Dx12Shader.h"
 #include "RenderResource/Dx12ShaderBindingTable.h"
@@ -33,12 +35,6 @@ Dx12RenderDevice::Dx12RenderDevice(const render::DeviceSettings& ds, bool bEnabl
 	m_pGraphicsQueue = new Dx12CommandQueue(*this, D3D12_COMMAND_LIST_TYPE_DIRECT);
 	m_pComputeQueue  = new Dx12CommandQueue(*this, D3D12_COMMAND_LIST_TYPE_COMPUTE);
 	m_pCopyQueue     = new Dx12CommandQueue(*this, D3D12_COMMAND_LIST_TYPE_COPY);
-
-	m_pResourceManager = new Dx12ResourceManager(*this); 
-
-	m_SRVDescriptorSize = m_d3d12Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	m_RTVDescriptorSize = m_d3d12Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-	m_DSVDescriptorSize = m_d3d12Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 
 	{
 		D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData;
@@ -98,6 +94,56 @@ Dx12RenderDevice::Dx12RenderDevice(const render::DeviceSettings& ds, bool bEnabl
 			}
 		}
 	}
+
+	m_pRtvDescriptorPool =
+		MakeBox< DescriptorPool >(*this, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, kMaxNumDescriptorPerPool[D3D12_DESCRIPTOR_HEAP_TYPE_RTV]);
+	m_pDsvDescriptorPool =
+		MakeBox< DescriptorPool >(*this, D3D12_DESCRIPTOR_HEAP_TYPE_DSV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, kMaxNumDescriptorPerPool[D3D12_DESCRIPTOR_HEAP_TYPE_DSV]);
+
+	m_pGlobalDescriptorHeap
+		= MakeArc< DescriptorPool >(*this, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, kMaxGlobalDescriptors);
+
+	m_pGlobalRootSignature =
+		MakeArc< Dx12RootSignature >(
+			*this,
+			"GlobalRootSignature",
+			D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT | D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED
+		);
+
+	static_assert(1u + render::kSlangPushBlockBytes / 4u <= D3D12_MAX_ROOT_COST, "Root signature exceeds D3D12_MAX_ROOT_COST");
+	m_pGlobalRootSignature->AddConstants(render::kSlangDrawIDRegister, render::kSlangDrawIDSpace, 1u);
+	m_pGlobalRootSignature->AddConstants(render::kSlangPushRegister, render::kSlangPushSpace, render::kSlangPushBlockBytes / 4u);
+
+	// Samplers
+	m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(render::eSamplerIndex::PointWrap));
+	m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(render::eSamplerIndex::PointClamp));
+	m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(render::eSamplerIndex::LinearWrap));
+	m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(render::eSamplerIndex::LinearClamp));
+	m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(render::eSamplerIndex::TrilinearWrap));
+	m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(render::eSamplerIndex::AnisotropicWrap));
+	m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(render::eSamplerIndex::ShadowCmpLessEqual));
+	m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(render::eSamplerIndex::PointClampMin));
+	m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(render::eSamplerIndex::LinearClampMin));
+
+	m_pGlobalRootSignature->Build();
+
+	m_pDispatchSignature = MakeBox< CommandSignature >(
+		*this,
+		CommandSignatureDesc(1, sizeof(D3D12_DISPATCH_ARGUMENTS))
+			.AddDispatch(),
+		nullptr);
+
+	if (m_Settings.bMeshShader)
+	{
+		m_pMeshDispatchSignature = MakeBox< CommandSignature >(
+			*this,
+			CommandSignatureDesc(2, sizeof(IndirectCommandData))
+				.AddConstant(0, 0, 1)
+				.AddDispatchMesh(),
+			m_pGlobalRootSignature->GetD3D12RootSignature());
+	}
+
+	m_pResourceManager = new Dx12ResourceManager(*this);
 }
 
 Dx12RenderDevice::~Dx12RenderDevice()
@@ -108,7 +154,22 @@ Dx12RenderDevice::~Dx12RenderDevice()
 	RELEASE(m_pComputeQueue);
 	RELEASE(m_pGraphicsQueue);
 
+	m_pMeshDispatchSignature.reset();
+	m_pDispatchSignature.reset();
+	m_pGlobalRootSignature.reset();
+
+	FlushDeferredReleases(); // slots are managed by pools so resources should be release before pool
+
+	m_pGlobalDescriptorHeap.reset();
+	m_pDsvDescriptorPool.reset();
+	m_pRtvDescriptorPool.reset();
+
 	COM_RELEASE(m_dmaAllocator);
+	if (m_d3d12InfoQueue)
+	{
+		m_d3d12InfoQueue->UnregisterMessageCallback(m_ValidationCallbackCookie);
+		COM_RELEASE(m_d3d12InfoQueue);
+	}
 	COM_RELEASE(m_d3d12Device);
 }
 
@@ -196,11 +257,6 @@ u32 Dx12RenderDevice::Swap()
 	return m_ContextIndex;
 }
 
-Box< render::SceneResource > Dx12RenderDevice::CreateSceneResource()
-{
-	return MakeBox< Dx12SceneResource >(*this);
-}
-
 void Dx12RenderDevice::UpdateSubresources(Dx12Resource* pResource, u32 firstSubresource, u32 numSubresources, const D3D12_SUBRESOURCE_DATA* pSrcData)
 {
 	u64 uploadBufferSize    = GetRequiredIntermediateSize(pResource->GetD3D12Resource(), firstSubresource, numSubresources);
@@ -221,9 +277,7 @@ void Dx12RenderDevice::UpdateSubresources(Dx12Resource* pResource, u32 firstSubr
 	auto pContext = BeginCommand(D3D12_COMMAND_LIST_TYPE_COPY);
 	{
 		// All resource state should be common in copy queue
-		//pContext->TransitionBarrier(pResource, D3D12_RESOURCE_STATE_COPY_DEST, ALL_SUBRESOURCES, true);
 		::UpdateSubresources(pContext->GetD3D12CommandList(), pResource->GetD3D12Resource(), d3d12UploadBuffer, 0, 0, numSubresources, &pSrcData[0]);
-		//pContext->TransitionBarrier(pResource, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
 		pContext->Close();
 	}
 	ExecuteCommand(std::move(pContext)).Wait();
@@ -289,6 +343,51 @@ SyncObject Dx12RenderDevice::ExecuteCommand(Arc< Dx12CommandContext >&& pContext
 render::ResourceManager& Dx12RenderDevice::GetResourceManager() const
 {
 	return *m_pResourceManager;
+}
+
+DescriptorAllocation Dx12RenderDevice::AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE type, u32 numDescriptors)
+{
+	switch (type)
+	{
+	case D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV:
+		return m_pGlobalDescriptorHeap->Allocate(numDescriptors);
+	case D3D12_DESCRIPTOR_HEAP_TYPE_RTV:
+		return m_pRtvDescriptorPool->Allocate(numDescriptors);
+	case D3D12_DESCRIPTOR_HEAP_TYPE_DSV:
+		return m_pDsvDescriptorPool->Allocate(numDescriptors);
+
+	default:
+		__debugbreak();
+		assert(false && "Invalid entry!");
+	}
+
+	return DescriptorAllocation();
+}
+
+Arc< Dx12RootSignature > Dx12RenderDevice::GetGlobalRootSignature() const
+{
+	return m_pGlobalRootSignature;
+}
+
+void Dx12RenderDevice::DeferRelease(IUnknown* d3d12Object)
+{
+	if (d3d12Object)
+		DeferRelease([d3d12Object] { d3d12Object->Release(); });
+}
+
+Arc< DescriptorPool > Dx12RenderDevice::GetGlobalDescriptorHeap() const
+{
+	return m_pGlobalDescriptorHeap;
+}
+
+ID3D12CommandSignature* Dx12RenderDevice::GetDispatchD3D12CommandSignature() const
+{
+	return m_pDispatchSignature->GetD3D12CommandSignature();
+}
+
+ID3D12CommandSignature* Dx12RenderDevice::GetMeshDispatchD3D12CommandSignature() const
+{
+	return m_pMeshDispatchSignature->GetD3D12CommandSignature();
 }
 
 bool Dx12RenderDevice::SaveTextureToEXR(const Arc< render::Texture >& pTexture, const char* path)
@@ -461,29 +560,6 @@ bool Dx12RenderDevice::SaveTextureToEXR(const Arc< render::Texture >& pTexture, 
 	return true;
 }
 
-DXGI_SAMPLE_DESC Dx12RenderDevice::GetMultisampleQualityLevels(DXGI_FORMAT format, D3D12_MULTISAMPLE_QUALITY_LEVEL_FLAGS flags) const
-{
-	DXGI_SAMPLE_DESC sampleDesc = { 1, 0 };
-
-	D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS qualityLevels;
-	qualityLevels.Format = format;
-	qualityLevels.SampleCount = 1;
-	qualityLevels.Flags = flags;
-	qualityLevels.NumQualityLevels = 0;
-
-	while (qualityLevels.SampleCount <= kNumSampling
-		&& SUCCEEDED(m_d3d12Device->CheckFeatureSupport(D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS, &qualityLevels, sizeof(D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS))) 
-		&& qualityLevels.NumQualityLevels > 0)
-	{
-		sampleDesc.Count = qualityLevels.SampleCount;
-		sampleDesc.Quality = qualityLevels.NumQualityLevels - 1;
-
-		qualityLevels.SampleCount *= 2;
-	}
-
-	return sampleDesc;
-}
-
 void Dx12RenderDevice::CreateDevice(bool bEnableGBV)
 {
 	ID3D12Debug* d3d12DebugController = nullptr;
@@ -504,7 +580,6 @@ void Dx12RenderDevice::CreateDevice(bool bEnableGBV)
 	{
 		d3d12DebugController->EnableDebugLayer();
 	}
-	//dwCreateFactoryFlags = DXGI_CREATE_FACTORY_DEBUG;
 	if (bEnableGBV)
 	{
 		ID3D12Debug5* d3d12DebugController5 = nullptr;
@@ -564,6 +639,9 @@ lb_exit:
 	}
 
 	if (d3d12DebugController)
+		RegisterValidationCallback();
+
+	if (d3d12DebugController)
 	{
 		d3d12DebugController->Release();
 		d3d12DebugController = nullptr;
@@ -580,6 +658,36 @@ lb_exit:
 		dxgiFactory->Release();
 		dxgiFactory = nullptr;
 	}
+}
+
+void Dx12RenderDevice::RegisterValidationCallback()
+{
+	// ID3D12InfoQueue1 only exists when the debug layer is active (Windows 11 / Agility SDK runtime).
+	if (FAILED(m_d3d12Device->QueryInterface(IID_PPV_ARGS(&m_d3d12InfoQueue))))
+	{
+		m_d3d12InfoQueue = nullptr;
+		fprintf(stderr, "D3D12 validation: ID3D12InfoQueue1 unavailable; validation errors are not counted\n");
+		return;
+	}
+
+	if (FAILED(m_d3d12InfoQueue->RegisterMessageCallback(
+		&Dx12RenderDevice::OnValidationMessage, D3D12_MESSAGE_CALLBACK_FLAG_NONE, this, &m_ValidationCallbackCookie)))
+	{
+		fprintf(stderr, "D3D12 validation: RegisterMessageCallback failed; validation errors are not counted\n");
+		COM_RELEASE(m_d3d12InfoQueue);
+	}
+}
+
+void CALLBACK Dx12RenderDevice::OnValidationMessage(
+	D3D12_MESSAGE_CATEGORY category, D3D12_MESSAGE_SEVERITY severity, D3D12_MESSAGE_ID id, LPCSTR description, void* pContext)
+{
+	UNUSED(category);
+	if (severity != D3D12_MESSAGE_SEVERITY_CORRUPTION && severity != D3D12_MESSAGE_SEVERITY_ERROR)
+		return;
+
+	auto* pDevice = static_cast< Dx12RenderDevice* >(pContext);
+	pDevice->m_ValidationErrorCount.fetch_add(1, std::memory_order_relaxed);
+	fprintf(stderr, "D3D12 validation error (id %d): %s\n", static_cast< i32 >(id), description ? description : "");
 }
 
 void SyncObject::Wait()

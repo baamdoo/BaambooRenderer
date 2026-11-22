@@ -1,0 +1,65 @@
+#pragma once
+#include "ShaderShared/Camera.h"
+#include "Common/Binding.slangh"
+
+bool IsFrustumCulled(float4 planes[6], float3 centerWS, float radius)
+{
+    [unroll]
+    for (int i = 0; i < 5; ++i)
+    {
+        if (dot(planes[i], float4(centerWS, 1.0)) + radius < 0.0)
+            return true;
+    }
+    return false;
+}
+
+// Normal-cone backface test (meshoptimizer form, no apex); cone.w is the cutoff
+bool IsConeCulled(float4 cone, float3 sphereCenter, float sphereRadius, float3 viewPos)
+{
+    const float3 toSphere = sphereCenter - viewPos;
+    return dot(cone.xyz, toSphere) >= cone.w * length(toSphere) + sphereRadius;
+}
+
+float MaxAxisScale(float4x4 localToWorld)
+{
+    // M[i] is row i; local axis i maps to column i
+    const float3x3 axes = transpose((float3x3)localToWorld);
+    return sqrt(max(dot(axes[0], axes[0]), max(dot(axes[1], axes[1]), dot(axes[2], axes[2]))));
+}
+
+bool IsOccluded(float3 centerWS, float radius, CameraData camera, Texture2D< float > hiZ, uint2 hiZSize)
+{
+    const float3 c = mul(camera.mView, float4(centerWS, 1.0)).xyz;
+    if (c.z < radius + camera.zNear)
+        return false;
+
+    const float3 cr   = c * radius;
+    const float  czr2 = c.z * c.z - radius * radius;
+
+    const float vx   = sqrt(c.x * c.x + czr2);
+    const float minx = (vx * c.x - cr.z) / (vx * c.z + cr.x);
+    const float maxx = (vx * c.x + cr.z) / (vx * c.z - cr.x);
+
+    const float vy   = sqrt(c.y * c.y + czr2);
+    const float miny = (vy * c.y - cr.z) / (vy * c.z + cr.y);
+    const float maxy = (vy * c.y + cr.z) / (vy * c.z - cr.y);
+
+    // TAA jitter lives in the projection's z column
+    const float2 jitter = float2(camera.mProj[0][2], camera.mProj[1][2]);
+    const float4 ndc    = float4(minx * camera.mProj[0][0], miny * camera.mProj[1][1], maxx * camera.mProj[0][0], maxy * camera.mProj[1][1]) + jitter.xyxy;
+
+    float4 uv;
+    uv.xz = ndc.xz *  0.5 + 0.5;
+    uv.yw = ndc.yw * -0.5 + 0.5;
+
+    const float2 bMin = saturate(min(uv.xy, uv.zw));
+    const float2 bMax = saturate(max(uv.xy, uv.zw));
+
+    // ceil: the 2x2 min footprint covers the rectangle only if it spans at most one texel at that level
+    const float2 extent = (bMax - bMin) * float2(hiZSize);
+    const float  level  = ceil(log2(max(max(extent.x, extent.y), 1.0)));
+
+    const float hiZDepth    = hiZ.SampleLevel(g_LinearClampMinSampler, (bMin + bMax) * 0.5, level);
+    const float sphereDepth = camera.zNear / (c.z - radius);
+    return sphereDepth < hiZDepth;
+}

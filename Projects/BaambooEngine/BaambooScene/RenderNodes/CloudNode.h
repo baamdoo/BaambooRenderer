@@ -4,6 +4,8 @@
 
 enum class eCloudUprezRatio;
 
+namespace baamboo::shader { class PipelineFactory; }
+
 namespace baamboo
 {
 
@@ -14,7 +16,7 @@ class CloudShapeNode : public render::RenderNode
 {
 using Super = render::RenderNode;
 public:
-	CloudShapeNode(render::RenderDevice& rd);
+	CloudShapeNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory);
 	virtual ~CloudShapeNode();
 
 	virtual void Apply(render::CommandContext& context, const SceneRenderView& renderView) override;
@@ -24,11 +26,9 @@ private:
 	Arc< render::Texture > m_pCloudProfileLUT;
 	Arc< render::Texture > m_pBaseNoiseTexture;
 
-	Box< render::ComputePipeline > m_pWeatherMapPSO;
 	Box< render::ComputePipeline > m_pCloudShapeBasePSO;
 
-	u64  m_LastCloudRevision = 0;
-	bool m_bBaseNoiseInitialized = false;
+	u32 m_BaseNoiseBuildCount = 0;
 };
 
 
@@ -39,7 +39,7 @@ class CloudScatteringNode : public render::RenderNode
 {
 using Super = render::RenderNode;
 public:
-	CloudScatteringNode(render::RenderDevice& device);
+	CloudScatteringNode(render::RenderDevice& device, shader::PipelineFactory& pipelineFactory);
 	virtual ~CloudScatteringNode();
 
 	virtual void Apply(render::CommandContext& context, const SceneRenderView& renderView) override;

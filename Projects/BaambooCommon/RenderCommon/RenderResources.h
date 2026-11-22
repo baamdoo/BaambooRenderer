@@ -1,6 +1,11 @@
 #pragma once
 #include "RendererAPI.h"
-#include "ShaderTypes.h"
+
+#include <functional>
+#include <optional>
+#include <span>
+#include <string>
+#include <unordered_map>
 
 #pragma warning(disable : 4251)
 
@@ -109,7 +114,6 @@ enum
     eBufferUsage_Uniform             = 0x00000010,
     eBufferUsage_Storage             = 0x00000020,
     eBufferUsage_Index               = 0x00000040,
-    eBufferUsage_Vertex              = 0x00000080,
     eBufferUsage_Indirect            = 0x00000100,
     eBufferUsage_ShaderDeviceAddress = 0x00020000,
 };
@@ -144,6 +148,9 @@ public:
     virtual void FlushMappedRange(u64 offsetInBytes, u64 sizeInBytes) const = 0;
     virtual void InvalidateMappedRange(u64 offsetInBytes, u64 sizeInBytes) const = 0;
 
+    virtual u32 GetShaderResourceHandle(u32 offset = 0) const = 0;
+    virtual u64 GetGPUVirtualAddress() const = 0;
+
 public:
     CreationInfo m_CreationInfo = {};
 };
@@ -169,15 +176,6 @@ enum
     eTextureUsage_Storage                = 0x00000008,
     eTextureUsage_ColorAttachment        = 0x00000010,
     eTextureUsage_DepthStencilAttachment = 0x00000020,
-};
-
-enum class eImageView
-{
-    None, // Vulkan
-    ShaderResource,
-    UnorderedAccess,
-    RenderTarget,
-    DepthStencil
 };
 
 enum class eTextureLayout
@@ -235,6 +233,7 @@ public:
     u32 Height() const { return m_CreationInfo.resolution.y; }
     u32 Depth() const { return m_CreationInfo.resolution.z; }
     virtual u32 MipLevels() const = 0;
+    virtual u32 GetShaderResourceHandle(u32 offset = 0) const = 0;
 
     virtual bool IsDepthTexture() const;
 
@@ -295,6 +294,22 @@ enum class eReductionMode
     Standard = 0,   // Weighted average (normal filtering)
     Min      = 1,   // Minimum of sampled values
     Max      = 2,   // Maximum of sampled values
+};
+
+enum class eSamplerIndex
+{
+    LinearClamp     = 0,
+    LinearWrap      = 1,
+    PointClamp      = 2,
+    PointWrap       = 3,
+    TrilinearWrap   = 4,
+    AnisotropicWrap = 5,
+
+    ShadowCmpLessEqual = 6,
+    PointClampMin      = 7,
+    LinearClampMin     = 8,
+
+    MaxIndex,
 };
 
 DLLEXPORT_TEMPLATE template class BAAMBOO_API Arc< Sampler >;
@@ -415,31 +430,21 @@ enum eShaderStage
     Mesh = 0x00000080,
 };
 
-inline bool IsRaytracingShader(eShaderStage stage)
-{
-    return (stage == RayGeneration)
-        || (stage == AnyHit)
-        || (stage == ClosestHit)
-        || (stage == Miss)
-        || (stage == Interaction)
-        || (stage == Callable);
-}
+inline constexpr u32 kSlangPushBlockBytes = 160;
+static_assert(kSlangPushBlockBytes % 4 == 0, "push blocks are written in DWORDs");
 
-enum class eShaderResourceType
-{
-    UniformBuffer = 0,
-    StorageBuffer = 1,
-    SampledImage  = 2,
-    StorageImage  = 3,
-    Sampler       = 4,
+inline constexpr u32 kSlangPushRegister   = 0;
+inline constexpr u32 kSlangPushSpace      = 100;
+inline constexpr u32 kSlangPushBlockIndex = 0;
 
-    Invalid = 0x7FFFFFFF,
-};
+// D3D12 only: the root constant the mesh command signature writes per draw
+inline constexpr u32 kSlangDrawIDRegister = 0;
+inline constexpr u32 kSlangDrawIDSpace    = 99;
 
-struct ShaderBytecode 
+struct ShaderBindingLayout
 {
-    size_t      size  = 0;
-    const void* pData = nullptr;
+    u32                                    pushBlockSize = 0;
+    std::unordered_map< std::string, u32 > pushOffsets;
 };
 
 class BAAMBOO_API Shader : public Resource
@@ -449,7 +454,10 @@ public:
     struct CreationInfo
     {
         eShaderStage stage;
-        std::string  filename;
+
+        std::vector< u8 > bytecode;
+
+        std::optional< ShaderBindingLayout > bindings;
     };
 
     static Arc< Shader > Create(RenderDevice& rd, const char* name, CreationInfo&& info);
@@ -457,13 +465,10 @@ public:
     Shader(const char* name, CreationInfo&& info);
     virtual ~Shader() = default;
 
-    virtual ShaderBytecode ShaderModule() const { return m_ShaderBytecode; }
+    const CreationInfo& GetCreationInfo() const { return m_CreationInfo; }
 
 protected:
-    CreationInfo   m_CreationInfo;
-    ShaderBytecode m_ShaderBytecode;
-
-    eShaderStage m_Stage;
+    CreationInfo m_CreationInfo;
 };
 
 
@@ -536,6 +541,12 @@ enum eGeometryFlags
     eGeometryFlag_None              = 0,
     eGeometryFlag_Opaque            = 1 << 0,
     eGeometryFlag_NoDuplicateAnyHit = 1 << 1,
+};
+
+enum eASInstanceFlags
+{
+    eASInstanceFlag_None           = 0,
+    eASInstanceFlag_ForceNonOpaque = 1 << 0,
 };
 
 struct GeometryDesc
@@ -612,6 +623,7 @@ public:
     [[nodiscard]] u32 NumInstances() const { return static_cast<u32>(m_Instances.size()); }
 
     [[nodiscard]] virtual u64 GetGPUVirtualAddress() const = 0;
+    [[nodiscard]] virtual u32 GetShaderResourceHandle() const = 0;
     [[nodiscard]] virtual bool IsBuilt() const = 0;
 
     [[nodiscard]]
@@ -687,12 +699,6 @@ enum class eCullMode
     Back  = 2,
 };
 
-enum class eFrontFace
-{
-    Clockwise        = 0,
-    CounterClockwise = 1,
-};
-
 enum class eBlendFactor
 {
     Zero             = 1,
@@ -726,30 +732,36 @@ enum class eLogicOp
     CopyInv = 4,
 };
 
-enum eComponentWriteMask
-{
-    R = (1 << 0),
-    G = (1 << 1), 
-    B = (1 << 2), 
-    A = (1 << 3)
-};
-
-struct BlendDesc
-{
-    bool bBlendEnabled    = false;
-    bool bLogicOpEnabled  = false;
-
-    eBlendFactor srcBlend = eBlendFactor::One;
-    eBlendFactor dstBlend = eBlendFactor::Zero;
-    eBlendOp     blendOp  = eBlendOp::Add;
-
-    eBlendFactor srcBlendAlpha = eBlendFactor::One;
-    eBlendFactor dstBlendAlpha = eBlendFactor::Zero;
-    eBlendOp     blendOpAlpha  = eBlendOp::Add;
-};
-
 DLLEXPORT_TEMPLATE template class BAAMBOO_API Arc< Shader >;
-class BAAMBOO_API GraphicsPipeline : public ArcBase
+class BAAMBOO_API Pipeline : public ArcBase
+{
+public:
+    explicit Pipeline(const char* name);
+    virtual ~Pipeline();
+
+    virtual bool Build() = 0;
+    virtual bool IsBuilt() const = 0;
+
+    void SetOnDestroy(std::move_only_function< void() >&& fnOnDestroy) { m_fnOnDestroy = std::move(fnOnDestroy); }
+
+    u32 BuildCount() const { return m_BuildCount; }
+
+    std::pair< u32, u32 > GetResourceBindingIndex(const std::string& name) const;
+
+protected:
+    std::string m_Name;
+
+    u32 m_BuildCount = 0;
+
+    // [name, set:binding] - Vulkan
+    // [name, offset:rootIndex] - Dx12
+    std::unordered_map< std::string, u64 > m_ResourceBindingMap;
+
+private:
+    std::move_only_function< void() > m_fnOnDestroy;
+};
+
+class BAAMBOO_API GraphicsPipeline : public Pipeline
 {
 public:
     static Box< GraphicsPipeline > Create(RenderDevice& rd, const char* name);
@@ -782,15 +794,9 @@ public:
     virtual GraphicsPipeline& SetColorBlending(u32 renderTargetIndex, eBlendFactor srcBlend, eBlendFactor dstBlend, eBlendOp blendOp) = 0;
     virtual GraphicsPipeline& SetAlphaBlending(u32 renderTargetIndex, eBlendFactor srcBlend, eBlendFactor dstBlend, eBlendOp blendOp) = 0;
 
-    virtual void Build() = 0;
-
-    std::pair< u32, u32 > GetResourceBindingIndex(const std::string& name);
-
-    inline bool IsMeshPipeline() const { return m_bMeshShader; }
+    virtual bool Build() = 0;
 
 protected:
-    std::string m_Name;
-
     Arc< Shader > m_pVS;
     Arc< Shader > m_pPS;
     Arc< Shader > m_pGS;
@@ -801,13 +807,9 @@ protected:
     Arc< Shader > m_pMS;
 
     bool m_bMeshShader = false;
-
-    // [name, set:binding] - Vulkan
-    // [name, offset:rootIndex] - Dx12
-    std::unordered_map< std::string, u64 > m_ResourceBindingMap;
 };
 
-class BAAMBOO_API ComputePipeline : public ArcBase
+class BAAMBOO_API ComputePipeline : public Pipeline
 {
 public:
     static Box< ComputePipeline > Create(RenderDevice& rd, const char* name);
@@ -816,23 +818,14 @@ public:
     virtual ~ComputePipeline() = default;
 
     ComputePipeline& SetComputeShader(Arc< Shader > pCS);
-    //ComputePipeline& SetDescriptorLayout(Arc< DescriptorLayout > layout);
 
-    virtual void Build() = 0;
-
-    std::pair< u32, u32 > GetResourceBindingIndex(const std::string& name);
+    virtual bool Build() = 0;
 
 protected:
-    std::string m_Name;
-
     Arc< Shader > m_pCS;
-
-    // [name, set:binding] - Vulkan
-    // [name, offset:rootIndex] - Dx12
-    std::unordered_map< std::string, u64 > m_ResourceBindingMap;
 };
 
-class BAAMBOO_API RaytracingPipeline : public ArcBase
+class BAAMBOO_API RaytracingPipeline : public Pipeline
 {
 public:
     struct RaytracingHitGroup
@@ -857,15 +850,11 @@ public:
     RaytracingPipeline& SetMaxAttributeSize(u32 sizeInBytes);
     RaytracingPipeline& SetMaxRecursionDepth(u32 depth);
 
-    virtual void Build() = 0;
+    virtual bool Build() = 0;
 
     virtual const void* GetShaderIdentifier(const std::string& exportName) const = 0;
 
-    std::pair< u32, u32 > GetResourceBindingIndex(const std::string& name);
-
 protected:
-    std::string m_Name;
-
     Arc< Shader > m_pShaderLibrary;
 
     std::string                       m_RayGenExport;
@@ -875,62 +864,13 @@ protected:
     u32 m_MaxRecursionDepth       = 1;
     u32 m_MaxPayloadSizeInBytes   = 4 * sizeof(float);
     u32 m_MaxAttributeSizeInBytes = 2 * sizeof(float);
-
-    // [name, set:binding] - Vulkan
-    // [name, offset:rootIndex] - Dx12
-    std::unordered_map< std::string, u64 > m_ResourceBindingMap;
-};
-
-
-//-------------------------------------------------------------------------
-// Scene Resource
-//-------------------------------------------------------------------------
-class BAAMBOO_API SceneResource
-{
-public:
-    virtual ~SceneResource() = default;
-
-    struct MediumBuffers
-    {
-        std::vector< MediumData > media;
-        std::vector< u32 > densityWords;
-    };
-    static MediumBuffers BuildMediumBuffers(const SceneRenderView& renderView);
-
-    virtual void UpdateSceneResources(const SceneRenderView& renderView, class CommandContext& context) = 0;
-    virtual void BindSceneResources(class CommandContext& context) = 0;
-
-    virtual const Arc< Buffer >& GetArgumentBuffer() const
-    {
-        static const Arc< Buffer > s_Empty;
-        return s_Empty;
-    }
-    virtual Arc< TopLevelAccelerationStructure > GetTLAS() const { return nullptr; }
-
-    virtual Arc< Buffer > GetMeshDataBuffer() const { return nullptr; }
-
-    [[nodiscard]]
-    u32 NumInstances() const { return m_NumInstances; }
-
-    [[nodiscard]]
-    u32 NumMeshletVisibilitySlots() const { return m_NumMeshletVisibilitySlots; }
-
-protected:
-    u32 m_ContextIndex = 0;
-    u32 m_NumInstances = 0;
-    u32 m_NumMeshletVisibilitySlots = 0;
 };
 
 
 //-------------------------------------------------------------------------
 // Resource Manager
 //-------------------------------------------------------------------------
-enum
-{
-    eDefaultTexture_White = 0,
-    eDefaultTexture_Black = 1,
-    eDefaultTexture_Gray  = 2,
-};
+class SceneResource;
 
 class BAAMBOO_API ResourceManager
 {
@@ -938,6 +878,9 @@ public:
     virtual ~ResourceManager();
 
     virtual Arc< Texture > LoadTexture(const std::string& filepath, bool bGenerateMips = false, eTextureColorSpace colorSpace = eTextureColorSpace::Linear) = 0;
+
+    virtual void UploadData(const Arc< Buffer >& pBuffer, const void* pData, u64 sizeInBytes, ePipelineStage dstStage, u64 dstOffsetInBytes) = 0;
+    virtual void BuildAccelerationStructures(std::span< BottomLevelAccelerationStructure* const > pendingBLAS, TopLevelAccelerationStructure* pTLAS) = 0;
 
     virtual Arc< Texture > GetFlatWhiteTexture() { return m_pWhiteTexture; }
     virtual Arc< Texture > GetFlatBlackTexture() { return m_pBlackTexture; }
@@ -950,14 +893,6 @@ public:
 
     void ReplaceSceneResource(Box< SceneResource >&& pSceneResource);
 
-    /*void SetBuffer(const std::string& name, Weak< Buffer > buffer);
-    void SetTexture(const std::string& name, Weak< Texture > texture);
-    void SetSampler(const std::string& name, Arc< Sampler > sampler);
-
-    Weak< Buffer > GetBuffer(const std::string& name) const;
-    Weak< Texture > GetTexture(const std::string& name) const;
-    Arc< Sampler > GetSampler(const std::string& name) const;*/
-
     virtual SceneResource& GetSceneResource() { return *m_pSceneResource; }
 
 protected:
@@ -969,10 +904,6 @@ protected:
     Arc< Texture > m_pBlackTexture3D;
 
     Arc< Texture > m_pBlackTextureCube;
-
-    /*std::unordered_map< std::string, Weak< Buffer > >  m_Buffers;
-    std::unordered_map< std::string, Weak< Texture > > m_Textures;
-    std::unordered_map< std::string, Arc< Sampler > >  m_Samplers;*/
 
     SceneResource* m_pSceneResource = nullptr;
 };

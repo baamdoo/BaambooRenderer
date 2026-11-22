@@ -25,6 +25,9 @@ public:
 	[[nodiscard]]
 	const mat4& WorldMatrix(u32 index) const { assert(index < m_mWorlds.size()); return m_mWorlds[index]; }
 
+	[[nodiscard]]
+	bool StructureChanged() const { return m_bStructureChanged; }
+
 private:
 	virtual void MarkDirty(entt::entity entity) override;
 
@@ -36,6 +39,7 @@ private:
 	FreeList<>          m_IndexAllocator;
 
 	std::unordered_map< u64, TransformRenderView > m_RenderData;
+	bool                                           m_bStructureChanged = false;
 
 	// DFS pre-order traversal cache — rebuilt only on structural hierarchy changes
 	std::vector< entt::entity >             m_HierarchyOrder;

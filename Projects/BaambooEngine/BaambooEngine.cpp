@@ -5,9 +5,11 @@
 #include "BaambooCore/Input.hpp"
 #include "BaambooScene/Entity.h"
 #include "RenderCommon/RenderDevice.h"
+#include "RenderCommon/SceneResource.h"
 #include "RenderCommon/CommandContext.h"
 #include "RenderCommon/CpuProfiler.h"
 #include "ThreadQueue.hpp"
+#include "PipelineFactory.h"
 #include "Utils/Math.hpp"
 
 #include <filesystem>
@@ -129,12 +131,17 @@ void Engine::Initialize(eRendererAPI eApi)
 		throw std::runtime_error("Failed to initialize window!");
 	if (!LoadRenderer(s_RendererAPI, m_pWindow, m_DeviceSettings, pImGuiContext, &m_pRendererBackend))
 		throw std::runtime_error("Failed to load backend!");
-	if (!LoadScene())
-		throw std::runtime_error("Failed to create scene!");
 
 	auto pDevice = m_pRendererBackend->GetDevice();
 	assert(pDevice);
 
+	if (!m_pShaderCompiler)
+		m_pShaderCompiler = MakeBox< shader::Compiler >();
+	m_pPipelineFactory = MakeBox< shader::PipelineFactory >(*m_pShaderCompiler, *pDevice,
+		s_RendererAPI == eRendererAPI::Vulkan ? shader::eTarget::Spirv : shader::eTarget::Dxil);
+
+	if (!LoadScene())
+		throw std::runtime_error("Failed to create scene!");
 
 	g_FrameData.pPointClamp        = render::Sampler::CreatePointClamp(*pDevice);
 	g_FrameData.pPointWrap         = render::Sampler::CreatePointRepeat(*pDevice);
@@ -228,10 +235,21 @@ void Engine::Release()
 	m_RenderViewQueue.clear();
 	ImGui::EntityDeletionQueue.clear(); // pending deletes hold Entity handles into the dying scene
 
-	m_pRendererBackend->WaitIdle();
+	if (m_pRendererBackend)
+	{
+		m_pRendererBackend->WaitIdle();
+
+		// Validation-layer errors over this device's lifetime. A clean run needs an active layer and a count of 0.
+		if (auto pDevice = m_pRendererBackend->GetDevice(); pDevice && pDevice->IsValidationActive())
+		{
+			printf("[Validation] %llu error(s)\n", static_cast< unsigned long long >(pDevice->ValidationErrorCount()));
+			fflush(stdout);
+		}
+	}
 
 	RELEASE(m_pCamera);
 	RELEASE(m_pScene);
+	m_pPipelineFactory.reset();
 	RELEASE(m_pWindow);
 
 	g_FrameData.pPointClampNearest.reset();
@@ -276,7 +294,8 @@ bool Engine::ReloadScene()
 
 	auto pDevice = m_pRendererBackend->GetDevice();
 	BB_ASSERT(pDevice, "Cannot reload a scene without a render device");
-	pDevice->GetResourceManager().ReplaceSceneResource(pDevice->CreateSceneResource());
+	pDevice->GetResourceManager().ReplaceSceneResource(MakeBox< render::SceneResource >(*pDevice));
+	pDevice->FlushDeferredReleases();
 
 	m_PendingResize = {};
 	m_bRenderSuspended = false;
@@ -393,6 +412,8 @@ void Engine::RenderLoop()
 		if (bDiscardRenderView)
 			continue;
 
+		m_pPipelineFactory->ReloadChangedShaders();
+
 		render::CpuProfiler::Thread().BeginFrame();
 
 		// Render
@@ -404,7 +425,6 @@ void Engine::RenderLoop()
 			{
 				pContext->SetRenderSequence(renderSequence);
 				rm.GetSceneResource().UpdateSceneResources(renderView, *pContext);
-				rm.GetSceneResource().BindSceneResources(*pContext);
 
 				m_LastFrameGpuTimeElapsed = pContext->GetLastFrameElapsedTime();
 
@@ -559,15 +579,43 @@ void Engine::RenderLoop()
 
 			// Close the CPU-side "Frame" scope.
 			render::CpuProfiler::Thread().EndFrame();
-
-			/*if (!m_GpuProfileSnapshot.empty() && m_pRendererBackend)
-				m_pRendererBackend->RecordFrameTime(m_GpuProfileSnapshot[0].currentMs);*/
 		}
 	}
 }
 
 void Engine::DrawUI()
 {
+	// **
+	// shader reload errors
+	// **
+	if (const auto reloadErrors = m_pPipelineFactory->ReloadErrors(); !reloadErrors.empty())
+	{
+		const ImGuiViewport* pViewport = ImGui::GetMainViewport();
+		ImGui::SetNextWindowPos(ImVec2(pViewport->WorkPos.x + pViewport->WorkSize.x * 0.5f, pViewport->WorkPos.y + 40.0f), ImGuiCond_Appearing, ImVec2(0.5f, 0.0f));
+		ImGui::SetNextWindowSize(ImVec2(720.0f, 0.0f), ImGuiCond_Appearing);
+
+		char title[64];
+		snprintf(title, sizeof(title), "Shader Reload Errors (%zu)###shader_reload_errors", reloadErrors.size());
+		ImGui::Begin(title);
+		{
+			ImGui::TextDisabled("These pipelines keep their last working build.");
+			for (size_t i = 0; i < reloadErrors.size(); ++i)
+			{
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.45f, 0.40f, 1.0f));
+				const bool bOpen = ImGui::TreeNodeEx(reinterpret_cast<void*>(i), ImGuiTreeNodeFlags_DefaultOpen, "%s", reloadErrors[i].pipeline.c_str());
+				ImGui::PopStyleColor();
+				if (bOpen)
+				{
+					ImGui::PushTextWrapPos(0.0f);
+					ImGui::TextUnformatted(reloadErrors[i].message.c_str());
+					ImGui::PopTextWrapPos();
+					ImGui::TreePop();
+				}
+			}
+		}
+		ImGui::End();
+	}
+
 	// **
 	// engine stats
 	// **
@@ -781,16 +829,16 @@ void Engine::DrawUI()
 				}
 			};
 			ImGui::TextDisabled("Per-triangle (mesh shader)");
-			toggleBit("Backface##cull0", 0x1);
+			toggleBit("Backface##cull0", kCullFlagTriangleBackface);
 			ImGui::SameLine();
-			toggleBit("Subpixel##cull1", 0x2);
+			toggleBit("Subpixel##cull1", kCullFlagTriangleSubpixel);
 
 			ImGui::TextDisabled("Per-meshlet (task shader)");
-			toggleBit("Frustum##cull2", 0x4);
+			toggleBit("Frustum##cull2", kCullFlagMeshletFrustum);
 			ImGui::SameLine();
-			toggleBit("Cone##cull3", 0x8);
+			toggleBit("Cone##cull3", kCullFlagMeshletCone);
 			ImGui::SameLine();
-			toggleBit("Occlusion##cull4", 0x10);
+			toggleBit("Occlusion##cull4", kCullFlagMeshletOcclusion);
 
 			ImGui::TextDisabled("LOD selection (SSE)");
 			ImGui::SliderFloat("SSE Threshold (px)##lodSse", &g_FrameData.sseThresholdPx, 0.1f, 4.0f, "%.2f");
@@ -842,7 +890,7 @@ void Engine::DrawUI()
 			// "Drawn instances exceeds total" can happen with meshlet-occlusion ON (2-phase draw of same instance).
 			// Detect that here so the cull% cell can be marked N/A instead of going negative.
 			const bool bMeshletOcclusionOn =
-				(g_FrameData.cullFlags & 0x10u) != 0u;
+				(g_FrameData.cullFlags & kCullFlagMeshletOcclusion) != 0u;
 			const bool bInstanceCullPctMeaningful = !bMeshletOcclusionOn;
 
 			auto pct = [](u64 num, u64 den) { return den > 0 ? 100.0 * double(num) / double(den) : 0.0; };

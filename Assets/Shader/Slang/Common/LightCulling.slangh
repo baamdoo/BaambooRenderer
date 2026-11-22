@@ -1,0 +1,150 @@
+#pragma once
+#include "ShaderShared/Light.h"
+#include "Common/Math.slangh"
+
+static const float LIGHT_INFLUENCE_THRESHOLD = 0.01;
+
+uint ClusterFlatIndex(uint3 tid, uint numTilesX, uint numTilesY)
+{
+    return (tid.z * numTilesY + tid.y) * numTilesX + tid.x;
+}
+
+// -------------------------------------------------------------------------
+// Light index encoding: 32-bit packed (type:3 + idx:29)
+// -------------------------------------------------------------------------
+uint EncodeLightIndex(uint type, uint idx)
+{
+    return (type << LIGHT_INDEX_BITS) | (idx & LIGHT_INDEX_MASK);
+}
+
+void DecodeLightIndex(uint packed, out uint type, out uint idx)
+{
+    type = packed >> LIGHT_INDEX_BITS;
+    idx  = packed & LIGHT_INDEX_MASK;
+}
+
+// -------------------------------------------------------------------------
+// Influence radius
+// Reference: https://blog.selfshadow.com/publications/s2014-shading-course/ [Moving Frostbite to PBR]
+// -------------------------------------------------------------------------
+float InfluenceRadiusIsotropic(float fluxLm, float physRadius)
+{
+    return max(physRadius, sqrt(fluxLm / (4.0 * PI * LIGHT_INFLUENCE_THRESHOLD)));
+}
+
+float InfluenceRadiusCone(float fluxLm, float outerConeAngleRad, float physRadius)
+{
+    if (outerConeAngleRad <= 0.0 || fluxLm <= 0.0)
+        return 0.0;
+    const float solidAngle = 2.0 * PI * (1.0 - cos(outerConeAngleRad));
+    return max(physRadius, sqrt(fluxLm / max(solidAngle * LIGHT_INFLUENCE_THRESHOLD, 1e-6)));
+}
+
+float SmoothDistanceAtt(float distSq, float invRMaxSq)
+{
+    const float factor = distSq * invRMaxSq;
+    const float smooth = saturate(1.0 - factor * factor);
+    return smooth * smooth;
+}
+
+bool IntersectAabbSphere(float3 aabbMin, float3 aabbMax, float3 sphereCenter, float sphereRadius)
+{
+    const float3 closest = clamp(sphereCenter, aabbMin, aabbMax);
+    const float3 diff    = closest - sphereCenter;
+    return dot(diff, diff) <= sphereRadius * sphereRadius;
+}
+
+bool IntersectAabbCapsule(float3 aabbMin, float3 aabbMax, float3 segA, float3 segB, float capRadius)
+{
+    const int K = 8;
+
+    float minDistSq = FLT_MAX;
+    [unroll]
+    for (int k = 0; k <= K; ++k)
+    {
+        const float  t = float(k) / float(K);
+        const float3 q = lerp(segA, segB, t); // segment point
+
+        const float3 closest = clamp(q, aabbMin, aabbMax);
+        const float3 diff    = closest - q;
+
+        minDistSq = min(minDistSq, dot(diff, diff));
+    }
+
+    return minDistSq <= capRadius * capRadius;
+}
+
+bool IntersectAabbHemisphere(float3 aabbMin, float3 aabbMax, float3 center, float3 backNormal, float radius)
+{
+    // Step 1: sphere fast reject
+    if (!IntersectAabbSphere(aabbMin, aabbMax, center, radius))
+        return false;
+
+    // Step 2: front-most vertex extreme test
+    const float3 frontVertex = float3(
+        backNormal.x < 0.0 ? aabbMax.x : aabbMin.x,
+        backNormal.y < 0.0 ? aabbMax.y : aabbMin.y,
+        backNormal.z < 0.0 ? aabbMax.z : aabbMin.z);
+    return dot(backNormal, frontVertex - center) <= 0.0;
+}
+
+bool IntersectAabbDisk(float3 aabbMin, float3 aabbMax, float3 diskCenter, float3 diskNormal, float diskRadius)
+{
+    return IntersectAabbHemisphere(aabbMin, aabbMax, diskCenter, diskNormal, diskRadius);
+}
+
+uint PixelToClusterIdx(uint2 pixelXY, float viewZ, float zNear, float zFar, uint screenW, uint screenH)
+{
+    const uint tx = pixelXY.x / CLUSTER_TILE_SIZE_PX;
+    const uint ty = pixelXY.y / CLUSTER_TILE_SIZE_PX;
+
+    const float k  = float(CLUSTER_SLICES_Z) * log(viewZ / zNear) / log(zFar / zNear);
+    const uint  tz = uint(clamp(k, 0.0, float(CLUSTER_SLICES_Z - 1)));
+
+    const uint numTilesX = (screenW + CLUSTER_TILE_SIZE_PX - 1) / CLUSTER_TILE_SIZE_PX;
+    const uint numTilesY = (screenH + CLUSTER_TILE_SIZE_PX - 1) / CLUSTER_TILE_SIZE_PX;
+
+    return ClusterFlatIndex(uint3(tx, ty, tz), numTilesX, numTilesY);
+}
+
+// -------------------------------------------------------------------------
+// Cluster tests per light type: the AABB is in the frozen camera's view space, and each bound
+// encloses the region where the light's distance window is non-zero
+// -------------------------------------------------------------------------
+bool IntersectClusterSphereLight(float3 aabbMin, float3 aabbMax, float4x4 mView, SphereLight light)
+{
+    const float3 centerVS = mul(mView, float4(light.position, 1.0)).xyz;
+    const float  rMax     = InfluenceRadiusIsotropic(light.luminousFluxLm, light.radius);
+    return IntersectAabbSphere(aabbMin, aabbMax, centerVS, rMax);
+}
+
+bool IntersectClusterSpotLight(float3 aabbMin, float3 aabbMax, float4x4 mView, SpotLight light)
+{
+    const float3 apexVS = mul(mView, float4(light.position, 1.0)).xyz;
+    const float  rMax   = InfluenceRadiusCone(light.luminousFluxLm, light.outerConeAngleRad, light.radiusM);
+    return IntersectAabbSphere(aabbMin, aabbMax, apexVS, rMax);
+}
+
+bool IntersectClusterAreaLight(float3 aabbMin, float3 aabbMax, float4x4 mView, AreaLight light)
+{
+    const float3 centerVS = mul(mView, float4(light.position, 1.0)).xyz;
+    const float3 normalVS = mul((float3x3)mView, light.normal);
+    const float  rMax     = InfluenceRadiusIsotropic(light.luminousFluxLm, sqrt(light.halfWidth * light.halfWidth + light.halfHeight * light.halfHeight));
+    return IntersectAabbHemisphere(aabbMin, aabbMax, centerVS, normalVS, rMax);
+}
+
+bool IntersectClusterDiskLight(float3 aabbMin, float3 aabbMax, float4x4 mView, DiskLight light)
+{
+    const float3 centerVS = mul(mView, float4(light.position, 1.0)).xyz;
+    const float3 normalVS = mul((float3x3)mView, light.normal);
+    const float  rMax     = InfluenceRadiusIsotropic(light.luminousFluxLm, light.radius);
+    return IntersectAabbDisk(aabbMin, aabbMax, centerVS, normalVS, rMax);
+}
+
+bool IntersectClusterTubeLight(float3 aabbMin, float3 aabbMax, float4x4 mView, TubeLight light)
+{
+    const float3 aVS  = mul(mView, float4(light.positionA, 1.0)).xyz;
+    const float3 bVS  = mul(mView, float4(light.positionB, 1.0)).xyz;
+    const float  rMax = InfluenceRadiusIsotropic(light.luminousFluxLm, light.radius);
+    return IntersectAabbCapsule(aabbMin, aabbMax, aVS, bVS, rMax);
+}

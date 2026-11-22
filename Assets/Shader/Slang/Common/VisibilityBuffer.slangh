@@ -1,0 +1,55 @@
+#pragma once
+#include "ShaderShared/VoxelTerrain.h"
+
+// VBuf0 (R32_UINT):
+//   bit 31      : valid (covered by geometry); VBuf0 == 0 => sky / empty
+//   bit 30      : voxel terrain
+//   bits 27..29 : reserved coarse flags
+//   bits 24..26 : LOD (0..7)
+//   bits  0..23 : instanceID, or the voxel chunk instance index
+// VBuf1 (R32_UINT):
+//   mesh  - (meshletIndex << 7) | triLocal (0..126)
+//   voxel - [31:11] globalTriIdx | [10:0] subTriPlus1 (0 = undiced)
+
+static const uint kVisIDValidBit = 1u << 31;
+static const uint kVisIDVoxelBit = 1u << 30;
+
+// ---- writers (geometry pass) ----
+uint PackVisID0Mesh(uint instanceID, uint lod, uint flags)
+{
+    return kVisIDValidBit
+         | ((flags & 0x7u) << 27)
+         | ((lod   & 0x7u) << 24)
+         | (instanceID & 0x00FFFFFFu);
+}
+
+uint PackVisID1(uint meshletIndex, uint triLocal)
+{
+    return (meshletIndex << 7) | (triLocal & 0x7Fu);
+}
+
+uint PackVisID0Voxel(uint chunkIndex)
+{
+    return kVisIDValidBit | kVisIDVoxelBit | (chunkIndex & 0x00FFFFFFu);
+}
+
+uint PackVisID1Voxel(uint meshletIndex, uint triLocal, uint subTriPlus1)
+{
+    return ((meshletIndex * kVoxelTrianglesPerMeshlet + triLocal) << 11) | (subTriPlus1 & 0x7FFu);
+}
+
+// ---- readers (resolve / lighting) ----
+bool VisIsSky(uint v0)   { return v0 == 0u; }
+bool VisIsMesh(uint v0)  { return (v0 & kVisIDValidBit) != 0u && (v0 & kVisIDVoxelBit) == 0u; }
+bool VisIsVoxel(uint v0) { return (v0 & kVisIDValidBit) != 0u && (v0 & kVisIDVoxelBit) != 0u; }
+
+uint VisInstanceID(uint v0)   { return v0 & 0x00FFFFFFu; }
+uint VisChunkIndex(uint v0)   { return v0 & 0x00FFFFFFu; }
+uint VisLOD(uint v0)          { return (v0 >> 24) & 0x7u; }
+uint VisFlags(uint v0)        { return (v0 >> 27) & 0x7u; }
+uint VisMeshletIndex(uint v1) { return v1 >> 7; }
+uint VisTriLocal(uint v1)     { return v1 & 0x7Fu; }
+
+uint VisVoxelMeshletIndex(uint v1) { return (v1 >> 11) / kVoxelTrianglesPerMeshlet; }
+uint VisVoxelTriLocal(uint v1)     { return (v1 >> 11) % kVoxelTrianglesPerMeshlet; }
+uint VisVoxelSubTriPlus1(uint v1)  { return v1 & 0x7FFu; }

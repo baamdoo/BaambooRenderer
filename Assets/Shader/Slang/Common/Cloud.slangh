@@ -1,0 +1,116 @@
+#pragma once
+#include "ShaderShared/Cloud.h"
+#include "Common/Binding.slangh"
+#include "Common/Math.slangh"
+
+// Everything the cloud density field reads
+struct CloudVolume
+{
+    CloudData           data;
+    Texture2D< float4 > macroMap;
+    Texture3D< float4 > baseNoise;
+    Texture2D< float3 > profileLUT;
+};
+
+////////////////////////////////////////////////////////////////////////
+// Shaping //
+// Reference: https://www.guerrilla-games.com/read/nubis-cubed
+float GetCloudFloorVariationLevel(CloudData cloud, float4 cloudMap, float hNorm, float macroDensity)
+{
+    const float varAlpha = saturate(macroDensity - 1.5);
+
+    float floorVariation = lerp(cloud.floorVariationClear, cloud.floorVariationCloudy, varAlpha);
+    floorVariation *= -1.0 * pow(cloudMap.r, 2.0);
+
+    return saturate(lerp(saturate(hNorm), 1.0, floorVariation));
+}
+
+// (dimensional profile, floor variation level, macro density)
+float3 SampleCloudConservativeDensity(CloudVolume clouds, float3 pos, float hNorm)
+{
+    const float2 cloudUV  = pos.zx / clouds.data.cloudsScale;
+    const float4 cloudMap = clouds.macroMap.SampleLevel(g_LinearWrapSampler, cloudUV, 0);
+
+    //--- Macro Cloud Map ---//
+    const float2 variation = 0.5 - 0.5 * cos(cloudUV * 2.0 * PI);
+
+    const float clumpsVariation = variation.x * variation.y * clouds.data.clumpsVariation;
+    const float macroDensity    = clumpsVariation + clouds.data.baseDensity;
+
+    const float densityThreshold = pow(1.0 - (macroDensity / 6.5), 3.0) - 0.25;
+
+    //--- Profile ---//
+    const float floorVariationLevel = GetCloudFloorVariationLevel(clouds.data, cloudMap, hNorm, macroDensity);
+
+    const float2 profileUV = float2(macroDensity / 3.0, 1.0 - floorVariationLevel);
+    const float  profileR  = clouds.profileLUT.SampleLevel(g_LinearClampSampler, profileUV, 0).r;
+
+    //--- Cloud Shape ---//
+    const float cloudShape         = saturate(cloudMap.r * cloudMap.g - densityThreshold) / (1.0 - densityThreshold);
+    const float dimensionalProfile = saturate(cloudShape - (1.0 - profileR));
+
+    return float3(dimensionalProfile, floorVariationLevel, macroDensity);
+}
+
+struct CloudDensityResult
+{
+    float uprezzedDensity;
+    float splitAltitude;
+};
+
+CloudDensityResult VolumetricCloudsExtinction(CloudVolume clouds, float3 pos, float3 conservativeDensity, bool bOptimize)
+{
+    //--- Profile ---//
+    const float floorVariationLevel = conservativeDensity.g;
+
+    const float2 profileUV     = float2(conservativeDensity.b / 3.0, 1.0 - floorVariationLevel);
+    const float3 profileSample = clouds.profileLUT.SampleLevel(g_LinearClampSampler, profileUV, 0);
+
+    //--- Base Erosion ---//
+    const float3 cloudUVW     = pos / clouds.data.baseErosionScale;
+    const float4 lowFreqNoise = clouds.baseNoise.SampleLevel(g_LinearWrapSampler, cloudUVW, 0);
+
+    const float noiseBlendAlpha = pow(conservativeDensity.r, 0.25);
+
+    const float erosionFactor  = max(profileSample.b, 0.3) * clouds.data.baseErosionStrength;
+    const float wispy          = lerp(lowFreqNoise.r, lowFreqNoise.g, conservativeDensity.r);
+    const float billowy        = lerp(lowFreqNoise.b, lowFreqNoise.a, noiseBlendAlpha);
+    const float lowFreqErosion = erosionFactor * pow(lerp(wispy, billowy, noiseBlendAlpha), clouds.data.baseErosionPower);
+
+    CloudDensityResult result;
+    result.splitAltitude = floorVariationLevel;
+    if (bOptimize)
+    {
+        result.uprezzedDensity = saturate(remap(conservativeDensity.r, lowFreqErosion, 1.0, 0.0, 1.0));
+        return result;
+    }
+
+    //--- High Erosion ---//
+    const float heightDensityMod = pow(profileSample.g, 3.0) * clouds.data.extinctionScale;
+
+    const float highFreqNoise = saturate(
+        lerp(1.0 - pow(abs(abs(lowFreqNoise.g * 2.0 - 1.0) * 2.0 - 1.0), 4.0 * clouds.data.hfErosionDistortion),
+            pow(abs(abs(lowFreqNoise.b * 2.0 - 1.0) * 2.0 - 1.0), 2.0 * clouds.data.hfErosionDistortion), noiseBlendAlpha));
+    const float noiseComposite = lerp(highFreqNoise, lowFreqErosion, clouds.data.hfErosionStrength);
+
+    const float uprezzedDensity = saturate(safeRemap(conservativeDensity.r, noiseComposite, 1.0, 0.0, 1.0)) * heightDensityMod;
+
+    result.uprezzedDensity = max(uprezzedDensity, 0.0);
+    return result;
+}
+
+struct CloudExtinctionResult
+{
+    float extinction;
+    float emissiveLerpAlpha;
+};
+
+CloudExtinctionResult SampleCloudExtinction(CloudVolume clouds, float3 pos, float3 conservativeDensity, bool bOptimize)
+{
+    const CloudDensityResult density = VolumetricCloudsExtinction(clouds, pos, conservativeDensity, bOptimize);
+
+    CloudExtinctionResult result;
+    result.extinction        = density.uprezzedDensity;
+    result.emissiveLerpAlpha = pow(1.0 - density.splitAltitude, 0.03);
+    return result;
+}

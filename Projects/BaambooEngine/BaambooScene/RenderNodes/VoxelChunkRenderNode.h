@@ -7,6 +7,8 @@
 
 struct VoxelTerrainRenderView;
 
+namespace baamboo::shader { class PipelineFactory; }
+
 namespace baamboo
 {
 
@@ -22,13 +24,9 @@ public:
 	static constexpr u32 kEdgeListSlots   = VoxelMaxClassVertexCap();
 	static constexpr u32 kTriTripletSlots = 3u * VoxelMaxClassTriCap();
 
-	// Morton-coded 32^3 sort blocks over the chunk cube (a multiple of the 1024-thread scan pass).
-	static constexpr u32 kTriSortBins = 32u * 32u * 32u;
-
 	// Erosion detail map (XZ heightfield): interior texels + apron overlap per side for seam-free boundary filtering.
-	static constexpr u32 kErosionApron       = 2u;
 	static constexpr u32 kErosionMapInnerDim = 512u;
-	static constexpr u32 kErosionMapDim      = kErosionMapInnerDim + 2u * kErosionApron;
+	static constexpr u32 kErosionMapDim      = kErosionMapInnerDim + 2u * kVoxelErosionApron;
 
 	enum class eChunkState
 	{
@@ -59,7 +57,7 @@ public:
 		bool bVisible = false;
 	};
 
-	VoxelChunkRenderNode(render::RenderDevice& rd);
+	VoxelChunkRenderNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory);
 	virtual ~VoxelChunkRenderNode() = default;
 
 	virtual void Apply(render::CommandContext& context, const SceneRenderView& renderView) override;
@@ -80,6 +78,7 @@ private:
 	u32  AcquireErosionColumn(const VoxelChunkID& id);
 	void ReleaseErosionColumn(const VoxelChunkID& id);
 	bool ConsumeErosionBake(const VoxelChunkID& id, u32 revision);
+	u32  ContentRevision(u32 terrainRevision) const;
 
 	u32  SelectPageClass(const ChunkSlot& chunkSlot) const;
 	void InstallPage(ChunkSlot& chunkSlot, u32 pageID);
@@ -154,7 +153,6 @@ private:
 	// Tri-count readback ring: per-build MCCounter snapshot, tagged for attribution when it arrives
 	static constexpr u32 kTriReadbackSlots    = kMaxFramesInFlight;
 	static constexpr u32 kTriReadbackPerFrame = 4u; // build-budget headroom per frame slot
-	static constexpr u32 kMCCounterFields     = 5u;
 	struct TriReadbackTag
 	{
 		u32 chunkIndex = kInvalidIndex;
@@ -170,7 +168,7 @@ private:
 	u32 m_TriReadbackFrameCounter = 0u;
 
 	// Triangle spatial sort: extraction order -> Morton-block order of the tri triplets
-	Arc< render::Buffer >          m_pTriSortBins; // kTriSortBins histogram / scanned offsets / scatter cursors
+	Arc< render::Buffer >          m_pTriSortBins; // kVoxelTriSortBins histogram / scanned offsets / scatter cursors
 	Box< render::ComputePipeline > m_pTriSortCountPSO;
 	Box< render::ComputePipeline > m_pTriSortScanPSO;
 	Box< render::ComputePipeline > m_pTriSortScatterPSO;

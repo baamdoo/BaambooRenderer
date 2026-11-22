@@ -1,14 +1,15 @@
+SlangVersion = "2026.19"
+
 Path = {}
 Path["Solution"] = "%{_WORKING_DIR}/"
-Path["Target"] = path.join(Path.Solution, "Output/Binaries/%{cfg.buildcfg}/%{cfg.system}/%{prj.name}/")
+Path["Target"] = path.join(Path.Solution, "Output/Binaries/%{cfg.buildcfg}/%{cfg.system}/")
 Path["Obj"] = path.join(Path.Solution, "Output/Intermediate/%{cfg.buildcfg}/%{cfg.system}/%{prj.name}/")
 Path["ThirdParty"] = path.join(Path.Solution, "Projects/ThirdParties/")
 Path["Vulkan"] = os.getenv("VULKAN_SDK")
-Path["ShaderSrc"] = path.join(Path.Solution, "Assets/Shader/")
-Path["Cso"] = path.join(Path.Solution, "Output/Shader/cso/")
-Path["Spv"] = path.join(Path.Solution, "Output/Shader/spv")
+Path["Slang"] = path.join(Path.Solution, "External/slang-" .. SlangVersion .. "/")
 
 Package = {}
+Package["Dxc"] = "Microsoft.Direct3D.DXC:1.8.2505.32"
 
 IncludeDir = {}
 IncludeDir["GLFW"] = "%{wks.location}/Projects/ThirdParties/GLFW/include/"

@@ -2,6 +2,8 @@
 #include "GBufferNode.h"
 #include "VoxelChunkRenderNode.h"
 
+namespace baamboo::shader { class PipelineFactory; }
+
 namespace baamboo
 {
 
@@ -24,10 +26,7 @@ class CullingNode : public render::RenderNode
 {
 using Super = render::RenderNode;
 public:
-	static constexpr u32 kPhase1Cull = 0u;
-	static constexpr u32 kPhase2Cull = 1u;
-
-	CullingNode(render::RenderDevice& rd);
+	CullingNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory);
 	virtual ~CullingNode();
 
 	CullingNode(const CullingNode& other);
@@ -71,11 +70,11 @@ private:
 
 	// --- HiZ pyramid + SPD ---
 	Arc< render::Texture > m_pHiZTexture;
-	Arc< render::Buffer >  m_pSPDCounterBuffer;
 
 	// --- Compute pipelines ---
 	Box< render::ComputePipeline > m_pInstanceCullingPSO;
-	Box< render::ComputePipeline > m_pHiZGenerationPSO;
+	Box< render::ComputePipeline > m_pHiZTilesPSO;
+	Box< render::ComputePipeline > m_pHiZTailPSO;
 	Box< render::ComputePipeline > m_pVoxelMeshDataPatchPSO; // stamps GPU meshlet count into the voxel instance's MeshData
 
 	// --- Readback ring ---

@@ -20,7 +20,7 @@ namespace StaticSamplerPresets
         .BorderColor      = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
         .MinLOD           = 0.0f,
         .MaxLOD           = D3D12_FLOAT32_MAX,
-        .ShaderRegister   = static_cast<u32>(eSamplerIndex::PointWrap),
+        .ShaderRegister   = static_cast<u32>(render::eSamplerIndex::PointWrap),
         .RegisterSpace    = 0,
         .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
     };
@@ -39,7 +39,7 @@ namespace StaticSamplerPresets
         .BorderColor      = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
         .MinLOD           = 0.0f,
         .MaxLOD           = D3D12_FLOAT32_MAX,
-        .ShaderRegister   = static_cast<u32>(eSamplerIndex::PointClamp),
+        .ShaderRegister   = static_cast<u32>(render::eSamplerIndex::PointClamp),
         .RegisterSpace    = 0,
         .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
     };
@@ -58,7 +58,7 @@ namespace StaticSamplerPresets
         .BorderColor      = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
         .MinLOD           = 0.0f,
         .MaxLOD           = D3D12_FLOAT32_MAX,
-        .ShaderRegister   = static_cast<u32>(eSamplerIndex::LinearWrap),
+        .ShaderRegister   = static_cast<u32>(render::eSamplerIndex::LinearWrap),
         .RegisterSpace    = 0,
         .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
     };
@@ -77,7 +77,7 @@ namespace StaticSamplerPresets
         .BorderColor      = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
         .MinLOD           = 0.0f,
         .MaxLOD           = D3D12_FLOAT32_MAX,
-        .ShaderRegister   = static_cast<u32>(eSamplerIndex::LinearClamp),
+        .ShaderRegister   = static_cast<u32>(render::eSamplerIndex::LinearClamp),
         .RegisterSpace    = 0,
         .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
     };
@@ -96,7 +96,7 @@ namespace StaticSamplerPresets
         .BorderColor      = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
         .MinLOD           = 0.0f,
         .MaxLOD           = D3D12_FLOAT32_MAX,
-        .ShaderRegister   = static_cast<u32>(eSamplerIndex::TrilinearWrap),
+        .ShaderRegister   = static_cast<u32>(render::eSamplerIndex::TrilinearWrap),
         .RegisterSpace    = 0,
         .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
     };
@@ -115,7 +115,7 @@ namespace StaticSamplerPresets
         .BorderColor      = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
         .MinLOD           = 0.0f,
         .MaxLOD           = D3D12_FLOAT32_MAX,
-        .ShaderRegister   = static_cast<u32>(eSamplerIndex::AnisotropicWrap),
+        .ShaderRegister   = static_cast<u32>(render::eSamplerIndex::AnisotropicWrap),
         .RegisterSpace    = 0,
         .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
     };
@@ -134,7 +134,7 @@ namespace StaticSamplerPresets
         .BorderColor      = D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE, // Corresponds to 1.0f depth
         .MinLOD           = 0.0f,
         .MaxLOD           = D3D12_FLOAT32_MAX,
-        .ShaderRegister   = static_cast<u32>(eSamplerIndex::ShadowCmpLessEqual),
+        .ShaderRegister   = static_cast<u32>(render::eSamplerIndex::ShadowCmpLessEqual),
         .RegisterSpace    = 0,
         .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
     };
@@ -153,7 +153,7 @@ namespace StaticSamplerPresets
         .BorderColor      = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
         .MinLOD           = 0.0f,
         .MaxLOD           = D3D12_FLOAT32_MAX,
-        .ShaderRegister   = static_cast<u32>(eSamplerIndex::PointClampMin),
+        .ShaderRegister   = static_cast<u32>(render::eSamplerIndex::PointClampMin),
         .RegisterSpace    = 0,
         .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
     };
@@ -173,86 +173,42 @@ namespace StaticSamplerPresets
         .BorderColor      = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
         .MinLOD           = 0.0f,
         .MaxLOD           = D3D12_FLOAT32_MAX,
-        .ShaderRegister   = static_cast<u32>(eSamplerIndex::LinearClampMin),
+        .ShaderRegister   = static_cast<u32>(render::eSamplerIndex::LinearClampMin),
         .RegisterSpace    = 0,
         .ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL
     };
 }
-static D3D12_STATIC_SAMPLER_DESC s_StaticSamplerPresets[static_cast<u32>(eSamplerIndex::MaxIndex)];
+static D3D12_STATIC_SAMPLER_DESC s_StaticSamplerPresets[static_cast<u32>(render::eSamplerIndex::MaxIndex)];
 
 Dx12RootSignature::Dx12RootSignature(Dx12RenderDevice& rd, const std::string& name, D3D12_ROOT_SIGNATURE_FLAGS flags)
 	: m_RenderDevice(rd)
 	, m_Name(name)
 	, m_Flags(flags)
 {
-	//InitCommonDescriptors();
-
-	s_StaticSamplerPresets[static_cast<u32>(eSamplerIndex::PointWrap)]          = StaticSamplerPresets::PointWrap;
-	s_StaticSamplerPresets[static_cast<u32>(eSamplerIndex::PointClamp)]         = StaticSamplerPresets::PointClamp;
-	s_StaticSamplerPresets[static_cast<u32>(eSamplerIndex::LinearWrap)]         = StaticSamplerPresets::LinearWrap;
-	s_StaticSamplerPresets[static_cast<u32>(eSamplerIndex::LinearClamp)]        = StaticSamplerPresets::LinearClamp;
-	s_StaticSamplerPresets[static_cast<u32>(eSamplerIndex::TrilinearWrap)]      = StaticSamplerPresets::TrilinearWrap;
-	s_StaticSamplerPresets[static_cast<u32>(eSamplerIndex::AnisotropicWrap)]    = StaticSamplerPresets::AnisotropicWrap;
-	s_StaticSamplerPresets[static_cast<u32>(eSamplerIndex::ShadowCmpLessEqual)] = StaticSamplerPresets::ShadowCmpLessEqual;
-	s_StaticSamplerPresets[static_cast<u32>(eSamplerIndex::PointClampMin)]      = StaticSamplerPresets::PointClampMin;
-	s_StaticSamplerPresets[static_cast<u32>(eSamplerIndex::LinearClampMin)]     = StaticSamplerPresets::LinearClampMin;
+	s_StaticSamplerPresets[static_cast<u32>(render::eSamplerIndex::PointWrap)]          = StaticSamplerPresets::PointWrap;
+	s_StaticSamplerPresets[static_cast<u32>(render::eSamplerIndex::PointClamp)]         = StaticSamplerPresets::PointClamp;
+	s_StaticSamplerPresets[static_cast<u32>(render::eSamplerIndex::LinearWrap)]         = StaticSamplerPresets::LinearWrap;
+	s_StaticSamplerPresets[static_cast<u32>(render::eSamplerIndex::LinearClamp)]        = StaticSamplerPresets::LinearClamp;
+	s_StaticSamplerPresets[static_cast<u32>(render::eSamplerIndex::TrilinearWrap)]      = StaticSamplerPresets::TrilinearWrap;
+	s_StaticSamplerPresets[static_cast<u32>(render::eSamplerIndex::AnisotropicWrap)]    = StaticSamplerPresets::AnisotropicWrap;
+	s_StaticSamplerPresets[static_cast<u32>(render::eSamplerIndex::ShadowCmpLessEqual)] = StaticSamplerPresets::ShadowCmpLessEqual;
+	s_StaticSamplerPresets[static_cast<u32>(render::eSamplerIndex::PointClampMin)]      = StaticSamplerPresets::PointClampMin;
+	s_StaticSamplerPresets[static_cast<u32>(render::eSamplerIndex::LinearClampMin)]     = StaticSamplerPresets::LinearClampMin;
 }
 
 Dx12RootSignature::~Dx12RootSignature()
 {
 	COM_RELEASE(m_d3d12RootSignature);
-
-	m_SamplerTableBitMask = 0;
-	m_DescriptorTableBitMask = 0;
-}
-
-u32 Dx12RootSignature::AddConstants(u32 reg, u32 numConstants, D3D12_SHADER_VISIBILITY visibility)
-{
-	return AddConstants(reg, kRootConstantSpace, numConstants, visibility);
 }
 
 u32 Dx12RootSignature::AddConstants(u32 reg, u32 space, u32 numConstants, D3D12_SHADER_VISIBILITY visibility)
 {
-	CD3DX12_ROOT_PARAMETER1 param = {};
+	CD3DX12_ROOT_PARAMETER1& param = m_RootParameters.emplace_back();
 	param.InitAsConstants(numConstants, reg, space, visibility);
-	return AddParameter(param);
-}
 
-u32 Dx12RootSignature::AddCBV(u32 reg, u32 space, D3D12_ROOT_DESCRIPTOR_FLAGS flags, D3D12_SHADER_VISIBILITY visibility)
-{
-	CD3DX12_ROOT_PARAMETER1 param = {};
-	param.InitAsConstantBufferView(reg, space, flags, visibility);
-	return AddParameter(param);
-}
-
-u32 Dx12RootSignature::AddSRV(u32 reg, u32 space, D3D12_ROOT_DESCRIPTOR_FLAGS flags, D3D12_SHADER_VISIBILITY visibility)
-{
-	CD3DX12_ROOT_PARAMETER1 param = {};
-	param.InitAsShaderResourceView(reg, space, flags, visibility);
-	return AddParameter(param);
-}
-
-u32 Dx12RootSignature::AddUAV(u32 reg, u32 space, D3D12_ROOT_DESCRIPTOR_FLAGS flags, D3D12_SHADER_VISIBILITY visibility)
-{
-	CD3DX12_ROOT_PARAMETER1 param = {};
-	param.InitAsUnorderedAccessView(reg, space, flags, visibility);
-	return AddParameter(param);
-}
-
-u32 Dx12RootSignature::AddSampler(
-	UINT                       shaderRegister, 
-	UINT                       registerSpace, 
-	D3D12_FILTER               filter, 
-	D3D12_TEXTURE_ADDRESS_MODE addressUVW, 
-	UINT                       maxAnisotropy, 
-	D3D12_COMPARISON_FUNC      comparisonFunc, 
-	D3D12_STATIC_BORDER_COLOR  borderColor)
-{
-	CD3DX12_STATIC_SAMPLER_DESC& desc = m_StaticSamplers.emplace_back();
-	desc.Init(shaderRegister, filter, addressUVW, addressUVW, addressUVW, 0.0f, maxAnisotropy, comparisonFunc, borderColor);
-	desc.RegisterSpace = registerSpace;
-
-	return static_cast<u32>(m_StaticSamplers.size()) - 1;
+	const u32 rootIndex = static_cast<u32>(m_RootParameters.size()) - 1;
+	m_RootIndexMap.emplace(RootKey{ D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, MAKELONG(space, reg) }, rootIndex);
+	return rootIndex;
 }
 
 u32 Dx12RootSignature::AddSamplerPreset(u32 preset)
@@ -261,61 +217,13 @@ u32 Dx12RootSignature::AddSamplerPreset(u32 preset)
 	return static_cast<u32>(m_StaticSamplers.size()) - 1;
 }
 
-u32 Dx12RootSignature::AddDescriptorTable(const DescriptorTable& table, D3D12_SHADER_VISIBILITY visibility)
-{
-	CD3DX12_ROOT_PARAMETER1 param = {};
-	param.InitAsDescriptorTable(static_cast<u32>(table.Size()), nullptr, visibility);
-	m_DescriptorTableIndices.push_back(static_cast<u32>(m_DescriptorTables.size()));
-	m_DescriptorTables.push_back(table);
-	return AddParameter(param);
-}
-
 void Dx12RootSignature::Build()
 {
 	auto d3d12Device = m_RenderDevice.GetD3D12Device();
 
-	u32 t = 0;
-	for (size_t i = 0; i < m_RootParameters.size(); ++i)
-	{
-		if (m_RootParameters[i].ParameterType == D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE)
-		{
-			m_RootParameters[i].DescriptorTable.NumDescriptorRanges = (u32)m_DescriptorTables[m_DescriptorTableIndices[t]].Size();
-			m_RootParameters[i].DescriptorTable.pDescriptorRanges = m_DescriptorTables[m_DescriptorTableIndices[t]].Data();
-			t++;
-		}
-	}
-
-	u32 numParameters = static_cast<u32>(m_RootParameters.size());
-	for (u32 i = 0; i < numParameters; ++i)
-	{
-		auto& rootParam = m_RootParameters[i];
-		if (rootParam.ParameterType == D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE)
-		{
-			if (rootParam.DescriptorTable.NumDescriptorRanges > 0)
-			{
-				switch (rootParam.DescriptorTable.pDescriptorRanges->RangeType)
-				{
-				case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
-				case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
-				case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
-					m_DescriptorTableBitMask |= (1LL << i);
-					break;
-				case D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER:
-					m_SamplerTableBitMask |= (1LL << i);
-					break;
-				}
-			}
-
-			for (u32 j = 0; j < rootParam.DescriptorTable.NumDescriptorRanges; ++j)
-			{
-				m_NumDescriptorsPerTable[i] += rootParam.DescriptorTable.pDescriptorRanges[j].NumDescriptors;
-			}
-		}
-	}
-
 	CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSigDesc = {};
 	rootSigDesc.Init_1_1(
-		numParameters, 
+		static_cast<u32>(m_RootParameters.size()),
 		m_RootParameters.data(), 
 		static_cast<u32>(m_StaticSamplers.size()), 
 		m_StaticSamplers.data(), 
@@ -349,40 +257,6 @@ void Dx12RootSignature::Build()
 	COM_RELEASE(d3dError);
 }
 
-void Dx12RootSignature::UpdateVisibility(u32 rootIndex, D3D12_SHADER_VISIBILITY visibility)
-{
-	assert(rootIndex < m_RootParameters.size());
-	m_RootParameters[rootIndex].ShaderVisibility = visibility;
-}
-
-void Dx12RootSignature::CopySignatureParams(Dx12RootSignature& srcSignature)
-{
-	m_RootParameters = srcSignature.m_RootParameters;
-	m_StaticSamplers = srcSignature.m_StaticSamplers;
-}
-
-u32 Dx12RootSignature::GetNumDescriptors(u32 rootIndex) const
-{
-	assert(rootIndex < kMaxRootIndex);
-	return m_NumDescriptorsPerTable[rootIndex];
-}
-
-u64 Dx12RootSignature::GetDescriptorTableBitMask(D3D12_DESCRIPTOR_HEAP_TYPE type) const
-{
-	u64 mask = 0;
-	switch (type)
-	{
-	case D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV:
-		mask = m_DescriptorTableBitMask;
-		break;
-	case D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER:
-		mask = m_SamplerTableBitMask;
-		break;
-	}
-
-	return mask;
-}
-
 u32 Dx12RootSignature::GetRootIndex(D3D12_ROOT_PARAMETER_TYPE type, u32 space, u32 reg) const
 {
 	const auto& it = m_RootIndexMap.find({ type, MAKELONG(space, reg) });
@@ -392,70 +266,6 @@ u32 Dx12RootSignature::GetRootIndex(D3D12_ROOT_PARAMETER_TYPE type, u32 space, u
 	}
 
 	return it->second;
-}
-
-u32 Dx12RootSignature::AddParameter(const CD3DX12_ROOT_PARAMETER1& param)
-{
-	m_RootParameters.emplace_back(param);
-	u32 rootIndex = static_cast<u32>(m_RootParameters.size()) - 1;
-
-	u32 reg   = kInvalidIndex;
-	u32 space = kInvalidIndex;
-	switch (param.ParameterType)
-	{
-	case D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS:
-		reg   = param.Constants.ShaderRegister;
-		space = param.Constants.RegisterSpace;
-		break;
-	case D3D12_ROOT_PARAMETER_TYPE_CBV:
-	case D3D12_ROOT_PARAMETER_TYPE_SRV:
-	case D3D12_ROOT_PARAMETER_TYPE_UAV:
-		reg   = param.Descriptor.ShaderRegister;
-		space = param.Descriptor.RegisterSpace;
-		break;
-	case D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE:
-		assert(param.DescriptorTable.NumDescriptorRanges > 0);
-		reg   = param.DescriptorTable.pDescriptorRanges[0].BaseShaderRegister;
-		space = param.DescriptorTable.pDescriptorRanges[0].RegisterSpace;
-		break;
-	}
-	m_RootIndexMap.emplace(
-		std::piecewise_construct,
-		std::forward_as_tuple(param.ParameterType, MAKELONG(space, reg)),
-		std::forward_as_tuple(rootIndex)
-	);
-
-	return rootIndex;
-}
-
-DescriptorTable& DescriptorTable::AddCBVRange(u32 reg, u32 space, u32 numDescriptors, D3D12_DESCRIPTOR_RANGE_FLAGS flags, u32 offset)
-{
-	AddDescriptorRange(reg, space, numDescriptors, D3D12_DESCRIPTOR_RANGE_TYPE_CBV, flags, offset);
-	return *this;
-}
-
-DescriptorTable& DescriptorTable::AddSRVRange(u32 reg, u32 space, u32 numDescriptors, D3D12_DESCRIPTOR_RANGE_FLAGS flags, u32 offset)
-{
-	AddDescriptorRange(reg, space, numDescriptors, D3D12_DESCRIPTOR_RANGE_TYPE_SRV, flags, offset);
-	return *this;
-}
-
-DescriptorTable& DescriptorTable::AddUAVRange(u32 reg, u32 space, u32 numDescriptors, D3D12_DESCRIPTOR_RANGE_FLAGS flags, u32 offset)
-{
-	AddDescriptorRange(reg, space, numDescriptors, D3D12_DESCRIPTOR_RANGE_TYPE_UAV, flags, offset);
-	return *this;
-}
-
-DescriptorTable& DescriptorTable::AddSamplerRange(u32 reg, u32 space, u32 numDescriptors, D3D12_DESCRIPTOR_RANGE_FLAGS flags, u32 offset)
-{
-	AddDescriptorRange(reg, space, numDescriptors, D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, flags, offset);
-	return *this;
-}
-
-void DescriptorTable::AddDescriptorRange(u32 reg, u32 space, u32 numDescriptors, D3D12_DESCRIPTOR_RANGE_TYPE type, D3D12_DESCRIPTOR_RANGE_FLAGS flags, u32 offset)
-{
-	CD3DX12_DESCRIPTOR_RANGE1& range = m_Ranges.emplace_back();
-	range.Init(type, numDescriptors, reg, space, flags, offset);
 }
 
 }

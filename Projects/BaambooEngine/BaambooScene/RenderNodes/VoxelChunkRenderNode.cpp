@@ -1,13 +1,14 @@
 #include "BaambooPch.h"
 #include "VoxelChunkRenderNode.h"
 
-#include "ShaderTypes.h"
+#include "ShaderShared/VoxelTerrain.h"
 #include "RenderCommon/RenderDevice.h"
 #include "RenderCommon/CommandContext.h"
 
 #include "BaambooScene/Scene.h"
 #include "BaambooScene/VoxelTerrain/MarchingCubes.h"
 #include "BaambooScene/VoxelTerrain/TransvoxelTables.h"
+#include "PipelineFactory.h"
 
 
 namespace baamboo
@@ -101,7 +102,7 @@ static_assert(ExtractScratchCoversAllClasses(), "extraction scratch must hold ev
 
 // ---- Construction ---------------------------------------------------------
 
-VoxelChunkRenderNode::VoxelChunkRenderNode(render::RenderDevice& rd)
+VoxelChunkRenderNode::VoxelChunkRenderNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory)
 	: Super(rd, "VoxelChunkPass")
 {
 	using namespace render;
@@ -158,10 +159,7 @@ VoxelChunkRenderNode::VoxelChunkRenderNode(render::RenderDevice& rd)
 			.elementSizeInBytes = sizeof(float),
 			.bufferUsage        = eBufferUsage_Storage,
 		});
-	auto pDensityCS = Shader::Create(rd, "VoxelDensityCS",
-		{ .stage = eShaderStage::Compute, .filename = "VoxelDensityCS" });
-	m_pDensityPSO = ComputePipeline::Create(rd, "VoxelDensityPSO");
-	m_pDensityPSO->SetComputeShader(pDensityCS).Build();
+	m_pDensityPSO = pipelineFactory.CreateAndBuildComputePipeline("VoxelDensityPSO", { .source = "VoxelDensityCS.slang" });
 
 	// Heightfield-first density: surface height per (x, z) column into the tile, then density per voxel from it
 	m_pHeightTile = Buffer::Create(rd, "VoxelChunkPass::HeightTile",
@@ -170,10 +168,7 @@ VoxelChunkRenderNode::VoxelChunkRenderNode(render::RenderDevice& rd)
 			.elementSizeInBytes = sizeof(float),
 			.bufferUsage        = eBufferUsage_Storage,
 		});
-	auto pHeightRawCS = Shader::Create(rd, "VoxelHeightRawCS",
-		{ .stage = eShaderStage::Compute, .filename = "VoxelHeightRawCS" });
-	m_pHeightRawPSO = ComputePipeline::Create(rd, "VoxelHeightRawPSO");
-	m_pHeightRawPSO->SetComputeShader(pHeightRawCS).Build();
+	m_pHeightRawPSO = pipelineFactory.CreateAndBuildComputePipeline("VoxelHeightRawPSO", { .source = "VoxelHeightRawCS.slang" });
 
 	m_pMCTriTable = Buffer::Create(rd, "VoxelChunkPass::MCTriTable",
 		{
@@ -189,7 +184,7 @@ VoxelChunkRenderNode::VoxelChunkRenderNode(render::RenderDevice& rd)
 		});
 	m_pMCCounter = Buffer::Create(rd, "VoxelChunkPass::MCCounter",
 		{
-			.count              = kMCCounterFields, // [tri, activeCells, vertex, meshletVertex, E]
+			.count              = kVoxelCounterFields,
 			.elementSizeInBytes = sizeof(u32),
 			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest | eBufferUsage_TransferSource,
 		});
@@ -228,64 +223,30 @@ VoxelChunkRenderNode::VoxelChunkRenderNode(render::RenderDevice& rd)
 
 	m_pTriCountReadback = Buffer::Create(rd, "VoxelChunkPass::TriCountReadback",
 		{
-			.count              = kTriReadbackSlots * kTriReadbackPerFrame * kMCCounterFields,
+			.count              = kTriReadbackSlots * kTriReadbackPerFrame * kVoxelCounterFields,
 			.elementSizeInBytes = sizeof(u32),
 			.mapDirection       = 2,
 			.bufferUsage        = eBufferUsage_TransferDest,
 		});
 
-	auto pEdgeMarkCS = Shader::Create(rd, "VoxelEdgeMarkCS",
-		{ .stage = eShaderStage::Compute, .filename = "VoxelEdgeMarkCS" });
-	m_pEdgeMarkPSO = ComputePipeline::Create(rd, "VoxelEdgeMarkPSO");
-	m_pEdgeMarkPSO->SetComputeShader(pEdgeMarkCS).Build();
-
-	auto pEdgeArgsCS = Shader::Create(rd, "VoxelEdgeArgsCS",
-		{ .stage = eShaderStage::Compute, .filename = "VoxelEdgeArgsCS" });
-	m_pEdgeArgsPSO = ComputePipeline::Create(rd, "VoxelEdgeArgsPSO");
-	m_pEdgeArgsPSO->SetComputeShader(pEdgeArgsCS).Build();
-
-	auto pEdgeVertexCS = Shader::Create(rd, "VoxelEdgeVertexCS",
-		{ .stage = eShaderStage::Compute, .filename = "VoxelEdgeVertexCS" });
-	m_pEdgeVertexPSO = ComputePipeline::Create(rd, "VoxelEdgeVertexPSO");
-	m_pEdgeVertexPSO->SetComputeShader(pEdgeVertexCS).Build();
-
-	auto pMCExtractCS = Shader::Create(rd, "VoxelMarchingCubesCS",
-		{ .stage = eShaderStage::Compute, .filename = "VoxelMarchingCubesCS" });
-	m_pMCExtractPSO = ComputePipeline::Create(rd, "VoxelMarchingCubesPSO");
-	m_pMCExtractPSO->SetComputeShader(pMCExtractCS).Build();
-
-	auto pTransvoxelCS = Shader::Create(rd, "VoxelTransvoxelCS",
-		{ .stage = eShaderStage::Compute, .filename = "VoxelTransvoxelCS" });
-	m_pTransvoxelPSO = ComputePipeline::Create(rd, "VoxelTransvoxelPSO");
-	m_pTransvoxelPSO->SetComputeShader(pTransvoxelCS).Build();
-
-	auto pMeshletBuildCS = Shader::Create(rd, "VoxelMeshletBuildCS",
-		{ .stage = eShaderStage::Compute, .filename = "VoxelMeshletBuildCS" });
-	m_pMeshletBuildPSO = ComputePipeline::Create(rd, "VoxelMeshletBuildPSO");
-	m_pMeshletBuildPSO->SetComputeShader(pMeshletBuildCS).Build();
+	m_pEdgeMarkPSO     = pipelineFactory.CreateAndBuildComputePipeline("VoxelEdgeMarkPSO", { .source = "VoxelEdgeMarkCS.slang" });
+	m_pEdgeArgsPSO     = pipelineFactory.CreateAndBuildComputePipeline("VoxelEdgeArgsPSO", { .source = "VoxelEdgeArgsCS.slang" });
+	m_pEdgeVertexPSO   = pipelineFactory.CreateAndBuildComputePipeline("VoxelEdgeVertexPSO", { .source = "VoxelEdgeVertexCS.slang" });
+	m_pMCExtractPSO    = pipelineFactory.CreateAndBuildComputePipeline("VoxelMarchingCubesPSO", { .source = "VoxelMarchingCubesCS.slang" });
+	m_pTransvoxelPSO   = pipelineFactory.CreateAndBuildComputePipeline("VoxelTransvoxelPSO", { .source = "VoxelTransvoxelCS.slang" });
+	m_pMeshletBuildPSO = pipelineFactory.CreateAndBuildComputePipeline("VoxelMeshletBuildPSO", { .source = "VoxelMeshletBuildCS.slang" });
 
 	// Triangle spatial sort (count -> scan -> scatter), between MC extract and meshlet build.
 	m_pTriSortBins = Buffer::Create(rd, "VoxelChunkPass::TriSortBins",
 		{
-			.count              = kTriSortBins,
+			.count              = kVoxelTriSortBins,
 			.elementSizeInBytes = sizeof(u32),
 			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest,
 		});
 
-	auto pTriSortCountCS = Shader::Create(rd, "VoxelTriSortCountCS",
-		{ .stage = eShaderStage::Compute, .filename = "VoxelTriSortCountCS" });
-	m_pTriSortCountPSO = ComputePipeline::Create(rd, "VoxelTriSortCountPSO");
-	m_pTriSortCountPSO->SetComputeShader(pTriSortCountCS).Build();
-
-	auto pTriSortScanCS = Shader::Create(rd, "VoxelTriSortScanCS",
-		{ .stage = eShaderStage::Compute, .filename = "VoxelTriSortScanCS" });
-	m_pTriSortScanPSO = ComputePipeline::Create(rd, "VoxelTriSortScanPSO");
-	m_pTriSortScanPSO->SetComputeShader(pTriSortScanCS).Build();
-
-	auto pTriSortScatterCS = Shader::Create(rd, "VoxelTriSortScatterCS",
-		{ .stage = eShaderStage::Compute, .filename = "VoxelTriSortScatterCS" });
-	m_pTriSortScatterPSO = ComputePipeline::Create(rd, "VoxelTriSortScatterPSO");
-	m_pTriSortScatterPSO->SetComputeShader(pTriSortScatterCS).Build();
+	m_pTriSortCountPSO   = pipelineFactory.CreateAndBuildComputePipeline("VoxelTriSortCountPSO", { .source = "VoxelTriSortCountCS.slang" });
+	m_pTriSortScanPSO    = pipelineFactory.CreateAndBuildComputePipeline("VoxelTriSortScanPSO", { .source = "VoxelTriSortScanCS.slang" });
+	m_pTriSortScatterPSO = pipelineFactory.CreateAndBuildComputePipeline("VoxelTriSortScatterPSO", { .source = "VoxelTriSortScatterCS.slang" });
 
 	m_pErosionDetailMap = Texture::Create(rd, "VoxelChunkPass::ErosionDetailMap",
 		{
@@ -295,10 +256,7 @@ VoxelChunkRenderNode::VoxelChunkRenderNode(render::RenderDevice& rd)
 			.imageUsage  = eTextureUsage_Storage | eTextureUsage_Sample,
 			.arrayLayers = kMaxVoxelErosionSlices,
 		});
-	auto pErosionBakeCS = Shader::Create(rd, "VoxelErosionBakeCS",
-		{ .stage = eShaderStage::Compute, .filename = "VoxelErosionBakeCS" });
-	m_pErosionBakePSO = ComputePipeline::Create(rd, "VoxelErosionBakePSO");
-	m_pErosionBakePSO->SetComputeShader(pErosionBakeCS).Build();
+	m_pErosionBakePSO = pipelineFactory.CreateAndBuildComputePipeline("VoxelErosionBakePSO", { .source = "VoxelErosionBakeCS.slang" });
 
 	g_FrameData.pVoxelChunkDescs       = m_pChunkDescBuffer;
 	g_FrameData.pVoxelChunkCounts      = m_pChunkCountsBuffer;
@@ -461,6 +419,18 @@ bool VoxelChunkRenderNode::ConsumeErosionBake(const VoxelChunkID& id, u32 revisi
 	return true;
 }
 
+// chunks built by older shaders are as stale as chunks built from older terrain settings
+u32 VoxelChunkRenderNode::ContentRevision(u32 terrainRevision) const
+{
+	u32 revision = terrainRevision;
+	for (const render::ComputePipeline* pPipeline : {
+			m_pDensityPSO.get(), m_pHeightRawPSO.get(), m_pErosionBakePSO.get(),
+			m_pEdgeMarkPSO.get(), m_pEdgeArgsPSO.get(), m_pEdgeVertexPSO.get(), m_pMCExtractPSO.get(), m_pTransvoxelPSO.get(), m_pMeshletBuildPSO.get(),
+			m_pTriSortCountPSO.get(), m_pTriSortScanPSO.get(), m_pTriSortScatterPSO.get() })
+		revision += pPipeline->BuildCount();
+	return revision;
+}
+
 u32 VoxelChunkRenderNode::SelectPageClass(const ChunkSlot& chunkSlot) const
 {
 	return std::min(chunkSlot.id.lod, kVoxelPageClassCount - 1u);
@@ -537,8 +507,6 @@ bool VoxelChunkRenderNode::EnsureChunkResident(render::CommandContext& context, 
 void VoxelChunkRenderNode::DispatchDensity(render::CommandContext& context, const VoxelTerrainGenParams& gp, const ChunkSlot& chunkSlot)
 {
 	using namespace render;
-	if (!m_pDensityPSO || !m_pHeightRawPSO)
-		return;
 
 	const u32 dim = gp.samplesPerAxis + 2u * gp.apron; // C+1+2A
 	if (dim == 0u || dim > kDensityVolumeDim)
@@ -557,8 +525,8 @@ void VoxelChunkRenderNode::DispatchDensity(render::CommandContext& context, cons
 
 		context.TransitionBufferToWrite(m_pHeightTile, ePipelineStage::ComputeShader);
 
-		context.SetComputeDynamicUniformBuffer("g_VoxelGenParams", gp);
-		context.StageDescriptor("g_OutHeightRaw", m_pHeightTile);
+		context.SetComputeConstants(sizeof(gp), &gp);
+		context.StageDescriptor("ID_OutHeightRaw", m_pHeightTile);
 
 		context.Dispatch2D< 8, 8 >(dim, dim);
 	}
@@ -572,9 +540,9 @@ void VoxelChunkRenderNode::DispatchDensity(render::CommandContext& context, cons
 		context.TransitionBufferToRead(m_pHeightTile, ePipelineStage::ComputeShader);
 		context.TransitionBufferToWrite(m_pDensityField, ePipelineStage::ComputeShader);
 
-		context.SetComputeDynamicUniformBuffer("g_VoxelGenParams", gp);
-		context.StageDescriptor("g_HeightTile", m_pHeightTile);
-		context.StageDescriptor("g_OutDensity", m_pDensityField);
+		context.SetComputeConstants(sizeof(gp), &gp);
+		context.StageDescriptor("ID_HeightTile", m_pHeightTile);
+		context.StageDescriptor("ID_OutDensity", m_pDensityField);
 
 		context.Dispatch3D< 4, 4, 4 >(dim, dim, dim);
 	}
@@ -583,7 +551,7 @@ void VoxelChunkRenderNode::DispatchDensity(render::CommandContext& context, cons
 void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, const VoxelTerrainGenParams& gp, const ChunkSlot& chunkSlot, u32 buildPageID)
 {
 	using namespace render;
-	if (!m_pEdgeMarkPSO || !m_pEdgeArgsPSO || !m_pEdgeVertexPSO || !m_pMCExtractPSO || !m_pMeshletBuildPSO || buildPageID == kInvalidIndex)
+	if (buildPageID == kInvalidIndex)
 		return;
 
 	const u32 C      = gp.cellsPerAxis;
@@ -603,20 +571,20 @@ void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, c
 		return;
 	}
 
-	struct
+	const VoxelExtractConstants ex =
 	{
-		u32   cellsPerAxis;
-		u32   apron;
-		float voxelSizeMeter;
-		u32   vertexPageBase;
-		u32   maxTriangles;
-		float morphRadiusMeter; // geomorph projection search radius
-		u32   maxVertices;
-	} ex = { C, apron, gp.voxelSizeMeter, vBase, triCap, 2.0f * gp.voxelSizeMeter, vCap }; // projection radius = one parent cell
+		.cellsPerAxis     = C,
+		.apron            = apron,
+		.voxelSizeMeter   = gp.voxelSizeMeter,
+		.vertexPageBase   = vBase,
+		.maxTriangles     = triCap,
+		.morphRadiusMeter = 2.0f * gp.voxelSizeMeter, // projection radius = one parent cell
+		.maxVertices      = vCap,
+	};
 
 	// Pass A1: edge mark -- each grid point numbers its active +x/+y/+z edges into the edge map and the compact list.
 	context.BeginGpuMarker("MCExtract");
-	context.ClearBuffer(m_pMCCounter, 0u); // [tri, activeCells, vertex, meshletVertex, E]
+	context.ClearBuffer(m_pMCCounter, 0u);
 
 	context.TransitionBufferToRead(m_pMCTriTable, ePipelineStage::ComputeShader);
 	context.TransitionBufferToRead(m_pDensityField, ePipelineStage::ComputeShader);
@@ -627,10 +595,10 @@ void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, c
 	context.BeginGpuMarker("EdgeMark");
 	context.SetRenderPipeline(m_pEdgeMarkPSO.get());
 	context.SetComputeConstants(sizeof(ex), &ex);
-	context.StageDescriptor("g_DensityField", m_pDensityField);
-	context.StageDescriptor("g_MCCounter", m_pMCCounter);
-	context.StageDescriptor("g_EdgeMap", m_pEdgeMap);
-	context.StageDescriptor("g_EdgeList", m_pEdgeList);
+	context.StageDescriptor("ID_DensityField", m_pDensityField);
+	context.StageDescriptor("ID_MCCounter", m_pMCCounter);
+	context.StageDescriptor("ID_EdgeMap", m_pEdgeMap);
+	context.StageDescriptor("ID_EdgeList", m_pEdgeList);
 
 	context.Dispatch3D< 4, 4, 4 >(C + 1u, C + 1u, C + 1u);
 	context.EndGpuMarker();
@@ -648,8 +616,8 @@ void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, c
 	context.BeginGpuMarker("EdgeArgs");
 	context.SetRenderPipeline(m_pEdgeArgsPSO.get());
 	context.SetComputeConstants(sizeof(ex), &ex);
-	context.StageDescriptor("g_MCCounter", m_pMCCounter);
-	context.StageDescriptor("g_EdgeArgs", m_pEdgeArgs);
+	context.StageDescriptor("ID_MCCounter", m_pMCCounter);
+	context.StageDescriptor("ID_EdgeArgs", m_pEdgeArgs);
 
 	context.Dispatch(1u, 1u, 1u);
 	context.EndGpuMarker();
@@ -661,11 +629,11 @@ void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, c
 	context.BeginGpuMarker("EdgeVertex");
 	context.SetRenderPipeline(m_pEdgeVertexPSO.get());
 	context.SetComputeConstants(sizeof(ex), &ex);
-	context.StageDescriptor("g_DensityField", m_pDensityField);
-	context.StageDescriptor("g_MCCounter", m_pMCCounter);
-	context.StageDescriptor("g_OutVertices", m_pVertexPool);
-	context.StageDescriptor("g_TriTable", m_pMCTriTable);
-	context.StageDescriptor("g_EdgeList", m_pEdgeList);
+	context.StageDescriptor("ID_DensityField", m_pDensityField);
+	context.StageDescriptor("ID_MCCounter", m_pMCCounter);
+	context.StageDescriptor("ID_OutVertices", m_pVertexPool);
+	context.StageDescriptor("ID_TriTable", m_pMCTriTable);
+	context.StageDescriptor("ID_EdgeList", m_pEdgeList);
 
 	context.DispatchIndirect(m_pEdgeArgs);
 	context.EndGpuMarker();
@@ -673,11 +641,11 @@ void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, c
 	// Pass A4: marching cubes -- each active cell appends its triangles
 	context.SetRenderPipeline(m_pMCExtractPSO.get());
 	context.SetComputeConstants(sizeof(ex), &ex);
-	context.StageDescriptor("g_TriTable", m_pMCTriTable);
-	context.StageDescriptor("g_DensityField", m_pDensityField);
-	context.StageDescriptor("g_MCCounter", m_pMCCounter);
-	context.StageDescriptor("g_EdgeMap", m_pEdgeMap);
-	context.StageDescriptor("g_Triplets", m_pTriTriplets);
+	context.StageDescriptor("ID_TriTable", m_pMCTriTable);
+	context.StageDescriptor("ID_DensityField", m_pDensityField);
+	context.StageDescriptor("ID_MCCounter", m_pMCCounter);
+	context.StageDescriptor("ID_EdgeMap", m_pEdgeMap);
+	context.StageDescriptor("ID_Triplets", m_pTriTriplets);
 
 	context.Dispatch3D< 4, 4, 4 >(C, C, C);
 	context.EndGpuMarker(); // MCExtract
@@ -686,12 +654,12 @@ void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, c
 	context.BeginGpuMarker("TransvoxelExtract");
 	context.SetRenderPipeline(m_pTransvoxelPSO.get());
 	context.SetComputeConstants(sizeof(ex), &ex);
-	context.StageDescriptor("g_TvTables", m_pTransvoxelTable);
-	context.StageDescriptor("g_TriTable", m_pMCTriTable);
-	context.StageDescriptor("g_DensityField", m_pDensityField);
-	context.StageDescriptor("g_MCCounter", m_pMCCounter);
-	context.StageDescriptor("g_OutVertices", m_pVertexPool);
-	context.StageDescriptor("g_Triplets", m_pTriTriplets);
+	context.StageDescriptor("ID_TvTables", m_pTransvoxelTable);
+	context.StageDescriptor("ID_TriTable", m_pMCTriTable);
+	context.StageDescriptor("ID_DensityField", m_pDensityField);
+	context.StageDescriptor("ID_MCCounter", m_pMCCounter);
+	context.StageDescriptor("ID_OutVertices", m_pVertexPool);
+	context.StageDescriptor("ID_Triplets", m_pTriTriplets);
 
 	context.Dispatch3D< 8, 8, 1 >(C / 2u, C / 2u, 6u);
 	context.EndGpuMarker();
@@ -709,19 +677,15 @@ void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, c
 
 	context.TransitionBufferToWrite(m_pTriSortBins, ePipelineStage::ComputeShader);
 
-	struct
-	{
-		u32 vertexPageBase;
-		u32 maxTriangles;
-	} ts = { vBase, triCap };
+	const VoxelTriSortConstants ts = { .vertexPageBase = vBase, .maxTriangles = triCap };
 
 	// A6.1: histogram
 	context.SetRenderPipeline(m_pTriSortCountPSO.get());
 	context.SetComputeConstants(sizeof(ts), &ts);
-	context.StageDescriptor("g_MCCounter", m_pMCCounter);
-	context.StageDescriptor("g_Vertices", m_pVertexPool);
-	context.StageDescriptor("g_SortBins", m_pTriSortBins);
-	context.StageDescriptor("g_Triplets", m_pTriTriplets);
+	context.StageDescriptor("ID_MCCounter", m_pMCCounter);
+	context.StageDescriptor("ID_Vertices", m_pVertexPool);
+	context.StageDescriptor("ID_SortBins", m_pTriSortBins);
+	context.StageDescriptor("ID_Triplets", m_pTriTriplets);
 
 	context.Dispatch1D< 256 >(triCap);
 	context.EndGpuMarker();
@@ -729,14 +693,11 @@ void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, c
 	context.UAVBarrier(m_pTriSortBins, true);
 
 	// A6.2: exclusive scan (single group)
-	static_assert(kTriSortBins % 1024u == 0u, "scan CS strips assume bins % threads == 0");
 	context.BeginGpuMarker("TriSortScan");
 	context.SetRenderPipeline(m_pTriSortScanPSO.get());
-	struct { u32 numBins; } sc = { kTriSortBins };
-	context.SetComputeConstants(sizeof(sc), &sc);
-	context.StageDescriptor("g_SortBins", m_pTriSortBins);
+	context.StageDescriptor("ID_SortBins", m_pTriSortBins);
 
-	context.Dispatch1D< 1024 >(1024u);
+	context.Dispatch1D< kVoxelTriSortScanThreads >(kVoxelTriSortScanThreads);
 	context.EndGpuMarker();
 
 	context.UAVBarrier(m_pTriSortBins, true);
@@ -747,11 +708,11 @@ void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, c
 
 	context.SetRenderPipeline(m_pTriSortScatterPSO.get());
 	context.SetComputeConstants(sizeof(ts), &ts);
-	context.StageDescriptor("g_MCCounter", m_pMCCounter);
-	context.StageDescriptor("g_Vertices", m_pVertexPool);
-	context.StageDescriptor("g_SortBins", m_pTriSortBins);
-	context.StageDescriptor("g_OutSortedTriplets", m_pTriTripletsSorted);
-	context.StageDescriptor("g_Triplets", m_pTriTriplets);
+	context.StageDescriptor("ID_MCCounter", m_pMCCounter);
+	context.StageDescriptor("ID_Vertices", m_pVertexPool);
+	context.StageDescriptor("ID_SortBins", m_pTriSortBins);
+	context.StageDescriptor("ID_OutSortedTriplets", m_pTriTripletsSorted);
+	context.StageDescriptor("ID_Triplets", m_pTriTriplets);
 
 	context.Dispatch1D< 256 >(triCap);
 	context.EndGpuMarker();
@@ -765,28 +726,27 @@ void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, c
 	context.TransitionBufferToRead(m_pTriTripletsSorted, ePipelineStage::ComputeShader);
 
 	context.SetRenderPipeline(m_pMeshletBuildPSO.get());
-	struct
+	const VoxelMeshletBuildConstants mb =
 	{
-		u32 chunkID;
-		u32 meshletPageBase;
-		u32 trianglesPerMeshlet;
-		u32 maxMeshlets;
-		u32 maxTriangles;
-		u32 vertexPageBase;
-		u32 meshletVertexPageBase;
-		float chunkSizeMeter;
-		u32 meshletTriPageBase;
-		u32 maxVertices;
-		u32 maxMeshletVertices;
-	} mb = { chunkSlot.chunkIndex, mlBase, kVoxelTrianglesPerMeshlet, VoxelClassMeshletCap(cls), triCap, vBase, mvBase, float(C) * gp.voxelSizeMeter, mtBase, vCap, mvCap };
+		.chunkID               = chunkSlot.chunkIndex,
+		.meshletPageBase       = mlBase,
+		.maxMeshlets           = VoxelClassMeshletCap(cls),
+		.maxTriangles          = triCap,
+		.vertexPageBase        = vBase,
+		.meshletVertexPageBase = mvBase,
+		.meshletTriPageBase    = mtBase,
+		.maxVertices           = vCap,
+		.maxMeshletVertices    = mvCap,
+		.chunkSizeMeter        = float(C) * gp.voxelSizeMeter,
+	};
 	context.SetComputeConstants(sizeof(mb), &mb);
-	context.StageDescriptor("g_MCCounter", m_pMCCounter);
-	context.StageDescriptor("g_OutMeshlets", m_pMeshletPool);
-	context.StageDescriptor("g_OutCounts", m_pChunkCountsBuffer);
-	context.StageDescriptor("g_Vertices", m_pVertexPool);
-	context.StageDescriptor("g_OutMeshletVerts", m_pMeshletVertexPool);
-	context.StageDescriptor("g_OutMeshletTris", m_pMeshletTrianglePool);
-	context.StageDescriptor("g_SortedTriplets", m_pTriTripletsSorted);
+	context.StageDescriptor("ID_MCCounter", m_pMCCounter);
+	context.StageDescriptor("ID_OutMeshlets", m_pMeshletPool);
+	context.StageDescriptor("ID_OutCounts", m_pChunkCountsBuffer);
+	context.StageDescriptor("ID_Vertices", m_pVertexPool);
+	context.StageDescriptor("ID_OutMeshletVerts", m_pMeshletVertexPool);
+	context.StageDescriptor("ID_OutMeshletTris", m_pMeshletTrianglePool);
+	context.StageDescriptor("ID_SortedTriplets", m_pTriTripletsSorted);
 
 	context.Dispatch1D< 64 >(VoxelClassMeshletCap(cls));
 	context.EndGpuMarker();
@@ -800,7 +760,7 @@ void VoxelChunkRenderNode::DispatchExtraction(render::CommandContext& context, c
 void VoxelChunkRenderNode::DispatchErosionBake(render::CommandContext& context, const VoxelTerrainGenParams& gp, const ChunkSlot& chunkSlot)
 {
 	using namespace render;
-	if (!m_pErosionBakePSO || !m_pErosionDetailMap || chunkSlot.erosionSlice == kInvalidIndex)
+	if (!m_pErosionDetailMap || chunkSlot.erosionSlice == kInvalidIndex)
 		return;
 
 	BAAMBOO_GPU_SCOPE(context, "ErosionBake");
@@ -809,15 +769,10 @@ void VoxelChunkRenderNode::DispatchErosionBake(render::CommandContext& context, 
 
 	context.TransitionBarrier(m_pErosionDetailMap, eTextureLayout::General);
 
-	context.SetComputeDynamicUniformBuffer("g_VoxelGenParams", gp);
+	const VoxelErosionBakeConstants constants = { .genParams = gp, .erosionSlice = chunkSlot.erosionSlice };
+	context.SetComputeConstants(sizeof(constants), &constants);
 
-	struct
-	{
-		u32 erosionSlice;
-	} constant = { chunkSlot.erosionSlice };
-	context.SetComputeConstants(sizeof(constant), &constant);
-
-	context.StageDescriptor("g_OutErosionMap", m_pErosionDetailMap);
+	context.StageDescriptor("ID_OutErosionMap", m_pErosionDetailMap);
 
 	context.Dispatch2D< 8, 8 >(kErosionMapDim, kErosionMapDim);
 
@@ -836,6 +791,7 @@ void VoxelChunkRenderNode::BuildChunkGeometryIfNeeded(render::CommandContext& co
 {
 	using namespace render;
 	const VoxelTerrainRenderView& vt = renderView.voxelTerrain;
+	const u32 revision = ContentRevision(vt.revision);
 
 	PublishTriReadback();
 
@@ -872,7 +828,7 @@ void VoxelChunkRenderNode::BuildChunkGeometryIfNeeded(render::CommandContext& co
 
 			if (vt.bValid && 
 				(resident.state == eChunkState::Resident || resident.state == eChunkState::ResidentEmpty) && 
-				resident.builtRevision != vt.revision && resident.pendingRevision != vt.revision && resident.rejectedRevision != vt.revision)
+				resident.builtRevision != revision && resident.pendingRevision != revision && resident.rejectedRevision != revision)
 				resident.state = eChunkState::Dirty;
 
 			resident.bDesired = true;
@@ -1105,7 +1061,7 @@ void VoxelChunkRenderNode::BuildChunkGeometryIfNeeded(render::CommandContext& co
 			else
 			{
 				// a rejected revision stays rejected (keep-last geometry) -- no bigger pool exists for this level
-				if (slot.rejectedRevision == vt.revision)
+				if (slot.rejectedRevision == revision)
 				{
 					slot.state = eChunkState::Resident;
 					continue;
@@ -1120,7 +1076,7 @@ void VoxelChunkRenderNode::BuildChunkGeometryIfNeeded(render::CommandContext& co
 					DeallocatePage(slot.pendingPageID);
 
 				slot.pendingPageID   = buildPageID;
-				slot.pendingRevision = vt.revision;
+				slot.pendingRevision = revision;
 			}
 
 			u32 frameBuildCount = 0u;
@@ -1129,21 +1085,21 @@ void VoxelChunkRenderNode::BuildChunkGeometryIfNeeded(render::CommandContext& co
 
 				DispatchDensity(context, gp, slot);
 				DispatchExtraction(context, gp, slot, buildPageID);
-				if (ConsumeErosionBake(slot.id, vt.revision)) // once per XZ column per revision; Y layers share the map
+				if (ConsumeErosionBake(slot.id, revision)) // once per XZ column per revision; Y layers share the map
 					DispatchErosionBake(context, gp, slot);
 
 				if (frameBuildCount < kTriReadbackPerFrame)
 				{
 					const u32 entry      = m_TriReadbackIdx * kTriReadbackPerFrame + frameBuildCount;
 					const u32 buildClass = VoxelPageClassId(buildPageID);
-					context.CopyBufferRegion(m_pTriCountReadback, m_pMCCounter, kMCCounterFields * sizeof(u32), (u64)entry * kMCCounterFields * sizeof(u32), 0);
-					m_TriReadbackTags[entry] = { slot.chunkIndex, VoxelChunkKey(slot.id), vt.revision, VoxelClassTriCap(buildClass), VoxelClassVertexCap(buildClass), VoxelClassMeshletVertexCap(buildClass) };
+					context.CopyBufferRegion(m_pTriCountReadback, m_pMCCounter, kVoxelCounterFields * sizeof(u32), (u64)entry * kVoxelCounterFields * sizeof(u32), 0);
+					m_TriReadbackTags[entry] = { slot.chunkIndex, VoxelChunkKey(slot.id), revision, VoxelClassTriCap(buildClass), VoxelClassVertexCap(buildClass), VoxelClassMeshletVertexCap(buildClass) };
 					++frameBuildCount;
 				}
 
 				slot.state = eChunkState::Resident;
 				if (!bRebuild)
-					slot.builtRevision = vt.revision;
+					slot.builtRevision = revision;
 
 				++numBuilt;
 			}
@@ -1269,8 +1225,8 @@ void VoxelChunkRenderNode::PublishTriReadback()
 		if (tag.chunkIndex == kInvalidIndex)
 			continue;
 
-		const u64 offset = (u64)entry * kMCCounterFields * sizeof(u32);
-		m_pTriCountReadback->InvalidateMappedRange(offset, kMCCounterFields * sizeof(u32));
+		const u64 offset = (u64)entry * kVoxelCounterFields * sizeof(u32);
+		m_pTriCountReadback->InvalidateMappedRange(offset, kVoxelCounterFields * sizeof(u32));
 		if (auto* counts = static_cast< u32* >(m_pTriCountReadback->MappedMemory()))
 		{
 			ChunkSlot& slot = m_ChunkSlots[tag.chunkIndex];
@@ -1279,10 +1235,11 @@ void VoxelChunkRenderNode::PublishTriReadback()
 			const bool bPendingVerdict = bSameChunk && slot.pendingPageID != kInvalidIndex && slot.pendingRevision == tag.revision;
 			const bool bLiveVerdict    = bSameChunk && slot.builtRevision == tag.revision;
 
-			const u32  triCount    = counts[entry * kMCCounterFields + 0u];
-			const u32  cellCount   = counts[entry * kMCCounterFields + 1u];
-			const u32  vertexCount = counts[entry * kMCCounterFields + 2u];
-			const u32  mvCount     = counts[entry * kMCCounterFields + 3u];
+			const u32* fields      = counts + entry * kVoxelCounterFields;
+			const u32  triCount    = fields[kVoxelCounterTri];
+			const u32  cellCount   = fields[kVoxelCounterActiveCell];
+			const u32  vertexCount = fields[kVoxelCounterVertex];
+			const u32  mvCount     = fields[kVoxelCounterMeshletVertex];
 			const bool bFits       = triCount <= tag.triCap && vertexCount <= tag.vertexCap && mvCount <= tag.mvCap;
 			if (bPendingVerdict)
 			{

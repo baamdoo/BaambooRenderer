@@ -1,6 +1,7 @@
 #pragma once
 #include "Boundings.h"
-#include "ShaderTypes.h"
+#include "ShaderShared/ShaderShared.h"
+#include "ShaderShared/DebugDraw.h"
 #include "EngineTypes.h"
 #include "ComponentTypes.h"
 #include "RenderCommon/RenderNode.h"
@@ -22,6 +23,7 @@ enum eComponentType
 	CPostProcess  = 8,
 	CVoxelTerrain = 9,
 	CMedium       = 10,
+	CEntity       = 11, // entities created or destroyed
 
 	// ...
 	NumComponents
@@ -244,14 +246,6 @@ struct DebugViewFlags
 	u32 lightTypeMask = 0u;
 
 	u32 surfaceDebugView = 0u;
-};
-
-struct DebugLineVertex
-{
-	float3 position = float3(0.0f);
-	float  pad0     = 0.0f;
-	float3 color    = float3(1.0f);
-	float  alpha    = 1.0f;
 };
 
 //-------------------------------------------------------------------------

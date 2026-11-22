@@ -287,6 +287,8 @@ void Scene::Update(f32 dt, const EditorCamera& edCamera)
 	};
 
 	updateSystem(m_pTransformSystem, eComponentType::CTransform);
+	if (m_pTransformSystem->StructureChanged())
+		changedComponents |= 1ULL << eComponentType::CEntity;
 
 	const bool bStaticMeshChanged = m_pStaticMeshSystem->HasPendingRenderDataChanges();
 	m_pStaticMeshSystem->UpdateRenderData(edCamera.GetPosition());

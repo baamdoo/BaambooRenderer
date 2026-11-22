@@ -1,0 +1,38 @@
+#pragma once
+#include "ShaderShared/Light.h"
+
+// scene.buffers.lights holds one LightData; load only the element you need, never the whole struct
+LightCounts LoadLightCounts(ByteAddressBuffer lights)
+{
+    return lights.Load< LightCounts >(kLightDataOffsetCounts);
+}
+
+DirectionalLight LoadDirectionalLight(ByteAddressBuffer lights, uint i)
+{
+    return lights.Load< DirectionalLight >(kLightDataOffsetDirectionals + i * kDirectionalLightStride);
+}
+
+SpotLight LoadSpotLight(ByteAddressBuffer lights, uint i)
+{
+    return lights.Load< SpotLight >(kLightDataOffsetSpots + i * kSpotLightStride);
+}
+
+AreaLight LoadAreaLight(ByteAddressBuffer lights, uint i)
+{
+    return lights.Load< AreaLight >(kLightDataOffsetAreas + i * kAreaLightStride);
+}
+
+SphereLight LoadSphereLight(ByteAddressBuffer lights, uint i)
+{
+    return lights.Load< SphereLight >(kLightDataOffsetSpheres + i * kSphereLightStride);
+}
+
+DiskLight LoadDiskLight(ByteAddressBuffer lights, uint i)
+{
+    return lights.Load< DiskLight >(kLightDataOffsetDisks + i * kDiskLightStride);
+}
+
+TubeLight LoadTubeLight(ByteAddressBuffer lights, uint i)
+{
+    return lights.Load< TubeLight >(kLightDataOffsetTubes + i * kTubeLightStride);
+}

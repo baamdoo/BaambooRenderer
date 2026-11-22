@@ -1,0 +1,37 @@
+#pragma once
+#include "ShaderShared/Culling.h"
+#include "Common/Binding.slangh"
+
+// The task, mesh and pixel stages form one pipeline, so they declare the same push block
+struct GBufferPush
+{
+    GBufferConstants constants;
+
+    uint ID_Scene;
+    uint ID_DrawIDs;
+    uint ID_HiZTexture;
+    uint ID_MeshletVisibility;
+    uint ID_MeshletStats;
+    uint ID_VoxelVertices;
+    uint ID_VoxelMeshlets;
+    uint ID_VoxelMeshletVertices;
+    uint ID_VoxelMeshletTriangles;
+    uint ID_VoxelChunkDescs;
+    uint ID_ErosionDetailMap;
+};
+
+[[vk::push_constant]] ConstantBuffer< GBufferPush > g_Push : register(b0, ROOT_CONSTANT_SPACE);
+
+struct AmplificationPayload
+{
+    uint drawID;            // packed draw ID (ShaderShared/Culling.h); with a task stage the mesh stage may not read DrawIndex
+    uint diceMask;
+    uint LmPacked[4];       // per-slot budget level Lm, 4 bits each, 8 slots per uint
+    uint triCountPacked[8]; // per-slot base-triangle count, 8 bits each, 4 slots per uint
+    uint tsLaneBits;        // lanes that emitted a meshlet
+    uint miBaseGroupID;     // global meshlet index of lane 0
+};
+
+uint DrawInstanceID(uint drawID) { return drawID & 0x00FFFFFFu; }
+uint DrawLOD(uint drawID)        { return (drawID >> 24) & 0x7Fu; }
+bool DrawEarly(uint drawID)      { return (drawID & kDrawIDEarlyBit) != 0u; }

@@ -42,9 +42,7 @@ project "Application"
 		"BaambooEngine",
 	}
 
-	debugenvs { 
-		"PATH=Projects/ThirdParties/assimp/bin/Release/;Output/Binaries/%{cfg.buildcfg}/%{cfg.system}/BaambooCommon;%PATH%"
-	}
+	dependson { "Dx12Renderer", "VkRenderer" }
 
 	filter 'system:windows'
 		systemversion 'latest'
@@ -61,13 +59,13 @@ project "Application"
 
 
 -- BaambooEngine
+local assimpName = (_ACTION == "vs2026" and "assimp-vc145-mt" or "assimp-vc143-mt")
 project "BaambooEngine"
 	location "BaambooEngine"
 	kind "StaticLib"
 	language "C++"
 	cppdialect "C++23"
 	staticruntime "off"
-	debugdir (Path.Solution)
 
 	targetdir (Path.Target)
 	objdir (Path.Obj)
@@ -96,11 +94,13 @@ project "BaambooEngine"
 		"%{Path.Solution}Projects/ThirdParties/imgui/misc/cpp/imgui_stdlib.cpp",
 		"%{Path.Solution}Projects/ThirdParties/imgui/backends/imgui_impl_glfw.h",
 		"%{Path.Solution}Projects/ThirdParties/imgui/backends/imgui_impl_glfw.cpp",
+		"%{Path.ThirdParty}/assimp/bin/Release/" .. assimpName .. ".dll",
 	}
 
 	includedirs {
 		"%{prj.name}/",
 		"%{Path.Solution}Projects/BaambooCommon",
+		"%{Path.Solution}Projects/BaambooShader",
 		"%{Path.Solution}Projects/ThirdParties",
 		"%{Path.Solution}Projects/ThirdParties/glm",
 		"%{Path.Solution}Projects/ThirdParties/glfw/include",
@@ -122,20 +122,84 @@ project "BaambooEngine"
 
 	links {
 		"BaambooCommon",
+		"BaambooShader",
 		"glfw3.lib",
-		(_ACTION == "vs2026" and 'assimp-vc145-mt.lib' or 'assimp-vc143-mt.lib'),
-		'meshoptimizer.lib', 
-	}
-
-	debugenvs { 
-		"PATH=Projects/ThirdParties/assimp/bin/Release/;Output/Binaries/%{cfg.buildcfg}/%{cfg.system}/BaambooCommon;%PATH%"
+		assimpName .. ".lib",
+		'meshoptimizer.lib',
 	}
 
 	filter { "files:ThirdParties/imgui/**.cpp" }
 		flags "NoPCH"
+	filter { "files:**.dll" }
+		buildaction "Copy"
 
 	filter 'system:windows'
 		systemversion 'latest'
+
+	filter 'configurations:Debug'
+		defines '_DEBUG'
+		runtime 'Debug'
+		symbols 'on'
+
+	filter 'configurations:Release'
+		defines 'NDEBUG'
+		runtime 'Release'
+		optimize 'on'
+
+
+-- BaambooShader: the only module that sees Slang. It owns the shader toolchain's runtime files.
+project "BaambooShader"
+	location "BaambooShader"
+	kind "StaticLib"
+	language "C++"
+	cppdialect "C++23"
+	staticruntime "off"
+
+	targetdir (Path.Target)
+	objdir (Path.Obj)
+
+	callingconvention ("FastCall")
+	exceptionhandling ("Off")
+	rtti ("Off")
+	floatingpoint ("Fast")
+	flags { "MultiProcessorCompile" }
+	warnings ("High")
+	exceptionhandling ("On")
+
+	files {
+		"%{prj.name}/**.h",
+		"%{prj.name}/**.hpp",
+		"%{prj.name}/**.cpp",
+
+		-- Slang runtime, copied next to the exe. slang-glslang is also Slang's SPIR-V optimizer.
+		"%{Path.Slang}/bin/slang-compiler.dll",
+		"%{Path.Slang}/bin/slang-glslang.dll",
+		"%{Path.Slang}/bin/slang-glsl-module.dll",
+	}
+
+	includedirs {
+		"%{prj.name}/",
+		"%{Path.Solution}Projects/BaambooCommon",
+		"%{Path.Solution}Projects/ThirdParties/glm",
+		"%{Path.Slang}/include",
+	}
+
+	libdirs {
+		"%{Path.Slang}/lib",
+	}
+
+	links {
+		"slang-compiler.lib",
+	}
+
+	filter { "files:**.dll" }
+		buildaction "Copy"
+
+	filter 'system:windows'
+		systemversion 'latest'
+
+		-- DXC behind Slang's DXIL target. The package copies dxcompiler.dll and dxil.dll next to the exe.
+		nuget { Package.Dxc }
 
 	filter 'configurations:Debug'
 		defines '_DEBUG'
@@ -225,7 +289,6 @@ project "Dx12Renderer"
 		"%{prj.name}/**.cpp",
 		"%{prj.name}/**.c",
 		"%{prj.name}/**.def",
-		"%{Path.ShaderSrc}/HLSL/**.hlsl",
 
 		"%{Path.Solution}Projects/ThirdParties/imgui/*.h",
 		"%{Path.Solution}Projects/ThirdParties/imgui/*.cpp",
@@ -259,36 +322,6 @@ project "Dx12Renderer"
 		"BaambooCommon"
 	}
 
-	shadermodel ("6.6")
-	shaderincludedirs { "%{Path.Solution}Projects/ThirdParties/openvdb/nanovdb" }
-	shaderobjectfileoutput (path.join(Path.Cso, "%%(Filename).cso"))
-	filter { "files:**VS.hlsl" }
-		shadertype "Vertex"
-
-	filter { "files:**PS.hlsl" }
-		shadertype "Pixel"
-
-	filter { "files:**GS.hlsl" }
-		shadertype "Geometry"
-
-	filter { "files:**DS.hlsl" }
-		shadertype "Domain"
-
-	filter { "files:**HS.hlsl" }
-		shadertype "Hull"
-
-	filter { "files:**CS.hlsl" }
-		shadertype "Compute"
-
-	filter { "files:**MS.hlsl" }
-		shadertype "Mesh"
-
-	filter { "files:**TS.hlsl" }
-		shadertype "Amplification"
-
-	filter { "files:**LIB.hlsl" }
-		shadertype "Library"
-
 	filter { "files:Dx12Renderer/RenderDevice/D3D12MemoryAllocator/src/**.cpp" }
 		flags "NoPCH"
 	filter { "files:Dx12Renderer/RenderDevice/Dx12EXRSupport.cpp" }
@@ -307,7 +340,6 @@ project "Dx12Renderer"
 			"Microsoft.Direct3D.D3D12:1.618.5",
 			"directxtk12_desktop_win10:2026.4.1.1",
 			"directxtex_desktop_win10:2026.4.1.1",
-			"Microsoft.Direct3D.DXC:1.8.2505.32",
 			"WinPixEventRuntime:1.0.240308001"
 		 }
     	-- Copy Agility SDK DLLs to output directory
@@ -324,7 +356,6 @@ project "Dx12Renderer"
 		defines "_DEBUG"
 		runtime "Debug"
 		symbols "on"
-		shaderoptions "-O3"
 		links {  }
 		
 	filter "configurations:Release"
@@ -334,14 +365,6 @@ project "Dx12Renderer"
 		links {  }
 
 
-rule "VkShaderCompile"
-	location "VkRenderer"
-	display "Compiling Shader to Spv"
-	fileextension { ".vert", ".frag", ".geom", ".hull", ".domain", ".task", ".mesh", ".comp" }
-
-	buildmessage 'Compiling %(Filename)%(Extension) to Spv'
-	buildcommands '"$(VULKAN_SDK)/Bin/glslangValidator" "%(FullPath)" -I"%{Path.Solution}Projects/ThirdParties/openvdb/nanovdb" -V -gVS --target-env vulkan1.4 -o "%{Path.Spv}/%(Filename)%(Extension).spv"'
-	buildoutputs '%{Path.Spv}/%(Filename)%(Extension).spv'
 project "VkRenderer"
 	location "VkRenderer"
 	kind "SharedLib"
@@ -363,7 +386,6 @@ project "VkRenderer"
 	flags { "MultiProcessorCompile" }
 	warnings ("High")
 	exceptionhandling ("On")
-	rules { "VkShaderCompile" }
 
 	files {
 		"%{prj.name}/**.h",
@@ -371,7 +393,6 @@ project "VkRenderer"
 		"%{prj.name}/**.cpp",
 		"%{prj.name}/**.c",
 		"%{prj.name}/**.def",
-		"%{Path.ShaderSrc}/GLSL/**",
 
 		"%{Path.Solution}Projects/ThirdParties/imgui/*.h",
 		"%{Path.Solution}Projects/ThirdParties/imgui/*.cpp",
@@ -412,13 +433,11 @@ project "VkRenderer"
 		defines "_DEBUG"
 		runtime "Debug"
 		symbols "on"
-		links { "spirv-cross-cored.lib", }
 		
 	filter "configurations:Release"
 		defines "NDEBUG"
 		runtime "Release"
 		optimize "on"
-		links { "spirv-cross-core.lib", }
 
 
 

@@ -2,9 +2,11 @@
 #include "CullingNode.h"
 
 #include "RenderCommon/RenderDevice.h"
+#include "RenderCommon/SceneResource.h"
 #include "RenderCommon/CommandContext.h"
 #include "RenderCommon/CpuProfiler.h"
 #include "BaambooScene/Scene.h"
+#include "PipelineFactory.h"
 
 namespace baamboo
 {
@@ -24,7 +26,7 @@ u32 previousPow2(u32 v)
 } // anonymous
 
 
-CullingNode::CullingNode(render::RenderDevice& rd)
+CullingNode::CullingNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory)
 	: Super(rd, "CullingPass")
 {
 	using namespace render;
@@ -61,13 +63,6 @@ CullingNode::CullingNode(render::RenderDevice& rd)
 			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferSource | eBufferUsage_TransferDest,
 		});
 	m_NumMeshletVisibilityWords = kNumInitialMeshletVisibilityWords;
-
-	m_pSPDCounterBuffer = Buffer::Create(rd, "CullingPass::SPDCounterBuffer",
-		{
-			.count              = 1,
-			.elementSizeInBytes = sizeof(u32),
-			.bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferDest,
-		});
 
 	// --- Readback ring ---
 	m_Phase1CountReadback = Buffer::Create(rd, "CullingPass::Phase1CountReadback",
@@ -118,17 +113,10 @@ CullingNode::CullingNode(render::RenderDevice& rd)
 		});
 
 	// --- Compute pipelines ---
-	auto pCullingCS = Shader::Create(rd, "InstanceCullingCS", { .stage = eShaderStage::Compute, .filename = "InstanceCullingCS" });
-	m_pInstanceCullingPSO = ComputePipeline::Create(rd, "InstanceCullingPSO");
-	m_pInstanceCullingPSO->SetComputeShader(pCullingCS).Build();
-
-	auto pHiZGenerationCS = Shader::Create(rd, "HiZGenerationCS", { .stage = eShaderStage::Compute, .filename = "HiZGenerationCS" });
-	m_pHiZGenerationPSO = ComputePipeline::Create(rd, "HiZGenerationPSO");
-	m_pHiZGenerationPSO->SetComputeShader(pHiZGenerationCS).Build();
-
-	auto pVoxelPatchCS = Shader::Create(rd, "VoxelMeshDataPatchCS", { .stage = eShaderStage::Compute, .filename = "VoxelMeshDataPatchCS" });
-	m_pVoxelMeshDataPatchPSO = ComputePipeline::Create(rd, "VoxelMeshDataPatchPSO");
-	m_pVoxelMeshDataPatchPSO->SetComputeShader(pVoxelPatchCS).Build();
+	m_pInstanceCullingPSO    = pipelineFactory.CreateAndBuildComputePipeline("InstanceCullingPSO", { .source = "InstanceCullingCS.slang" });
+	m_pVoxelMeshDataPatchPSO = pipelineFactory.CreateAndBuildComputePipeline("VoxelMeshDataPatchPSO", { .source = "VoxelMeshDataPatchCS.slang" });
+	m_pHiZTilesPSO           = pipelineFactory.CreateAndBuildComputePipeline("HiZTilesPSO", { .source = "HiZGenerationCS.slang", .entryPoint = "DownsampleTiles" });
+	m_pHiZTailPSO            = pipelineFactory.CreateAndBuildComputePipeline("HiZTailPSO", { .source = "HiZGenerationCS.slang", .entryPoint = "DownsampleTail" });
 
 	g_FrameData.pHiZ = m_pHiZTexture;
 }
@@ -149,6 +137,8 @@ void CullingNode::DispatchMeshCull(render::CommandContext& context, u32 numInsta
 	if (numInstances == 0)
 		return;
 
+	auto& sr = m_RenderDevice.GetResourceManager().GetSceneResource();
+
 	context.SetRenderPipeline(m_pInstanceCullingPSO.get());
 
 	context.TransitionBufferToWrite(m_CulledIndirectCommandBuffer, ePipelineStage::ComputeShader);
@@ -157,21 +147,15 @@ void CullingNode::DispatchMeshCull(render::CommandContext& context, u32 numInsta
 	context.TransitionBufferToWrite(m_VisibilityBuffer, ePipelineStage::ComputeShader);
 	context.TransitionTextureToRead(m_pHiZTexture, ePipelineStage::ComputeShader);
 
-	struct
-	{
-		u32 numInstances;
-		u32 cullingPhase;
-	} constant = {
-		.numInstances = numInstances,
-		.cullingPhase = phase,
-	};
-	context.SetComputeConstants(sizeof(constant), &constant);
+	InstanceCullingConstants constants = { .cullingPhase = phase };
+	context.SetComputeConstants(sizeof(constants), &constants);
 
-	context.StageDescriptor("g_IndirectCommands", m_CulledIndirectCommandBuffer);
-	context.StageDescriptor("g_DrawIDs", m_DrawIndexBuffer);
-	context.StageDescriptor("g_DrawCount", m_DrawCountBuffer);
-	context.StageDescriptor("g_VisibilityBuffer", m_VisibilityBuffer);
-	context.StageDescriptor("g_HiZTexture", m_pHiZTexture, g_FrameData.pLinearClampMin);
+	context.StageDescriptor("ID_Scene", sr.GetSceneGlobals());
+	context.StageDescriptor("ID_IndirectCommands", m_CulledIndirectCommandBuffer);
+	context.StageDescriptor("ID_DrawIDs", m_DrawIndexBuffer);
+	context.StageDescriptor("ID_DrawCount", m_DrawCountBuffer);
+	context.StageDescriptor("ID_VisibilityBuffer", m_VisibilityBuffer);
+	context.StageDescriptor("ID_HiZTexture", m_pHiZTexture, g_FrameData.pLinearClampMin);
 
 	context.Dispatch1D< 64 >(numInstances);
 
@@ -205,16 +189,12 @@ void CullingNode::PatchVoxelMeshData(render::CommandContext& context, const Scen
 	context.TransitionBufferToWrite(pMeshData, ePipelineStage::ComputeShader);
 
 	// Voxel MeshData rows were appended after the static meshes, so the base row == static mesh count.
-	struct
-	{
-		u32 voxelMeshBaseID;
-		u32 numVoxelSlots; // registered voxel MeshData rows
-	} constant = { (u32)renderView.meshes.size(), kMaxVoxelChunkSlots };
-	context.SetComputeConstants(sizeof(constant), &constant);
+	VoxelMeshDataPatchConstants constants = { .voxelMeshBaseID = (u32)renderView.meshes.size(), .numVoxelSlots = kMaxVoxelChunkSlots };
+	context.SetComputeConstants(sizeof(constants), &constants);
 
-	context.StageDescriptor("g_VoxelCounts", pVoxelCounts);
-	context.StageDescriptor("g_VoxelChunkDescs", pVoxelDescs);
-	context.StageDescriptor("g_MeshData", pMeshData);
+	context.StageDescriptor("ID_VoxelCounts", pVoxelCounts);
+	context.StageDescriptor("ID_VoxelChunkDescs", pVoxelDescs);
+	context.StageDescriptor("ID_MeshData", pMeshData);
 
 	context.Dispatch((kMaxVoxelChunkSlots + 63u) / 64u, 1, 1);
 
@@ -235,46 +215,42 @@ void CullingNode::BuildHiZ(render::CommandContext& context)
 	if (!pDepthAttachment)
 		return;
 
-	u32 hiZWidth    = m_pHiZTexture->Width();
-	u32 hiZHeight   = m_pHiZTexture->Height();
-	u32 hiZMipCount = m_pHiZTexture->MipLevels();
-	u32 numGroupsX  = (hiZWidth  + 63) / 64;
-	u32 numGroupsY  = (hiZHeight + 63) / 64;
+	const u32 hiZWidth  = m_pHiZTexture->Width();
+	const u32 hiZHeight = m_pHiZTexture->Height();
+	const u32 lastMip   = m_pHiZTexture->MipLevels() - 1;
 
-	context.SetRenderPipeline(m_pHiZGenerationPSO.get());
+	const HiZConstants constants = {
+		.mip0Width   = hiZWidth,
+		.mip0Height  = hiZHeight,
+		.spdMipCount = lastMip,
+	};
 
-	context.ClearBuffer(m_pSPDCounterBuffer, 0);
-	context.TransitionBufferToWrite(m_pSPDCounterBuffer, ePipelineStage::ComputeShader, 0, true);
+	auto StageHiZ = [&]()
+	{
+		context.SetComputeConstants(sizeof(constants), &constants);
+		context.StageDescriptor("ID_DepthSrc", pDepthAttachment, g_FrameData.pLinearClampMin);
+
+		static constexpr u32 kNumMipUAVs = 13; // ID_MipUAV0..ID_MipUAV12
+		for (u32 i = 0; i < kNumMipUAVs; ++i)
+			context.StageDescriptorMip("ID_MipUAV" + std::to_string(i), m_pHiZTexture, std::min(i, lastMip));
+	};
 
 	context.TransitionTextureToRead(pDepthAttachment, ePipelineStage::ComputeShader);
 	context.TransitionTextureToWrite(m_pHiZTexture, ePipelineStage::ComputeShader);
 
-	struct SPDPushConstants
-	{
-		u32 mip0Width;
-		u32 mip0Height;
-		u32 spdMipCount;
-		u32 numWorkGroups;
-	} constants = {
-		.mip0Width     = hiZWidth,
-		.mip0Height    = hiZHeight,
-		.spdMipCount   = hiZMipCount - 1,
-		.numWorkGroups = numGroupsX * numGroupsY,
-	};
-	context.SetComputeConstants(sizeof(constants), &constants);
+	context.SetRenderPipeline(m_pHiZTilesPSO.get());
+	StageHiZ();
+	context.Dispatch((hiZWidth + 63) / 64, (hiZHeight + 63) / 64, 1);
 
-	context.StageDescriptor("g_DepthSrc", pDepthAttachment, g_FrameData.pLinearClampMin);
-	context.StageDescriptor("g_SPDCounter", m_pSPDCounterBuffer);
-
-	u32 lastMip = hiZMipCount - 1;
-	static constexpr u32 kMaxSpdMipUavs = 13; // g_MipUAV0..g_MipUAV12
-	for (u32 i = 0; i < kMaxSpdMipUavs; ++i)
+	if (lastMip > 6)
 	{
-		u32 mip = std::min(i, lastMip);
-		context.StageDescriptorMip("g_MipUAV" + std::to_string(i), m_pHiZTexture, mip);
+		// Same-state transition emits the UAV barrier: the tail group reads mip 6 from every tile group
+		context.TransitionTextureToWrite(m_pHiZTexture, ePipelineStage::ComputeShader);
+
+		context.SetRenderPipeline(m_pHiZTailPSO.get());
+		StageHiZ();
+		context.Dispatch(1, 1, 1);
 	}
-
-	context.Dispatch(numGroupsX, numGroupsY, 1);
 
 	context.TransitionTextureToRead(m_pHiZTexture, ePipelineStage::ComputeShader | ePipelineStage::TaskShader, ALL_SUBRESOURCES, true);
 }
@@ -386,7 +362,7 @@ void CullingNode::Apply(render::CommandContext& context, const SceneRenderView& 
 	// ============================================================
 	{
 		BAAMBOO_PROFILE_SCOPE(context, "Phase1Cull");
-		DispatchMeshCull(context, numInstances, kPhase1Cull);
+		DispatchMeshCull(context, numInstances, kCullPhase1);
 
 		context.CopyBufferRegion(m_Phase1CountReadback, m_DrawCountBuffer, sizeof(u32), m_ReadbackIdx * sizeof(u32), 0);
 		context.TransitionBufferToRead(m_DrawCountBuffer, ePipelineStage::DrawIndirect, 0, true);
@@ -394,7 +370,7 @@ void CullingNode::Apply(render::CommandContext& context, const SceneRenderView& 
 	{
 		BAAMBOO_PROFILE_SCOPE_STATS(context, "Phase1Draw");
 		if (m_pGBufferNode)
-			m_pGBufferNode->DrawGBufferPhase1(context, MakeMeshCullOutputs(numInstances, kPhase1Cull));
+			m_pGBufferNode->DrawGBufferPhase1(context, MakeMeshCullOutputs(numInstances, kCullPhase1));
 
 #if PROFILING_LEVEL >= 1
 		const u32 statsBytes = kMeshletStatsFields * sizeof(u32);
@@ -415,7 +391,7 @@ void CullingNode::Apply(render::CommandContext& context, const SceneRenderView& 
 	// ============================================================
 	{
 		BAAMBOO_PROFILE_SCOPE(context, "Phase2Cull");
-		DispatchMeshCull(context, numInstances, kPhase2Cull);
+		DispatchMeshCull(context, numInstances, kCullPhase2);
 
 		context.CopyBufferRegion(m_Phase2CountReadback, m_DrawCountBuffer, sizeof(u32), m_ReadbackIdx * sizeof(u32), 0);
 		context.TransitionBufferToRead(m_DrawCountBuffer, ePipelineStage::DrawIndirect, 0, true);
@@ -423,7 +399,7 @@ void CullingNode::Apply(render::CommandContext& context, const SceneRenderView& 
 	{
 		BAAMBOO_PROFILE_SCOPE_STATS(context, "Phase2Draw");
 		if (m_pGBufferNode)
-			m_pGBufferNode->DrawGBufferPhase2(context, MakeMeshCullOutputs(numInstances, kPhase2Cull));
+			m_pGBufferNode->DrawGBufferPhase2(context, MakeMeshCullOutputs(numInstances, kCullPhase2));
 
 #if PROFILING_LEVEL >= 1
 		const u32 statsBytes = kMeshletStatsFields * sizeof(u32);

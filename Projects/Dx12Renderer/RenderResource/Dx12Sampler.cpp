@@ -110,67 +110,6 @@ Arc< Dx12Sampler > Dx12Sampler::Create(Dx12RenderDevice& rd, const char* name, C
     return MakeArc< Dx12Sampler >(rd, name, std::move(info));
 }
 
-Arc< Dx12Sampler > Dx12Sampler::CreateLinearRepeat(Dx12RenderDevice& rd, const char* name) {
-    return Create(rd, name,
-        {
-            .filter      = eFilterMode::Linear,
-            .addressMode = eAddressMode::Wrap
-        });
-}
-
-Arc< Dx12Sampler > Dx12Sampler::CreateLinearClamp(Dx12RenderDevice& rd, const char* name)
-{
-    return Create(rd, name,
-        {
-            .filter      = eFilterMode::Linear,
-            .addressMode = eAddressMode::ClampEdge
-        });
-}
-
-Arc< Dx12Sampler > Dx12Sampler::CreatePointRepeat(Dx12RenderDevice& rd, const char* name)
-{
-    return Create(rd, name,
-        {
-            .filter        = eFilterMode::Point,
-            .addressMode   = eAddressMode::Wrap,
-            .maxAnisotropy = 0.0f
-        });
-}
-
-Arc< Dx12Sampler > Dx12Sampler::CreatePointClamp(Dx12RenderDevice& rd, const char* name)
-{
-    return Create(rd, name,
-        {
-            .filter        = eFilterMode::Point,
-            .addressMode   = eAddressMode::ClampEdge,
-            .maxAnisotropy = 0.0f
-        });
-}
-
-Arc< Dx12Sampler > Dx12Sampler::CreateLinearClampCmp(Dx12RenderDevice& rd, const char* name)
-{
-    return Create(rd, name,
-        {
-            .filter        = eFilterMode::Linear,
-            .addressMode   = eAddressMode::ClampBorder,
-            .maxAnisotropy = 0.0f,
-            .compareOp     = eCompareOp::LessEqual,
-            .borderColor   = eBorderColor::OpaqueWhite_Float
-        });
-}
-
-Arc< Dx12Sampler > Dx12Sampler::CreatePointClampMin(Dx12RenderDevice& rd, const char* name)
-{
-    return Create(rd, name,
-        {
-            .filter        = eFilterMode::Point,
-            .mipmapMode    = eMipmapMode::Nearest,
-            .addressMode   = eAddressMode::ClampEdge,
-            .maxAnisotropy = 0.0f,
-            .reductionMode = eReductionMode::Min
-        });
-}
-
 Dx12Sampler::Dx12Sampler(Dx12RenderDevice& rd, const char* name, CreationInfo&& info)
 	: render::Sampler(name, std::move(info))
     , Dx12Resource(rd, name, eResourceType::Sampler)

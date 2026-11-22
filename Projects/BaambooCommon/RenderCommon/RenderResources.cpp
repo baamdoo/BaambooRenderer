@@ -1,9 +1,6 @@
 #include "RenderResources.h"
 #include "RenderDevice.h"
-#include "SceneRenderView.h"
-
-#include <cmath>
-#include <limits>
+#include "SceneResource.h"
 
 namespace render
 {
@@ -318,8 +315,28 @@ Box< GraphicsPipeline > GraphicsPipeline::Create(RenderDevice& rd, const char* n
 	return rd.CreateGraphicsPipeline(name);
 }
 
-GraphicsPipeline::GraphicsPipeline(const char* name)
+Pipeline::Pipeline(const char* name)
 	: m_Name(name)
+{
+}
+
+Pipeline::~Pipeline()
+{
+	if (m_fnOnDestroy)
+		m_fnOnDestroy();
+}
+
+std::pair< u32, u32 > Pipeline::GetResourceBindingIndex(const std::string& name) const
+{
+	auto iter = m_ResourceBindingMap.find(name);
+	if (iter == m_ResourceBindingMap.end())
+		return { kInvalidIndex, kInvalidIndex };
+
+	return { (u32)(iter->second >> 32), (u32)(iter->second & 0xFFFFFFFF) };
+}
+
+GraphicsPipeline::GraphicsPipeline(const char* name)
+	: Pipeline(name)
 {
 }
 
@@ -354,15 +371,6 @@ GraphicsPipeline& GraphicsPipeline::SetMeshShaders(
 	return *this;
 }
 
-std::pair< u32, u32 > GraphicsPipeline::GetResourceBindingIndex(const std::string& name)
-{
-	auto iter = m_ResourceBindingMap.find(name);
-	if (iter == m_ResourceBindingMap.end())
-		return { kInvalidIndex, kInvalidIndex };
-
-	return { (u32)(iter->second >> 32), (u32)(iter->second & 0xFFFFFFFF) };
-}
-
 
 //-------------------------------------------------------------------------
 // Compute Pipeline
@@ -373,7 +381,7 @@ Box< ComputePipeline > ComputePipeline::Create(RenderDevice& rd, const char* nam
 }
 
 ComputePipeline::ComputePipeline(const char* name)
-	: m_Name(name)
+	: Pipeline(name)
 {
 }
 
@@ -381,15 +389,6 @@ ComputePipeline& ComputePipeline::SetComputeShader(Arc< Shader > pCS)
 {
 	m_pCS = pCS;
 	return *this;
-}
-
-std::pair< u32, u32 > ComputePipeline::GetResourceBindingIndex(const std::string& name)
-{
-	auto iter = m_ResourceBindingMap.find(name);
-	if (iter == m_ResourceBindingMap.end())
-		return { -1, -1 };
-
-	return { (u32)(iter->second >> 32), (u32)(iter->second & 0xFFFFFFFF) };
 }
 
 
@@ -402,7 +401,7 @@ Box< RaytracingPipeline > RaytracingPipeline::Create(RenderDevice& rd, const cha
 }
 
 RaytracingPipeline::RaytracingPipeline(const char* name)
-	: m_Name(name)
+	: Pipeline(name)
 {
 }
 
@@ -448,130 +447,6 @@ RaytracingPipeline& RaytracingPipeline::SetMaxRecursionDepth(u32 depth)
 	return *this;
 }
 
-std::pair< u32, u32 > RaytracingPipeline::GetResourceBindingIndex(const std::string& name)
-{
-	auto iter = m_ResourceBindingMap.find(name);
-	if (iter == m_ResourceBindingMap.end())
-		return { kInvalidIndex, kInvalidIndex };
-
-	return { (u32)(iter->second >> 32), (u32)(iter->second & 0xFFFFFFFF) };
-}
-
-
-//-------------------------------------------------------------------------
-// Scene Resource
-//-------------------------------------------------------------------------
-// The project uses /fp:fast; preserve the outward-rounding operations below.
-#ifdef _MSC_VER
-#pragma float_control(precise, on, push)
-#endif
-SceneResource::MediumBuffers SceneResource::BuildMediumBuffers(const SceneRenderView& renderView)
-{
-    MediumBuffers buffers;
-    buffers.media.resize(renderView.voxelTerrain.bValid ? kMaxVoxelChunkSlots : 0u);
-
-    std::unordered_map< const MediumDensityAsset*, u32 > assetOffsets;
-    for (const auto& [entity, draw] : renderView.draws)
-    {
-        UNUSED(entity);
-        if (!IsValidIndex(draw.mesh))
-            continue;
-
-        MediumData data = {};
-        if (IsValidIndex(draw.medium))
-        {
-            BB_ASSERT(draw.medium < renderView.media.size(), "Medium render-view index is out of range");
-            BB_ASSERT(draw.transform < renderView.transforms.size(), "Medium transform index is out of range");
-
-            const auto& medium = renderView.media[draw.medium];
-            data = medium.data;
-
-            data.mWorldToDensity    = renderView.transforms[draw.transform].mWorldInverse;
-            data.densityByteOffset  = kInvalidIndex;
-
-            if (medium.pDensity)
-            {
-                const auto* pAsset = medium.pDensity.get();
-                data.mWorldToDensity = pAsset->mLocalToIndex * data.mWorldToDensity;
-                auto assetIt = assetOffsets.find(pAsset);
-                if (assetIt == assetOffsets.end())
-                {
-                    BB_ASSERT(!pAsset->words.empty() && pAsset->words.size() % 8u == 0u, "Density payload must have 32-byte alignment");
-
-                    const u64 totalWords = static_cast<u64>(buffers.densityWords.size()) + pAsset->words.size();
-                    BB_ASSERT(totalWords <= std::numeric_limits<u32>::max() / sizeof(u32),
-                        "Density pool must fit its 32-bit byte offsets");
-
-                    const u32 offset = static_cast<u32>(buffers.densityWords.size() * sizeof(u32));
-                    buffers.densityWords.insert(buffers.densityWords.end(), pAsset->words.begin(), pAsset->words.end());
-                    assetIt = assetOffsets.emplace(pAsset, offset).first;
-                }
-                data.densityByteOffset = assetIt->second;
-            }
-
-            const auto roundUp = [](double value)
-            {
-                float bound = static_cast<float>(value);
-                if (static_cast<double>(bound) < value)
-                    bound = std::nextafter(bound, std::numeric_limits<float>::infinity());
-
-                BB_ASSERT(std::isfinite(bound), "Medium bound exceeds finite float32 range");
-                return bound;
-            };
-            const float maxDensity = medium.pDensity ? medium.pDensity->maxDensity : 1.0f;
-
-            const float densityBound = roundUp(static_cast<double>(maxDensity) * data.densityScale);
-            data.majorant = 0.0f;
-            for (u32 axis = 0; axis < 3; ++axis)
-            {
-                const float sigmaA = roundUp(static_cast<double>(data.sigmaA[axis]) * densityBound);
-                const float sigmaS = roundUp(static_cast<double>(data.sigmaS[axis]) * densityBound);
-                data.majorant = std::max(data.majorant, roundUp(static_cast<double>(sigmaA) + sigmaS));
-            }
-
-            const float determinant = glm::determinant(mat3(data.mWorldToDensity));
-            BB_ASSERT(std::isfinite(determinant) && determinant != 0.0f &&
-                data.mWorldToDensity[0][3] == 0.0f && data.mWorldToDensity[1][3] == 0.0f &&
-                data.mWorldToDensity[2][3] == 0.0f && data.mWorldToDensity[3][3] == 1.0f,
-                "Medium transform must be affine and invertible");
-        }
-
-        // Pure boundaries inherit the incident IOR during traversal
-        data.ior = 1.0f;
-        if (IsValidIndex(draw.material))
-        {
-            BB_ASSERT(draw.material < renderView.materials.size(), "Medium boundary material index is out of range");
-
-            const auto& root = renderView.materials[draw.material];
-            const bool bMediumBoundary = (root.materialFlags & MATERIAL_FLAG_MEDIUM_BOUNDARY) != 0u;
-
-            u32 terminalMaterial = draw.material;
-            if (root.layerCount > 1u)
-            {
-                const u64 terminal = static_cast<u64>(root.layerOffset) + root.layerCount - 1u;
-                terminalMaterial = renderView.materialSlabs[terminal].materialID;
-            }
-            BB_ASSERT(terminalMaterial < renderView.materials.size(), "Medium terminal material is out of range");
-            const float ior = renderView.materials[terminalMaterial].ior;
-            if (!bMediumBoundary)
-            {
-                data.ior = std::max(ior, 1.0e-4f);
-            }
-        }
-        buffers.media.push_back(data);
-    }
-
-    // Bind nonempty buffers even when the scene has no media or density grids.
-    if (buffers.media.empty())
-        buffers.media.emplace_back();
-    if (buffers.densityWords.empty())
-        buffers.densityWords.push_back(0u);
-    return buffers;
-}
-#ifdef _MSC_VER
-#pragma float_control(pop)
-#endif
-
 
 //-------------------------------------------------------------------------
 // Resource Manager
@@ -586,47 +461,5 @@ void ResourceManager::ReplaceSceneResource(Box< SceneResource >&& pSceneResource
 	RELEASE(m_pSceneResource);
 	m_pSceneResource = pSceneResource.release();
 }
-
-//void ResourceManager::SetBuffer(const std::string& name, Weak< Buffer > buffer)
-//{
-//	m_Buffers.emplace(name, buffer);
-//}
-//
-//void ResourceManager::SetTexture(const std::string& name, Weak< Texture > texture)
-//{
-//	m_Textures.emplace(name, texture);
-//}
-//
-//void ResourceManager::SetSampler(const std::string& name, Arc< Sampler > sampler)
-//{
-//	m_Samplers.emplace(name, sampler);
-//}
-//
-//Weak< Buffer > ResourceManager::GetBuffer(const std::string& name) const
-//{
-//	auto iter = m_Buffers.find(name);
-//	if (iter == m_Buffers.end())
-//		return nullptr;
-//
-//	return iter->second;
-//}
-//
-//Weak< Texture > ResourceManager::GetTexture(const std::string& name) const
-//{
-//	auto iter = m_Textures.find(name);
-//	if (iter == m_Textures.end())
-//		return nullptr;
-//
-//	return iter->second;
-//}
-//
-//Arc< Sampler > ResourceManager::GetSampler(const std::string& name) const
-//{
-//	auto iter = m_Samplers.find(name);
-//	if (iter == m_Samplers.end())
-//		return nullptr;
-//
-//	return iter->second;
-//}
 
 } // namespace render

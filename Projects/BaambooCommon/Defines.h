@@ -20,14 +20,11 @@
 //       count survives. Cheapest path.
 //   1  — Per-phase meshlet + triangle counters.
 //   2+ — Reserved for future per-stage timings / breakdowns.
-//
-// IMPORTANT: keep this in sync with PROFILING_LEVEL in Assets/Shader/Common.bsh
 // =============================================================================
 #ifndef PROFILING_LEVEL
 #define PROFILING_LEVEL 1
 #endif
 
-// Keep this in sync with PT_VALIDATION in Assets/Shader/Common.bsh.
 #ifndef PT_VALIDATION
 #define PT_VALIDATION 0
 #endif

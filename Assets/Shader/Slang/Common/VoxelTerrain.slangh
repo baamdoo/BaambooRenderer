@@ -1,0 +1,423 @@
+#pragma once
+#include "ShaderShared/VoxelTerrain.h"
+#include "Common/Noise.slangh"
+
+// World XZ -> erosion array UV: interior texels span the chunk, apron texels overlap the neighbors
+float3 VoxelErosionUV(VoxelChunkDesc chunk, float2 xzWS, float mapDim)
+{
+    float inner = mapDim - 2.0 * float(kVoxelErosionApron);
+    float2 uv01 = (xzWS - chunk.originWS.xz) / max(chunk.chunkSizeMeter, 1e-3);
+    float2 uv = (uv01 * inner + float(kVoxelErosionApron)) / mapDim;
+    return float3(uv, (float) chunk.erosionSlice);
+}
+
+
+// Base tris per MS group by budget level Lm (1..3)
+static const uint kDiceTrisPerGroup[4] = { 21u, 10u, 4u, 1u };
+
+uint DiceSubTriCount(uint level)  { return 1u << (2u * level); }
+uint DiceSubVertCount(uint level) { uint n = 1u << level; return (n + 1u) * (n + 2u) / 2u; }
+
+float DiceLodLevel(float d, float e, VoxelChunkDesc desc)
+{
+    return log2(desc.diceKScale * e / (desc.diceTargetPx * d));
+}
+
+uint DiceEdgeLevel(float3 p0, float3 p1, float3 camPos, VoxelChunkDesc desc)
+{
+    precise float3 mid  = 0.5 * (p0 + p1);
+    precise float  dMid = distance(mid, camPos);
+
+    float Le = (dMid >= desc.diceRadiusMeter) ? // lod-0 if dice radius exceeded (outside fade)
+        0.0 : clamp(ceil(DiceLodLevel(dMid, length(p1 - p0), desc)), 1.0, (float)desc.diceMaxLevel);
+    return (uint)Le;
+}
+
+uint DiceSnapEdgeK(uint k, uint Lt, uint Le, bool bLower)
+{
+    uint s = 1u << (Lt - Le); // snap stride
+    if (k % s == s / 2)
+    {
+        if (bLower)
+            k -= s / 2; // tie-break toward the lower sub-vertex
+        else
+            k += s / 2; // tie-break toward the higher sub-vertex
+    }
+
+    return (uint)round((float)k / (float)s) * s;  // round to nearest multiple of s (s = 2^m -> exact FP)
+}
+
+// Conservative meshlet budget level: an upper bound on every edge level inside.
+uint DiceMeshletBudgetLevel(float3 centerWS, float radiusWS, float3 camWS, VoxelChunkDesc desc)
+{
+    float dMin = max(distance(centerWS, camWS) - radiusWS, 1e-3);
+    if (dMin >= desc.diceRadiusMeter)
+        return 0u;
+
+    float eMax = 1.7320508 * desc.voxelSizeMeter; // sqrt(3) * voxelSize (longest edge)
+    float lm   = ceil(DiceLodLevel(dMin, eMax, desc));
+    return (uint)clamp(lm, 1.0, (float)min(desc.diceMaxLevel, 3u));
+}
+
+// MS group count one payload slot needs at level
+uint DiceGroupsForMeshlet(uint lm, uint triCount)
+{
+    uint t = kDiceTrisPerGroup[lm];
+    return (triCount + t - 1u) / t;
+}
+
+// Integer barycentric sub-vertex coord
+uint3 DiceSubVertexCoordInt(uint sv, uint level)
+{
+    uint n = 1u << level;
+
+    uint i = (uint)((sqrt(8.0 * (float)sv + 1.0) - 1.0) * 0.5);
+    while ((i + 1u) * (i + 2u) / 2u <= sv)
+        ++i; // float sqrt can land a row off
+    while (i * (i + 1u) / 2u > sv)
+        --i;
+
+    uint j = sv - i * (i + 1u) / 2u;
+    return uint3(n - i, i - j, j);
+}
+
+float3 DiceSubVertexBary(uint sv, uint level)
+{
+    return float3(DiceSubVertexCoordInt(sv, level)) / (float)(1u << level);
+}
+
+// Canonical sub-triangle enumeration
+uint3 DiceSubTriVerts(uint st, uint level)
+{
+    uint r = (uint)sqrt((float)st);
+    while ((r + 1u) * (r + 1u) <= st) 
+        ++r;
+    while (r * r > st)
+        --r;
+
+    uint m = st - r * r;
+    uint k = m >> 1u;
+
+    uint rowA = r * (r + 1u) / 2u;
+    uint rowB = (r + 1u) * (r + 2u) / 2u;
+
+    return ((m & 1u) == 0u)
+        ? uint3(rowA + k, rowB + k,      rowB + k + 1u)  // upright
+        : uint3(rowA + k, rowB + k + 1u, rowA + k + 1u); // inverted
+}
+
+// Lexicographic endpoint order; fixes the tie-break direction per edge.
+bool DiceLexLess(float3 a, float3 b)
+{
+    if (a.x != b.x) return a.x < b.x;
+    if (a.y != b.y) return a.y < b.y;
+    return a.z < b.z;
+}
+
+// Snap an integer sub-vertex coord onto the owning edge
+uint3 DiceSnapSubVertexCoord(uint3 coord, uint Lt, uint3 le, float3 p0, float3 p1, float3 p2)
+{
+    uint n = 1u << Lt;
+
+    if (coord.z == 0u && coord.x != 0u && coord.y != 0u)      // on edge p0-p1, k runs p0 -> p1
+    {
+        uint k = DiceSnapEdgeK(coord.y, Lt, le.x, DiceLexLess(p0, p1));
+        coord  = uint3(n - k, k, 0u);
+    }
+    else if (coord.x == 0u && coord.y != 0u && coord.z != 0u) // on edge p1-p2, k runs p1 -> p2
+    {
+        uint k = DiceSnapEdgeK(coord.z, Lt, le.y, DiceLexLess(p1, p2));
+        coord  = uint3(0u, n - k, k);
+    }
+    else if (coord.y == 0u && coord.z != 0u && coord.x != 0u) // on edge p2-p0, k runs p2 -> p0
+    {
+        uint k = DiceSnapEdgeK(coord.x, Lt, le.z, DiceLexLess(p2, p0));
+        coord  = uint3(k, 0u, n - k);
+    }
+    return coord;
+}
+
+// Sub-vertex -> chunk-local position/normal: snap, then one barycentric lerp.
+void DiceSubVertex(uint3 coord, uint Lt, uint3 le, float3 p0, float3 p1, float3 p2, float3 n0,  float3 n1,  float3 n2, out float3 pos, out float3 nrm)
+{
+    coord = DiceSnapSubVertexCoord(coord, Lt, le, p0, p1, p2);
+
+    precise float  invN = 1.0 / (float)(1u << Lt);
+    precise float3 b    = float3(coord) * invN;
+    precise float3 p    = b.x * p0 + b.y * p1 + b.z * p2;
+    pos = p;
+    nrm = b.x * n0 + b.y * n1 + b.z * n2;
+}
+
+
+// ---- Micro band ------------------------------------------------------------------
+struct DiceMicroParams
+{
+    float amplitudeMeter;
+    float baseWaveLengthMeter;
+    float lacunarity;
+    float gain;
+    float sharpness;    // -1 = ridged (rock crests) .. 0 = plain .. +1 = billowed (crevices)
+    float refEdgeMeter; // band-limit nominal edge E0 (= voxelSizeMeter)
+    uint  octaves;
+};
+
+DiceMicroParams DiceMicroFromDesc(VoxelChunkDesc desc)
+{
+    DiceMicroParams mp;
+    mp.amplitudeMeter      = desc.microAmplitudeMeter;
+    mp.baseWaveLengthMeter = max(desc.microBaseWaveLengthMeter, 1e-3);
+    mp.lacunarity          = max(desc.microLacunarity, 1.01);
+    mp.gain                = desc.microGain;
+    mp.sharpness           = desc.microSharpness;
+    mp.refEdgeMeter        = desc.voxelSizeMeter;
+    mp.octaves             = min(desc.microOctaves, 6u);
+    return mp;
+}
+
+// Micro band height + world-space slope
+float3 VoxelMicroHeightDeriv(float2 xzWS, float lv, DiceMicroParams mp)
+{
+    // fixed per-octave rotation hides lattice alignment
+    const float2x2 R = float2x2(0.8, -0.6, 0.6, 0.8);
+
+    float invWL = 1.0 / mp.baseWaveLengthMeter;
+
+    float2   p = xzWS * invWL;
+    float2x2 M = float2x2(invWL, 0.0, 0.0, invWL); // dp/dxz chain-rule Jacobian (rotations + frequency)
+
+    float  amp  = mp.amplitudeMeter;
+    float  wl   = mp.baseWaveLengthMeter;
+    float2 dsum = float2(0.0, 0.0); // damping accumulator
+
+    float  h      = 0.0;
+    float2 dWorld = float2(0.0, 0.0);
+    [loop] for (uint i = 0u; i < mp.octaves; ++i)
+    {
+        float3 n = valueNoiseDeriv2D(p); // (value, d/dp)
+
+        // sharpness fold
+        float  s    = mp.sharpness;
+        float  sgnS = (s >= 0.0) ? 1.0 : -1.0;
+        float  sgnN = (n.x >= 0.0) ? 1.0 : -1.0;
+        float  v    = lerp(n.x, sgnS * (2.0 * abs(n.x) - 1.0), abs(s));
+        v += sgnS * abs(s) * 0.2424; // zero-center the fold
+        float2 dv   = n.yz * lerp(1.0, 2.0 * sgnS * sgnN, abs(s));
+
+        // slope damping
+        dsum += dv;
+        float wErode = 1.0 / (1.0 + dot(dsum, dsum));
+
+        // band-limit fade: Nyquist needs wl >= 2 * (refEdge / 2^lv); linear fade over one level
+        float lNeed = log2(2.0 * mp.refEdgeMeter / wl);
+        float wFade = saturate(lv - lNeed + 1.0);
+        if (wFade <= 0.0)
+            break;
+
+        float wAmp = amp * wErode * wFade;
+        h      += wAmp * v;
+        dWorld += wAmp * mul(transpose(M), dv);
+
+        amp *= mp.gain;
+        wl  /= mp.lacunarity;
+        p   = mul(R, p) * mp.lacunarity;
+        M   = mul(R, M) * mp.lacunarity;
+    }
+
+    return float3(h, dWorld);
+}
+
+float3 DisplaceVoxelDice(float3 posWS, float baseNy, float3 camPosWS, VoxelChunkDesc chunk, Texture2DArray< float4 > ErosionMap, SamplerState Sampler)
+{
+    if (chunk.erosionSlice == kInvalidIndex)
+        return posWS; // coarse-LOD chunks carry no erosion slice
+
+    uint mapW, mapH, mapSlices;
+    ErosionMap.GetDimensions(mapW, mapH, mapSlices);
+
+    float4 erosion = ErosionMap.SampleLevel(Sampler, VoxelErosionUV(chunk, posWS.xz, (float)mapW), 0); // R detail height (m) | G ridgeMap | B surfaceY | A unused
+
+    float dCam      = length(posWS - camPosWS);
+    float wDist     = saturate((chunk.diceRadiusMeter - dCam) / chunk.diceFadeWidthMeter); // fade out at the dicing radius
+    float hfGate    = saturate(1.0 - abs(posWS.y - erosion.b) / 2.0);                      // height-field gate, +/-2 m tolerance
+    float slopeGate = saturate(baseNy);                                                    // no displacement on steep slopes (avoid self-intersection)
+
+    // diced band
+    float h = erosion.r * chunk.diceDisplacementScale;
+
+    // micro band
+    if (chunk.microOctaves != 0u)
+    {
+        DiceMicroParams mpar = DiceMicroFromDesc(chunk);
+
+        float lv = min(DiceLodLevel(dCam, chunk.voxelSizeMeter, chunk), (float)chunk.diceMaxLevel);
+        h += VoxelMicroHeightDeriv(posWS.xz, lv, mpar).x * (1.0 + chunk.microCreaseBoost * saturate(-erosion.g));
+    }
+
+    return posWS + float3(0.0, hfGate * slopeGate * wDist * h, 0.0);
+}
+
+
+
+
+// 8+8 bit octahedral unit vector
+uint VoxelPackNormal16(float3 n)
+{
+    float denom = abs(n.x) + abs(n.y) + abs(n.z);
+    if (denom < 1e-6)
+        return 0u;
+
+    float2 oct = n.xy / denom;
+    if (n.z < 0.0)
+        oct = float2((1.0 - abs(oct.y)) * (oct.x >= 0.0 ? 1.0 : -1.0),
+                     (1.0 - abs(oct.x)) * (oct.y >= 0.0 ? 1.0 : -1.0));
+
+    uint2 q = uint2(round((oct * 0.5 + 0.5) * 255.0));
+    return q.x << 8u | q.y;
+}
+
+float3 VoxelUnpackNormal16(uint bits16)
+{
+    float2 oct = float2((bits16 >> 8u) & 0xFFu, bits16 & 0xFFu) / 255.0 * 2.0 - 1.0;
+
+    float z = 1.0 - abs(oct.x) - abs(oct.y);
+    if (z < 0.0)
+        oct = float2((1.0 - abs(oct.y)) * (oct.x >= 0.0 ? 1.0 : -1.0),
+                     (1.0 - abs(oct.x)) * (oct.y >= 0.0 ? 1.0 : -1.0));
+
+    return normalize(float3(oct.x, oct.y, z));
+}
+
+// The normal exactly as the renderer decodes it (the geomorph ray must use this one)
+float3 VoxelQuantizeNormal(float3 n)
+{
+    return VoxelUnpackNormal16(VoxelPackNormal16(n));
+}
+
+// 10-bit two's complement of x in [-1, 1]
+uint VoxelPackSnorm10(float x)
+{
+    return uint(int(round(clamp(x, -1.0, 1.0) * 511.0))) & 0x3FFu;
+}
+
+float VoxelUnpackSnorm10(uint bits10)
+{
+    return float(int(bits10 << 22u) >> 22) / 511.0;
+}
+
+// s1/s2/s3 = signed offsets along the normal to the parent / grandparent / great-grandparent mesh (units 2/4/8 voxels); pinned = transition-cell coarse face, never shifted
+VoxelVertex VoxelPackVertex(float3 pos, float3 normal, float3 normalT1, float3 normalT2, float s1, float s2, float s3, bool pinned, float chunkSizeMeter, float voxelSizeMeter)
+{
+    uint3 posQ = uint3(round(saturate(pos / chunkSizeMeter) * 65535.0));
+
+    VoxelVertex v;
+    v.posXY      = posQ.x << 16u | posQ.y;
+    v.posZnormal = posQ.z << 16u | VoxelPackNormal16(normal);
+    v.normalT    = VoxelPackNormal16(normalT1) << 16u | VoxelPackNormal16(normalT2);
+    v.morph      = (pinned ? 1u : 0u)
+                 | VoxelPackSnorm10(s1 / (2.0 * voxelSizeMeter)) << 1u
+                 | VoxelPackSnorm10(s2 / (4.0 * voxelSizeMeter)) << 11u
+                 | VoxelPackSnorm10(s3 / (8.0 * voxelSizeMeter)) << 21u;
+    return v;
+}
+
+float3 VoxelUnpackPos(VoxelVertex v, float chunkSizeMeter)
+{
+    uint3 posQ = uint3(v.posXY >> 16u, v.posXY & 0xFFFFu, v.posZnormal >> 16u);
+    return float3(posQ) / 65535.0 * chunkSizeMeter;
+}
+
+float3 VoxelUnpackNormal(VoxelVertex v)
+{
+    return VoxelUnpackNormal16(v.posZnormal & 0xFFFFu);
+}
+
+float3 VoxelUnpackNormalT1(VoxelVertex v)
+{
+    return VoxelUnpackNormal16(v.normalT >> 16u);
+}
+
+float3 VoxelUnpackNormalT2(VoxelVertex v)
+{
+    return VoxelUnpackNormal16(v.normalT & 0xFFFFu);
+}
+
+// (s1, s2, s3) in meters
+float3 VoxelUnpackMorph(VoxelVertex v, float voxelSizeMeter)
+{
+    return float3(VoxelUnpackSnorm10((v.morph >> 1u)  & 0x3FFu) * 2.0,
+                  VoxelUnpackSnorm10((v.morph >> 11u) & 0x3FFu) * 4.0,
+                  VoxelUnpackSnorm10((v.morph >> 21u) & 0x3FFu) * 8.0) * voxelSizeMeter;
+}
+
+float3 VoxelTransitionDelta(float3 posQ, uint transitionMask)
+{
+    const float cellWidth = 65535.0 / 128.0; // pos(uint16) resolution / 128 cells per chunk
+
+    bool isBoundaryXMin = posQ.x < cellWidth;           // vertex inside the -x boundary cell
+    bool isBoundaryXMax = posQ.x > 65535.0 - cellWidth; // vertex inside the +x boundary cell
+    bool isBoundaryYMin = posQ.y < cellWidth;           // vertex inside the -y boundary cell
+    bool isBoundaryYMax = posQ.y > 65535.0 - cellWidth; // vertex inside the +y boundary cell
+    bool isBoundaryZMin = posQ.z < cellWidth;           // vertex inside the -z boundary cell
+    bool isBoundaryZMax = posQ.z > 65535.0 - cellWidth; // vertex inside the +z boundary cell
+
+    float3 delta = float3(0.0, 0.0, 0.0);
+    if      (isBoundaryXMin && (transitionMask & (1u << 0u)) != 0u) delta.x = +0.5 * (cellWidth - posQ.x);
+    else if (isBoundaryXMax && (transitionMask & (1u << 1u)) != 0u) delta.x = -0.5 * (cellWidth - (65535.0 - posQ.x));
+    if      (isBoundaryYMin && (transitionMask & (1u << 2u)) != 0u) delta.y = +0.5 * (cellWidth - posQ.y);
+    else if (isBoundaryYMax && (transitionMask & (1u << 3u)) != 0u) delta.y = -0.5 * (cellWidth - (65535.0 - posQ.y));
+    if      (isBoundaryZMin && (transitionMask & (1u << 4u)) != 0u) delta.z = +0.5 * (cellWidth - posQ.z);
+    else if (isBoundaryZMax && (transitionMask & (1u << 5u)) != 0u) delta.z = -0.5 * (cellWidth - (65535.0 - posQ.z));
+
+    return delta;
+}
+
+// Render-position unpack: boundary-band vertices shift inward on faces whose transition mask bit is set
+float3 VoxelUnpackPosTransition(VoxelVertex v, float chunkSizeMeter, uint lodAndMask)
+{
+    float3 posF = float3(uint3(v.posXY >> 16u, v.posXY & 0xFFFFu, v.posZnormal >> 16u));
+    if ((v.morph & 1u) == 0u) // pinned vertices sit on the coarse face itself
+    {
+        // slide along the tangent plane so the shifted vertex stays on the surface (uniform scale keeps the normal valid in quantized space)
+        float3 n     = VoxelUnpackNormal(v);
+        float3 delta = VoxelTransitionDelta(posF, (lodAndMask >> 8u) & 0x3Fu);
+        posF += delta - dot(delta, n) * n;
+    }
+    return posF / 65535.0 * chunkSizeMeter;
+}
+
+// Geomorph fade alpha
+float VoxelMorphFactor(float3 posWS, float3 camPosWS, float chunkSizeMeter)
+{
+    float d = length(posWS - camPosWS);
+    return saturate((d - chunkSizeMeter) / (0.5 * chunkSizeMeter));
+}
+
+// Morph a fine vertex along its normal toward the coarse surface
+float3 VoxelMorphPosWS(VoxelVertex v, float3 posWS, float3 n, float3 camPosWS, VoxelChunkDesc chunk)
+{
+    float  t1 = VoxelMorphFactor(posWS, camPosWS, chunk.chunkSizeMeter);
+    float  t2 = VoxelMorphFactor(posWS, camPosWS, 2.0 * chunk.chunkSizeMeter);
+    float  t3 = VoxelMorphFactor(posWS, camPosWS, 4.0 * chunk.chunkSizeMeter);
+    float3 s  = VoxelUnpackMorph(v, chunk.voxelSizeMeter);
+    return posWS + lerp(lerp(t1 * s.x, s.y, t2), s.z, t3) * n;
+}
+
+float3 VoxelMorphNormal(VoxelVertex v, float3 n, float3 posWS, float3 camPosWS, VoxelChunkDesc chunk)
+{
+    float  t1 = VoxelMorphFactor(posWS, camPosWS, chunk.chunkSizeMeter);
+    float  t2 = VoxelMorphFactor(posWS, camPosWS, 2.0 * chunk.chunkSizeMeter);
+    float3 n1 = lerp(n, VoxelUnpackNormalT1(v), t1);
+    return normalize(lerp(n1, VoxelUnpackNormalT2(v), t2));
+}
+
+// Row-major linear index of a texel in a dim^2 tile or a dim^3 volume
+uint FlatTexel(uint2 t, uint dim)
+{
+    return t.y * dim + t.x;
+}
+
+uint FlatTexel(uint3 t, uint dim)
+{
+    return (t.z * dim + t.y) * dim + t.x;
+}

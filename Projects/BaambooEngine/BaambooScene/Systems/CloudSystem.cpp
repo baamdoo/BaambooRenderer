@@ -23,7 +23,7 @@ void CloudSystem::OnComponentConstructed(entt::registry& registry, entt::entity 
 
     cloud.weatherMap   = TEXTURE_PATH.string() + "cloud_weather.png";
     cloud.curlNoiseTex = TEXTURE_PATH.string() + "cloud_curl_noise.png";
-    cloud.blueNoiseTex = TEXTURE_PATH.string() + "blue_noise.png";
+    cloud.blueNoiseTex = TEXTURE_PATH.string() + "BlueNoise_R_128x128x64.png";
 
     Super::OnComponentConstructed(registry, entity);
 }

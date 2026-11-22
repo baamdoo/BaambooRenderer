@@ -9,13 +9,6 @@ class Dx12Sampler : public render::Sampler, public Dx12Resource
 public:
     static Arc< Dx12Sampler > Create(Dx12RenderDevice& rd, const char* name, CreationInfo&& info);
 
-    static Arc< Dx12Sampler > CreateLinearRepeat(Dx12RenderDevice& rd, const char* name = "LinearRepeat");
-    static Arc< Dx12Sampler > CreateLinearClamp(Dx12RenderDevice& rd, const char* name = "LinearClamp");
-    static Arc< Dx12Sampler > CreatePointRepeat(Dx12RenderDevice& rd, const char* name = "PointRepeat");
-    static Arc< Dx12Sampler > CreatePointClamp(Dx12RenderDevice& rd, const char* name = "PointClamp");
-    static Arc< Dx12Sampler > CreateLinearClampCmp(Dx12RenderDevice& rd, const char* name = "Shadow");
-    static Arc< Dx12Sampler > CreatePointClampMin(Dx12RenderDevice& rd, const char* name = "PointClampMin");
-
     Dx12Sampler(Dx12RenderDevice& rd, const char* name, CreationInfo&& info);
     virtual ~Dx12Sampler();
 

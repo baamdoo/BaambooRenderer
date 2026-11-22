@@ -1,5 +1,9 @@
 #pragma once
 #include "RenderCommon/RenderDevice.h"
+#include "FreeList.hpp"
+
+#include <atomic>
+#include <bitset>
 
 namespace vk
 {
@@ -7,15 +11,13 @@ namespace vk
 class CommandQueue;
 class VkCommandContext;
 class VkResourceManager;
-class DescriptorSet;
-class DescriptorPool;
+class VulkanSampler;
 
 enum class eCommandType;
 
 struct DeviceCapabilities
 {
 	bool bValidation                = false;
-	bool bValidationFeatures        = false;
 	bool bDebugUtils                = false;
 	bool bSurfaceMaintenance        = false;
 	bool bMeshShader                = false;
@@ -28,7 +30,6 @@ struct DeviceCapabilities
 
 struct DeviceDispatch
 {
-	PFN_vkCmdPushDescriptorSetKHR             cmdPushDescriptorSet = nullptr;
 	PFN_vkCmdDrawMeshTasksIndirectEXT         cmdDrawMeshTasksIndirect = nullptr;
 	PFN_vkCmdDrawMeshTasksIndirectCountEXT    cmdDrawMeshTasksIndirectCount = nullptr;
 	PFN_vkSetDebugUtilsObjectNameEXT           setDebugUtilsObjectName = nullptr;
@@ -42,8 +43,6 @@ using Super = render::RenderDevice;
 public:
 	VkRenderDevice(const render::DeviceSettings& ds);
 	~VkRenderDevice();
-
-	u32 NextFrame();
 
 	virtual void Flush() override;
 
@@ -66,21 +65,15 @@ public:
 	virtual Box< render::GraphicsPipeline > CreateGraphicsPipeline(const char* name) override;
 	virtual Box< render::RaytracingPipeline > CreateRaytracingPipeline(const char* name) override;
 
-	virtual Box< render::SceneResource > CreateSceneResource() override;
-
-	VkDeviceSize GetAlignedSize(VkDeviceSize size) const;
-
 	inline VkInstance vkInstance() const { return m_vkInstance; }
 	inline VkDevice vkDevice() const { return m_vkDevice; }
 	inline VkPhysicalDevice vkPhysicalDevice() const { return m_vkPhysicalDevice; }
 	inline const VkPhysicalDeviceProperties& DeviceProps() const { return m_PhysicalDeviceProperties; }
-	inline const VkPhysicalDeviceMaintenance3Properties& DeviceMaintenance3Props() const { return m_PhysicalDeviceMaintenance3Properties; }
 	inline const VkPhysicalDeviceFeatures& DeviceFeatures() const { return m_PhysicalDeviceFeatures; }
 	inline const DeviceCapabilities& Capabilities() const { return m_Capabilities; }
 	inline const DeviceDispatch& Dispatch() const { return m_Dispatch; }
 	u32 TimestampValidBits(eCommandType cmdType) const;
 
-	CommandQueue& GetQueue(eCommandType cmdType) const;
 	inline CommandQueue& GraphicsQueue() const { return *m_pGraphicsQueue; }
 	inline CommandQueue& ComputeQueue() const { return *m_pComputeQueue; }
 	inline CommandQueue& TransferQueue() const { return *m_pTransferQueue; }
@@ -93,22 +86,43 @@ public:
 
 	virtual bool SaveTextureToEXR(const Arc< render::Texture >& pTexture, const char* path) override;
 
-	inline VkRenderPass vkMainRenderPass() const { return m_vkMainRenderPass; }
-	void SetMainRenderPass(VkRenderPass vkRenderPass) { m_vkMainRenderPass = vkRenderPass; }
+	virtual u64 ValidationErrorCount() const override;
+	// The messenger alone is not enough: the loader can serve VK_EXT_debug_utils without VK_LAYER_KHRONOS_validation.
+	virtual bool IsValidationActive() const override { return m_Capabilities.bValidation && m_vkDebugMessenger != VK_NULL_HANDLE; }
 
-	DescriptorSet& AllocateDescriptorSet(VkDescriptorSetLayout vkSetLayout) const;
-	inline VkDescriptorSetLayout GetEmptyDescriptorSetLayout() const { return m_vkEmptySetLayout; }
+	inline VkDescriptorSet GetHeapDescriptorSet() const { return m_vkHeapSet; }
+	inline VkDescriptorSet GetSamplerDescriptorSet() const { return m_vkSamplerSet; }
+	inline VkPipelineLayout GetGlobalPipelineLayout() const { return m_vkGlobalPipelineLayout; }
+
+	[[nodiscard]]
+	u32 AllocateHeapSlot();
+	void FreeHeapSlot(u32 slot);
+	void WriteHeapImage(u32 slot, VkDescriptorType type, VkImageView vkView, VkImageLayout layout);
+	void WriteHeapBuffer(u32 slot, VkDescriptorType type, VkBuffer vkBuffer);
+
+	using render::RenderDevice::DeferRelease;
+	void DeferRelease(VkBuffer vkBuffer, VmaAllocation vmaAllocation);
+	void DeferRelease(VkImage vkImage, VmaAllocation vmaAllocation);
+	void DeferRelease(VkImageView vkImageView);
+	void DeferRelease(VkFramebuffer vkFramebuffer);
+	void DeferRelease(VkRenderPass vkRenderPass);
+	void DeferRelease(VkPipeline vkPipeline);
+	void DeferRelease(VkSampler vkSampler);
 
 	void SetVkObjectName(const std::string& name, u64 handle, VkObjectType type);
+
+private:
+	void CreateDescriptorHeap();
+	void CreateStaticSamplers();
+	void CreateGlobalPipelineLayout();
 
 private:
 	VkInstance					m_vkInstance       = VK_NULL_HANDLE;
 	VkDebugUtilsMessengerEXT	m_vkDebugMessenger = VK_NULL_HANDLE;
 								
-	VkPhysicalDevice			           m_vkPhysicalDevice = VK_NULL_HANDLE;
-	VkPhysicalDeviceProperties	           m_PhysicalDeviceProperties;
-	VkPhysicalDeviceMaintenance3Properties m_PhysicalDeviceMaintenance3Properties;
-	VkPhysicalDeviceFeatures               m_PhysicalDeviceFeatures = {};
+	VkPhysicalDevice           m_vkPhysicalDevice = VK_NULL_HANDLE;
+	VkPhysicalDeviceProperties m_PhysicalDeviceProperties;
+	VkPhysicalDeviceFeatures   m_PhysicalDeviceFeatures = {};
 
 	VkDevice m_vkDevice = VK_NULL_HANDLE;
 	DeviceCapabilities m_Capabilities;
@@ -119,12 +133,24 @@ private:
 	CommandQueue* m_pTransferQueue = nullptr;
 
 	VmaAllocator       m_vmaAllocator     = VK_NULL_HANDLE;
+
+	VkDescriptorSetLayout m_vkHeapSetLayout = VK_NULL_HANDLE;
+	VkDescriptorPool      m_vkHeapPool      = VK_NULL_HANDLE;
+	VkDescriptorSet       m_vkHeapSet       = VK_NULL_HANDLE; // freed with m_vkHeapPool
+
+	baamboo::FreeList< u32 >            m_HeapSlots;
+	std::bitset< kHeapDescriptorCount > m_HeapSlotsInUse;
+
+	std::array< Arc< VulkanSampler >, static_cast< size_t >(render::eSamplerIndex::MaxIndex) > m_pStaticSamplers;
+	VkDescriptorSetLayout m_vkSamplerSetLayout = VK_NULL_HANDLE;
+	VkDescriptorPool      m_vkSamplerPool      = VK_NULL_HANDLE;
+	VkDescriptorSet       m_vkSamplerSet       = VK_NULL_HANDLE; // freed with m_vkSamplerPool
+
+	VkPipelineLayout m_vkGlobalPipelineLayout = VK_NULL_HANDLE;
+
 	VkResourceManager* m_pResourceManager = nullptr;
 
-	VkRenderPass m_vkMainRenderPass = VK_NULL_HANDLE;
-
-	VkDescriptorSetLayout m_vkEmptySetLayout      = VK_NULL_HANDLE;
-	DescriptorPool*       m_pGlobalDescriptorPool = nullptr;
+	u64 m_ValidationErrorBase = 0;
 };
 
 } // namespace vk

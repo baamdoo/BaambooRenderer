@@ -132,7 +132,6 @@ void CommandQueue::ExecuteCommandBuffer(Arc< VkCommandContext > context)
 		submitInfo.pCommandBuffers    = &vkCommandBuffer;
 		VK_CHECK(vkResetFences(m_RenderDevice.vkDevice(), 1, &vkRenderCompleteFence));
 		VK_CHECK(vkQueueSubmit(m_vkQueue, 1, &submitInfo, vkRenderCompleteFence));
-		//context->WaitForFence(context->vkRenderCompleteFence());
 		VK_CHECK(vkQueueWaitIdle(m_vkQueue));
 
 		context.reset();

@@ -1,6 +1,8 @@
 #pragma once
 #include "RenderCommon/RenderNode.h"
 
+namespace baamboo::shader { class PipelineFactory; }
+
 namespace baamboo
 {
 
@@ -11,7 +13,7 @@ class GBufferNode : public render::RenderNode
 {
 using Super = render::RenderNode;
 public:
-	GBufferNode(render::RenderDevice& rd);
+	GBufferNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory);
 	virtual ~GBufferNode() = default;
 
 	// No-op: GBufferNode is not registered in RenderGraph. CullingNode owns this and drives DrawGBufferPhase1/2.

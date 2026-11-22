@@ -1,34 +1,21 @@
 #pragma once
 #include "RenderCommon/RenderResources.h"
 
-namespace baamboo { struct EmbeddedImage; }   // fwd — defined in BaambooCommon/EmbeddedImageRegistry.h
-
 namespace dx12
 {
 
-struct BarrierState;
-
-class DescriptorPool;
 class Dx12Buffer;
-class Dx12ConstantBuffer;
 class Dx12Texture;
-class Dx12RootSignature;
-class CommandSignature;
 
 class Dx12ResourceManager : public render::ResourceManager
 {
 public:
     Dx12ResourceManager(Dx12RenderDevice& rd);
-    ~Dx12ResourceManager();
 
     virtual Arc< render::Texture > LoadTexture(const std::string& filepath, bool bGenerateMips = false, render::eTextureColorSpace colorSpace = render::eTextureColorSpace::Linear) override;
 
-    void UploadData(Dx12Resource* pResource, const void* pData, u64 sizeInBytes, u64 dstOffsetInBytes, const BarrierState& stateAfter);
-    void UploadData(Arc< Dx12Buffer > pBuffer, const void* pData, u64 sizeInBytes, u64 dstOffsetInBytes, const BarrierState& stateAfter);
-    void UploadData(Arc< Dx12Texture > pTexture, const void* pData, u64 sizeInBytes, const BarrierState& stateAfter);
-
-    [[nodiscard]]
-    DescriptorAllocation AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE type, u32 numDescriptors = 1);
+    virtual void UploadData(const Arc< render::Buffer >& pBuffer, const void* pData, u64 sizeInBytes, render::ePipelineStage dstStage, u64 dstOffsetInBytes) override;
+    virtual void BuildAccelerationStructures(std::span< render::BottomLevelAccelerationStructure* const > pendingBLAS, render::TopLevelAccelerationStructure* pTLAS) override;
 
     // Overriding to avoid resource dependency order
     // [ResourceManager] => [RenderResources]
@@ -43,10 +30,6 @@ public:
 
     virtual Arc< render::Texture > GetFlatBlackTextureCube() override;
 
-    Arc< Dx12RootSignature > GetGlobalRootSignature() const;
-    Arc< DescriptorPool > GetGlobalDescriptorHeap() const;
-    ID3D12CommandSignature* GetDispatchD3D12CommandSignature() const;
-
 
 private:
     Arc< Dx12Texture > CreateFlat2DTexture(const char* name, u32 color);
@@ -59,15 +42,6 @@ private:
     Dx12RenderDevice& m_RenderDevice;
 
     Arc< Dx12Buffer > m_pStagingBuffer;
-
-    
-    Box< DescriptorPool > m_pRtvDescriptorPool;
-    Box< DescriptorPool > m_pDsvDescriptorPool;
-    Arc< DescriptorPool > m_pGlobalDescriptorHeap;
-
-    Arc< Dx12RootSignature > m_pGlobalRootSignature;
-
-    Box< CommandSignature > m_pDispatchSignature; // compute indirect: DISPATCH arguments only
 };
 
 }

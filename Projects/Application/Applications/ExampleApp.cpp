@@ -11,7 +11,6 @@
 #include "BaambooScene/RenderNodes/GBufferNode.h"
 #include "BaambooScene/RenderNodes/CullingNode.h"
 #include "BaambooScene/RenderNodes/CloudNode.h"
-#include "BaambooScene/RenderNodes/SkyboxNode.h"
 #include "BaambooScene/RenderNodes/LightingNode.h"
 #include "BaambooScene/RenderNodes/SurfaceResolveNode.h"
 #include "BaambooScene/RenderNodes/PostProcessNode.h"
@@ -249,21 +248,21 @@ void ExampleApp::DrawUI()
 
 void ExampleApp::ConfigureRenderGraph()
 {
-	m_pScene->AddRenderNode(MakeArc< CloudShapeNode >(*m_pRendererBackend->GetDevice()));
-	m_pScene->AddRenderNode(MakeArc< AtmosphereNode >(*m_pRendererBackend->GetDevice()));
-	m_pScene->AddRenderNode(MakeArc< ClusterBuildNode >(*m_pRendererBackend->GetDevice()));
-	m_pScene->AddRenderNode(MakeArc< LightCullingNode >(*m_pRendererBackend->GetDevice()));
+	auto& device = *m_pRendererBackend->GetDevice();
+
+	m_pScene->AddRenderNode(MakeArc< CloudShapeNode >(device, *m_pPipelineFactory));
+	m_pScene->AddRenderNode(MakeArc< AtmosphereNode >(device, *m_pPipelineFactory));
+	m_pScene->AddRenderNode(MakeArc< ClusterBuildNode >(device, *m_pPipelineFactory));
+	m_pScene->AddRenderNode(MakeArc< LightCullingNode >(device, *m_pPipelineFactory));
 	{
-		auto pGBufferNode = MakeArc< GBufferNode >(*m_pRendererBackend->GetDevice());
-		auto pCullingNode = MakeArc< CullingNode >(*m_pRendererBackend->GetDevice());
-		pCullingNode->SetGBufferNode(pGBufferNode);
+		auto pCullingNode = MakeArc< CullingNode >(device, *m_pPipelineFactory);
+		pCullingNode->SetGBufferNode(MakeArc< GBufferNode >(device, *m_pPipelineFactory));
 		m_pScene->AddRenderNode(pCullingNode);
 	}
-	m_pScene->AddRenderNode(MakeArc< SurfaceResolveNode >(*m_pRendererBackend->GetDevice()));
-	m_pScene->AddRenderNode(MakeArc< CloudScatteringNode >(*m_pRendererBackend->GetDevice()));
-	m_pScene->AddRenderNode(MakeArc< DynamicSkyboxNode >(*m_pRendererBackend->GetDevice()));
-	m_pScene->AddRenderNode(MakeArc< LightingNode >(*m_pRendererBackend->GetDevice()));
-	m_pScene->AddRenderNode(MakeArc< PostProcessNode >(*m_pRendererBackend->GetDevice()));
+	m_pScene->AddRenderNode(MakeArc< SurfaceResolveNode >(device, *m_pPipelineFactory));
+	m_pScene->AddRenderNode(MakeArc< CloudScatteringNode >(device, *m_pPipelineFactory));
+	m_pScene->AddRenderNode(MakeArc< LightingNode >(device, *m_pPipelineFactory));
+	m_pScene->AddRenderNode(MakeArc< PostProcessNode >(device, *m_pPipelineFactory));
 }
 
 void ExampleApp::ConfigureSceneObjects()

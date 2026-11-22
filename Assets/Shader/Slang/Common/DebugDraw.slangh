@@ -1,0 +1,11 @@
+#pragma once
+
+// Every debug vertex shader writes this and DebugWireframePS reads it, so the SPIR-V locations match
+struct DebugVertexOutput
+{
+    float4 position : SV_Position;
+    float4 color    : COLOR0;
+};
+
+// Outside the clip volume (x > w, z > w): a line clips away only when both of its endpoints use it
+static const float4 kCulledClipPosition = float4(2.0, 2.0, 2.0, 1.0);

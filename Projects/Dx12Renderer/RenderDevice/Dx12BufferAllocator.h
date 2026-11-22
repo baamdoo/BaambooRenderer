@@ -22,16 +22,12 @@ public:
         Arc< Dx12Buffer > pBuffer;
         u64               offsetInBytes;
 
-        u8*                       CPUHandle;
-        D3D12_GPU_VIRTUAL_ADDRESS GPUHandle;
+        u8*               CPUHandle;
     };
 
     Allocation Allocate(size_t sizeInBytes, size_t alignment = D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
 
     void Reset();
-
-public:
-    inline SIZE_T GetPageSize() const { return m_MaxPageSize; }
 
 private:
     struct Page
@@ -64,57 +60,6 @@ private:
     Page* m_pCurrentPage = nullptr;
 
     SIZE_T m_MaxPageSize;
-};
-
-
-//-------------------------------------------------------------------------
-// Static Buffer-Allocator
-//     - allocate additional buffer by resizing (keep only a single buffer)
-//-------------------------------------------------------------------------
-class StaticBufferAllocator
-{
-public:
-    StaticBufferAllocator(Dx12RenderDevice& rd, const std::string& name, u64 elementSizeInBytes, u64 numElements, u32 extraUsage = 0);
-    ~StaticBufferAllocator();
-
-    struct Allocation
-    {
-        Arc< Dx12StructuredBuffer > pBuffer;
-
-        u64                       sizeInBytes   = 0;
-        u64                       offsetInBytes = 0;
-        D3D12_GPU_VIRTUAL_ADDRESS gpuHandle     = 0;
-    };
-
-    [[nodiscard]]
-    Allocation Allocate(u32 numElements, u64 elementSizeInBytes = 0);
-
-    void Reset();
-    void Resize(u32 numElements);
-
-    [[nodiscard]]
-    u64 GetElementSize() const { return m_ElementSizeInBytes; }
-    [[nodiscard]]
-    u64 GetElementCount() const { return m_SizeInBytes / m_ElementSizeInBytes; }
-    [[nodiscard]]
-    u64 GetAllocatedSize() const { return m_OffsetInBytes; }
-    [[nodiscard]]
-    Arc< Dx12StructuredBuffer > GetBuffer() const { return m_pBuffer; }
-
-private:
-    void Resize(u64 elementSizeInBytes, u32 numElements);
-
-private:
-    Dx12RenderDevice& m_RenderDevice;
-    std::string       m_Name;
-
-    Arc< Dx12StructuredBuffer > m_pBuffer;
-    D3D12_GPU_VIRTUAL_ADDRESS   m_BaseGpuHandle;
-
-    u64 m_SizeInBytes        = 0;
-    u64 m_ElementSizeInBytes = 0;
-    u64 m_OffsetInBytes      = 0;
-    u32 m_ExtraUsage         = 0; // extra eBufferUsage_* flags OR'd into the backing buffer (e.g. Storage/UAV)
 };
 
 }

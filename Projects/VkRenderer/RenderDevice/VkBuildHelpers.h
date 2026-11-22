@@ -78,10 +78,9 @@ public:
 	DeviceBuilder& RequireMeshShader(bool bRequired);
 	DeviceBuilder& EnableSwapchainMaintenance(bool bInstanceSurfaceMaintenanceEnabled);
 
-	VkPhysicalDevice                       physicalDevice = VK_NULL_HANDLE;
-	VkPhysicalDeviceProperties             physicalDeviceProperties = {};
-	VkPhysicalDeviceMaintenance3Properties physicalDeviceMaintenance3Properties = {};
-	VkPhysicalDeviceFeatures               enabledPhysicalDeviceFeatures = {};
+	VkPhysicalDevice           physicalDevice = VK_NULL_HANDLE;
+	VkPhysicalDeviceProperties physicalDeviceProperties = {};
+	VkPhysicalDeviceFeatures   enabledPhysicalDeviceFeatures = {};
 
 public:
 	//-------------------------------------------------------------------------
@@ -118,14 +117,7 @@ private:
 	bool m_bRequireMeshShader = false;
 	bool m_bInstanceSurfaceMaintenanceEnabled = false;
 
-	VkPhysicalDeviceVulkan11Features m_Supported11Features = {};
-	VkPhysicalDeviceVulkan12Features m_Supported12Features = {};
-	VkPhysicalDeviceVulkan13Features m_Supported13Features = {};
-	VkPhysicalDeviceMeshShaderFeaturesEXT m_SupportedMeshShaderFeatures = {};
 	VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT m_SupportedSwapchainMaintenanceFeatures = {};
-	VkPhysicalDeviceSubgroupProperties m_SubgroupProperties = {};
-	VkPhysicalDeviceDescriptorIndexingProperties m_DescriptorIndexingProperties = {};
-	VkPhysicalDevicePushDescriptorPropertiesKHR m_PushDescriptorProperties = {};
 	std::vector< VkExtensionProperties > m_SelectedDeviceExtensions;
 };
 

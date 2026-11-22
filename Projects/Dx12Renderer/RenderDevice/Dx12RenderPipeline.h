@@ -1,13 +1,9 @@
 #pragma once
 #include "Dx12RootSignature.h"
-#include "Dx12DescriptorAllocation.h"
 #include "RenderResource/Dx12Shader.h"
 
 namespace dx12
 {
-
-class Shader;
-class RenderTarget;
 
 //-------------------------------------------------------------------------
 // Graphics Pipeline
@@ -32,15 +28,15 @@ public:
 	virtual render::GraphicsPipeline& SetColorBlending(u32 renderTargetIndex, render::eBlendFactor srcBlend, render::eBlendFactor dstBlend, render::eBlendOp blendOp) override;
 	virtual render::GraphicsPipeline& SetAlphaBlending(u32 renderTargetIndex, render::eBlendFactor srcBlend, render::eBlendFactor dstBlend, render::eBlendOp blendOp) override;
 
-	virtual void Build() override;
+	virtual bool Build() override;
+	virtual bool IsBuilt() const override { return m_d3d12PipelineState != nullptr; }
 
 	Arc< Dx12RootSignature > GetRootSignature() const { return m_pRootSignature; }
 	inline ID3D12PipelineState* GetD3D12PipelineState() const { return m_d3d12PipelineState; }
 	inline D3D_PRIMITIVE_TOPOLOGY GetD3D12PrimitiveTopology() const { return m_D3DPrimitiveTopology; }
 
-protected:
-	void SetVertexInputLayout(ID3D12ShaderReflection* d3d12ShaderReflection);
-	void ParseRootParameters(const Dx12Shader::ShaderReflection& reflection);
+private:
+	void ParseRootParameters(const render::ShaderBindingLayout& bindings);
 
 private:
 	Dx12RenderDevice& m_RenderDevice;
@@ -48,8 +44,7 @@ private:
 	Arc< Dx12RootSignature > m_pRootSignature;
 	ID3D12PipelineState*     m_d3d12PipelineState = nullptr;
 
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC      m_PipelineDesc = {};
-	std::vector< D3D12_INPUT_ELEMENT_DESC > m_InputLayoutDesc;
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC m_PipelineDesc = {};
 
 	D3D_PRIMITIVE_TOPOLOGY m_D3DPrimitiveTopology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 
@@ -78,13 +73,14 @@ public:
 	Dx12ComputePipeline(Dx12RenderDevice& rd, const char* name);
 	~Dx12ComputePipeline();
 
-	virtual void Build() override;
+	virtual bool Build() override;
+	virtual bool IsBuilt() const override { return m_d3d12PipelineState != nullptr; }
 
 	Arc< Dx12RootSignature > GetRootSignature() const { return m_pRootSignature; }
 	inline ID3D12PipelineState* GetD3D12PipelineState() const { return m_d3d12PipelineState; }
 
 private:
-	void ParseRootParameters(const Dx12Shader::ShaderReflection& reflection);
+	void ParseRootParameters(const render::ShaderBindingLayout& bindings);
 
 private:
 	Dx12RenderDevice& m_RenderDevice;
@@ -105,7 +101,8 @@ public:
 	Dx12RaytracingPipeline(Dx12RenderDevice& rd, const char* name);
 	~Dx12RaytracingPipeline();
 
-	virtual void Build() override;
+	virtual bool Build() override;
+	virtual bool IsBuilt() const override { return m_d3d12StateObject != nullptr; }
 
 	virtual const void* GetShaderIdentifier(const std::string& exportName) const override;
 
@@ -115,17 +112,13 @@ public:
 	ID3D12StateObject* GetD3D12StateObject() const { return m_d3d12StateObject; }
 
 private:
-	void BuildStateObject();
-	void BuildLocalRootSignature(const Dx12Shader::ShaderReflection& reflection);
-	void ParseRootParameters(const Dx12Shader::ShaderReflection& reflection);
+	bool BuildStateObject();
+	void ParseRootParameters(const render::ShaderBindingLayout& bindings);
 
 private:
 	Dx12RenderDevice& m_RenderDevice;
 
 	Arc< Dx12RootSignature > m_pGlobalRootSignature;
-	Arc< Dx12RootSignature > m_pMissLocalRootSignature;
-	Arc< Dx12RootSignature > m_pHitGroupLocalRootSignature;
-	u32                      m_LocalRootArgumentsSize = 0;
 
 	ID3D12StateObject*           m_d3d12StateObject           = nullptr;
 	ID3D12StateObjectProperties* m_d3d12StateObjectProperties = nullptr;

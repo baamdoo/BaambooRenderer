@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 
+namespace baamboo::shader { class PipelineFactory; }
+
 namespace baamboo
 {
 
@@ -17,7 +19,7 @@ class PathTracerNode : public render::RenderNode
 {
 	using Super = render::RenderNode;
 public:
-	PathTracerNode(render::RenderDevice& rd);
+	PathTracerNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory);
 	virtual ~PathTracerNode() = default;
 
 	virtual void Apply(render::CommandContext& context, const SceneRenderView& renderView) override;
@@ -64,6 +66,7 @@ private:
 	bool LoadEnvironmentDistribution(const std::filesystem::path& environmentMapPath);
 	bool RebuildMaterialSlabBuffer(const std::vector< MaterialSlabData >& slabs);
 	bool UpdateLightSelectionDistribution(const SceneRenderView& renderView);
+	void BuildShaderBindingTable();
 
 private:
 	Arc< render::Texture > m_pAccumulation;
@@ -81,6 +84,7 @@ private:
 	Arc< render::Buffer >  m_pMaterialSlabs;
 	Arc< render::Buffer >  m_pPrimaryRayMediumSeed;
 	Arc< render::ShaderBindingTable > m_pSBT;
+	u32                               m_SBTBuildCount = 0;
 	Box< render::ComputePipeline >     m_pPrimaryMediumQueryPSO;
 	Box< render::RaytracingPipeline > m_pPSO;
 

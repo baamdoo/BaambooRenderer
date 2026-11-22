@@ -1,7 +1,5 @@
 #include "RendererPch.h"
 #include "VkBufferAllocator.h"
-#include "VkCommandQueue.h"
-#include "VkCommandContext.h"
 #include "RenderResource/VkBuffer.h"
 #include "Utils/Math.hpp"
 
@@ -52,8 +50,6 @@ DynamicBufferAllocator::Page* DynamicBufferAllocator::RequestPage()
 	{
 		pPage = m_pAvailablePages.front();
 		m_pAvailablePages.pop_front();
-
-		pPage->Activate(true);
 	}
 	else
 	{
@@ -82,7 +78,6 @@ DynamicBufferAllocator::Allocation DynamicBufferAllocator::Page::Allocate(VkDevi
 
 	Allocation allocation = {};
 	allocation.pBuffer       = m_pBuffer;
-	allocation.sizeInBytes   = alignedSize;
 	allocation.offsetInBytes = alignedOffset;
 	allocation.cpuHandle     = static_cast<u8*>(m_pBuffer->MappedMemory()) + alignedOffset;
 
@@ -94,7 +89,6 @@ DynamicBufferAllocator::Allocation DynamicBufferAllocator::Page::Allocate(VkDevi
 void DynamicBufferAllocator::Page::Reset()
 {
 	m_OffsetInBytes = 0;
-	m_bActivated    = false;
 }
 
 bool DynamicBufferAllocator::Page::HasSpace(VkDeviceSize sizeInBytes, VkDeviceSize alignment) const
@@ -103,90 +97,6 @@ bool DynamicBufferAllocator::Page::HasSpace(VkDeviceSize sizeInBytes, VkDeviceSi
 	VkDeviceSize alignedOffset = baamboo::math::AlignUp(m_OffsetInBytes, alignment);
 
 	return alignedOffset + alignedSize <= m_pBuffer->SizeInBytes();
-}
-
-
-//-------------------------------------------------------------------------
-// Static-Buffer Allocator
-//-------------------------------------------------------------------------
-StaticBufferAllocator::StaticBufferAllocator(VkRenderDevice& rd, VkDeviceSize bufferSize, VkBufferUsageFlags2 usage)
-	: m_RenderDevice(rd)
-{
-	m_Alignment  = m_RenderDevice.DeviceProps().limits.minStorageBufferOffsetAlignment;
-	m_UsageFlags = usage |
-		           VK_BUFFER_USAGE_2_TRANSFER_DST_BIT |
-		           VK_BUFFER_USAGE_2_TRANSFER_SRC_BIT |
-		           VK_BUFFER_USAGE_2_SHADER_DEVICE_ADDRESS_BIT;
-
-	Resize(std::min(bufferSize, m_RenderDevice.DeviceMaintenance3Props().maxMemoryAllocationSize));
-}
-
-StaticBufferAllocator::~StaticBufferAllocator()
-{
-}
-
-StaticBufferAllocator::Allocation StaticBufferAllocator::Allocate(u32 numElements, u64 elementSizeInBytes)
-{
-	if (m_ElementSizeInBytes == 0)
-		m_ElementSizeInBytes = elementSizeInBytes;
-
-	BB_ASSERT(elementSizeInBytes == m_ElementSizeInBytes,
-	          "StaticBufferAllocator was created for stride %llu but allocation requested stride %llu",
-	          m_ElementSizeInBytes, elementSizeInBytes);
-
-	// This buffer is bound as one storage buffer. Shader offsets are element
-	// indices, so byte padding between allocations would corrupt reads.
-	const u64 offsetInBytes      = m_Offset;
-	const u64 sizeInBytes        = numElements * elementSizeInBytes;
-	const u64 allocationEndBytes = offsetInBytes + sizeInBytes;
-	BB_ASSERT(offsetInBytes % elementSizeInBytes == 0,
-	          "StaticBufferAllocator produced a non-element-aligned offset");
-
-	if (allocationEndBytes > m_pAllocatedBuffer->SizeInBytes())
-	{
-		VkDeviceSize newSize = allocationEndBytes * 2;
-		Resize(newSize);
-	}
-
-	Allocation allocation = {};
-	allocation.pBuffer     = m_pAllocatedBuffer;
-	allocation.offset      = (u32)(offsetInBytes / elementSizeInBytes);
-	allocation.sizeInBytes = sizeInBytes;
-	allocation.gpuHandle   = m_pAllocatedBuffer->DeviceAddress() + offsetInBytes;
-
-	m_Offset = allocationEndBytes;
-
-	return allocation;
-}
-
-void StaticBufferAllocator::Reset()
-{
-	m_Offset = 0;
-}
-
-VkDescriptorBufferInfo StaticBufferAllocator::GetDescriptorInfo(u64 offset) const
-{
-	VkDescriptorBufferInfo descriptorInfo = {};
-	descriptorInfo.buffer = m_pAllocatedBuffer->vkBuffer();
-	descriptorInfo.offset = offset;
-	descriptorInfo.range  = GetAllocatedSize();
-	return descriptorInfo;
-}
-
-void StaticBufferAllocator::Resize(VkDeviceSize sizeInBytes)
-{
-	if (m_pAllocatedBuffer == nullptr)
-	{
-		if (m_UsageFlags & VK_BUFFER_USAGE_2_STORAGE_BUFFER_BIT)
-			m_pAllocatedBuffer = VulkanStorageBuffer::Create(m_RenderDevice, "AllocatedBuffer_Static", sizeInBytes, m_UsageFlags);
-		else if (m_UsageFlags & VK_BUFFER_USAGE_2_UNIFORM_BUFFER_BIT)
-			m_pAllocatedBuffer = VulkanUniformBuffer::Create(m_RenderDevice, "AllocatedBuffer_Static", sizeInBytes, m_UsageFlags);
-		else if (m_UsageFlags & VK_BUFFER_USAGE_2_INDEX_BUFFER_BIT)
-			m_pAllocatedBuffer = VulkanIndexBuffer::Create(m_RenderDevice, "AllocatedBuffer_Static", (u32)(sizeInBytes / sizeof(u32)), VK_INDEX_TYPE_UINT32);
-		return;
-	}
-
-	m_pAllocatedBuffer->Resize(sizeInBytes);
 }
 
 } // namespace vk

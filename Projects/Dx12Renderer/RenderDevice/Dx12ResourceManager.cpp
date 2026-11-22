@@ -1,12 +1,9 @@
 #include "RendererPch.h"
 #include "Dx12ResourceManager.h"
-#include "Dx12DescriptorPool.h"
 #include "Dx12CommandContext.h"
-#include "Dx12RootSignature.h"
-#include "Dx12CommandSignature.h"
 #include "RenderResource/Dx12Buffer.h"
 #include "RenderResource/Dx12Texture.h"
-#include "RenderResource/Dx12SceneResource.h"
+#include "RenderCommon/SceneResource.h"
 
 #include <DirectXTex.h>
 #include <tinyexr/tinyexr.h>
@@ -118,74 +115,6 @@ namespace
 Dx12ResourceManager::Dx12ResourceManager(Dx12RenderDevice& rd)
     : m_RenderDevice(rd)
 {
-    m_pRtvDescriptorPool =
-        MakeBox< DescriptorPool >(m_RenderDevice, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, kMaxNumDescriptorPerPool[D3D12_DESCRIPTOR_HEAP_TYPE_RTV]);
-    m_pDsvDescriptorPool =
-        MakeBox< DescriptorPool >(m_RenderDevice, D3D12_DESCRIPTOR_HEAP_TYPE_DSV, D3D12_DESCRIPTOR_HEAP_FLAG_NONE, kMaxNumDescriptorPerPool[D3D12_DESCRIPTOR_HEAP_TYPE_DSV]);
-
-    m_pGlobalDescriptorHeap
-        = MakeArc< DescriptorPool >(m_RenderDevice, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE, kMaxGlobalDescriptors);
-
-    m_pGlobalRootSignature = 
-        MakeArc< Dx12RootSignature >(
-            m_RenderDevice, 
-            "GlobalRootSignature", 
-            D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT | D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED
-        );
-
-    // CommandSignature Param: space100, b0
-    m_pGlobalRootSignature->AddConstants(0, kCommandSignatureSpace, 1);
-    // Root Constant: space100, b0
-    m_pGlobalRootSignature->AddConstants(0, kMaxLocalRootConstants - 1);
-    // DescriptorHeapIndices: space100, b1 ~ b22 (kMaxDescriptorHeapIndices)
-    for (u32 i = 1; i < kMaxDescriptorHeapIndices + 1; ++i)
-    {
-        m_pGlobalRootSignature->AddConstants(i, 1);
-    }
-
-    // Global CBVs
-    m_pGlobalRootSignature->AddCBV(0, kGlobalDescriptorSpace);           // g_Camera
-    m_pGlobalRootSignature->AddCBV(1, kGlobalDescriptorSpace);           // g_MeshStreams CBV (vertices/indices/meshlets/meshletVertices/meshletTriangles heap indices)
-    m_pGlobalRootSignature->AddConstants(6, kGlobalDescriptorSpace, 1);  // g_Meshes
-    m_pGlobalRootSignature->AddConstants(7, kGlobalDescriptorSpace, 1);  // g_Instances
-    m_pGlobalRootSignature->AddCBV(8, kGlobalDescriptorSpace);           // g_CullData
-    m_pGlobalRootSignature->AddConstants(9, kGlobalDescriptorSpace, 1);  // g_Transforms
-    m_pGlobalRootSignature->AddConstants(10, kGlobalDescriptorSpace, 1); // g_Materials
-    m_pGlobalRootSignature->AddCBV(11, kGlobalDescriptorSpace);          // g_Lights
-    m_pGlobalRootSignature->AddCBV(12, kGlobalDescriptorSpace);          // g_SceneEnvironment
-    m_pGlobalRootSignature->AddCBV(13, kGlobalDescriptorSpace);          // g_FrozenCamera
-    m_pGlobalRootSignature->AddConstants(14, kGlobalDescriptorSpace, 1); // g_MaterialTextures
-    // Local CBVs
-    for (u32 i = 0; i < (kMaxViews - 8) / 3; ++i)
-    {
-        m_pGlobalRootSignature->AddCBV(i, 1);
-        m_pGlobalRootSignature->AddSRV(i, 1);
-        m_pGlobalRootSignature->AddUAV(i, 1);
-    }
-
-    // Samplers
-    m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(eSamplerIndex::PointWrap));
-    m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(eSamplerIndex::PointClamp));
-    m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(eSamplerIndex::LinearWrap));
-    m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(eSamplerIndex::LinearClamp));
-    m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(eSamplerIndex::TrilinearWrap));
-    m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(eSamplerIndex::AnisotropicWrap));
-    m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(eSamplerIndex::ShadowCmpLessEqual));
-    m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(eSamplerIndex::PointClampMin));
-    m_pGlobalRootSignature->AddSamplerPreset(static_cast<u32>(eSamplerIndex::LinearClampMin));
-
-    m_pGlobalRootSignature->Build();
-
-    m_pDispatchSignature = MakeBox< CommandSignature >(
-        m_RenderDevice,
-        CommandSignatureDesc(1, sizeof(D3D12_DISPATCH_ARGUMENTS))
-            .AddDispatch(),
-        nullptr);
-}
-
-Dx12ResourceManager::~Dx12ResourceManager()
-{
-    ResourceManager::~ResourceManager();
 }
 
 Arc< render::Texture > Dx12ResourceManager::LoadTexture(const std::string& filepath, bool bGenerateMips, render::eTextureColorSpace colorSpace)
@@ -499,7 +428,7 @@ Arc< Dx12Texture > Dx12ResourceManager::LoadTextureArray(const fs::path& dirpath
     return pTex;
 }
 
-void Dx12ResourceManager::UploadData(Dx12Resource* pResource, const void* pData, u64 sizeInBytes, u64 dstOffsetInBytes, const BarrierState& stateAfter)
+void Dx12ResourceManager::UploadData(const Arc< render::Buffer >& pBuffer, const void* pData, u64 sizeInBytes, render::ePipelineStage dstStage, u64 dstOffsetInBytes)
 {
     if (!m_pStagingBuffer)
     {
@@ -519,51 +448,44 @@ void Dx12ResourceManager::UploadData(Dx12Resource* pResource, const void* pData,
     }
     memcpy(m_pStagingBuffer->MappedMemory(), pData, sizeInBytes);
 
-    auto pContext = m_RenderDevice.BeginCommand(D3D12_COMMAND_LIST_TYPE_DIRECT);
+    auto pDstBuffer = StaticCast< Dx12Buffer >(pBuffer);
+    auto pContext   = m_RenderDevice.BeginCommand(D3D12_COMMAND_LIST_TYPE_DIRECT);
     {
-        pContext->TransitionBarrier(pResource, BarrierStates::CopyDest);
-        pContext->CopyBuffer(pResource->GetD3D12Resource(), m_pStagingBuffer->GetD3D12Resource(), sizeInBytes, dstOffsetInBytes, 0);
-        if (stateAfter != BarrierStates::Common)
-            pContext->TransitionBarrier(pResource, stateAfter);
+        pContext->TransitionBarrier(pDstBuffer.get(), BarrierStates::CopyDest);
+        pContext->CopyBuffer(pDstBuffer->GetD3D12Resource(), m_pStagingBuffer->GetD3D12Resource(), sizeInBytes, dstOffsetInBytes, 0);
+        if (dstStage != render::ePipelineStage::None)
+            pContext->TransitionBufferToRead(pBuffer, dstStage, dstOffsetInBytes, true);
         pContext->Close();
     }
     m_RenderDevice.ExecuteCommand(std::move(pContext)).Wait();
 }
 
-void Dx12ResourceManager::UploadData(Arc< Dx12Buffer > pBuffer, const void* pData, u64 sizeInBytes, u64 dstOffsetInBytes, const BarrierState& stateAfter)
+void Dx12ResourceManager::BuildAccelerationStructures(std::span< render::BottomLevelAccelerationStructure* const > pendingBLAS, render::TopLevelAccelerationStructure* pTLAS)
 {
-    UploadData(pBuffer.get(), pData, sizeInBytes, dstOffsetInBytes, stateAfter);
-}
+    const bool bHasTLAS = pTLAS && pTLAS->NumInstances() > 0;
+    if (pendingBLAS.empty() && !bHasTLAS)
+        return;
 
-void Dx12ResourceManager::UploadData(Arc< Dx12Texture > pTexture, const void* pData, u64 sizeInBytes, const BarrierState& stateAfter)
-{
-    UploadData(pTexture.get(), pData, sizeInBytes, 0, stateAfter);
-}
-
-DescriptorAllocation Dx12ResourceManager::AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE type, u32 numDescriptors)
-{
-    switch (type)
+    auto pContext = m_RenderDevice.BeginCommand(D3D12_COMMAND_LIST_TYPE_DIRECT);
+    for (auto* pBLAS : pendingBLAS)
     {
-    case D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV:
-        return m_pGlobalDescriptorHeap->Allocate(numDescriptors);
-    case D3D12_DESCRIPTOR_HEAP_TYPE_RTV:
-        return m_pRtvDescriptorPool->Allocate(numDescriptors);
-    case D3D12_DESCRIPTOR_HEAP_TYPE_DSV:
-        return m_pDsvDescriptorPool->Allocate(numDescriptors);
-
-    default:
-        __debugbreak();
-        assert(false && "Invalid entry!");
+        pContext->BuildBLAS(*pBLAS);
     }
 
-    return DescriptorAllocation();
+    if (bHasTLAS)
+    {
+        pContext->BuildTLAS(*pTLAS);
+    }
+
+    pContext->Close();
+    m_RenderDevice.ExecuteCommand(std::move(pContext)).Wait();
 }
 
 render::SceneResource& Dx12ResourceManager::GetSceneResource()
 {
     if (!m_pSceneResource)
     {
-        m_pSceneResource = new Dx12SceneResource(m_RenderDevice);
+        m_pSceneResource = new render::SceneResource(m_RenderDevice);
     }
 
     return *m_pSceneResource;
@@ -621,21 +543,6 @@ Arc<render::Texture> Dx12ResourceManager::GetFlatBlackTextureCube()
         m_pBlackTextureCube = CreateFlatCubeTexture("DefaultTexture::BlackCube", 0xFF000000u);
     }
 	return m_pBlackTextureCube;
-}
-
-Arc< Dx12RootSignature > Dx12ResourceManager::GetGlobalRootSignature() const
-{
-    return m_pGlobalRootSignature;
-}
-
-Arc< DescriptorPool > Dx12ResourceManager::GetGlobalDescriptorHeap() const
-{
-    return m_pGlobalDescriptorHeap;
-}
-
-ID3D12CommandSignature* Dx12ResourceManager::GetDispatchD3D12CommandSignature() const
-{
-    return m_pDispatchSignature->GetD3D12CommandSignature();
 }
 
 Arc< Dx12Texture > Dx12ResourceManager::CreateFlat2DTexture(const char* name, u32 color)

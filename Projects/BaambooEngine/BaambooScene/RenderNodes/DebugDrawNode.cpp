@@ -3,7 +3,9 @@
 
 #include "RenderCommon/RenderDevice.h"
 #include "RenderCommon/CommandContext.h"
+#include "RenderCommon/SceneResource.h"
 #include "BaambooScene/Scene.h"
+#include "PipelineFactory.h"
 
 #include <imgui.h>
 
@@ -20,17 +22,10 @@ u32 CeilDiv(u32 a, u32 b)
 
 struct LightTypeStyle
 {
-	u32    typeMask;     // 1u << LT_OFF_*
+	u32    typeMask;     // 1u << kDebugLightBit*
 	float3 color;
 	const char* label;
 };
-constexpr u32 kLtBitSpot   = 0u;
-constexpr u32 kLtBitArea   = 1u;
-constexpr u32 kLtBitSphere = 2u;
-constexpr u32 kLtBitDisk   = 3u;
-constexpr u32 kLtBitTube   = 4u;
-
-constexpr u32 kMaxVertsPerLight = 192u;
 
 } // namespace
 
@@ -38,30 +33,32 @@ constexpr u32 kMaxVertsPerLight = 192u;
 // =========================================================================
 // DebugDrawNode — construction
 // =========================================================================
-DebugDrawNode::DebugDrawNode(render::RenderDevice& rd)
+DebugDrawNode::DebugDrawNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory)
 	: Super(rd, "DebugDrawPass")
 {
 	using namespace render;
 
-	auto pPS = Shader::Create(rd, "DebugWireframePS", { .stage = eShaderStage::Fragment, .filename = "DebugWireframePS" });
+	const shader::ShaderDesc wireframePS = { .source = "DebugWireframePS.slang" };
 
 	// --- Frustum PSO ---
 	{
-		auto pVS = Shader::Create(rd, "DebugFrustumVS", { .stage = eShaderStage::Vertex, .filename = "DebugFrustumVS" });
-
-		m_pFrustumPSO = GraphicsPipeline::Create(rd, "DebugFrustumPSO");
-		m_pFrustumPSO->SetShaders(pVS, pPS)
-			          .SetTopology(ePrimitiveTopology::Line)
+		m_pFrustumPSO = pipelineFactory.CreateGraphicsPipeline("DebugFrustumPSO",
+			{
+				.vertex = { .source = "DebugFrustumVS.slang" },
+				.pixel  = wireframePS,
+			});
+		m_pFrustumPSO->SetTopology(ePrimitiveTopology::Line)
 			          .SetCullMode(eCullMode::None);
 	}
 
 	// --- Cluster PSO ---
 	{
-		auto pVS = Shader::Create(rd, "DebugClusterVS", { .stage = eShaderStage::Vertex, .filename = "DebugClusterVS" });
-
-		m_pClusterPSO = GraphicsPipeline::Create(rd, "DebugClusterPSO");
-		m_pClusterPSO->SetShaders(pVS, pPS)
-			          .SetTopology(ePrimitiveTopology::Line)
+		m_pClusterPSO = pipelineFactory.CreateGraphicsPipeline("DebugClusterPSO",
+			{
+				.vertex = { .source = "DebugClusterVS.slang" },
+				.pixel  = wireframePS,
+			});
+		m_pClusterPSO->SetTopology(ePrimitiveTopology::Line)
 			          .SetCullMode(eCullMode::None)
 			          .SetBlendEnable(0, true)
 			          .SetColorBlending(0, eBlendFactor::SrcAlpha, eBlendFactor::SrcAlphaInv, eBlendOp::Add)
@@ -70,22 +67,24 @@ DebugDrawNode::DebugDrawNode(render::RenderDevice& rd)
 
 	// --- Light PSO ---
 	{
-		auto pVS = Shader::Create(rd, "DebugLightVS", { .stage = eShaderStage::Vertex, .filename = "DebugLightVS" });
-
-		m_pLightPSO = GraphicsPipeline::Create(rd, "DebugLightPSO");
-		m_pLightPSO->SetShaders(pVS, pPS)
-			.SetTopology(ePrimitiveTopology::Line)
+		m_pLightPSO = pipelineFactory.CreateGraphicsPipeline("DebugLightPSO",
+			{
+				.vertex = { .source = "DebugLightVS.slang" },
+				.pixel  = wireframePS,
+			});
+		m_pLightPSO->SetTopology(ePrimitiveTopology::Line)
 			.SetCullMode(eCullMode::None);
 		// No alpha-blend: light gizmos read more clearly as solid wireframe.
 	}
 
 	// --- Generic debug line PSO ---
 	{
-		auto pVS = Shader::Create(rd, "DebugLineVS", { .stage = eShaderStage::Vertex, .filename = "DebugLineVS" });
-
-		m_pDebugLinePSO = GraphicsPipeline::Create(rd, "DebugLinePSO");
-		m_pDebugLinePSO->SetShaders(pVS, pPS)
-			.SetTopology(ePrimitiveTopology::Line)
+		m_pDebugLinePSO = pipelineFactory.CreateGraphicsPipeline("DebugLinePSO",
+			{
+				.vertex = { .source = "DebugLineVS.slang" },
+				.pixel  = wireframePS,
+			});
+		m_pDebugLinePSO->SetTopology(ePrimitiveTopology::Line)
 			.SetCullMode(eCullMode::None)
 			.SetBlendEnable(0, true)
 			.SetColorBlending(0, eBlendFactor::SrcAlpha, eBlendFactor::SrcAlphaInv, eBlendOp::Add)
@@ -137,6 +136,15 @@ void DebugDrawNode::Apply(render::CommandContext& context, const SceneRenderView
 
 	EnsureRenderTarget(pColor);
 
+	// Copies and buffer barriers must be recorded outside the render pass (Vulkan)
+	if (bDrawDebugLines)
+		UploadDebugLines(context, renderView);
+	if (bDrawCluster)
+	{
+		context.TransitionBufferToRead(g_FrameData.pClusterAABBBuffer.lock(), ePipelineStage::VertexShader);
+		context.TransitionBufferToRead(g_FrameData.pLightGridBuffer.lock(),   ePipelineStage::VertexShader);
+	}
+
 	context.TransitionBarrier(pColor, eTextureLayout::ColorAttachment);
 
 	context.BeginRenderPass(m_pRenderTarget);
@@ -166,11 +174,10 @@ void DebugDrawNode::ApplyFrustumWireframe(render::CommandContext& context)
 
 	context.SetRenderPipeline(m_pFrustumPSO.get());
 
-	struct
-	{
-		float r, g, b, a;
-	} push = { 1.0f, 0.85f, 0.15f, 1.0f };
-	context.SetGraphicsConstants(sizeof(push), &push);
+	const DebugFrustumConstants constants = { .lineColor = float3(1.0f, 0.85f, 0.15f), .lineAlpha = 1.0f };
+	context.SetGraphicsConstants(sizeof(constants), &constants);
+
+	context.StageDescriptor("ID_Scene", m_RenderDevice.GetResourceManager().GetSceneResource().GetSceneGlobals());
 
 	context.Draw(24u, 1u);
 }
@@ -187,33 +194,24 @@ void DebugDrawNode::ApplyClusterWireframe(render::CommandContext& context, const
 	const u32 clusterCount = numTilesX * numTilesY * numZ;
 
 	u32 flagsBits = 0u;
-	if (renderView.debugFlags.bClusterHeatmap)    flagsBits |= 0x1u;
-	if (renderView.debugFlags.bSkipEmptyClusters) flagsBits |= 0x2u;
+	if (renderView.debugFlags.bClusterHeatmap)    flagsBits |= kDebugClusterFlagHeatmap;
+	if (renderView.debugFlags.bSkipEmptyClusters) flagsBits |= kDebugClusterFlagSkipEmpty;
 
-	struct
-	{
-		float r, g, b;
-		float a;
-		u32   numTilesX;
-		u32   numTilesY;
-		u32   numSlices;
-		u32   flagsBits;
-		u32   saturationMax;
-		float padX, padY, padZ;
-	} push = {
+	const DebugClusterConstants constants = {
 		// uniform color (when heatmap off) — soft white, alpha tuned for readability
-		.r = 1.0f, .g = 1.0f, .b = 1.0f, .a = 0.3f,
+		.lineColor     = float3(1.0f),
+		.lineAlpha     = 0.3f,
 		.numTilesX     = numTilesX,
 		.numTilesY     = numTilesY,
 		.numSlices     = numZ,
 		.flagsBits     = flagsBits,
 		.saturationMax = std::max(renderView.debugFlags.saturationMax, 1u),
-		.padX = 0.0f, .padY = 0.0f, .padZ = 0.0f,
 	};
-	context.SetGraphicsConstants(sizeof(push), &push);
+	context.SetGraphicsConstants(sizeof(constants), &constants);
 
-	context.StageDescriptor("g_ClusterBuffer",   g_FrameData.pClusterAABBBuffer.lock());
-	context.StageDescriptor("g_LightGridBuffer", g_FrameData.pLightGridBuffer.lock());
+	context.StageDescriptor("ID_Scene",           m_RenderDevice.GetResourceManager().GetSceneResource().GetSceneGlobals());
+	context.StageDescriptor("ID_ClusterBuffer",   g_FrameData.pClusterAABBBuffer.lock());
+	context.StageDescriptor("ID_LightGridBuffer", g_FrameData.pLightGridBuffer.lock());
 
 	context.Draw(24u, clusterCount);
 }
@@ -224,12 +222,15 @@ void DebugDrawNode::ApplyLightWireframe(render::CommandContext& context, const S
 
 	context.SetRenderPipeline(m_pLightPSO.get());
 
+	// Staged once: SetGraphicsConstants below rewrites only the constants at the front of the push block
+	context.StageDescriptor("ID_Scene", m_RenderDevice.GetResourceManager().GetSceneResource().GetSceneGlobals());
+
 	const LightTypeStyle types[] = {
-		{ 1u << kLtBitSpot,   { 1.0f, 0.85f, 0.30f }, "Spot"   },
-		{ 1u << kLtBitArea,   { 0.30f, 0.85f, 1.0f }, "Area"   },
-		{ 1u << kLtBitSphere, { 1.0f, 0.40f, 0.70f }, "Sphere" },
-		{ 1u << kLtBitDisk,   { 0.70f, 1.0f, 0.40f }, "Disk"   },
-		{ 1u << kLtBitTube,   { 0.40f, 0.70f, 1.0f }, "Tube"   },
+		{ 1u << kDebugLightBitSpot,   { 1.0f, 0.85f, 0.30f }, "Spot"   },
+		{ 1u << kDebugLightBitArea,   { 0.30f, 0.85f, 1.0f }, "Area"   },
+		{ 1u << kDebugLightBitSphere, { 1.0f, 0.40f, 0.70f }, "Sphere" },
+		{ 1u << kDebugLightBitDisk,   { 0.70f, 1.0f, 0.40f }, "Disk"   },
+		{ 1u << kDebugLightBitTube,   { 0.40f, 0.70f, 1.0f }, "Tube"   },
 	};
 
 	for (const auto& t : types)
@@ -238,62 +239,44 @@ void DebugDrawNode::ApplyLightWireframe(render::CommandContext& context, const S
 			continue;
 
 		u32 instanceCount = 0u;
-		if      (t.typeMask == (1u << kLtBitSpot))   instanceCount = renderView.light.numSpots;
-		else if (t.typeMask == (1u << kLtBitArea))   instanceCount = renderView.light.numAreas;
-		else if (t.typeMask == (1u << kLtBitSphere)) instanceCount = renderView.light.numSpheres;
-		else if (t.typeMask == (1u << kLtBitDisk))   instanceCount = renderView.light.numDisks;
-		else if (t.typeMask == (1u << kLtBitTube))   instanceCount = renderView.light.numTubes;
+		if      (t.typeMask == (1u << kDebugLightBitSpot))   instanceCount = renderView.light.numSpots;
+		else if (t.typeMask == (1u << kDebugLightBitArea))   instanceCount = renderView.light.numAreas;
+		else if (t.typeMask == (1u << kDebugLightBitSphere)) instanceCount = renderView.light.numSpheres;
+		else if (t.typeMask == (1u << kDebugLightBitDisk))   instanceCount = renderView.light.numDisks;
+		else if (t.typeMask == (1u << kDebugLightBitTube))   instanceCount = renderView.light.numTubes;
 
 		if (instanceCount == 0u)
 			continue;
 
-		struct
-		{
-			float r, g, b;
-			float a;
-			u32   typeMask;
-			u32   padX, padY, padZ;
-		} push = {
-			.r = t.color.r, .g = t.color.g, .b = t.color.b, .a = 1.0f,
-			.typeMask = t.typeMask,
-			.padX = 0u, .padY = 0u, .padZ = 0u,
+		const DebugLightConstants constants = {
+			.lineColor = t.color,
+			.lineAlpha = 1.0f,
+			.typeMask  = t.typeMask,
 		};
-		context.SetGraphicsConstants(sizeof(push), &push);
+		context.SetGraphicsConstants(sizeof(constants), &constants);
 
-		context.Draw(kMaxVertsPerLight, instanceCount);
+		context.Draw(kDebugLightMaxVertices, instanceCount);
 	}
 }
 
-bool DebugDrawNode::EnsureDebugLineBuffer(u32 vertexCount)
-{
-	if (vertexCount == 0u)
-		return false;
-
-	if (m_pDebugLineBuffer && m_DebugLineVertexCapacity >= vertexCount)
-		return false;
-
-	m_DebugLineVertexCapacity = std::max(vertexCount, m_DebugLineVertexCapacity * 2u);
-	m_DebugLineVertexCapacity = std::max(m_DebugLineVertexCapacity, 256u);
-	m_pDebugLineBuffer = render::Buffer::Create(m_RenderDevice, "DebugDrawPass::DebugLines",
-		{
-			.count = m_DebugLineVertexCapacity,
-			.elementSizeInBytes = sizeof(DebugLineVertex),
-			.bufferUsage = render::eBufferUsage_Storage | render::eBufferUsage_TransferDest,
-		});
-	return true;
-}
-
-void DebugDrawNode::ApplyDebugLines(render::CommandContext& context, const SceneRenderView& renderView)
+void DebugDrawNode::UploadDebugLines(render::CommandContext& context, const SceneRenderView& renderView)
 {
 	using namespace render;
 
 	const u32 vertexCount = static_cast< u32 >(renderView.debugLines.size());
-	if (vertexCount == 0u)
-		return;
 
-	const bool bBufferRecreated = EnsureDebugLineBuffer(vertexCount);
-	if (!m_pDebugLineBuffer)
-		return;
+	const bool bBufferRecreated = !m_pDebugLineBuffer || m_DebugLineVertexCapacity < vertexCount;
+	if (bBufferRecreated)
+	{
+		m_DebugLineVertexCapacity = std::max(vertexCount, m_DebugLineVertexCapacity * 2u);
+		m_DebugLineVertexCapacity = std::max(m_DebugLineVertexCapacity, 256u);
+		m_pDebugLineBuffer = Buffer::Create(m_RenderDevice, "DebugDrawPass::DebugLines",
+			{
+				.count = m_DebugLineVertexCapacity,
+				.elementSizeInBytes = sizeof(DebugLineVertex),
+				.bufferUsage = eBufferUsage_Storage | eBufferUsage_TransferDest,
+			});
+	}
 
 	if (bBufferRecreated || m_DebugLineVersion != renderView.debugLinesVersion || m_DebugLineVertexCount != vertexCount)
 	{
@@ -302,10 +285,16 @@ void DebugDrawNode::ApplyDebugLines(render::CommandContext& context, const Scene
 		m_DebugLineVertexCount = vertexCount;
 	}
 	context.TransitionBufferToRead(m_pDebugLineBuffer, ePipelineStage::VertexShader);
+}
+
+void DebugDrawNode::ApplyDebugLines(render::CommandContext& context, const SceneRenderView& renderView)
+{
+	using namespace render;
 
 	context.SetRenderPipeline(m_pDebugLinePSO.get());
-	context.StageDescriptor("g_DebugLines", m_pDebugLineBuffer);
-	context.Draw(vertexCount, 1u);
+	context.StageDescriptor("ID_Scene",      m_RenderDevice.GetResourceManager().GetSceneResource().GetSceneGlobals());
+	context.StageDescriptor("ID_DebugLines", m_pDebugLineBuffer);
+	context.Draw(static_cast< u32 >(renderView.debugLines.size()), 1u);
 }
 
 void DebugDrawNode::Resize(u32 width, u32 height, u32 depth)

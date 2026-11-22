@@ -3,7 +3,6 @@
 #include "RenderDevice/VkSwapChain.h"
 #include "RenderDevice/VkCommandQueue.h"
 #include "RenderDevice/VkCommandContext.h"
-#include "RenderResource/VkSceneResource.h"
 
 #include <imgui/imgui.h>
 #include <imgui/backends/imgui_impl_vulkan.h>
@@ -37,7 +36,6 @@ ImGuiModule::ImGuiModule(VkRenderDevice& rd, vk::SwapChain& swapChain, ImGuiCont
 	imguiInfo.QueueFamily     = m_RenderDevice.GraphicsQueue().Index();
 	imguiInfo.Queue           = m_RenderDevice.GraphicsQueue().vkQueue();
 	imguiInfo.DescriptorPool  = m_vkImGuiPool;
-	//imguiInfo.RenderPass      = m_RenderDevice.vkMainRenderPass();
 	const u32 minImageCount = std::max(g_minImageCount, swapChain.Capabilities().minImageCount);
 	BB_ASSERT(swapChain.ImageCount() >= minImageCount,
 		"The Vulkan swapchain image count is below the ImGui backend minimum.");

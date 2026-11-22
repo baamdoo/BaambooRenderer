@@ -1,0 +1,276 @@
+#pragma once
+#include "ShaderShared/Scene.h"
+#include "ShaderShared/Mesh.h"
+#include "ShaderShared/Material.h"
+#include "Common/Binding.slangh"
+#include "Common/Math.slangh"
+#include "Common/MaterialTextures.slangh"
+#include "Common/VisibilityBuffer.slangh"
+
+// CoreMaterial G channel
+static const uint MATCLASS_STANDARD = 0u;
+
+float2 SignNotZero(float2 v)
+{
+    return float2(v.x >= 0.0 ? 1.0 : -1.0,
+                  v.y >= 0.0 ? 1.0 : -1.0);
+}
+
+float2 OctEncode(float3 n)
+{
+    n /= abs(n.x) + abs(n.y) + abs(n.z);
+    if (n.z < 0.0)
+    {
+        const float2 oldXY = n.xy;
+        n.xy = (1.0 - abs(oldXY.yx)) * SignNotZero(oldXY);
+    }
+
+    return n.xy;
+}
+
+float3 OctDecode(float2 e)
+{
+    float3 n = float3(e.x, e.y, 1.0 - abs(e.x) - abs(e.y));
+
+    const float t = saturate(-n.z);
+    n.xy -= t * SignNotZero(n.xy);
+
+    return normalize(n);
+}
+
+// Pixel space has y down, NDC has y up
+float2 PixelCenterToNDC(float2 pixelCenter, float2 viewport)
+{
+    const float2 ndc = (pixelCenter / viewport) * 2.0 - 1.0;
+    return float2(ndc.x, -ndc.y);
+}
+
+// Built from the projection and the view rotation only: at depth 0 the inverse view-projection gives w = 0 and loses the ray's sign
+float3 ViewRayDirWS(float2 ndc, float4x4 mProj, float4x4 mView)
+{
+    const float3 dirVS = float3((ndc.x - mProj[0][2]) / mProj[0][0], (ndc.y - mProj[1][2]) / mProj[1][1], 1.0);
+    return normalize(mul(dirVS, (float3x3)mView));
+}
+
+float EdgeFunction(float2 a, float2 b, float2 c)
+{
+    return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+float3 Barycentrics(float2 ndc, float4 c0, float4 c1, float4 c2)
+{
+    const float2 ndc0 = c0.xy / c0.w;
+    const float2 ndc1 = c1.xy / c1.w;
+    const float2 ndc2 = c2.xy / c2.w;
+
+    const float totalArea = EdgeFunction(ndc0, ndc1, ndc2);
+    if (abs(totalArea) < 1e-6)
+        return float3(1.0 / 3.0);
+
+    const float a = EdgeFunction(ndc, ndc1, ndc2) / totalArea;
+    const float b = EdgeFunction(ndc, ndc2, ndc0) / totalArea;
+    const float c = 1.0 - a - b;
+
+    const float3 invZ = float3(1.0 / c0.w, 1.0 / c1.w, 1.0 / c2.w);
+    const float3 bary = float3(a, b, c) * invZ;
+    return bary / dot(bary, float3(1.0)); // 1/Z = a/Z0 + b/Z1 + c/Z2
+}
+
+void UVGradient(float2 ndc, float2 invViewport,
+                float4 c0, float4 c1, float4 c2,
+                float2 uv0, float2 uv1, float2 uv2,
+                out float2 duvdx, out float2 duvdy)
+{
+    const float3 bary   = Barycentrics(ndc, c0, c1, c2);
+    const float3 barydx = Barycentrics(ndc + float2(2.0 * invViewport.x, 0.0), c0, c1, c2);
+    const float3 barydy = Barycentrics(ndc + float2(0.0, -2.0 * invViewport.y), c0, c1, c2);
+
+    const float2 uv   = bary.x * uv0 + bary.y * uv1 + bary.z * uv2;
+    const float2 uvdx = barydx.x * uv0 + barydx.y * uv1 + barydx.z * uv2;
+    const float2 uvdy = barydy.x * uv0 + barydy.y * uv1 + barydy.z * uv2;
+
+    duvdx = uvdx - uv;
+    duvdy = uvdy - uv;
+}
+
+
+struct VisTriangle
+{
+    float3   position[3];
+    float2   uv[3];
+    float3   normal[3];
+    float4   tangent[3];
+
+    float4x4 mLocalToWorld;
+    float4x4 mWorldToLocal;
+
+    uint     materialID;
+};
+
+// Mesh path: the VBuf1 meshlet index is absolute (it already includes the LOD's meshlet offset)
+VisTriangle FetchVisTriangle(SceneBufferIndices buffers, uint v0, uint v1)
+{
+    StructuredBuffer< Vertex >        vertices         = GetResource(buffers.vertices);
+    StructuredBuffer< Meshlet >       meshlets         = GetResource(buffers.meshlets);
+    StructuredBuffer< uint >          meshletVertices  = GetResource(buffers.meshletVertices);
+    StructuredBuffer< uint >          meshletTriangles = GetResource(buffers.meshletTriangles);
+    StructuredBuffer< MeshData >      meshes           = GetResource(buffers.meshes);
+    StructuredBuffer< InstanceData >  instances        = GetResource(buffers.instances);
+    StructuredBuffer< TransformData > transforms       = GetResource(buffers.transforms);
+
+    const InstanceData  instance  = instances[VisInstanceID(v0)];
+    const TransformData transform = transforms[instance.transformID];
+    const MeshData      mesh      = meshes[instance.meshID];
+    const MeshLOD       meshLod   = mesh.lods[VisLOD(v0)];
+    const Meshlet       meshlet   = meshlets[VisMeshletIndex(v1)];
+
+    const uint tPacked3 = meshletTriangles[meshLod.mtOffset + meshlet.triangleOffset + VisTriLocal(v1)];
+
+    VisTriangle t;
+    t.mLocalToWorld = transform.mLocalToWorld;
+    t.mWorldToLocal = transform.mWorldToLocal;
+    t.materialID    = instance.materialID;
+
+    [unroll]
+    for (uint k = 0; k < 3; ++k)
+    {
+        const uint local = (tPacked3 >> (8u * k)) & 0xFFu;
+        const uint vi    = mesh.vOffset + meshletVertices[meshLod.mvOffset + meshlet.vertexOffset + local];
+
+        const Vertex vertex = vertices[vi];
+        t.position[k] = vertex.position;
+        t.uv[k]       = vertex.uv;
+        t.normal[k]   = vertex.normal;
+        t.tangent[k]  = vertex.tangent;
+    }
+
+    return t;
+}
+
+struct ResolvedSurface
+{
+    float3 N;         // world-space shading normal
+    float  roughness; // linear; voxel terrain stores the base normal's y here
+    uint   matClass;
+    float3 posWS;     // perspective-correct interpolated world position
+};
+
+// Mesh surface: fetch -> perspective-correct bary -> interpolate -> analytic UV gradient -> SampleGrad material
+ResolvedSurface ResolveMeshSurface(SceneBufferIndices buffers, float4x4 viewProj, uint v0, uint v1, float2 pixelCenter, float2 viewport)
+{
+    const VisTriangle t = FetchVisTriangle(buffers, v0, v1);
+
+    float3 wpos[3];
+    float4 c[3];
+    [unroll]
+    for (uint k = 0; k < 3; ++k)
+    {
+        const float4 wp = mul(t.mLocalToWorld, float4(t.position[k], 1.0));
+        wpos[k] = wp.xyz;
+        c[k]    = mul(viewProj, wp);
+    }
+
+    const float2 ndc  = PixelCenterToNDC(pixelCenter, viewport);
+    const float3 bary = Barycentrics(ndc, c[0], c[1], c[2]);
+
+    const float2 uv      = bary.x * t.uv[0] + bary.y * t.uv[1] + bary.z * t.uv[2];
+    const float3 normal  = bary.x * t.normal[0] + bary.y * t.normal[1] + bary.z * t.normal[2];
+    const float3 tangent = bary.x * t.tangent[0].xyz + bary.y * t.tangent[1].xyz + bary.z * t.tangent[2].xyz;
+
+    const float tangentSign   = t.tangent[0].w < 0.0 ? -1.0 : 1.0;
+    const float transformSign = determinant((float3x3)t.mLocalToWorld) < 0.0 ? -1.0 : 1.0;
+    const float tangentSignWS = tangentSign * transformSign;
+
+    const float3x3 normalTransform = transpose((float3x3)t.mWorldToLocal);
+
+    const float3 edge01              = t.position[1] - t.position[0];
+    const float3 edge02              = t.position[2] - t.position[0];
+    const float3 geometricNormal     = cross(edge01, edge02);
+    const float  geometricNormalLen2 = dot(geometricNormal, geometricNormal);
+    const float  edgeScale2          = dot(edge01, edge01) * dot(edge02, edge02);
+
+    float3 geometricNormalWS = float3(0.0, 1.0, 0.0);
+    if (geometricNormalLen2 > edgeScale2 * DEGENERATE_SIN2)
+    {
+        geometricNormalWS = mul(normalTransform, geometricNormal * rsqrt(geometricNormalLen2));
+        const float len2 = dot(geometricNormalWS, geometricNormalWS);
+        geometricNormalWS = len2 > 0.0 ? geometricNormalWS * rsqrt(len2) : float3(0.0, 1.0, 0.0);
+    }
+
+    // Vertex normals are unit-length in local space, so test there before the transform
+    const float normalLen2 = dot(normal, normal);
+    float3 shadingNormalWS = geometricNormalWS;
+    if (normalLen2 > DEGENERATE_LEN2)
+    {
+        shadingNormalWS = mul(normalTransform, normal * rsqrt(normalLen2));
+        const float len2 = dot(shadingNormalWS, shadingNormalWS);
+        shadingNormalWS = len2 > 0.0 ? shadingNormalWS * rsqrt(len2) : geometricNormalWS;
+    }
+    if (dot(shadingNormalWS, geometricNormalWS) < 0.0)
+        shadingNormalWS = -shadingNormalWS;
+
+    const float tangentLen2   = dot(tangent, tangent);
+    bool        bValidTangent = tangentLen2 > DEGENERATE_LEN2;
+    float3      tangentWS     = float3(0.0);
+    if (bValidTangent)
+    {
+        tangentWS = mul((float3x3)t.mLocalToWorld, tangent * rsqrt(tangentLen2));
+        const float tangentWSLen2 = dot(tangentWS, tangentWS);
+        tangentWS -= shadingNormalWS * dot(tangentWS, shadingNormalWS); // gram-schmidt
+        const float orthoLen2 = dot(tangentWS, tangentWS);
+        bValidTangent = orthoLen2 > tangentWSLen2 * DEGENERATE_SIN2 && orthoLen2 > 0.0;
+        if (bValidTangent)
+            tangentWS *= rsqrt(orthoLen2);
+    }
+    if (!bValidTangent)
+    {
+        const float3 axis = abs(shadingNormalWS.z) < 0.999 ? float3(0.0, 0.0, 1.0) : float3(1.0, 0.0, 0.0);
+        tangentWS = normalize(cross(axis, shadingNormalWS));
+    }
+
+    ResolvedSurface rs;
+    rs.N         = shadingNormalWS;
+    rs.roughness = 1.0;
+    rs.matClass  = MATCLASS_STANDARD;
+    rs.posWS     = bary.x * wpos[0] + bary.y * wpos[1] + bary.z * wpos[2];
+
+    if (t.materialID == kInvalidIndex)
+        return rs;
+
+    StructuredBuffer< MaterialData >        materials        = GetResource(buffers.materials);
+    StructuredBuffer< MaterialTextureData > materialTextures = GetResource(buffers.materialTextures);
+    const MaterialData material = materials[t.materialID];
+
+    float2 ddxUV, ddyUV;
+    UVGradient(ndc, 1.0 / viewport, c[0], c[1], c[2], t.uv[0], t.uv[1], t.uv[2], ddxUV, ddyUV);
+
+    float4 textureValue;
+    uint   textureChannel;
+
+    float roughness = material.roughness;
+    if (SampleMaterialTextureGrad(materialTextures, material, eMaterialTextureSemantic_PerceptualRoughness, uv, ddxUV, ddyUV, textureValue, textureChannel))
+        roughness *= SelectMaterialTextureScalar(textureValue, textureChannel);
+
+    // Tangent-space normal map
+    if (SampleMaterialTextureGrad(materialTextures, material, eMaterialTextureSemantic_Normal, uv, ddxUV, ddyUV, textureValue, textureChannel))
+    {
+        float3 normalTS = textureValue.rgb * 2.0 - 1.0;
+        const float normalTSLen2 = dot(normalTS, normalTS);
+        if (normalTSLen2 > EPSILON_MIN)
+        {
+            normalTS *= rsqrt(normalTSLen2);
+            if (normalTS.z < 0.0)
+                normalTS = -normalTS;
+
+            const float3   bitangentWS = tangentSignWS * cross(shadingNormalWS, tangentWS);
+            const float3x3 TBN         = float3x3(tangentWS, bitangentWS, shadingNormalWS);
+            shadingNormalWS = mul(normalTS, TBN);
+            if (dot(shadingNormalWS, geometricNormalWS) < 0.0)
+                shadingNormalWS = -shadingNormalWS;
+        }
+    }
+
+    rs.N         = shadingNormalWS;
+    rs.roughness = roughness;
+    return rs;
+}

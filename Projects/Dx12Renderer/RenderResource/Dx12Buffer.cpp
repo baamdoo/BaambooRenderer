@@ -1,7 +1,6 @@
 #include "RendererPch.h"
 #include "Dx12Buffer.h"
 #include "RenderDevice/Dx12CommandContext.h"
-#include "RenderDevice/Dx12ResourceManager.h"
 #include "Utils/Math.hpp"
 
 namespace dx12
@@ -164,24 +163,17 @@ void Dx12Buffer::Resize(u64 sizeInBytes, bool bReset)
 	}
 	CreateViews();
 
-	if (d3d12OldResource)
+	if (d3d12OldResource && !bReset && oldSize > 0)
 	{
-		if (!bReset && oldSize > 0)
+		auto pContext = m_RenderDevice.BeginCommand(D3D12_COMMAND_LIST_TYPE_COPY);
 		{
-			auto pContext = m_RenderDevice.BeginCommand(D3D12_COMMAND_LIST_TYPE_COPY);
-			{
-				pContext->CopyBuffer(m_d3d12Resource, d3d12OldResource, std::min(oldSize, sizeInBytes), 0, 0);
-				pContext->Close();
-			}
-			m_RenderDevice.ExecuteCommand(std::move(pContext)).Wait();
+			pContext->CopyBuffer(m_d3d12Resource, d3d12OldResource, std::min(oldSize, sizeInBytes), 0, 0);
+			pContext->Close();
 		}
-		else
-		{
-			m_RenderDevice.Flush();
-		}
+		m_RenderDevice.ExecuteCommand(std::move(pContext)).Wait();
 	}
 
-	COM_RELEASE(d3d12OldResource);
+	m_RenderDevice.DeferRelease(d3d12OldResource);
 }
 
 
@@ -191,7 +183,6 @@ void Dx12Buffer::CreateViews()
 		return;
 
 	auto  d3d12Device = m_RenderDevice.GetD3D12Device();
-	auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
 
 	switch (m_Type)
 	{
@@ -205,7 +196,7 @@ void Dx12Buffer::CreateViews()
 			
 		// SRV
 		{
-			m_SRVAllocation = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+			m_SRVAllocation = m_RenderDevice.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
 
 			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 			srvDesc.Shader4ComponentMapping    = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
@@ -221,7 +212,7 @@ void Dx12Buffer::CreateViews()
 		// UAV
 		if ((m_ResourceDesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS) != 0)
 		{
-			m_UAVAllocation = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+			m_UAVAllocation = m_RenderDevice.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
 
 			D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
 			uavDesc.Format                      = dxgiFormat;
@@ -243,7 +234,7 @@ void Dx12Buffer::CreateViews()
 	{
 		// SRV
 		{
-			m_SRVAllocation = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+			m_SRVAllocation = m_RenderDevice.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
 
 			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 			srvDesc.Shader4ComponentMapping    = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
@@ -259,7 +250,7 @@ void Dx12Buffer::CreateViews()
 		// UAV
 		if ((m_ResourceDesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS) != 0)
 		{
-			m_UAVAllocation = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+			m_UAVAllocation = m_RenderDevice.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
 
 			D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
 			uavDesc.Format                      = DXGI_FORMAT_UNKNOWN;
@@ -283,7 +274,7 @@ void Dx12Buffer::CreateViews()
 
 		// SRV
 		{
-			m_SRVAllocation = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+			m_SRVAllocation = m_RenderDevice.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
 
 			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 			srvDesc.Shader4ComponentMapping    = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
@@ -299,7 +290,7 @@ void Dx12Buffer::CreateViews()
 		// UAV
 		if ((m_ResourceDesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS) != 0)
 		{
-			m_UAVAllocation = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+			m_UAVAllocation = m_RenderDevice.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
 
 			D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
 			uavDesc.Format                      = DXGI_FORMAT_R32_TYPELESS;
@@ -326,52 +317,6 @@ void Dx12Buffer::ReleaseViews()
 }
 
 //-------------------------------------------------------------------------
-// Vertex Buffer
-//------------------------------------------------------------------------- 
-Arc< Dx12VertexBuffer > Dx12VertexBuffer::Create(Dx12RenderDevice& rd, const char* name, u32 numVertices)
-{
-	return MakeArc< Dx12VertexBuffer >(rd, name, numVertices);
-}
-
-Dx12VertexBuffer::Dx12VertexBuffer(Dx12RenderDevice& rd, const char* name, u32 numVertices)
-	: Super(rd, name, 
-		{
-			.count              = numVertices,
-			.elementSizeInBytes = sizeof(Vertex),
-			.mapDirection       = 0,
-			.bufferUsage        = render::eBufferUsage_TransferDest | render::eBufferUsage_Vertex
-		}, eBufferType::Vertex)
-{
-	m_d3d12BufferView.BufferLocation = m_d3d12Resource->GetGPUVirtualAddress();
-	m_d3d12BufferView.StrideInBytes  = sizeof(Vertex);
-	m_d3d12BufferView.SizeInBytes    = static_cast<u32>(SizeInBytes());
-}
-
-
-//-------------------------------------------------------------------------
-// Index Buffer
-//-------------------------------------------------------------------------
-Arc< Dx12IndexBuffer > Dx12IndexBuffer::Create(Dx12RenderDevice& rd, const char* name, u32 numIndices)
-{
-	return MakeArc< Dx12IndexBuffer >(rd, name, numIndices);
-}
-
-Dx12IndexBuffer::Dx12IndexBuffer(Dx12RenderDevice& rd, const char* name, u32 numIndices)
-	: Super(rd, name, 
-		{
-			.count              = numIndices,
-			.elementSizeInBytes = 4,
-			.mapDirection       = 0,
-			.bufferUsage        = render::eBufferUsage_TransferDest | render::eBufferUsage_Index
-		}, eBufferType::Index)
-{
-	m_d3d12BufferView.BufferLocation = m_d3d12Resource->GetGPUVirtualAddress();
-	m_d3d12BufferView.Format         = DXGI_FORMAT_R32_UINT;
-	m_d3d12BufferView.SizeInBytes    = static_cast<u32>(SizeInBytes());
-}
-
-
-//-------------------------------------------------------------------------
 // Constant Buffer
 //-------------------------------------------------------------------------
 Arc< Dx12ConstantBuffer > Dx12ConstantBuffer::Create(Dx12RenderDevice& rd, const char* name, u64 sizeInBytes, RenderFlags additionalUsage)
@@ -390,8 +335,7 @@ Dx12ConstantBuffer::Dx12ConstantBuffer(Dx12RenderDevice& rd, const char* name, u
 {
 	auto d3d12Device = m_RenderDevice.GetD3D12Device();
 
-	auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
-	m_CBVAllocation = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, m_Count);
+	m_CBVAllocation = m_RenderDevice.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, m_Count);
 
 	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
 	cbvDesc.BufferLocation = m_d3d12Resource->GetGPUVirtualAddress();
@@ -407,40 +351,6 @@ Dx12ConstantBuffer::~Dx12ConstantBuffer()
 void Dx12ConstantBuffer::Reset()
 {
 	memset(MappedMemory(), 0, SizeInBytes());
-}
-
-void Dx12ConstantBuffer::Upload(const void* pData, u64 sizeInBytes, u64 offsetInBytes)
-{
-	if (pData && sizeInBytes > 0)
-	{
-		memcpy((u8*)MappedMemory() + offsetInBytes, pData, sizeInBytes);
-	}
-}
-
-
-//-------------------------------------------------------------------------
-// Structured Buffer
-//-------------------------------------------------------------------------
-Arc< Dx12StructuredBuffer > Dx12StructuredBuffer::Create(Dx12RenderDevice& rd, const char* name, u64 elementSizeInBytes, u32 numElements, RenderFlags additionalUsage)
-{
-	return MakeArc< Dx12StructuredBuffer >(rd, name, elementSizeInBytes, numElements, additionalUsage);
-}
-
-Dx12StructuredBuffer::Dx12StructuredBuffer(Dx12RenderDevice& rd, const char* name, u64 elementSizeInBytes, u32 numElements, RenderFlags additionalUsage)
-	: Super(rd, name, 
-		{
-			.count              = numElements,
-			.elementSizeInBytes = elementSizeInBytes,
-			.bufferUsage        = additionalUsage
-									| render::eBufferUsage_Storage
-									| render::eBufferUsage_ShaderDeviceAddress
-		}, eBufferType::Structured)
-{
-	CreateViews();
-}
-
-Dx12StructuredBuffer::~Dx12StructuredBuffer()
-{
 }
 
 }

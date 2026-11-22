@@ -1,0 +1,265 @@
+#pragma once
+#include "Common/VoxelTerrain.slangh"
+#include "Common/Math.slangh"
+
+// Height field and erosion of the procedural terrain (SDF: solid < 0, air > 0)
+
+float3 VoxelTexelToWorld(VoxelTerrainGenParams gp, uint3 texel)
+{
+    int3 originIndex = int3(gp.chunkCoordX, gp.chunkCoordY, gp.chunkCoordZ) * int(gp.cellsPerAxis);
+    int3 localIndex  = int3(texel) - int(gp.apron);
+    return float3(originIndex + localIndex) * gp.voxelSizeMeter;
+}
+
+float2 VoxelRotScale(float2 p, float s)
+{
+    return float2(0.8 * p.x - 0.6 * p.y, 0.6 * p.x + 0.8 * p.y) * s;
+}
+
+// Plain value-only fBm
+float VoxelFbm2(VoxelTerrainGenParams gp, float2 p)
+{
+    float a = 0.0, amp = 1.0, sum = 0.0;
+    for (uint i = 0u; i < gp.octaves; ++i)
+    {
+        a   += amp * valueNoiseDeriv2D(p).x;
+        sum += amp;
+        amp *= gp.gain;
+        p    = VoxelRotScale(p, gp.lacunarity);
+    }
+    return a / max(sum, 1e-5);
+}
+
+// Reference: https://iquilezles.org/articles/morenoise/
+float3 VoxelTerrainFBMDeriv(VoxelTerrainGenParams gp, float2 p, bool ridged)
+{
+    float a = 0.0, amp = 1.0, sum = 0.0;
+
+    float2 d    = float2(0.0, 0.0); // damping accumulator
+    float2 dOut = float2(0.0, 0.0); // output derivative accumulator
+    for (uint i = 0u; i < gp.octaves; ++i)
+    {
+        float3 n   = valueNoiseDeriv2D(p);
+        float  val = n.x;
+        float2 der = n.yz;
+
+        if (ridged)
+        {
+            der = -sign(val) * der;
+            val = 1.0 - abs(val);
+        }
+        else
+        {
+            val = 0.5 * val + 0.5;
+            der = 0.5 * der;
+        }
+        d += der;
+
+        float w = 1.0 / (1.0 + gp.detailWeight * dot(d, d));
+        a    += amp * val * w;
+        dOut += amp * der * w;
+        sum  += amp;
+        amp  *= gp.gain;
+
+        p = VoxelRotScale(p, gp.lacunarity);
+    }
+
+    float inv = 1.0 / max(sum, 1e-5);
+    return float3(saturate(a * inv), dOut * inv);
+}
+
+// Base height + slope at a world XZ column: (h01, dh01/dx_m, dh01/dz_m)
+float3 VoxelTerrainHeight01Deriv(VoxelTerrainGenParams gp, float2 xz)
+{
+    float2 seedOffset = float2(float(gp.seed) * 0.1234, float(gp.seed) * 0.5678);
+
+    // domain warp: displace the sample coords by a low-freq fBm
+    float2 wp   = xz * gp.warpFrequency + seedOffset;
+    float2 warp = float2(VoxelFbm2(gp, wp), VoxelFbm2(gp, wp + float2(31.4, 17.7)));
+
+    float2 p = xz * gp.frequency + seedOffset + gp.warpStrength * warp;
+
+    float3 sm = VoxelTerrainFBMDeriv(gp, p, false);
+    float3 rg = VoxelTerrainFBMDeriv(gp, p, true);
+
+    float  t  = saturate(gp.ridgedBlend);
+    float  v  = lerp(sm.x, rg.x, t);
+    float2 dv = lerp(sm.yz, rg.yz, t);
+
+    // redistribution chain rule: d(v^e) = e * v^(e-1) * dv
+    float  e  = max(gp.redistributionExp, 1e-3);
+    float  h  = pow(saturate(v), e);
+    float2 dh = e * pow(max(v, 1e-4), e - 1.0) * dv;
+
+    // noise space -> world meters (p = xz * frequency)
+    return float3(h, dh * gp.frequency);
+}
+
+float VoxelTerrainHeight01(VoxelTerrainGenParams gp, float2 xz)
+{
+    return VoxelTerrainHeight01Deriv(gp, xz).x;
+}
+
+float2 VoxelTerrainCoarseGrad(VoxelTerrainGenParams gp, float2 xz, float spacing)
+{
+    float h  = max(spacing, 1e-3);
+    float dx = VoxelTerrainHeight01(gp, xz + float2(h, 0.0)) - VoxelTerrainHeight01(gp, xz - float2(h, 0.0));
+    float dz = VoxelTerrainHeight01(gp, xz + float2(0.0, h)) - VoxelTerrainHeight01(gp, xz - float2(0.0, h));
+    return float2(dx, dz) / (2.0 * h);
+}
+
+
+// ---- Detailed Erosion --------------------------------------------------------------
+// Reference: https://blog.runevision.com/2026/03/fast-and-gorgeous-erosion-filter.html
+
+float2 VoxelErosionHash2(float2 x, uint seed)
+{
+    uint h = hash2D(uint2(int2(x)), seed);
+    return -1.0 + 2.0 * float2(float(h & 0xFFFFu), float(h >> 16u)) / 65535.0;
+}
+float VoxelEaseOut(float t) { float v = 1.0 - saturate(t); return 1.0 - v * v; }
+float VoxelPowInv(float t, float power) { return 1.0 - pow(1.0 - saturate(t), power); }
+float VoxelSmoothStart(float t, float smoothing)
+{
+    if (t >= smoothing)
+        return t - 0.5 * smoothing;
+
+    return 0.5 * t * t / max(smoothing, 1e-6);
+}
+
+float4 PhacelleNoise(float2 p, float2 gradientDir, float freq, float offset, float normalization, uint seed)
+{
+    float2 sideDir = float2(-gradientDir.y, gradientDir.x) * freq * 2.0 * PI;
+
+    // 4x4 grid neighborhood around p
+    float2 base   = floor(p);
+    float2 remain = frac(p);
+
+    float weightSum = 0.0;
+    float2 phaseDir = float2(0.0, 0.0);
+    for (int x = -1; x <= 2; ++x)
+    {
+        for (int z = -1; z <= 2; ++z)
+        {
+            float2 gridOffset = float2(float(x), float(z));
+            float2 gridPoint  = base + gridOffset;
+
+            float2 randomOffset       = VoxelErosionHash2(gridPoint, seed) * 0.5;
+            float2 vectorFromSplatToP = remain - gridOffset - randomOffset;
+            float  distSq = dot(vectorFromSplatToP, vectorFromSplatToP);
+
+            // Gaussian-shaped weight: exp(-2*d^2) - 0.01111 (exactly 0 at d=1.5)
+            float weight = max(0.0, exp(-2.0 * distSq) - 0.01111);
+            weightSum += weight;
+
+            float waveInput = dot(vectorFromSplatToP, sideDir) + offset * 2.0 * PI;
+            phaseDir += float2(cos(waveInput), sin(waveInput)) * weight;
+        }
+    }
+
+    float2 interpolated = phaseDir / weightSum;
+    float  magnitude    = max(1.0 - normalization, length(interpolated));
+
+    return float4(interpolated / magnitude, sideDir);
+}
+
+// Erosion constants.
+static const float kEroRoundingRidge     = 0.1;  // ridge rounding (lerp hi endpoint)
+static const float kEroRoundingCrease    = 0.0;  // crease rounding (lerp lo endpoint; 0 = sharp creases)
+static const float kEroRoundingInput     = 0.1;  // input-feature rounding scale
+static const float kEroRoundingOctave    = 2.0;  // per-octave rounding multiplier
+static const float kEroOnsetRidgeIn      = 2.8;  // ridge-map input mask onset
+static const float kEroOnsetRidgeOct     = 1.5;  // ridge-map octave mask onset
+static const float kEroAssumedSlopeMag   = 0.7;  // pretend input slope magnitude (straight-gullies aid)
+static const float kEroAssumedSlopeBlend = 1.0;  // 0 = real slope, 1 = fully assumed
+static const float kEroGain              = 0.5;  // per-octave strength decay
+static const float kEroLacunarity        = 2.0;  // per-octave frequency step
+
+float4 VoxelErosionFilterEx(VoxelTerrainGenParams gp, float2 p, float3 heightAndSlope, float fadeTarget,
+                            float geoMinWavelengthMeter, float outMinWavelengthMeter,
+                            out float ridgeMap, out float3 geoDelta)
+{
+    float strength    = gp.erosionStrength * gp.erosionScale;
+    float freq        = 1.0 / max(gp.erosionScale * gp.erosionCellScale, 1e-4);
+    float slopeLength = max(length(heightAndSlope.yz), 1e-6);
+
+    fadeTarget = clamp(fadeTarget, -1.0, 1.0);
+
+    float3 inputHeightAndSlope = heightAndSlope;
+    float  magnitude    = 0.0;
+    float  roundingMult = 1.0;
+
+    float roundingForInput = lerp(kEroRoundingCrease, kEroRoundingRidge, saturate(fadeTarget + 0.5)) * kEroRoundingInput;
+    // accumulating slope mask (input slope first, then each octave)
+    float combiMask = VoxelEaseOut(VoxelSmoothStart(slopeLength * gp.erosionOnsetInput, roundingForInput * gp.erosionOnsetInput));
+
+    // Ridge map: parallel copies of fadeTarget and mask.
+    float ridgeMapCombiMask  = VoxelEaseOut(slopeLength * kEroOnsetRidgeIn);
+    float ridgeMapFadeTarget = fadeTarget;
+
+    // Initial gully-direction slope: mix of the actual slope and an assumed-magnitude slope.
+    float2 gullySlope = lerp(heightAndSlope.yz, heightAndSlope.yz / slopeLength * kEroAssumedSlopeMag, kEroAssumedSlopeBlend);
+
+    bool geoRecorded = false;
+    geoDelta = float3(0.0, 0.0, 0.0);
+
+    for (uint i = 0u; i < gp.erosionOctaves; ++i)
+    {
+        // band limit: octaves finer than the consumer grid only alias
+        float wavelength = 1.0 / (freq * gp.erosionCellScale);
+        if (!geoRecorded && wavelength < geoMinWavelengthMeter)
+        {
+            geoDelta    = heightAndSlope - inputHeightAndSlope; // geometry-band snapshot
+            geoRecorded = true;
+        }
+        if (wavelength < outMinWavelengthMeter)
+            break;
+
+        // normalized gullySlope; zero slope falls back to +x
+        float  gl      = length(gullySlope);
+        float2 normDir = (gl > 1e-8) ? gullySlope / gl : float2(1.0, 0.0);
+
+        float4 phacelle = PhacelleNoise(p * freq, normDir, gp.erosionCellScale, 0.25, gp.erosionNormalization, gp.seed);
+
+        // Multiply with freq since p was multiplied with freq. Negate: slope directions point down.
+        phacelle.zw *= -freq;
+
+        // Amount of slope as a 0..1 value.
+        float sloping = abs(phacelle.y);
+
+        // rule 1 - direction inheritance: sign(sin) straight-gullies trick feeds later octaves
+        gullySlope += sign(phacelle.y) * phacelle.zw * strength * gp.erosionGullyWeight;
+
+        // Gullies: height offset (-1..1) in x, derivative in yz.
+        float3 gullies = float3(phacelle.x, phacelle.y * phacelle.zw);
+
+        // rule 2 - fade gullies towards fadeTarget by combiMask (flats finish at ridge/valley value)
+        float3 fadedGullies = lerp(float3(fadeTarget, 0.0, 0.0), gullies * gp.erosionGullyWeight, combiMask);
+
+        heightAndSlope += fadedGullies * strength;
+        magnitude      += strength;
+
+        // Fade stacking: this octave's faded output is the next octave's fade destination.
+        fadeTarget = fadedGullies.x;
+
+        // rule 3 - sanctuary mask: ridges/creases carved so far are not re-carved
+        float roundingForOctave = lerp(kEroRoundingCrease, kEroRoundingRidge, saturate(phacelle.x + 0.5)) * roundingMult;
+        float newMask = VoxelEaseOut(VoxelSmoothStart(sloping * gp.erosionOnsetOctave, roundingForOctave * gp.erosionOnsetOctave));
+        combiMask = VoxelPowInv(combiMask, gp.erosionDetail) * newMask;
+
+        // Ridge-map parallel track.
+        ridgeMapFadeTarget = lerp(ridgeMapFadeTarget, gullies.x, ridgeMapCombiMask);
+        ridgeMapCombiMask *= VoxelEaseOut(sloping * kEroOnsetRidgeOct);
+
+        strength     *= kEroGain;
+        freq         *= kEroLacunarity;
+        roundingMult *= kEroRoundingOctave;
+    }
+
+    ridgeMap = ridgeMapFadeTarget * (1.0 - ridgeMapCombiMask);
+
+    if (!geoRecorded)
+        geoDelta = heightAndSlope - inputHeightAndSlope; // geo limit not reached
+
+    return float4(heightAndSlope - inputHeightAndSlope, magnitude);
+}

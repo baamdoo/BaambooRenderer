@@ -3,8 +3,6 @@
 namespace dx12
 {
 
-class RootSignature;
-
 class CommandSignatureDesc
 {
 public:
@@ -16,11 +14,6 @@ public:
 	D3D12_COMMAND_SIGNATURE_DESC Build() noexcept;
 
 	CommandSignatureDesc& AddDraw();
-	CommandSignatureDesc& AddDrawIndexed();
-
-	CommandSignatureDesc& AddVertexBufferView(UINT slot);
-	CommandSignatureDesc& AddIndexBufferView();
-	CommandSignatureDesc& AddMeshletBufferView();
 
 	CommandSignatureDesc& AddConstant(UINT rootIndex, UINT dstOffsetIn32BitValues, UINT num32BitValues);
 	CommandSignatureDesc& AddConstantBufferView(UINT rootIndex);

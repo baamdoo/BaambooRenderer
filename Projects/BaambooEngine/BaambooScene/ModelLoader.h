@@ -3,6 +3,7 @@
 #include "AnimationTypes.h"
 #include "MaterialTypes.h"
 #include "Utils/FileIO.hpp"
+#include "ShaderShared/Mesh.h"
 
 struct aiScene;
 struct aiNode;

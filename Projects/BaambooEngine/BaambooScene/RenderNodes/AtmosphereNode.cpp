@@ -1,8 +1,10 @@
 #include "BaambooPch.h"
 #include "AtmosphereNode.h"
 #include "RenderCommon/RenderDevice.h"
+#include "RenderCommon/SceneResource.h"
 #include "RenderCommon/CommandContext.h"
 #include "BaambooScene/Scene.h"
+#include "PipelineFactory.h"
 
 namespace baamboo
 {
@@ -14,7 +16,7 @@ static constexpr uint3 kAerialPerspectiveLutResolution = { 32, 32, 32 };
 static constexpr uint3 kAtmosphereAmbientLutResolution = { 64, 1, 1 };
 static constexpr uint3 kSkyboxLutResolution            = { 1024, 1024, 1 };
 
-AtmosphereNode::AtmosphereNode(render::RenderDevice& rd)
+AtmosphereNode::AtmosphereNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory)
 	: Super(rd, "AtmospherePass")
 {
 	using namespace render;
@@ -78,70 +80,39 @@ AtmosphereNode::AtmosphereNode(render::RenderDevice& rd)
 				.arrayLayers = 6
 			});
 
-	m_pTransmittancePSO = ComputePipeline::Create(m_RenderDevice, "TransmittancePSO");
-	m_pTransmittancePSO->SetComputeShader(
-		Shader::Create(m_RenderDevice, "TransmittanceCS",
-			{
-				.stage    = eShaderStage::Compute,
-				.filename = "AtmosphereTransmittanceCS"
-			})).Build();
-
-	m_pMultiScatteringPSO = ComputePipeline::Create(m_RenderDevice, "MultiScatteringPSO");
-	m_pMultiScatteringPSO->SetComputeShader(
-		Shader::Create(m_RenderDevice, "MultiScatteringCS",
-			{
-				.stage    = eShaderStage::Compute,
-				.filename = "AtmosphereMultiScatteringCS"
-			})).Build();
-
-	m_pSkyViewPSO = ComputePipeline::Create(m_RenderDevice, "SkyViewPSO");
-	m_pSkyViewPSO->SetComputeShader(
-		Shader::Create(m_RenderDevice, "SkyViewCS",
-			{
-				.stage    = eShaderStage::Compute,
-				.filename = "AtmosphereSkyViewCS"
-			})).Build();
-
-	m_pAerialPerspectivePSO = ComputePipeline::Create(m_RenderDevice, "AerialPerspectivePSO");
-	m_pAerialPerspectivePSO->SetComputeShader(
-		Shader::Create(m_RenderDevice, "AerialPerspectiveCS",
-			{
-				.stage    = eShaderStage::Compute,
-				.filename = "AtmosphereAerialPerspectiveCS"
-			})).Build();
-
-	m_pDistantSkyLightPSO = ComputePipeline::Create(m_RenderDevice, "DistantSkyLightPSO");
-	m_pDistantSkyLightPSO->SetComputeShader(
-		Shader::Create(m_RenderDevice, "AtmosphereDistantSkyLightCS",
-			{
-				.stage    = eShaderStage::Compute,
-				.filename = "AtmosphereDistantSkyLightCS"
-			})).Build();
-
-	m_pBakeSkyboxPSO = ComputePipeline::Create(m_RenderDevice, "BakeSkyboxPSO");
-	m_pBakeSkyboxPSO->SetComputeShader(
-		Shader::Create(m_RenderDevice, "BakeAtmosphereSkyboxCS",
-			{
-				.stage    = eShaderStage::Compute,
-				.filename = "AtmosphereSkyboxCS"
-			})).Build();
+	m_pTransmittancePSO     = pipelineFactory.CreateAndBuildComputePipeline("TransmittancePSO", { .source = "AtmosphereTransmittanceCS.slang" });
+	m_pMultiScatteringPSO   = pipelineFactory.CreateAndBuildComputePipeline("MultiScatteringPSO", { .source = "AtmosphereMultiScatteringCS.slang" });
+	m_pSkyViewPSO           = pipelineFactory.CreateAndBuildComputePipeline("SkyViewPSO", { .source = "AtmosphereSkyViewCS.slang" });
+	m_pAerialPerspectivePSO = pipelineFactory.CreateAndBuildComputePipeline("AerialPerspectivePSO", { .source = "AtmosphereAerialPerspectiveCS.slang" });
+	m_pDistantSkyLightPSO   = pipelineFactory.CreateAndBuildComputePipeline("DistantSkyLightPSO", { .source = "AtmosphereDistantSkyLightCS.slang" });
+	m_pBakeSkyboxPSO        = pipelineFactory.CreateAndBuildComputePipeline("BakeSkyboxPSO", { .source = "AtmosphereSkyboxCS.slang" });
 }
 
 void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)
 {
 	using namespace render;
-	auto& rm = m_RenderDevice.GetResourceManager();
+	const Arc< render::Buffer >& pSceneGlobals = m_RenderDevice.GetResourceManager().GetSceneResource().GetSceneGlobals();
+
+	const AtmosphereRaymarchConstants raymarchConstants =
+	{
+		.msIsoSampleCount = renderView.atmosphere.msIsoSampleCount,
+		.msNumRaySteps    = renderView.atmosphere.msNumRaySteps,
+		.svMinRaySteps    = renderView.atmosphere.svMinRaySteps,
+		.svMaxRaySteps    = renderView.atmosphere.svMaxRaySteps,
+	};
 
 	const u64 atmosphereRevision = renderView.componentRevisions[eComponentType::CAtmosphere];
 	const bool atmosphereDirty = atmosphereRevision != m_LastAtmosphereRevision;
-	if (!m_bStaticLutsInitialized || atmosphereDirty)
+	const u32 staticLutBuildCount = m_pTransmittancePSO->BuildCount() + m_pMultiScatteringPSO->BuildCount();
+	if (m_StaticLutBuildCount != staticLutBuildCount || atmosphereDirty)
 	{
 		context.SetRenderPipeline(m_pTransmittancePSO.get());
 
 		context.TransitionBarrier(m_pTransmittanceLUT, eTextureLayout::General);
 
-		context.StageDescriptor("g_OutTransmittanceLUT", m_pTransmittanceLUT);
-		
+		context.StageDescriptor("ID_Scene", pSceneGlobals);
+		context.StageDescriptor("ID_OutTransmittanceLUT", m_pTransmittanceLUT);
+
 		context.Dispatch2D< 8, 8 >(kTransmittanceLutResolution.x, kTransmittanceLutResolution.y);
 
 		//
@@ -150,14 +121,14 @@ void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderVie
 		context.TransitionBarrier(m_pTransmittanceLUT, eTextureLayout::ShaderReadOnly, 0xFFFFFFFF, true);
 		context.TransitionBarrier(m_pMultiScatteringLUT, eTextureLayout::General, 0xFFFFFFFF, true);
 
-		context.SetComputeConstants(sizeof(u32), &renderView.atmosphere.msIsoSampleCount, 0);
-		context.SetComputeConstants(sizeof(u32), &renderView.atmosphere.msNumRaySteps, sizeof(u32));
-		context.StageDescriptor("g_TransmittanceLUT", m_pTransmittanceLUT, g_FrameData.pLinearClamp);
-		context.StageDescriptor("g_OutMultiScatteringLUT", m_pMultiScatteringLUT);
-		
+		context.SetComputeConstants(sizeof(raymarchConstants), &raymarchConstants);
+		context.StageDescriptor("ID_Scene", pSceneGlobals);
+		context.StageDescriptor("ID_TransmittanceLUT", m_pTransmittanceLUT, g_FrameData.pLinearClamp);
+		context.StageDescriptor("ID_OutMultiScatteringLUT", m_pMultiScatteringLUT);
+
 		context.Dispatch2D< 8, 8 >(kMultiScatteringLutResolution.x, kMultiScatteringLutResolution.y);
 		m_LastAtmosphereRevision = atmosphereRevision;
-		m_bStaticLutsInitialized = true;
+		m_StaticLutBuildCount    = staticLutBuildCount;
 	}
 
 	context.SetRenderPipeline(m_pSkyViewPSO.get());
@@ -166,12 +137,12 @@ void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderVie
 	context.TransitionBarrier(m_pMultiScatteringLUT, eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(m_pSkyViewLUT, eTextureLayout::General);
 
-	context.SetComputeConstants(sizeof(u32), &renderView.atmosphere.svMinRaySteps, 0);
-	context.SetComputeConstants(sizeof(u32), &renderView.atmosphere.svMaxRaySteps, sizeof(u32));
-	context.StageDescriptor("g_TransmittanceLUT", m_pTransmittanceLUT, g_FrameData.pLinearClamp);
-	context.StageDescriptor("g_MultiScatteringLUT", m_pMultiScatteringLUT, g_FrameData.pLinearClamp);
-	context.StageDescriptor("g_OutSkyViewLUT", m_pSkyViewLUT);
-	
+	context.SetComputeConstants(sizeof(raymarchConstants), &raymarchConstants);
+	context.StageDescriptor("ID_Scene", pSceneGlobals);
+	context.StageDescriptor("ID_TransmittanceLUT", m_pTransmittanceLUT, g_FrameData.pLinearClamp);
+	context.StageDescriptor("ID_MultiScatteringLUT", m_pMultiScatteringLUT, g_FrameData.pLinearClamp);
+	context.StageDescriptor("ID_OutSkyViewLUT", m_pSkyViewLUT);
+
 	context.Dispatch2D< 8, 8 >(kSkyViewLutResolution.x, kSkyViewLutResolution.y);
 
 	//
@@ -179,9 +150,10 @@ void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderVie
 
 	context.TransitionBarrier(m_pAerialPerspectiveLUT, eTextureLayout::General);
 
-	context.StageDescriptor("g_TransmittanceLUT", m_pTransmittanceLUT, g_FrameData.pLinearClamp);
-	context.StageDescriptor("g_MultiScatteringLUT", m_pMultiScatteringLUT, g_FrameData.pLinearClamp);
-	context.StageDescriptor("g_OutAerialPerspectiveLUT", m_pAerialPerspectiveLUT);
+	context.StageDescriptor("ID_Scene", pSceneGlobals);
+	context.StageDescriptor("ID_TransmittanceLUT", m_pTransmittanceLUT, g_FrameData.pLinearClamp);
+	context.StageDescriptor("ID_MultiScatteringLUT", m_pMultiScatteringLUT, g_FrameData.pLinearClamp);
+	context.StageDescriptor("ID_OutAerialPerspectiveLUT", m_pAerialPerspectiveLUT);
 
 	context.Dispatch3D< 4, 4, 4 >(kAerialPerspectiveLutResolution.x, kAerialPerspectiveLutResolution.y, kAerialPerspectiveLutResolution.z);
 
@@ -190,16 +162,11 @@ void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderVie
 
 	context.TransitionBarrier(m_pAtmosphereAmbientLUT, eTextureLayout::General);
 
-	struct
-	{
-		u32 minRaySteps;
-		u32 maxRaySteps;
-		u32 sampleCount;
-	} constant = { renderView.atmosphere.svMinRaySteps, renderView.atmosphere.svMaxRaySteps, renderView.atmosphere.msIsoSampleCount };
-	context.SetComputeConstants(sizeof(constant), &constant);
-	context.StageDescriptor("g_TransmittanceLUT", m_pTransmittanceLUT, g_FrameData.pLinearClamp);
-	context.StageDescriptor("g_MultiScatteringLUT", m_pMultiScatteringLUT, g_FrameData.pLinearClamp);
-	context.StageDescriptor("g_OutAtmosphereAmbientLUT", m_pAtmosphereAmbientLUT);
+	context.SetComputeConstants(sizeof(raymarchConstants), &raymarchConstants);
+	context.StageDescriptor("ID_Scene", pSceneGlobals);
+	context.StageDescriptor("ID_TransmittanceLUT", m_pTransmittanceLUT, g_FrameData.pLinearClamp);
+	context.StageDescriptor("ID_MultiScatteringLUT", m_pMultiScatteringLUT, g_FrameData.pLinearClamp);
+	context.StageDescriptor("ID_OutAtmosphereAmbientLUT", m_pAtmosphereAmbientLUT);
 
 	context.Dispatch1D< 64 >(kAtmosphereAmbientLutResolution.x);
 
@@ -209,8 +176,10 @@ void AtmosphereNode::Apply(render::CommandContext& context, const SceneRenderVie
 	context.TransitionBarrier(m_pSkyViewLUT, eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(m_pSkyboxLUT, eTextureLayout::General);
 
-	context.StageDescriptor("g_SkyViewLUT", m_pSkyViewLUT, g_FrameData.pLinearClamp);
-	context.StageDescriptor("g_OutSkyboxLUT", m_pSkyboxLUT);
+	context.StageDescriptor("ID_Scene", pSceneGlobals);
+	context.StageDescriptor("ID_TransmittanceLUT", m_pTransmittanceLUT, g_FrameData.pLinearClamp);
+	context.StageDescriptor("ID_SkyViewLUT", m_pSkyViewLUT, g_FrameData.pLinearClamp);
+	context.StageDescriptor("ID_OutSkyboxLUT", m_pSkyboxLUT);
 
 	context.Dispatch3D< 8, 8, 6 >(kSkyboxLutResolution.x, kSkyboxLutResolution.y, kSkyboxLutResolution.z);
 

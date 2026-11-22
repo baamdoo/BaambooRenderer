@@ -18,10 +18,6 @@ Dx12SwapChain::Dx12SwapChain(Dx12RenderDevice& rd, baamboo::Window& window)
 
 	DWORD dwCreateFactoryFlags = 0;
 
-#if defined(_DEBUG)
-	//dwCreateFactoryFlags = DXGI_CREATE_FACTORY_DEBUG;
-#endif
-
 	CreateDXGIFactory2(dwCreateFactoryFlags, IID_PPV_ARGS(&dxgiFactory7));
 
 	// SwapChain
@@ -30,8 +26,6 @@ Dx12SwapChain::Dx12SwapChain(Dx12RenderDevice& rd, baamboo::Window& window)
 		swapChainDesc.Width              = m_Window.Width();
 		swapChainDesc.Height             = m_Window.Height();
 		swapChainDesc.Format             = DXGI_FORMAT_R8G8B8A8_UNORM;
-		//swapChainDesc.BufferDesc.RefreshRate.Numerator = m_uiRefreshRate;
-		//swapChainDesc.BufferDesc.RefreshRate.Denominator = 1;
 		swapChainDesc.BufferUsage        = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 		swapChainDesc.BufferCount        = kMaxFramesInFlight;
 		swapChainDesc.SampleDesc.Count   = 1;
@@ -88,6 +82,7 @@ void Dx12SwapChain::ResizeViewport(u32 width, u32 height)
 		assert(pTex);
 		pTex->Reset();
 	}
+	m_RenderDevice.FlushDeferredReleases();
 
 	DXGI_SWAP_CHAIN_DESC1 desc = {};
 	DX_CHECK(m_dxgiSwapChain4->GetDesc1(&desc));

@@ -57,9 +57,9 @@ struct FrameData
 	Weak< render::Texture > pCloudScatteringLUT;
 
 	// Visibility buffer (thin geometry pass) + resolved feature caches.
-	//   pVBuf0        R32_UINT   : bit31 valid | bit30 terrain | lod:24-26 | instanceID:0-23; sky = 0 (clear)
+	//   pVBuf0        R32_UINT   : bit31 valid | bit30 voxel | lod:24-26 | instanceID:0-23; sky = 0 (clear)
 	//   pVBuf1        R32_UINT   : (meshletIndex:25 | triLocal:7)
-	//   pVelocity     RG16F      : currUV - prevUV (screen-space motion)
+	//   pVelocity     RG16F      : texture-UV motion currUV - prevUV, y down, both unjittered (TAA: historyUV = uv - velocity)
 	//   pCoreNormal   RG16_SNORM : signed octahedral world-space normal (.xy)
 	//   pCoreMaterial RGBA8_UNORM: R linear roughness | G material class | BA spare
 	Weak< render::Texture > pVBuf0;
@@ -113,14 +113,7 @@ struct FrameData
 	u32 phase2TriangleCandidates = 0;
 #endif
 
-	// Runtime culling toggles — bitmask consumed by task + mesh shaders per-frame as push constant.
-	// Bits:
-	//   bit 0 : per-triangle backface cull
-	//   bit 1 : per-triangle sub-pixel cull
-	//   bit 2 : per-meshlet frustum cull
-	//   bit 3 : per-meshlet backface cone cull
-	//   bit 4 : per-meshlet occlusion (2-pass HiZ + visibility persistence)
-	u32 cullFlags = 0x1F; // all five toggles on by default
+	u32 cullFlags = kCullFlagTriangleBackface | kCullFlagTriangleSubpixel | kCullFlagMeshletFrustum | kCullFlagMeshletCone | kCullFlagMeshletOcclusion;
 
 	float sseThresholdPx = 1.0f; // for lod selection
 

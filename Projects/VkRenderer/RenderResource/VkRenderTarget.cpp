@@ -209,12 +209,12 @@ void VulkanRenderTarget::DestroyNativeObjects()
 {
 	if (m_vkFramebuffer)
 	{
-		vkDestroyFramebuffer(m_RenderDevice.vkDevice(), m_vkFramebuffer, nullptr);
+		m_RenderDevice.DeferRelease(m_vkFramebuffer);
 		m_vkFramebuffer = VK_NULL_HANDLE;
 	}
 	if (m_vkRenderPass)
 	{
-		vkDestroyRenderPass(m_RenderDevice.vkDevice(), m_vkRenderPass, nullptr);
+		m_RenderDevice.DeferRelease(m_vkRenderPass);
 		m_vkRenderPass = VK_NULL_HANDLE;
 	}
 
@@ -275,9 +275,10 @@ VkViewport VulkanRenderTarget::GetViewport(float2 scale, float2 bias, f32 minDep
 
 	VkViewport viewport = {};
 	viewport.x        = static_cast<float>(width) * bias.x;
-	viewport.y        = static_cast<float>(height) * bias.y;
+	// Negative height makes NDC +y point up as in D3D12, so y is the bottom edge
+	viewport.y        = static_cast<float>(height) * (bias.y + scale.y);
 	viewport.width    = static_cast<float>(width) * scale.x;
-	viewport.height   = static_cast<float>(height) * scale.y;
+	viewport.height   = -static_cast<float>(height) * scale.y;
 	viewport.minDepth = minDepth;
 	viewport.maxDepth = maxDepth;
 

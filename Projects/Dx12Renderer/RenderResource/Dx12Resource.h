@@ -2,13 +2,8 @@
 #include "Dx12BarrierState.h"
 #include "RenderDevice/Dx12DescriptorAllocation.h"
 
-#include <filesystem>
-namespace fs = std::filesystem;
-
 namespace dx12
 {
-
-constexpr D3D12_RESOURCE_STATES kD3D12ResourceStateInvalid = (D3D12_RESOURCE_STATES)(~0u);
 
 enum class eResourceType
 {
@@ -80,8 +75,6 @@ struct Dx12ResourceCreationInfo
 class Dx12Resource
 {
 public:
-	friend class Dx12ResourceManager;
-
 	Dx12Resource(Dx12RenderDevice& rd, const char* name);
 	Dx12Resource(Dx12RenderDevice& rd, const char* name, eResourceType type);
 	Dx12Resource(Dx12RenderDevice& rd, const char* name, Dx12ResourceCreationInfo&& info, eResourceType type);
@@ -94,8 +87,6 @@ public:
 	inline bool IsBuffer() const { return m_Type == eResourceType::Buffer; }
 	[[nodiscard]]
 	inline bool IsTexture() const { return m_Type == eResourceType::Texture; }
-	[[nodiscard]]
-	inline bool IsSampler() const { return m_Type == eResourceType::Sampler; }
 
 	[[nodiscard]]
 	ID3D12Resource2* GetD3D12Resource() const { return m_d3d12Resource; }

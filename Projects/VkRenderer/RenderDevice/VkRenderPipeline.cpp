@@ -1,15 +1,13 @@
 #include "RendererPch.h"
 #include "VkRenderPipeline.h"
-#include "VkResourceManager.h"
 #include "RenderResource/VkRenderTarget.h"
-#include "RenderResource/VkSceneResource.h"
+#include "RenderResource/VkTexture.h"
 #include "Utils/FileIO.hpp"
 
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <new>
-#include <unordered_set>
 
 namespace vk
 {
@@ -18,6 +16,15 @@ using namespace render;
 
 namespace
 {
+
+bool IsSucceeded(VkResult result, VkPipeline vkCurrent)
+{
+	if (result != VK_SUCCESS && vkCurrent == VK_NULL_HANDLE)
+		VK_CHECK(result);
+
+	return result == VK_SUCCESS;
+}
+
 bool IsCompatiblePipelineCache(const FileIO::Data& cacheData, const VkPhysicalDeviceProperties& deviceProps)
 {
 	if (!cacheData.data || cacheData.size < sizeof(VkPipelineCacheHeaderVersionOne))
@@ -150,21 +157,6 @@ VkCullModeFlagBits ConvertToVkCullMode(render::eCullMode mode)
 	return VK_CULL_MODE_NONE;
 }
 
-#define VK_PIPELINE_FRONTFACE(face) ConvertToVkFrontFace(face)
-VkFrontFace ConvertToVkFrontFace(render::eFrontFace face)
-{
-	switch (face)
-	{
-	case eFrontFace::Clockwise        : return VK_FRONT_FACE_CLOCKWISE;
-	case eFrontFace::CounterClockwise : return VK_FRONT_FACE_COUNTER_CLOCKWISE;
-
-	default:
-		assert(false && "Invalid front face!"); break;
-	}
-
-	return VK_FRONT_FACE_COUNTER_CLOCKWISE;
-}
-
 #define VK_PIPELINE_LOGICOP(op) ConvertToVkLogicOp(op)
 VkLogicOp ConvertToVkLogicOp(render::eLogicOp op)
 {
@@ -279,27 +271,7 @@ VulkanGraphicsPipeline::VulkanGraphicsPipeline(VkRenderDevice& rd, const char* n
 
 VulkanGraphicsPipeline::~VulkanGraphicsPipeline()
 {
-	vkDestroyPipeline(m_RenderDevice.vkDevice(), m_vkPipeline, nullptr);
-	vkDestroyPipelineLayout(m_RenderDevice.vkDevice(), m_vkPipelineLayout, nullptr);
-	for (u32 i = 1; i < m_vkSetLayouts.size(); ++i)
-	{
-		if (m_vkSetLayouts[i] == m_RenderDevice.GetEmptyDescriptorSetLayout())
-			continue;
-
-		vkDestroyDescriptorSetLayout(m_RenderDevice.vkDevice(), m_vkSetLayouts[i], nullptr);
-	}
-}
-
-GraphicsPipeline& VulkanGraphicsPipeline::SetVertexInputs(std::vector< VkVertexInputBindingDescription >&& streams, std::vector< VkVertexInputAttributeDescription >&& attributes)
-{
-	m_VertexBindings = std::move(streams);
-	m_VertexAttributes = std::move(attributes);
-	m_PipelineDesc.vertexInputInfo.vertexBindingDescriptionCount   = static_cast<u32>(m_VertexBindings.size());
-	m_PipelineDesc.vertexInputInfo.pVertexBindingDescriptions      = m_VertexBindings.data();
-	m_PipelineDesc.vertexInputInfo.vertexAttributeDescriptionCount = static_cast<u32>(m_VertexAttributes.size());
-	m_PipelineDesc.vertexInputInfo.pVertexAttributeDescriptions    = m_VertexAttributes.data();
-
-	return *this;
+	m_RenderDevice.DeferRelease(m_vkPipeline);
 }
 
 GraphicsPipeline& VulkanGraphicsPipeline::SetRenderTarget(Arc< render::RenderTarget > pRenderTarget)
@@ -307,7 +279,7 @@ GraphicsPipeline& VulkanGraphicsPipeline::SetRenderTarget(Arc< render::RenderTar
 	auto rhiRenderTarget = StaticCast<VulkanRenderTarget>(pRenderTarget);
 	assert(rhiRenderTarget);
 
-	m_PipelineDesc.renderPass = rhiRenderTarget->vkRenderPass();
+	m_pRenderTarget = rhiRenderTarget;
 	m_PipelineDesc.colorAttachmentCount = rhiRenderTarget->GetNumColors();
 	BB_ASSERT(m_PipelineDesc.colorAttachmentCount <= m_PipelineDesc.blendStates.size(),
 		"Vulkan render target exposes too many color attachment slots (%u).",
@@ -406,506 +378,70 @@ GraphicsPipeline& VulkanGraphicsPipeline::SetLogicOp(eLogicOp logicOp)
 	return *this;
 }
 
-void VulkanGraphicsPipeline::Build()
+bool VulkanGraphicsPipeline::Build()
 {
-	auto& rm = m_RenderDevice.GetResourceManager();
-	auto& rhiSceneResource = static_cast<VkSceneResource&>(rm.GetSceneResource());
+	auto vs = StaticCast<VulkanShader>(m_pVS);
+	auto ms = StaticCast<VulkanShader>(m_pMS);
+	auto ps = StaticCast<VulkanShader>(m_pPS);
+	auto ts = StaticCast<VulkanShader>(m_pTS);
+	assert((m_bMeshShader ? ms : vs) && ps);
 
 	// **
 	// Create shader stages
 	// **
 	std::vector< VkPipelineShaderStageCreateInfo > shaderStages;
-	std::vector< VkPushConstantRange >             pushConstants;
+
 	if (m_bMeshShader)
 	{
-		auto ms = StaticCast<VulkanShader>(m_pMS);
-		auto ps = StaticCast<VulkanShader>(m_pPS);
-		auto ts = StaticCast<VulkanShader>(m_pTS);
-		assert(ms && ps);
-
 		VkPipelineShaderStageCreateInfo msStageCreateInfo = {};
 		msStageCreateInfo.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		msStageCreateInfo.stage  = VK_SHADER_STAGE_MESH_BIT_EXT;
 		msStageCreateInfo.module = ms->vkModule();
 		msStageCreateInfo.pName  = "main";
 		shaderStages.push_back(msStageCreateInfo);
-
-		VkPipelineShaderStageCreateInfo fsStageCreateInfo = {};
-		fsStageCreateInfo.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		fsStageCreateInfo.stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
-		fsStageCreateInfo.module = ps->vkModule();
-		fsStageCreateInfo.pName  = "main";
-		shaderStages.push_back(fsStageCreateInfo);
-
-		if (ts)
-		{
-			VkPipelineShaderStageCreateInfo tsStageCreateInfo = {};
-			tsStageCreateInfo.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-			tsStageCreateInfo.stage  = VK_SHADER_STAGE_TASK_BIT_EXT;
-			tsStageCreateInfo.module = ts->vkModule();
-			tsStageCreateInfo.pName  = "main";
-			shaderStages.push_back(tsStageCreateInfo);
-		}
-
-		// **
-		// Construct descriptor-set layout
-		// **
-		i32 maxSet = -1;
-		std::unordered_map< u32, std::unordered_map< u32, VkDescriptorSetLayoutBinding > > descriptorSetLayoutBindingMap;
-
-		// ms
-		const auto& msReflection = ms->Reflection();
-		for (const auto& [set, infos] : msReflection.descriptors)
-		{
-			for (const auto& info : infos)
-			{
-				VkDescriptorSetLayoutBinding layoutBinding = {};
-				layoutBinding.binding         = info.binding;
-				layoutBinding.descriptorCount = 1;
-				layoutBinding.descriptorType  = info.descriptorType;
-				layoutBinding.stageFlags      = VK_SHADER_STAGE_MESH_BIT_EXT;
-				descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
-
-				m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
-			}
-
-			maxSet = maxSet < (i32)set ? (i32)set : maxSet;
-		}
-
-		const auto& fsReflection = ps->Reflection();
-		for (const auto& [set, infos] : fsReflection.descriptors)
-		{
-			for (const auto& info : infos)
-			{
-				if (descriptorSetLayoutBindingMap[set].contains(info.binding))
-				{
-					descriptorSetLayoutBindingMap[set][info.binding].stageFlags |= VK_SHADER_STAGE_FRAGMENT_BIT;
-				}
-				else
-				{
-					VkDescriptorSetLayoutBinding layoutBinding = {};
-					layoutBinding.binding         = info.binding;
-					layoutBinding.descriptorCount = 1;
-					layoutBinding.descriptorType  = info.descriptorType;
-					layoutBinding.stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
-					descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
-				}
-
-				m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
-			}
-
-			maxSet = maxSet < (i32)set ? (i32)set : maxSet;
-		}
-
-		if (ts)
-		{
-			const auto& tsReflection = ts->Reflection();
-			for (const auto& [set, infos] : tsReflection.descriptors)
-			{
-				for (const auto& info : infos)
-				{
-					if (descriptorSetLayoutBindingMap[set].contains(info.binding))
-					{
-						descriptorSetLayoutBindingMap[set][info.binding].stageFlags |= VK_SHADER_STAGE_TASK_BIT_NV;
-					}
-					else
-					{
-						VkDescriptorSetLayoutBinding layoutBinding = {};
-						layoutBinding.binding         = info.binding;
-						layoutBinding.descriptorCount = 1;
-						layoutBinding.descriptorType  = info.descriptorType;
-						layoutBinding.stageFlags      = VK_SHADER_STAGE_TASK_BIT_NV;
-						descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
-					}
-
-					m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
-				}
-
-				maxSet = maxSet < (i32)set ? (i32)set : maxSet;
-			}
-		}
-
-		m_vkSetLayouts.clear();
-		m_vkSetLayouts.resize(maxSet + 1);
-		for (const auto& [set, binding] : descriptorSetLayoutBindingMap)
-		{
-			if (set == kCommonDescriptorSetIndex)
-			{
-				m_vkSetLayouts[set] = rhiSceneResource.GetSceneDescriptorSetLayout();
-				continue;
-			}
-
-			std::vector< VkDescriptorSetLayoutBinding > bindings;
-			for (auto& [_, info] : descriptorSetLayoutBindingMap[set])
-			{
-				bindings.push_back(info);
-			}
-
-			/** Descriptor set layout **/
-			VkDescriptorSetLayoutCreateInfo layoutInfo = {};
-			layoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-			layoutInfo.bindingCount = static_cast<u32>(bindings.size());
-			layoutInfo.pBindings    = bindings.data();
-			if (set != kCommonDescriptorSetIndex)
-			{
-				layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT;
-			}
-			else
-			{
-				auto& descriptorSet = m_RenderDevice.AllocateDescriptorSet(m_vkSetLayouts[set]);
-				m_DescriptorTable.emplace(set, descriptorSet);
-			}
-			VK_CHECK(vkCreateDescriptorSetLayout(m_RenderDevice.vkDevice(), &layoutInfo, nullptr, &m_vkSetLayouts[set]));
-		}
-
-		for (auto& vkSetLayout : m_vkSetLayouts)
-		{
-			if (vkSetLayout == VK_NULL_HANDLE)
-				vkSetLayout = m_RenderDevice.GetEmptyDescriptorSetLayout();
-		}
-
-		// **
-		// Push constants
-		// **
-		const auto& msResourceInfo = ms->Reflection();
-		const auto& psResourceInfo = ps->Reflection();
-		pushConstants.append_range(msResourceInfo.pushConstants);
-		pushConstants.append_range(psResourceInfo.pushConstants);
-		if (ts)
-		{
-			const auto& reflection = ts->Reflection();
-			pushConstants.append_range(reflection.pushConstants);
-		}
 	}
 	else
 	{
-		auto vs = StaticCast<VulkanShader>(m_pVS);
-		auto ps = StaticCast<VulkanShader>(m_pPS);
-		auto gs = StaticCast<VulkanShader>(m_pGS);
-		auto hs = StaticCast<VulkanShader>(m_pHS);
-		auto ds = StaticCast<VulkanShader>(m_pDS);
-		assert(vs && ps);
-
+		// vertexInputInfo stays empty: vertex shaders fetch their data from the heap by SV_VertexID
 		VkPipelineShaderStageCreateInfo vsStageCreateInfo = {};
 		vsStageCreateInfo.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		vsStageCreateInfo.stage  = VK_SHADER_STAGE_VERTEX_BIT;
 		vsStageCreateInfo.module = vs->vkModule();
 		vsStageCreateInfo.pName  = "main";
 		shaderStages.push_back(vsStageCreateInfo);
-
-		VkPipelineShaderStageCreateInfo fsStageCreateInfo = {};
-		fsStageCreateInfo.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		fsStageCreateInfo.stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
-		fsStageCreateInfo.module = ps->vkModule();
-		fsStageCreateInfo.pName  = "main";
-		shaderStages.push_back(fsStageCreateInfo);
-
-		if (gs)
-		{
-			VkPipelineShaderStageCreateInfo gsStageCreateInfo = {};
-			gsStageCreateInfo.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-			gsStageCreateInfo.stage  = VK_SHADER_STAGE_GEOMETRY_BIT;
-			gsStageCreateInfo.module = gs->vkModule();
-			gsStageCreateInfo.pName  = "main";
-			shaderStages.push_back(gsStageCreateInfo);
-		}
-		if (hs)
-		{
-			VkPipelineShaderStageCreateInfo hsStageCreateInfo = {};
-			hsStageCreateInfo.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-			hsStageCreateInfo.stage  = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-			hsStageCreateInfo.module = hs->vkModule();
-			hsStageCreateInfo.pName  = "main";
-			shaderStages.push_back(hsStageCreateInfo);
-		}
-		if (ds)
-		{
-			VkPipelineShaderStageCreateInfo dsStageCreateInfo = {};
-			dsStageCreateInfo.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-			dsStageCreateInfo.stage  = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-			dsStageCreateInfo.module = ds->vkModule();
-			dsStageCreateInfo.pName  = "main";
-			shaderStages.push_back(dsStageCreateInfo);
-		}
-
-
-		// **
-		// Construct descriptor-set layout
-		// **
-		i32 maxSet = -1;
-		std::unordered_map< u32, std::unordered_map< u32, VkDescriptorSetLayoutBinding > > descriptorSetLayoutBindingMap;
-
-		// vs
-		const auto& vsReflection = vs->Reflection();
-		for (const auto& [set, infos] : vsReflection.descriptors)
-		{
-			for (const auto& info : infos)
-			{
-				VkDescriptorSetLayoutBinding layoutBinding = {};
-				layoutBinding.binding         = info.binding;
-				layoutBinding.descriptorCount = 1;
-				layoutBinding.descriptorType  = info.descriptorType;
-				layoutBinding.stageFlags      = VK_SHADER_STAGE_VERTEX_BIT;
-				descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
-
-				m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
-			}
-
-			maxSet = maxSet < (i32)set ? (i32)set : maxSet;
-		}
-
-		// ps
-		{
-			const auto& fsReflection = ps->Reflection();
-			for (const auto& [set, infos] : fsReflection.descriptors)
-			{
-				for (const auto& info : infos)
-				{
-					if (descriptorSetLayoutBindingMap[set].contains(info.binding))
-					{
-						descriptorSetLayoutBindingMap[set][info.binding].stageFlags |= VK_SHADER_STAGE_FRAGMENT_BIT;
-					}
-					else
-					{
-						VkDescriptorSetLayoutBinding layoutBinding = {};
-						layoutBinding.binding         = info.binding;
-						layoutBinding.descriptorCount = 1;
-						layoutBinding.descriptorType  = info.descriptorType;
-						layoutBinding.stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
-						descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
-					}
-
-					m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
-				}
-
-				maxSet = maxSet < (i32)set ? (i32)set : maxSet;
-			}
-		}
-
-		// gs
-		if (gs)
-		{
-			const auto& gsReflection = gs->Reflection();
-			for (const auto& [set, infos] : gsReflection.descriptors)
-			{
-				for (const auto& info : infos)
-				{
-					if (descriptorSetLayoutBindingMap[set].contains(info.binding))
-					{
-						descriptorSetLayoutBindingMap[set][info.binding].stageFlags |= VK_SHADER_STAGE_GEOMETRY_BIT;
-					}
-					else
-					{
-						VkDescriptorSetLayoutBinding layoutBinding = {};
-						layoutBinding.binding         = info.binding;
-						layoutBinding.descriptorCount = 1;
-						layoutBinding.descriptorType  = info.descriptorType;
-						layoutBinding.stageFlags      = VK_SHADER_STAGE_GEOMETRY_BIT;
-						descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
-					}
-
-					m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
-				}
-
-				maxSet = maxSet < (i32)set ? (i32)set : maxSet;
-			}
-		}
-
-		// hs
-		if (hs)
-		{
-			const auto& hsReflection = hs->Reflection();
-			for (const auto& [set, infos] : hsReflection.descriptors)
-			{
-				for (const auto& info : infos)
-				{
-					if (descriptorSetLayoutBindingMap[set].contains(info.binding))
-					{
-						descriptorSetLayoutBindingMap[set][info.binding].stageFlags |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-					}
-					else
-					{
-						VkDescriptorSetLayoutBinding layoutBinding = {};
-						layoutBinding.binding         = info.binding;
-						layoutBinding.descriptorCount = 1;
-						layoutBinding.descriptorType  = info.descriptorType;
-						layoutBinding.stageFlags      = VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-						descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
-					}
-
-					m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
-				}
-
-				maxSet = maxSet < (i32)set ? (i32)set : maxSet;
-			}
-		}
-
-		// ds
-		if (ds)
-		{
-			const auto& dsReflection = ds->Reflection();
-			for (const auto& [set, infos] : dsReflection.descriptors)
-			{
-				for (const auto& info : infos)
-				{
-					if (descriptorSetLayoutBindingMap[set].contains(info.binding))
-					{
-						descriptorSetLayoutBindingMap[set][info.binding].stageFlags |= VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-					}
-					else
-					{
-						VkDescriptorSetLayoutBinding layoutBinding = {};
-						layoutBinding.binding         = info.binding;
-						layoutBinding.descriptorCount = 1;
-						layoutBinding.descriptorType  = info.descriptorType;
-						layoutBinding.stageFlags      = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-						descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
-					}
-
-					m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
-				}
-
-				maxSet = maxSet < (i32)set ? (i32)set : maxSet;
-			}
-		}
-
-		m_vkSetLayouts.clear();
-		m_vkSetLayouts.resize(maxSet + 1);
-		for (const auto& [set, binding] : descriptorSetLayoutBindingMap)
-		{
-			if (set == kCommonDescriptorSetIndex)
-			{
-				m_vkSetLayouts[set] = rhiSceneResource.GetSceneDescriptorSetLayout();
-				continue;
-			}
-
-			std::vector< VkDescriptorSetLayoutBinding > bindings;
-			for (auto& [_, info] : descriptorSetLayoutBindingMap[set])
-			{
-				bindings.push_back(info);
-			}
-
-			/** Descriptor set layout **/
-			VkDescriptorSetLayoutCreateInfo layoutInfo = {};
-			layoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-			layoutInfo.flags        = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT;
-			layoutInfo.bindingCount = static_cast<u32>(bindings.size());
-			layoutInfo.pBindings    = bindings.data();
-			VK_CHECK(vkCreateDescriptorSetLayout(m_RenderDevice.vkDevice(), &layoutInfo, nullptr, &m_vkSetLayouts[set]));
-		}
-
-		for (auto& vkSetLayout : m_vkSetLayouts)
-		{
-			if (vkSetLayout == VK_NULL_HANDLE)
-				vkSetLayout = m_RenderDevice.GetEmptyDescriptorSetLayout();
-		}
-
-		// **
-		// Push constants
-		// **
-		const auto& vsResourceInfo = vs->Reflection();
-		pushConstants.append_range(vsResourceInfo.pushConstants);
-		if (ps)
-		{
-			const auto& reflection = ps->Reflection();
-			pushConstants.append_range(reflection.pushConstants);
-		}
-		if (gs)
-		{
-			const auto& reflection = gs->Reflection();
-			pushConstants.append_range(reflection.pushConstants);
-		}
-		if (hs)
-		{
-			const auto& reflection = hs->Reflection();
-			pushConstants.append_range(reflection.pushConstants);
-		}
-		if (ds)
-		{
-			const auto& reflection = ds->Reflection();
-			pushConstants.append_range(reflection.pushConstants);
-		}
 	}
 
+	VkPipelineShaderStageCreateInfo fsStageCreateInfo = {};
+	fsStageCreateInfo.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	fsStageCreateInfo.stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
+	fsStageCreateInfo.module = ps->vkModule();
+	fsStageCreateInfo.pName  = "main";
+	shaderStages.push_back(fsStageCreateInfo);
 
-	// **
-	// PushConstants
-	// **
-	if (pushConstants.size() > 1)
+	if (ts)
 	{
-		std::unordered_map< u64, VkShaderStageFlags > merged;
-		for (const auto& r : pushConstants)
-		{
-			u64 key = (static_cast<u64>(r.offset) << 32) | static_cast<u64>(r.size);
-			merged[key] |= r.stageFlags;
-		}
-		pushConstants.clear();
-		pushConstants.reserve(merged.size());
-		for (const auto& [key, flags] : merged)
-		{
-			VkPushConstantRange r = {};
-			r.stageFlags = flags;
-			r.offset     = static_cast<u32>(key >> 32);
-			r.size       = static_cast<u32>(key & 0xFFFFFFFFu);
-			pushConstants.push_back(r);
-		}
+		VkPipelineShaderStageCreateInfo tsStageCreateInfo = {};
+		tsStageCreateInfo.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		tsStageCreateInfo.stage  = VK_SHADER_STAGE_TASK_BIT_EXT;
+		tsStageCreateInfo.module = ts->vkModule();
+		tsStageCreateInfo.pName  = "main";
+		shaderStages.push_back(tsStageCreateInfo);
 	}
 
-	// Cache combined push-constant stage flags so vkCmdPushConstants stageFlags matches the actual ranges.
-	m_PushConstantStages = 0;
-	for (const auto& r : pushConstants)
-		m_PushConstantStages |= r.stageFlags;
+	std::unordered_map< std::string, u64 > bindingMap;
+	const auto AddPushOffsets = [&bindingMap](const VulkanShader& shader)
+		{
+			const auto& bindings = *shader.GetCreationInfo().bindings;
+			BB_ASSERT(bindings.pushBlockSize <= render::kSlangPushBlockBytes, "PushBlockSize is overflowed!");
 
-
-	// **
-	// Create pipeline layout
-	// **
-	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
-	pipelineLayoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutInfo.setLayoutCount         = static_cast<u32>(m_vkSetLayouts.size());
-	pipelineLayoutInfo.pSetLayouts            = m_vkSetLayouts.data();
-	pipelineLayoutInfo.pushConstantRangeCount = static_cast<u32>(pushConstants.size());
-	pipelineLayoutInfo.pPushConstantRanges    = pushConstants.data();
-	VK_CHECK(vkCreatePipelineLayout(m_RenderDevice.vkDevice(), &pipelineLayoutInfo, nullptr, &m_vkPipelineLayout));
-
-
-	// **
-	// Descriptor template
-	// **
-	//for (u32 set = 0; set < eNumDescriptorSet; ++set)
-	//{
-	//	std::vector< VkDescriptorSetLayoutBinding > bindings;
-	//	for (auto& [binding, info] : descriptorSetLayoutBindingMap[set])
-	//		bindings.push_back(info);
-
-	//	/** Descriptor Template Entries **/
-	//	u32 offset = 0;
-	//	std::vector< VkDescriptorUpdateTemplateEntry > entries(bindings.size());
-	//	for (u32 i = 0; i < bindings.size(); ++i)
-	//	{
-	//		VkDescriptorUpdateTemplateEntry& entry = entries[i];
-	//		entry.dstBinding = bindings[i].binding;
-	//		entry.dstArrayElement = 0;
-	//		entry.descriptorCount = bindings[i].descriptorCount;
-	//		entry.descriptorType = bindings[i].descriptorType;
-	//		entry.offset = offset;
-	//		entry.stride = sizeof(DescriptorInfo);
-
-	//		offset += sizeof(DescriptorInfo) * bindings[i].descriptorCount;
-	//	}
-
-	//	VkDescriptorUpdateTemplateCreateInfo templateCreateInfo = {};
-	//	templateCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_UPDATE_TEMPLATE_CREATE_INFO;
-	//	templateCreateInfo.descriptorUpdateEntryCount = static_cast<u32>(entries.size());
-	//	templateCreateInfo.pDescriptorUpdateEntries = entries.data();
-	//	templateCreateInfo.templateType = set > eDescriptorSet_PerFrame ? 
-	//		VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_PUSH_DESCRIPTORS_KHR : VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_DESCRIPTOR_SET;
-	//	templateCreateInfo.descriptorSetLayout = m_vkSetLayouts[set];
-	//	templateCreateInfo.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-	//	templateCreateInfo.pipelineLayout = m_vkPipelineLayout;
-	//	templateCreateInfo.set = set;
-	//	VK_CHECK(vkCreateDescriptorUpdateTemplate(m_RenderDevice.vkDevice(), &templateCreateInfo, nullptr, &m_vkDescriptorTemplate));
-	//}
+			for (const auto& [name, offset] : bindings.pushOffsets)
+			{
+				bindingMap.emplace(name, u64(offset) << 32llu);
+			}
+		};
+	AddPushOffsets(m_bMeshShader ? *ms : *vs);
+	AddPushOffsets(*ps);
+	if (ts) AddPushOffsets(*ts);
 
 
 	// **
@@ -955,24 +491,30 @@ void VulkanGraphicsPipeline::Build()
 	pipelineInfo.pDepthStencilState  = &m_PipelineDesc.depthStencilInfo;
 	pipelineInfo.pColorBlendState    = &colorBlendingInfo;
 	pipelineInfo.pDynamicState       = &dynamicStateInfo;
-	pipelineInfo.layout              = m_vkPipelineLayout;
-	pipelineInfo.renderPass          = m_PipelineDesc.renderPass;
+	pipelineInfo.layout              = m_RenderDevice.GetGlobalPipelineLayout();
+	pipelineInfo.renderPass          = m_pRenderTarget ? m_pRenderTarget->vkRenderPass() : VK_NULL_HANDLE; // a resized render target has a new pass
 	pipelineInfo.subpass             = 0;
 	pipelineInfo.basePipelineIndex   = -1;
+
 	// **
 	// Clean up
 	// **
-	try
-	{
-		VK_CHECK(vkCreateGraphicsPipelines(m_RenderDevice.vkDevice(), vkPipelineCache, 1, &pipelineInfo, nullptr, &m_vkPipeline));
+	VkPipeline vkPipeline = VK_NULL_HANDLE;
+	const VkResult result = vkCreateGraphicsPipelines(m_RenderDevice.vkDevice(), vkPipelineCache, 1, &pipelineInfo, nullptr, &vkPipeline);
+	if (result == VK_SUCCESS)
 		WritePipelineCache(m_RenderDevice, vkPipelineCache, filename);
-	}
-	catch (...)
-	{
-		vkDestroyPipelineCache(m_RenderDevice.vkDevice(), vkPipelineCache, nullptr);
-		throw;
-	}
 	vkDestroyPipelineCache(m_RenderDevice.vkDevice(), vkPipelineCache, nullptr);
+
+	if (!IsSucceeded(result, m_vkPipeline))
+		return false;
+
+	if (m_vkPipeline)
+		m_RenderDevice.DeferRelease(m_vkPipeline);
+	m_vkPipeline         = vkPipeline;
+	m_ResourceBindingMap = std::move(bindingMap);
+
+	++m_BuildCount;
+	return true;
 }
 
 
@@ -987,108 +529,23 @@ VulkanComputePipeline::VulkanComputePipeline(VkRenderDevice& rd, const char* nam
 
 VulkanComputePipeline::~VulkanComputePipeline()
 {
-	vkDestroyPipeline(m_RenderDevice.vkDevice(), m_vkPipeline, nullptr);
-	vkDestroyPipelineLayout(m_RenderDevice.vkDevice(), m_vkPipelineLayout, nullptr);
-	for (u32 i = 1; i < m_vkSetLayouts.size(); ++i)
-	{
-		if (m_vkSetLayouts[i] == m_RenderDevice.GetEmptyDescriptorSetLayout())
-			continue;
-
-		vkDestroyDescriptorSetLayout(m_RenderDevice.vkDevice(), m_vkSetLayouts[i], nullptr);
-	}
+	m_RenderDevice.DeferRelease(m_vkPipeline);
 }
 
-void VulkanComputePipeline::Build()
+bool VulkanComputePipeline::Build()
 {
-	auto& rm = m_RenderDevice.GetResourceManager();
-	auto& rhiSceneResource = static_cast<VkSceneResource&>(rm.GetSceneResource());
-
-	// **
-	// Construct descriptor-set layout
-	// **
 	auto vkCS = StaticCast<VulkanShader>(m_pCS);
 	assert(vkCS);
 
-	i32 maxSet = -1;
-	std::unordered_map< u32, std::unordered_map< u32, VkDescriptorSetLayoutBinding > > descriptorSetLayoutBindingMap;
+	const auto& bindings = vkCS->GetCreationInfo().bindings;
+	BB_ASSERT(bindings, "Compute pipeline '%s': the shader has no Slang bindings. Create it through the PipelineFactory.", m_Name.c_str());
+	BB_ASSERT(bindings->pushBlockSize <= render::kSlangPushBlockBytes, "PushBlockSize is overflowed!");
 
-	// cs
-	const auto& csReflection = vkCS->Reflection();
-	m_LocalSizeX = csReflection.localSizeX;
-	m_LocalSizeY = csReflection.localSizeY;
-	m_LocalSizeZ = csReflection.localSizeZ;
-
-	for (const auto& [set, infos] : csReflection.descriptors)
+	std::unordered_map< std::string, u64 > bindingMap;
+	for (const auto& [name, offset] : bindings->pushOffsets)
 	{
-		for (const auto& info : infos)
-		{
-			VkDescriptorSetLayoutBinding layoutBinding = {};
-			layoutBinding.binding         = info.binding;
-			layoutBinding.descriptorCount = info.arraySize;
-			layoutBinding.descriptorType  = info.descriptorType;
-			layoutBinding.stageFlags      = VK_SHADER_STAGE_COMPUTE_BIT;
-			descriptorSetLayoutBindingMap[set].emplace(info.binding, layoutBinding);
-
-			m_ResourceBindingMap.emplace(info.name, (static_cast<u64>(set) << 32) | info.binding);
-		}
-
-		maxSet = maxSet < (i32)set ? (i32)set : maxSet;
+		bindingMap.emplace(name, u64(offset) << 32llu);
 	}
-
-	m_vkSetLayouts.clear();
-	m_vkSetLayouts.resize(maxSet + 1);
-
-	m_vkSetLayouts[kCommonDescriptorSetIndex] = rhiSceneResource.GetSceneDescriptorSetLayout();
-	for (const auto& [set, binding] : descriptorSetLayoutBindingMap)
-	{
-		if (set == kCommonDescriptorSetIndex)
-		{
-			continue;
-		}
-
-		std::vector< VkDescriptorSetLayoutBinding > bindings;
-		for (auto& [_, info] : descriptorSetLayoutBindingMap[set])
-		{
-			bindings.push_back(info);
-		}
-
-		/** Descriptor set layout **/
-		VkDescriptorSetLayoutCreateInfo layoutInfo = {};
-		layoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-		layoutInfo.flags        = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT;
-		layoutInfo.bindingCount = static_cast<u32>(bindings.size());
-		layoutInfo.pBindings    = bindings.data();
-		VK_CHECK(vkCreateDescriptorSetLayout(m_RenderDevice.vkDevice(), &layoutInfo, nullptr, &m_vkSetLayouts[set]));
-	}
-
-	for (auto& vkSetLayout : m_vkSetLayouts)
-	{
-		if (vkSetLayout == VK_NULL_HANDLE)
-			vkSetLayout = m_RenderDevice.GetEmptyDescriptorSetLayout();
-	}
-
-	// **
-	// Push constants
-	// **
-	std::vector< VkPushConstantRange > pushConstants;
-	const auto& resourceInfo = vkCS->Reflection();
-	pushConstants.append_range(resourceInfo.pushConstants);
-
-
-	// **
-	// Create pipeline layout
-	// **
-	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
-	pipelineLayoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutInfo.setLayoutCount         = static_cast<u32>(m_vkSetLayouts.size());
-	pipelineLayoutInfo.pSetLayouts            = m_vkSetLayouts.data();
-	pipelineLayoutInfo.pushConstantRangeCount = static_cast<u32>(pushConstants.size());
-	pipelineLayoutInfo.pPushConstantRanges    = pushConstants.data();
-	VK_CHECK(vkCreatePipelineLayout(m_RenderDevice.vkDevice(), &pipelineLayoutInfo, nullptr, &m_vkPipelineLayout));
-
-	// **
-	// Pipeline
-	// **
 
 	// Pipeline cache
 	std::string filename   = std::string(m_Name) + ".cache";
@@ -1100,23 +557,29 @@ void VulkanComputePipeline::Build()
 	pipelineInfo.stage.stage        = VK_SHADER_STAGE_COMPUTE_BIT;
 	pipelineInfo.stage.module       = vkCS->vkModule();
 	pipelineInfo.stage.pName        = "main";
-	pipelineInfo.layout             = m_vkPipelineLayout;
+	pipelineInfo.layout             = m_RenderDevice.GetGlobalPipelineLayout();
 	pipelineInfo.basePipelineHandle = nullptr;
 	pipelineInfo.basePipelineIndex  = 0;
+
 	// **
 	// Clean up
 	// **
-	try
-	{
-		VK_CHECK(vkCreateComputePipelines(m_RenderDevice.vkDevice(), vkPipelineCache, 1, &pipelineInfo, nullptr, &m_vkPipeline));
+	VkPipeline vkPipeline = VK_NULL_HANDLE;
+	const VkResult result = vkCreateComputePipelines(m_RenderDevice.vkDevice(), vkPipelineCache, 1, &pipelineInfo, nullptr, &vkPipeline);
+	if (result == VK_SUCCESS)
 		WritePipelineCache(m_RenderDevice, vkPipelineCache, filename);
-	}
-	catch (...)
-	{
-		vkDestroyPipelineCache(m_RenderDevice.vkDevice(), vkPipelineCache, nullptr);
-		throw;
-	}
 	vkDestroyPipelineCache(m_RenderDevice.vkDevice(), vkPipelineCache, nullptr);
+
+	if (!IsSucceeded(result, m_vkPipeline))
+		return false;
+
+	if (m_vkPipeline)
+		m_RenderDevice.DeferRelease(m_vkPipeline);
+	m_vkPipeline         = vkPipeline;
+	m_ResourceBindingMap = std::move(bindingMap);
+
+	++m_BuildCount;
+	return true;
 }
 
 } // namespace vk

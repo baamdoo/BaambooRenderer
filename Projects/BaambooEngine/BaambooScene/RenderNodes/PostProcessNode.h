@@ -1,6 +1,8 @@
 #pragma once
 #include "RenderCommon/RenderNode.h"
 
+namespace baamboo::shader { class PipelineFactory; }
+
 namespace baamboo
 {
 
@@ -8,7 +10,7 @@ class PostProcessNode : public render::RenderNode
 {
 using Super = render::RenderNode;
 public:
-	PostProcessNode(render::RenderDevice& rd);
+	PostProcessNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory);
 	virtual ~PostProcessNode() = default;
 
 	virtual void Apply(render::CommandContext& context, const SceneRenderView& renderView) override;

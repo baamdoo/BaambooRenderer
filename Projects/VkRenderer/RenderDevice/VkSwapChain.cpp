@@ -394,6 +394,7 @@ bool SwapChain::Release(VkSwapchainKHR vkSwapChain)
 	m_PresentWaitSemaphores.clear();
 
 	m_BackBuffers.clear();
+	m_RenderDevice.FlushDeferredReleases(); // the back-buffer views must be gone before the swapchain
 	if (vkSwapChain)
 		vkDestroySwapchainKHR(m_RenderDevice.vkDevice(), vkSwapChain, nullptr);
 

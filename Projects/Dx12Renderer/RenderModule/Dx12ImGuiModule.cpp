@@ -2,7 +2,7 @@
 #include "Dx12ImGuiModule.h"
 #include "RenderDevice/Dx12CommandQueue.h"
 #include "RenderDevice/Dx12CommandContext.h"
-#include "RenderResource/Dx12SceneResource.h"
+#include "RenderResource/Dx12Texture.h"
 
 #include <imgui/imgui.h>
 #include <imgui/backends/imgui_impl_dx12.h>

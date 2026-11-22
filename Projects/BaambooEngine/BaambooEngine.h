@@ -9,6 +9,7 @@
 #include <deque>
 
 namespace baamboo { class Engine; }
+namespace baamboo::shader { class Compiler; class PipelineFactory; }
 namespace ImGui
 {
 	void DrawUI(baamboo::Engine& engine);
@@ -58,6 +59,8 @@ protected:
 
 	render::Renderer* m_pRendererBackend = nullptr;
 
+	Box< shader::PipelineFactory > m_pPipelineFactory;
+
 	int  m_ResizeWidth    = -1;
 	int  m_ResizeHeight   = -1;
 	bool m_bWindowResized = false;
@@ -77,6 +80,8 @@ private:
 	double m_RunningTime = 0.0;
 	PendingResizeRequest m_PendingResize;
 	bool                 m_bRenderSuspended = false;
+
+	Box< shader::Compiler > m_pShaderCompiler;
 
 	std::thread                    m_RenderThread;
 	ThreadQueue< SceneRenderView > m_RenderViewQueue;

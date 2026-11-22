@@ -4,49 +4,7 @@
 namespace vk
 {
 
-class RenderTarget;
-class DescriptorSet;
-
-struct DescriptorInfo
-{
-	union
-	{
-		VkDescriptorImageInfo  imageInfo;
-		VkDescriptorBufferInfo bufferInfo;
-	};
-
-	DescriptorInfo(const VkDescriptorImageInfo& imageInfo_)
-	{
-		imageInfo = imageInfo_;
-
-		bImage = true;
-	}
-	DescriptorInfo(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout)
-	{
-		imageInfo.sampler = sampler;
-		imageInfo.imageView = imageView;
-		imageInfo.imageLayout = imageLayout;
-
-		bImage = true;
-	}
-
-	DescriptorInfo(const VkDescriptorBufferInfo& bufferInfo_)
-	{
-		bufferInfo = bufferInfo_;
-
-		bImage = false;
-	}
-	DescriptorInfo(VkBuffer buffer, VkDeviceSize offset = 0, VkDeviceSize range = VK_WHOLE_SIZE)
-	{
-		bufferInfo.buffer = buffer;
-		bufferInfo.offset = offset;
-		bufferInfo.range = range;
-
-		bImage = false;
-	}
-
-	bool bImage = false;
-};
+class VulkanRenderTarget;
 
 //-------------------------------------------------------------------------
 // Graphics Pipeline
@@ -57,7 +15,6 @@ public:
 	VulkanGraphicsPipeline(VkRenderDevice& rd, const char* name);
 	~VulkanGraphicsPipeline();
 
-	render::GraphicsPipeline& SetVertexInputs(std::vector< VkVertexInputBindingDescription >&& streams, std::vector< VkVertexInputAttributeDescription >&& attributes);
 	virtual render::GraphicsPipeline& SetRenderTarget(Arc< render::RenderTarget > pRenderTarget) override;
 
 	virtual render::GraphicsPipeline& SetFillMode(bool bWireframe) override;
@@ -72,31 +29,21 @@ public:
 	virtual render::GraphicsPipeline& SetColorBlending(u32 renderTargetIndex, render::eBlendFactor srcBlend, render::eBlendFactor dstBlend, render::eBlendOp blendOp) override;
 	virtual render::GraphicsPipeline& SetAlphaBlending(u32 renderTargetIndex, render::eBlendFactor srcBlend, render::eBlendFactor dstBlend, render::eBlendOp blendOp) override;
 
-	virtual void Build() override;
+	virtual bool Build() override;
+	virtual bool IsBuilt() const override { return m_vkPipeline != VK_NULL_HANDLE; }
 
 	[[nodiscard]]
 	inline VkPipeline vkPipeline() const { return m_vkPipeline; }
-	[[nodiscard]]
-	inline VkPipelineLayout vkPipelineLayout() const { return m_vkPipelineLayout; }
-	[[nodiscard]]
-	inline VkDescriptorSetLayout vkSetLayout(u8 set) const { return m_vkSetLayouts[set]; }
-	[[nodiscard]]
-	inline VkShaderStageFlags vkPushConstantStages() const { return m_PushConstantStages; }
 
 private:
 	VkRenderDevice& m_RenderDevice;
 
-	VkPipeline		                     m_vkPipeline = VK_NULL_HANDLE;
-	VkPipelineLayout                     m_vkPipelineLayout = VK_NULL_HANDLE;
-	std::vector< VkDescriptorSetLayout > m_vkSetLayouts;
-	VkShaderStageFlags                   m_PushConstantStages = 0;
-	std::vector< VkVertexInputBindingDescription >   m_VertexBindings;
-	std::vector< VkVertexInputAttributeDescription > m_VertexAttributes;
+	VkPipeline m_vkPipeline = VK_NULL_HANDLE;
+
+	Arc< VulkanRenderTarget > m_pRenderTarget;
 
 	struct PipelineDesc
 	{
-		VkRenderPass renderPass = VK_NULL_HANDLE;
-
 		std::vector< VkPipelineColorBlendAttachmentState > blendStates;
 		u32                                                colorAttachmentCount = 0;
 		VkBool32                                           bLogicOpEnabled = VK_FALSE;
@@ -109,8 +56,6 @@ private:
 		VkPipelineDepthStencilStateCreateInfo	depthStencilInfo  = {};
 		VkPipelineMultisampleStateCreateInfo	multisamplingInfo = {};
 	} m_PipelineDesc = {};
-
-	std::unordered_map< u32, DescriptorSet& > m_DescriptorTable;
 };
 
 
@@ -123,32 +68,16 @@ public:
 	VulkanComputePipeline(VkRenderDevice& rd, const char* name);
 	~VulkanComputePipeline();
 
-	virtual void Build() override;
+	virtual bool Build() override;
+	virtual bool IsBuilt() const override { return m_vkPipeline != VK_NULL_HANDLE; }
 
 	[[nodiscard]]
 	inline VkPipeline vkPipeline() const { return m_vkPipeline; }
-	[[nodiscard]]
-	inline VkPipelineLayout vkPipelineLayout() const { return m_vkPipelineLayout; }
-
-	[[nodiscard]]
-	inline u32 LocalSizeX() const { return m_LocalSizeX; }
-	[[nodiscard]]
-	inline u32 LocalSizeY() const { return m_LocalSizeY; }
-	[[nodiscard]]
-	inline u32 LocalSizeZ() const { return m_LocalSizeZ; }
 
 private:
 	VkRenderDevice& m_RenderDevice;
 
-	VkPipeline		                     m_vkPipeline = VK_NULL_HANDLE;
-	VkPipelineLayout                     m_vkPipelineLayout = VK_NULL_HANDLE;
-	std::vector< VkDescriptorSetLayout > m_vkSetLayouts;
-
-	std::unordered_map< u32, DescriptorSet& > m_DescriptorTable;
-
-	u32 m_LocalSizeX = 0;
-	u32 m_LocalSizeY = 0;
-	u32 m_LocalSizeZ = 0;
+	VkPipeline m_vkPipeline = VK_NULL_HANDLE;
 };
 
 } // namespace vk

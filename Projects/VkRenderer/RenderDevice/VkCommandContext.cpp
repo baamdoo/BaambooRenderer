@@ -3,27 +3,23 @@
 #include "VkCommandQueue.h"
 #include "VkRenderPipeline.h"
 #include "VkBufferAllocator.h"
-#include "VkResourceManager.h"
-#include "VkDescriptorSet.h"
 #include "VkTimer.h"
 
 #include "RenderResource/VkBuffer.h"
 #include "RenderResource/VkTexture.h"
 #include "RenderResource/VkRenderTarget.h"
-#include "RenderResource/VkSceneResource.h"
 
 #include "Utils/Math.hpp"
 
 namespace vk
 {
 
-static bool ValidateResourceBinding(const std::string& name, u32 set, u32 binding)
+static u32 PushOffsetOf(const render::Pipeline& pipeline, const std::string& name)
 {
-	if (set != kInvalidIndex && binding != kInvalidIndex)
-		return true;
+	const auto [offset, rootIndex] = pipeline.GetResourceBindingIndex(name);
+	BB_ASSERT(rootIndex != kInvalidIndex, "Invalid shader resource name %s", name.c_str());
 
-	BB_ASSERT(false, "Descriptor '%s' was not found in the current Vulkan pipeline.", name.c_str());
-	return false;
+	return offset;
 }
 
 static bool IsReadOnlyImageAccess(VkAccessFlags2 access)
@@ -48,7 +44,7 @@ static bool IsReadOnlyImageAccess(VkAccessFlags2 access)
 class VkCommandContext::Impl
 {
 public:
-	Impl(VkRenderDevice& rd, VkCommandContext& context, VkCommandPool vkCommandPool, eCommandType type, VkCommandBufferLevel vkLevel = VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+	Impl(VkRenderDevice& rd, VkCommandPool vkCommandPool, eCommandType type, VkCommandBufferLevel vkLevel = VK_COMMAND_BUFFER_LEVEL_PRIMARY);
 	virtual ~Impl();
 
 	void Open(VkCommandBufferUsageFlags flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
@@ -114,23 +110,12 @@ public:
 		VkImageLayout newLayout,
 		u32 baseMip = 0, u32 numMips = 1, u32 baseArray = 0, u32 numArrays = 1);
 
-	void SetComputeDynamicUniformBuffer(const std::string& name, u32 sizeInBytes, const void* pData);
-	void SetGraphicsDynamicUniformBuffer(const std::string& name, u32 sizeInBytes, const void* pData);
+	void StageRootConstants(u32 srcSizeInBytes, const void* pSrcData, u32 dstOffsetInBytes = 0);
 
-	void SetPushConstants(u32 sizeInBytes, const void* pData, VkShaderStageFlags stages, u32 offsetInBytes = 0);
-	void SetDynamicUniformBuffer(u32 set, u32 binding, VkDeviceSize sizeInBytes, const void* pData);
-	
-	void SetComputeShaderResource(const std::string& name, Arc< VulkanBuffer > pBuffer);
-	void SetGraphicsShaderResource(const std::string& name, Arc< VulkanBuffer > pBuffer);
-	void SetComputeShaderResource(const std::string& name, Arc< VulkanTexture > pTexture, Arc< VulkanSampler > samplerInCharge);
-	void SetGraphicsShaderResource(const std::string& name, Arc< VulkanTexture > pTexture, Arc< VulkanSampler > samplerInCharge);
-	 
-	void StageDescriptor(const std::string& name, Arc< VulkanBuffer > pBuffer, u32 offset = 0);
-	void StageDescriptor(const std::string& name, Arc< VulkanTexture > pTexture, Arc< VulkanSampler > pSamplerInCharge, u32 offset = 0);
-	void StageDescriptorMip(const std::string& name, Arc< VulkanTexture > pTexture, u32 mipLevel, Arc< VulkanSampler > pSamplerInCharge = nullptr);
-
-	void PushDescriptor(u32 set, u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType);
-	void PushDescriptor(u32 set, u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType);
+	void StageDescriptor(const std::string& name, Arc< VulkanBuffer > pBuffer);
+	void StageDescriptor(const std::string& name, Arc< VulkanTexture > pTexture);
+	void StageDescriptorMip(const std::string& name, Arc< VulkanTexture > pTexture, u32 mipLevel);
+	void StageDescriptor(const std::string& name, u32 heapIdx);
 
 	void SetRenderPipeline(VulkanGraphicsPipeline* pRenderPipeline);
 	void SetRenderPipeline(VulkanComputePipeline* pRenderPipeline);
@@ -141,7 +126,6 @@ public:
 	void EndRendering();
 
 	void Draw(u32 vertexCount, u32 instanceCount = 1, u32 firstVertex = 0, u32 firstInstance = 0);
-	void DrawIndexed(u32 indexCount, u32 instanceCount = 1, u32 firstIndex = 0, i32 vertexOffset = 0, u32 firstInstance = 0);
 	void DrawMeshTasksIndirect(const Arc< VulkanBuffer >& pArgumentBuffer, u64 offsetInBytes, u32 numDraws, u32 strideInBytes);
 	void DrawMeshTasksIndirectCount(const Arc< VulkanBuffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< VulkanBuffer >& pCountBuffer, u32 numDraws, u32 strideInBytes);
 
@@ -162,7 +146,6 @@ public:
 	void SetTransient(bool bTransient) { m_bTransient = bTransient; }
 
 	bool IsGraphicsContext() const { return m_pGraphicsPipeline != nullptr; }
-	bool IsComputeContext() const { return m_pComputePipeline != nullptr; }
 
 	VkCommandBuffer vkCommandBuffer() const { return m_vkCommandBuffer; }
 
@@ -170,14 +153,6 @@ public:
 	VkSemaphore vkRenderCompleteSemaphore() const { return m_vkPresentWaitSemaphore ? m_vkPresentWaitSemaphore : m_vkRenderCompleteSemaphore; }
 	void SetPresentWaitSemaphore(VkSemaphore vkSemaphore) { m_vkPresentWaitSemaphore = vkSemaphore; }
 	VkSemaphore vkPresentCompleteSemaphore() const { return m_vkPresentCompleteSemaphore; }
-
-	VkPipelineLayout vkGraphicsPipelineLayout() const { return m_pGraphicsPipeline ? m_pGraphicsPipeline->vkPipelineLayout() : nullptr; }
-	VkPipelineLayout vkComputePipelineLayout() const { return m_pComputePipeline ? m_pComputePipeline->vkPipelineLayout() : nullptr; }
-	VkPipeline vkGraphicsPipeline() const { return m_pGraphicsPipeline ? m_pGraphicsPipeline->vkPipeline() : nullptr; }
-	VkPipeline vkComputePipeline() const { return m_pComputePipeline ? m_pComputePipeline->vkPipeline() : nullptr; }
-
-	VulkanGraphicsPipeline* GraphicsPipeline() const { return m_pGraphicsPipeline; }
-	VulkanComputePipeline*  ComputePipeline()  const { return m_pComputePipeline; }
 
 	double GetElapsedTime() const;
 
@@ -189,20 +164,12 @@ private:
 	void AddBarrier(const VkBufferMemoryBarrier2& barrier, bool bFlushImmediate);
 	void AddBarrier(const VkImageMemoryBarrier2& barrier, bool bFlushImmediate);
 
-	void BindShaderResources(VkPipelineBindPoint bindPoint, VkPipelineLayout vkPipelineLayout);
-
-	template< typename T >
-	constexpr T RoundUpAndDivide(T Value, size_t Alignment)
-	{
-		return (T)((Value + Alignment - 1) / Alignment);
-	}
+	void SetRootConstants();
 
 private:
 	friend class CommandQueue;
 	VkRenderDevice& m_RenderDevice;
 	eCommandType    m_CommandType;
-
-	VkCommandContext& m_CommandContext;
 
 	VkTimer m_Timer;
 
@@ -210,7 +177,6 @@ private:
 	VkCommandPool        m_vkBelongedPool = VK_NULL_HANDLE;
 	VkCommandBufferLevel m_Level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
-	Box< DynamicBufferAllocator > m_pUniformBufferPool;
 	Box< DynamicBufferAllocator > m_pStagingBufferPool;
 
 	VkFence     m_vkRenderCompleteFence      = VK_NULL_HANDLE;
@@ -220,29 +186,21 @@ private:
 
 	VulkanGraphicsPipeline* m_pGraphicsPipeline = nullptr;
 	VulkanComputePipeline*  m_pComputePipeline  = nullptr;
+	render::Pipeline*       m_pBoundPipeline    = nullptr;
 
-	struct AllocationInfo
-	{
-		u32              binding;
-		DescriptorInfo   descriptor;
-		VkDescriptorType descriptorType;
-	};
-	std::unordered_map< u32, std::vector< AllocationInfo > > m_PushAllocations;
+	std::array< u32, render::kSlangPushBlockBytes / 4 > m_PushBlock = {};
 
 	u32                    m_NumBufferBarriersToFlush = 0;
 	VkBufferMemoryBarrier2 m_BufferBarriers[kMaxNumPendingBarriers] = {};
 	u32                    m_NumImageBarriersToFlush = 0;
 	VkImageMemoryBarrier2  m_ImageBarriers[kMaxNumPendingBarriers] = {};
 
-	u32 m_CurrentContextIndex = 0;
-
 	bool m_bTransient = false;
 };
 
-VkCommandContext::Impl::Impl(VkRenderDevice& rd, VkCommandContext& context, VkCommandPool vkCommandPool, eCommandType type, VkCommandBufferLevel level)
+VkCommandContext::Impl::Impl(VkRenderDevice& rd, VkCommandPool vkCommandPool, eCommandType type, VkCommandBufferLevel level)
 	: m_RenderDevice(rd)
 	, m_CommandType(type)
-	, m_CommandContext(context)
 	, m_vkBelongedPool(vkCommandPool)
 	, m_Level(level)
 {
@@ -259,9 +217,8 @@ VkCommandContext::Impl::Impl(VkRenderDevice& rd, VkCommandContext& context, VkCo
 
 
 	// **
-	// Create buffer pools
+	// Create staging buffer pool
 	// **
-	m_pUniformBufferPool = MakeBox< DynamicBufferAllocator >(m_RenderDevice);
 	m_pStagingBufferPool = MakeBox< DynamicBufferAllocator >(m_RenderDevice, _MB(128));
 
 
@@ -309,8 +266,6 @@ void VkCommandContext::Impl::Open(VkCommandBufferUsageFlags flags)
 {
 	Flush();
 
-	m_CurrentContextIndex = m_RenderDevice.ContextIndex();
-
 	m_vkPresentWaitSemaphore = VK_NULL_HANDLE;
 
 	VK_CHECK(vkResetCommandBuffer(m_vkCommandBuffer, 0));
@@ -320,12 +275,22 @@ void VkCommandContext::Impl::Open(VkCommandBufferUsageFlags flags)
 	beginInfo.flags = flags;
 	VK_CHECK(vkBeginCommandBuffer(m_vkCommandBuffer, &beginInfo));
 
-	m_pUniformBufferPool->Reset();
 	m_pStagingBufferPool->Reset();
-	m_PushAllocations.clear();
 
 	m_pGraphicsPipeline = nullptr;
 	m_pComputePipeline  = nullptr;
+	m_pBoundPipeline    = nullptr;
+
+	if (m_CommandType != eCommandType::Transfer)
+	{
+		const VkDescriptorSet  vkDescriptorSets[] = { m_RenderDevice.GetHeapDescriptorSet(), m_RenderDevice.GetSamplerDescriptorSet() };
+		const VkPipelineLayout vkPipelineLayout   = m_RenderDevice.GetGlobalPipelineLayout();
+		const u32              numDescriptorSets  = static_cast< u32 >(std::size(vkDescriptorSets));
+
+		vkCmdBindDescriptorSets(m_vkCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, vkPipelineLayout, kHeapSetIndex, numDescriptorSets, vkDescriptorSets, 0, nullptr);
+		if (m_CommandType == eCommandType::Graphics)
+			vkCmdBindDescriptorSets(m_vkCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vkPipelineLayout, kHeapSetIndex, numDescriptorSets, vkDescriptorSets, 0, nullptr);
+	}
 
 	// Reads previous frame's timestamp results (fence above guarantees completion),
 	// resets the pool, and opens the implicit "Frame" scope.
@@ -403,6 +368,13 @@ void VkCommandContext::Impl::CopyBuffer(
 		dstOffset,
 		srcOffset
 	);
+
+	// Host reads of a read-back buffer must be ordered after the transfer write.
+	if (pDstBuffer->m_CreationInfo.mapDirection == 2)
+	{
+		TransitionBarrier(pDstBuffer, { VK_ACCESS_2_HOST_READ_BIT, VK_PIPELINE_STAGE_2_HOST_BIT }, dstOffset);
+		FlushBarriers();
+	}
 }
 
 void VkCommandContext::Impl::CopyBuffer(const Arc< VulkanTexture >& pDstTexture, const Arc< VulkanBuffer >& pSrcBuffer, const std::vector< VkBufferImageCopy >& regions, bool bAllSubresources)
@@ -826,285 +798,64 @@ void VkCommandContext::Impl::ClearTexture(
 	}
 }
 
-void VkCommandContext::Impl::SetComputeDynamicUniformBuffer(const std::string& name, u32 sizeInBytes, const void* pData)
+void VkCommandContext::Impl::StageRootConstants(u32 srcSizeInBytes, const void* pSrcData, u32 dstOffsetInBytes)
 {
-	assert(IsComputeContext());
-	auto [set, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
-	if (!ValidateResourceBinding(name, set, binding))
-		return;
+	BB_ASSERT(srcSizeInBytes <= render::kSlangPushBlockBytes && dstOffsetInBytes <= render::kSlangPushBlockBytes - srcSizeInBytes,
+		"StageRootConstants: %u bytes at offset %u do not fit in the %u-byte push block.", srcSizeInBytes, dstOffsetInBytes, render::kSlangPushBlockBytes);
 
-	SetDynamicUniformBuffer(set, binding, sizeInBytes, pData);
+	memcpy(reinterpret_cast< u8* >(m_PushBlock.data()) + dstOffsetInBytes, pSrcData, srcSizeInBytes);
 }
 
-void VkCommandContext::Impl::SetGraphicsDynamicUniformBuffer(const std::string& name, u32 sizeInBytes, const void* pData)
+void VkCommandContext::Impl::StageDescriptor(const std::string& name, Arc< VulkanBuffer > pBuffer)
 {
-	assert(IsGraphicsContext());
-	auto [set, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
-	if (!ValidateResourceBinding(name, set, binding))
-		return;
-
-	SetDynamicUniformBuffer(set, binding, sizeInBytes, pData);
+	StageDescriptor(name, pBuffer->GetShaderResourceHandle());
 }
 
-void VkCommandContext::Impl::SetPushConstants(u32 sizeInBytes, const void* pData, VkShaderStageFlags stages, u32 offsetInBytes)
+void VkCommandContext::Impl::StageDescriptor(const std::string& name, Arc< VulkanTexture > pTexture)
 {
-	assert(m_pGraphicsPipeline || m_pComputePipeline);
-	vkCmdPushConstants(m_vkCommandBuffer, m_pGraphicsPipeline ? m_pGraphicsPipeline->vkPipelineLayout() : m_pComputePipeline->vkPipelineLayout(), stages, offsetInBytes, sizeInBytes, pData);
-}
+	const auto layout = pTexture->GetState().GetSubresourceState().layout;
+	BB_ASSERT(layout == VK_IMAGE_LAYOUT_GENERAL || layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, "Invalid texture layout!");
 
-void VkCommandContext::Impl::SetDynamicUniformBuffer(u32 set, u32 binding, VkDeviceSize sizeInBytes, const void* pData)
-{
-	BB_ASSERT(sizeInBytes <= m_RenderDevice.DeviceProps().limits.maxUniformBufferRange,
-	          "Dynamic uniform buffer size %llu exceeds maxUniformBufferRange %u",
-	          sizeInBytes, m_RenderDevice.DeviceProps().limits.maxUniformBufferRange);
-
-	auto allocation = m_pUniformBufferPool->Allocate(sizeInBytes);
-	memcpy(allocation.cpuHandle, pData, sizeInBytes);
-	allocation.pBuffer->FlushMappedRange(allocation.offsetInBytes, sizeInBytes);
-
-	VkDescriptorBufferInfo bufferInfo = {};
-	bufferInfo.buffer = allocation.pBuffer->vkBuffer();
-	bufferInfo.range  = allocation.sizeInBytes;
-	bufferInfo.offset = allocation.offsetInBytes;
-
-	m_PushAllocations[set].push_back({ binding, bufferInfo, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER });
-}
-
-void VkCommandContext::Impl::SetComputeShaderResource(const std::string& name, Arc< VulkanBuffer > pBuffer)
-{
-	assert(IsComputeContext());
-	auto [set, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
-	if (!ValidateResourceBinding(name, set, binding))
-		return;
-
-	PushDescriptor(
-		set,
-		binding,
-		{
-			.buffer = pBuffer->vkBuffer(),
-			.offset = 0,
-			.range  = pBuffer->SizeInBytes()
-		}, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-}
-
-void VkCommandContext::Impl::SetGraphicsShaderResource(const std::string& name, Arc< VulkanBuffer > pBuffer)
-{
-	assert(IsGraphicsContext());
-	auto [set, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
-	if (!ValidateResourceBinding(name, set, binding))
-		return;
-
-	PushDescriptor(
-		set,
-		binding,
-		{
-			.buffer = pBuffer->vkBuffer(),
-			.offset = 0,
-			.range  = pBuffer->SizeInBytes()
-		}, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-}
-
-void VkCommandContext::Impl::SetComputeShaderResource(const std::string& name, Arc< VulkanTexture > pTexture, Arc< VulkanSampler > pSamplerInCharge)
-{
-	assert(IsComputeContext());
-	auto [set, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
-	if (!ValidateResourceBinding(name, set, binding))
-		return;
-
-	auto layout = pTexture->GetState().GetSubresourceState().layout;
-
-	VkDescriptorType descType =
-		layout == VK_IMAGE_LAYOUT_GENERAL ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	PushDescriptor(
-		set,
-		binding,
-		{
-			.sampler     = pSamplerInCharge ? pSamplerInCharge->vkSampler() : VK_NULL_HANDLE,
-			.imageView   = pTexture->vkView(),
-			.imageLayout = layout
-		}, descType);
-}
-
-void VkCommandContext::Impl::SetGraphicsShaderResource(const std::string& name, Arc< VulkanTexture > pTexture, Arc< VulkanSampler > pSamplerInCharge)
-{
-	assert(IsGraphicsContext());
-	auto [set, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
-	if (!ValidateResourceBinding(name, set, binding))
-		return;
-
-	auto layout = pTexture->GetState().GetSubresourceState().layout;
-
-	VkDescriptorType descType =
-		layout == VK_IMAGE_LAYOUT_GENERAL ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	PushDescriptor(
-		set,
-		binding,
-		{
-			.sampler     = pSamplerInCharge ? pSamplerInCharge->vkSampler() : VK_NULL_HANDLE,
-			.imageView   = pTexture->vkView(),
-			.imageLayout = layout
-		}, descType);
-}
-
-void VkCommandContext::Impl::StageDescriptor(const std::string& name, Arc< VulkanBuffer > pBuffer, u32 offset)
-{
-	if (IsGraphicsContext())
-	{
-		auto [set, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
-		if (!ValidateResourceBinding(name, set, binding))
-			return;
-
-		PushDescriptor(
-			set,
-			binding,
-			{
-				.buffer = pBuffer->vkBuffer(),
-				.offset = offset,
-				.range  = pBuffer->SizeInBytes()
-			}, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-	}
-	else if (IsComputeContext())
-	{
-		auto [set, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
-		if (!ValidateResourceBinding(name, set, binding))
-			return;
-
-		PushDescriptor(
-			set,
-			binding,
-			{
-				.buffer = pBuffer->vkBuffer(),
-				.offset = offset,
-				.range  = pBuffer->SizeInBytes()
-			}, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-	}
+	const bool bIsUAV = layout == VK_IMAGE_LAYOUT_GENERAL;
+	if (bIsUAV)
+		StageDescriptor(name, pTexture->GetUnorderedAccessHandle());
 	else
-	{
-		assert(false && "No pipeline is set!");
-	}
+		StageDescriptor(name, pTexture->GetShaderResourceHandle());
 }
 
-void VkCommandContext::Impl::StageDescriptor(const std::string& name, Arc< VulkanTexture > pTexture, Arc< VulkanSampler > pSamplerInCharge, u32 offset)
+void VkCommandContext::Impl::StageDescriptorMip(const std::string& name, Arc< VulkanTexture > pTexture, u32 mipLevel)
 {
-	UNUSED(offset);
-
-	if (IsGraphicsContext())
-	{
-		auto [set, binding] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
-		if (!ValidateResourceBinding(name, set, binding))
-			return;
-
-		auto layout = pTexture->GetState().GetSubresourceState().layout;
-
-		VkDescriptorType descType =
-			layout == VK_IMAGE_LAYOUT_GENERAL ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		PushDescriptor(
-			set,
-			binding,
-			{
-				.sampler     = pSamplerInCharge ? pSamplerInCharge->vkSampler() : VK_NULL_HANDLE,
-				.imageView   = pTexture->vkView(),
-				.imageLayout = layout
-			}, descType);
-	}
-	else if (IsComputeContext())
-	{
-		auto [set, binding] = m_pComputePipeline->GetResourceBindingIndex(name);
-		if (!ValidateResourceBinding(name, set, binding))
-			return;
-
-		auto layout = pTexture->GetState().GetSubresourceState().layout;
-
-		VkDescriptorType descType =
-			layout == VK_IMAGE_LAYOUT_GENERAL ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		PushDescriptor(
-			set,
-			binding,
-			{
-				.sampler     = pSamplerInCharge ? pSamplerInCharge->vkSampler() : VK_NULL_HANDLE,
-				.imageView   = pTexture->vkView(),
-				.imageLayout = layout
-			}, descType);
-	}
-	else
-	{
-		__debugbreak();
-		assert(false && "No pipeline is set!");
-	}
+	StageDescriptor(name, pTexture->GetUnorderedAccessHandle(mipLevel));
 }
 
-void VkCommandContext::Impl::StageDescriptorMip(const std::string& name, Arc< VulkanTexture > pTexture, u32 mipLevel, Arc< VulkanSampler > pSamplerInCharge)
+void VkCommandContext::Impl::StageDescriptor(const std::string& name, u32 heapIdx)
 {
-	std::pair< u32, u32 > bindingPair;
-	if (IsComputeContext())
-		bindingPair = m_pComputePipeline->GetResourceBindingIndex(name);
-	else if (IsGraphicsContext())
-		bindingPair = m_pGraphicsPipeline->GetResourceBindingIndex(name);
-	else
-	{
-		assert(false && "No pipeline is set!");
-		return;
-	}
-
-	auto [set, binding] = bindingPair;
-	if (!ValidateResourceBinding(name, set, binding))
-		return;
-
-	// With sampler: bind per-mip view as SRV (ShaderReadOnly) — for reading a specific mip
-	// Without sampler: bind per-mip view as UAV (General) — for writing a specific mip
-	if (pSamplerInCharge)
-	{
-		PushDescriptor(
-			set, binding,
-			{
-				.sampler     = pSamplerInCharge->vkSampler(),
-				.imageView   = pTexture->vkMipView(mipLevel),
-				.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-			}, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-	}
-	else
-	{
-		PushDescriptor(
-			set, binding,
-			{
-				.sampler     = VK_NULL_HANDLE,
-				.imageView   = pTexture->vkMipView(mipLevel),
-				.imageLayout = VK_IMAGE_LAYOUT_GENERAL
-			}, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-	}
-}
-
-void VkCommandContext::Impl::PushDescriptor(u32 set, u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType)
-{
-	m_PushAllocations[set].push_back({ binding, bufferInfo, descriptorType });
-}
-
-void VkCommandContext::Impl::PushDescriptor(u32 set, u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType)
-{
-	m_PushAllocations[set].push_back({ binding, imageInfo, descriptorType });
+	BB_ASSERT(m_pBoundPipeline, "StageDescriptor('%s'): no pipeline is bound.", name.c_str());
+	BB_ASSERT(IsValidIndex(heapIdx), "StageDescriptor('%s'): the resource has no slot for this view.", name.c_str());
+	StageRootConstants(sizeof(u32), &heapIdx, PushOffsetOf(*m_pBoundPipeline, name));
 }
 
 void VkCommandContext::Impl::SetRenderPipeline(VulkanGraphicsPipeline* pRenderPipeline)
 {
+	m_PushBlock.fill(0);
+	m_pBoundPipeline   = pRenderPipeline;
 	m_pComputePipeline = nullptr;
-	if (pRenderPipeline && m_pGraphicsPipeline != pRenderPipeline)
+	if (m_pGraphicsPipeline != pRenderPipeline)
 	{
 		m_pGraphicsPipeline = pRenderPipeline;
 		vkCmdBindPipeline(m_vkCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pGraphicsPipeline->vkPipeline());
-
-		m_PushAllocations.clear();
 	}
 }
 
 void VkCommandContext::Impl::SetRenderPipeline(VulkanComputePipeline* pRenderPipeline)
 {
+	m_PushBlock.fill(0);
+	m_pBoundPipeline    = pRenderPipeline;
 	m_pGraphicsPipeline = nullptr;
-	if (pRenderPipeline && m_pComputePipeline != pRenderPipeline)
+	if (m_pComputePipeline != pRenderPipeline)
 	{
 		m_pComputePipeline = pRenderPipeline;
 		vkCmdBindPipeline(m_vkCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_pComputePipeline->vkPipeline());
-
-		m_PushAllocations.clear();
 	}
 }
 
@@ -1155,23 +906,15 @@ void VkCommandContext::Impl::EndRendering()
 void VkCommandContext::Impl::Draw(u32 vertexCount, u32 instanceCount, u32 firstVertex, u32 firstInstance)
 {
 	FlushBarriers();
-	BindShaderResources(VK_PIPELINE_BIND_POINT_GRAPHICS, m_pGraphicsPipeline->vkPipelineLayout());
+	SetRootConstants();
 
 	vkCmdDraw(m_vkCommandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
-}
-
-void VkCommandContext::Impl::DrawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex, i32 vertexOffset, u32 firstInstance)
-{
-	FlushBarriers();
-	BindShaderResources(VK_PIPELINE_BIND_POINT_GRAPHICS, m_pGraphicsPipeline->vkPipelineLayout());
-
-	vkCmdDrawIndexed(m_vkCommandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
 void VkCommandContext::Impl::DrawMeshTasksIndirect(const Arc< VulkanBuffer >& pArgumentBuffer, u64 offsetInBytes, u32 numDraws, u32 strideInBytes)
 {
 	FlushBarriers();
-	BindShaderResources(VK_PIPELINE_BIND_POINT_GRAPHICS, m_pGraphicsPipeline->vkPipelineLayout());
+	SetRootConstants();
 
 	m_RenderDevice.Dispatch().cmdDrawMeshTasksIndirect(
 		m_vkCommandBuffer, pArgumentBuffer->vkBuffer(), offsetInBytes + offsetof(IndirectCommandData, groupCountX), numDraws, strideInBytes);
@@ -1180,7 +923,7 @@ void VkCommandContext::Impl::DrawMeshTasksIndirect(const Arc< VulkanBuffer >& pA
 void VkCommandContext::Impl::DrawMeshTasksIndirectCount(const Arc< VulkanBuffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< VulkanBuffer >& pCountBuffer, u32 numDraws, u32 strideInBytes)
 {
 	FlushBarriers();
-	BindShaderResources(VK_PIPELINE_BIND_POINT_GRAPHICS, m_pGraphicsPipeline->vkPipelineLayout());
+	SetRootConstants();
 
 	m_RenderDevice.Dispatch().cmdDrawMeshTasksIndirectCount(
 		m_vkCommandBuffer, pArgumentBuffer->vkBuffer(), offsetInBytes + offsetof(IndirectCommandData, groupCountX),
@@ -1190,7 +933,7 @@ void VkCommandContext::Impl::DrawMeshTasksIndirectCount(const Arc< VulkanBuffer 
 void VkCommandContext::Impl::Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ)
 {
 	FlushBarriers();
-	BindShaderResources(VK_PIPELINE_BIND_POINT_COMPUTE, m_pComputePipeline->vkPipelineLayout());
+	SetRootConstants();
 
 	vkCmdDispatch(m_vkCommandBuffer, numGroupsX, numGroupsY, numGroupsZ);
 }
@@ -1198,7 +941,7 @@ void VkCommandContext::Impl::Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGro
 void VkCommandContext::Impl::DispatchIndirect(const Arc< VulkanBuffer >& pArgumentBuffer, u64 offsetInBytes)
 {
 	FlushBarriers();
-	BindShaderResources(VK_PIPELINE_BIND_POINT_COMPUTE, m_pComputePipeline->vkPipelineLayout());
+	SetRootConstants();
 
 	vkCmdDispatchIndirect(m_vkCommandBuffer, pArgumentBuffer->vkBuffer(), offsetInBytes);
 }
@@ -1268,39 +1011,12 @@ void VkCommandContext::Impl::FlushBarriers()
 	}
 }
 
-void VkCommandContext::Impl::BindShaderResources(VkPipelineBindPoint bindPoint, VkPipelineLayout vkPipelineLayout)
+void VkCommandContext::Impl::SetRootConstants()
 {
-	if (m_bTransient == false)
-	{
-		auto& rm = m_RenderDevice.GetResourceManager();
-		rm.GetSceneResource().BindSceneResources(m_CommandContext);
-	}
+	BB_ASSERT(m_pBoundPipeline, "SetRootConstants: no pipeline is bound.");
 
-	for (const auto& [set, allocations] : m_PushAllocations)
-	{
-		std::vector< VkWriteDescriptorSet > writes; writes.reserve(allocations.size());
-		for (const auto& allocation : allocations)
-		{
-			VkWriteDescriptorSet write = {};
-			write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			write.dstSet          = VK_NULL_HANDLE;
-			write.dstBinding      = allocation.binding;
-			write.dstArrayElement = 0;
-			write.descriptorCount = 1;
-			write.descriptorType  = allocation.descriptorType;
-			if (allocation.descriptor.bImage)
-				write.pImageInfo  = &allocation.descriptor.imageInfo;
-			else
-				write.pBufferInfo = &allocation.descriptor.bufferInfo;
-			writes.push_back(write);
-		}
-
-		m_RenderDevice.Dispatch().cmdPushDescriptorSet(
-			m_vkCommandBuffer,
-			bindPoint,
-			vkPipelineLayout,
-			set, static_cast<u32>(writes.size()), writes.data());
-	}
+	vkCmdPushConstants(
+		m_vkCommandBuffer, m_RenderDevice.GetGlobalPipelineLayout(), VK_SHADER_STAGE_ALL, 0, render::kSlangPushBlockBytes, m_PushBlock.data());
 }
 
 
@@ -1308,7 +1024,7 @@ void VkCommandContext::Impl::BindShaderResources(VkPipelineBindPoint bindPoint, 
 // Command Context
 //-------------------------------------------------------------------------
 VkCommandContext::VkCommandContext(VkRenderDevice& rd, VkCommandPool vkCommandPool, eCommandType type, VkCommandBufferLevel level)
-	: m_Impl(MakeBox< Impl >(rd, *this, vkCommandPool, type, level)) {}
+	: m_Impl(MakeBox< Impl >(rd, vkCommandPool, type, level)) {}
 
 void VkCommandContext::Open(VkCommandBufferUsageFlags flags)
 {
@@ -1541,89 +1257,35 @@ void VkCommandContext::ClearTexture(
 	m_Impl->ClearTexture(texture, newLayout, baseMip, numMips, baseArray, numArrays);
 }
 
-void VkCommandContext::SetConstants(u32 sizeInBytes, const void* pData, render::eShaderStage stage, u32 offsetInBytes)
-{
-	m_Impl->SetPushConstants(sizeInBytes, pData, VK_SHADER_STAGE(stage), offsetInBytes);
-}
-
 void VkCommandContext::SetComputeConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes)
 {
-	m_Impl->SetPushConstants(sizeInBytes, pData, VK_SHADER_STAGE_COMPUTE_BIT, offsetInBytes);
+	m_Impl->StageRootConstants(sizeInBytes, pData, offsetInBytes);
 }
 
 void VkCommandContext::SetGraphicsConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes)
 {
-	VkShaderStageFlags stages = m_Impl->GraphicsPipeline()
-		? m_Impl->GraphicsPipeline()->vkPushConstantStages()
-		: 0;
-	if (stages == 0)
-		return;
-	m_Impl->SetPushConstants(sizeInBytes, pData, stages, offsetInBytes);
-}
-
-void VkCommandContext::SetComputeDynamicUniformBuffer(const std::string& name, u32 sizeInBytes, const void* pData)
-{
-	m_Impl->SetComputeDynamicUniformBuffer(name, sizeInBytes, pData);
-}
-
-void VkCommandContext::SetGraphicsDynamicUniformBuffer(const std::string& name, u32 sizeInBytes, const void* pData)
-{
-	m_Impl->SetGraphicsDynamicUniformBuffer(name, sizeInBytes, pData);
-}
-
-void VkCommandContext::SetComputeShaderResource(const std::string& name, Arc< render::Texture > texture, Arc< render::Sampler > samplerInCharge)
-{
-	auto rhiTexture = StaticCast<VulkanTexture>(texture);
-	assert(rhiTexture);
-
-	m_Impl->SetComputeShaderResource(name, rhiTexture, StaticCast<VulkanSampler>(samplerInCharge));
-}
-
-void VkCommandContext::SetGraphicsShaderResource(const std::string& name, Arc< render::Texture > texture, Arc< render::Sampler > samplerInCharge)
-{
-	auto rhiTexture = StaticCast<VulkanTexture>(texture);
-	assert(rhiTexture);
-
-	m_Impl->SetGraphicsShaderResource(name, rhiTexture, StaticCast<VulkanSampler>(samplerInCharge));
-}
-
-void VkCommandContext::SetComputeShaderResource(const std::string& name, Arc< render::Buffer > buffer)
-{
-	auto rhiBuffer = StaticCast<VulkanBuffer>(buffer);
-	assert(rhiBuffer);
-
-	m_Impl->SetComputeShaderResource(name, rhiBuffer);
-}
-
-void VkCommandContext::SetGraphicsShaderResource(const std::string& name, Arc< render::Buffer > buffer)
-{
-	auto rhiBuffer = StaticCast<VulkanBuffer>(buffer);
-	assert(rhiBuffer);
-
-	m_Impl->SetGraphicsShaderResource(name, rhiBuffer);
-}
-
-void VkCommandContext::SetAccelerationStructure(const std::string& name, render::TopLevelAccelerationStructure& tlas)
-{
-	UNUSED(name);
-	UNUSED(tlas);
-	BB_ASSERT(false, "Vulkan acceleration-structure binding is unsupported.");
+	m_Impl->StageRootConstants(sizeInBytes, pData, offsetInBytes);
 }
 
 void VkCommandContext::StageDescriptor(const std::string& name, Arc< render::Buffer > buffer, u32 offset)
 {
+	UNUSED(offset);
+
 	auto rhiBuffer = StaticCast<VulkanBuffer>(buffer);
 	assert(rhiBuffer);
 
-	m_Impl->StageDescriptor(name, rhiBuffer, offset);
+	m_Impl->StageDescriptor(name, rhiBuffer);
 }
 
 void VkCommandContext::StageDescriptor(const std::string& name, Arc< render::Texture > texture, Arc< render::Sampler > samplerInCharge, u32 offset)
 {
+	UNUSED(offset);
+	UNUSED(samplerInCharge);
+
 	auto rhiTexture = StaticCast<VulkanTexture>(texture);
 	assert(rhiTexture);
 
-	m_Impl->StageDescriptor(name, rhiTexture, StaticCast<VulkanSampler>(samplerInCharge), offset);
+	m_Impl->StageDescriptor(name, rhiTexture);
 }
 
 void VkCommandContext::StageDescriptorMip(const std::string& name, Arc< render::Texture > texture, u32 mipLevel, Arc< render::Sampler > samplerInCharge)
@@ -1631,17 +1293,10 @@ void VkCommandContext::StageDescriptorMip(const std::string& name, Arc< render::
 	auto rhiTexture = StaticCast<VulkanTexture>(texture);
 	assert(rhiTexture);
 
-	m_Impl->StageDescriptorMip(name, rhiTexture, mipLevel, StaticCast<VulkanSampler>(samplerInCharge));
-}
-
-void VkCommandContext::PushDescriptor(u32 set, u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType)
-{
-	m_Impl->PushDescriptor(set, binding, imageInfo, descriptorType);
-}
-
-void VkCommandContext::PushDescriptor(u32 set, u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType)
-{
-	m_Impl->PushDescriptor(set, binding, bufferInfo, descriptorType);
+	if (samplerInCharge)
+		m_Impl->StageDescriptor(name, rhiTexture);
+	else
+		m_Impl->StageDescriptorMip(name, rhiTexture, mipLevel);
 }
 
 void VkCommandContext::SetRenderPipeline(render::GraphicsPipeline* pRenderPipeline)
@@ -1706,11 +1361,6 @@ void VkCommandContext::Draw(u32 vertexCount, u32 instanceCount, u32 firstVertex,
 	m_Impl->Draw(vertexCount, instanceCount, firstVertex, firstInstance);
 }
 
-void VkCommandContext::DrawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex, i32 vertexOffset, u32 firstInstance)
-{
-	m_Impl->DrawIndexed(indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
-}
-
 void VkCommandContext::DrawMeshTasksIndirect(const Arc< render::Buffer >& pArgumentBuffer, u64 offsetInBytes, u32 numDraws, u32 strideInBytes)
 {
 	const auto& rhiArgBuffer = StaticCast< VulkanBuffer >(pArgumentBuffer);
@@ -1750,24 +1400,9 @@ bool VkCommandContext::IsReady() const
 	return m_Impl->IsReady();
 }
 
-bool VkCommandContext::IsFenceComplete(VkFence vkFence) const
-{
-	return m_Impl->IsFenceComplete(vkFence);
-}
-
-void VkCommandContext::WaitForFence(VkFence vkFence) const
-{
-	m_Impl->WaitForFence(vkFence);
-}
-
 void VkCommandContext::Flush() const
 {
 	m_Impl->Flush();
-}
-
-void VkCommandContext::FlushBarriers() const
-{
-	m_Impl->FlushBarriers();
 }
 
 eCommandType VkCommandContext::GetCommandType() const
@@ -1783,16 +1418,6 @@ bool VkCommandContext::IsTransient() const
 void VkCommandContext::SetTransient(bool bTransient)
 {
 	return m_Impl->SetTransient(bTransient);
-}
-
-bool VkCommandContext::IsGraphicsContext() const
-{
-	return m_Impl->IsGraphicsContext();
-}
-
-bool VkCommandContext::IsComputeContext() const
-{
-	return m_Impl->IsComputeContext();
 }
 
 VkCommandBuffer VkCommandContext::vkCommandBuffer() const
@@ -1818,26 +1443,6 @@ VkSemaphore VkCommandContext::vkRenderCompleteSemaphore() const
 VkSemaphore VkCommandContext::vkPresentCompleteSemaphore() const
 {
 	return m_Impl->vkPresentCompleteSemaphore();
-}
-
-VkPipelineLayout VkCommandContext::vkGraphicsPipelineLayout() const
-{
-	return m_Impl->vkGraphicsPipelineLayout();
-}
-
-VkPipelineLayout VkCommandContext::vkComputePipelineLayout() const
-{
-	return m_Impl->vkComputePipelineLayout();
-}
-
-VkPipeline VkCommandContext::vkGraphicsPipeline() const
-{
-	return m_Impl->vkGraphicsPipeline();
-}
-
-VkPipeline VkCommandContext::vkComputePipeline() const
-{
-	return m_Impl->vkComputePipeline();
 }
 
 double VkCommandContext::GetLastFrameElapsedTime() const

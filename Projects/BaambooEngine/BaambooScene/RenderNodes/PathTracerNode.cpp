@@ -3,8 +3,10 @@
 
 #include "RenderCommon/CommandContext.h"
 #include "RenderCommon/RenderDevice.h"
+#include "RenderCommon/SceneResource.h"
 
 #include "BaambooScene/Scene.h"
+#include "PipelineFactory.h"
 
 #include "Utils/Math.hpp"
 
@@ -204,7 +206,7 @@ void ComputeLightPowerWeights(const LightRenderView& light, float sceneBoundsRad
 
 } // namespace
 
-PathTracerNode::PathTracerNode(render::RenderDevice& rd)
+PathTracerNode::PathTracerNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory)
     : Super(rd, "PathTracer")
 {
     using namespace render;
@@ -265,22 +267,10 @@ PathTracerNode::PathTracerNode(render::RenderDevice& rd)
             .bufferUsage        = eBufferUsage_Storage | eBufferUsage_TransferSource,
         });
 
-    m_pPrimaryMediumQueryPSO = ComputePipeline::Create(m_RenderDevice, "PrimaryMediumQueryPSO");
-    m_pPrimaryMediumQueryPSO->SetComputeShader(
-        Shader::Create(m_RenderDevice, "PrimaryMediumQueryCS",
-            {
-                .stage    = eShaderStage::Compute,
-                .filename = "PrimaryMediumQueryCS"
-            })).Build();
+    m_pPrimaryMediumQueryPSO = pipelineFactory.CreateAndBuildComputePipeline("PrimaryMediumQueryPSO", { .source = "PrimaryMediumQueryCS.slang" });
 
-    m_pPSO = RaytracingPipeline::Create(m_RenderDevice, "PathTracerPSO");
-    m_pPSO->SetShaderLibrary(
-            Shader::Create(m_RenderDevice, "PathTracerLIB",
-                {
-                    .stage    = eShaderStage::RayGeneration,
-                    .filename = "PathTracerLIB"
-                }))
-          .SetRayGenerationShader("RayGen")
+    m_pPSO = pipelineFactory.CreateRaytracingPipeline("PathTracerPSO", "PathTracerLIB.slang");
+    m_pPSO->SetRayGenerationShader("RayGen")
           .AddMissShader("PrimaryMiss")
           .AddMissShader("ShadowMiss")
           .AddHitGroup(
@@ -299,6 +289,14 @@ PathTracerNode::PathTracerNode(render::RenderDevice& rd)
           .SetMaxRecursionDepth(1)
           .Build();
 
+    BuildShaderBindingTable();
+}
+
+void PathTracerNode::BuildShaderBindingTable()
+{
+    using namespace render;
+
+    // a new table each time: frames in flight still dispatch with the old one
     m_pSBT = ShaderBindingTable::Create(m_RenderDevice, "PathTracerSBT");
     m_pSBT->SetRayGenerationRecord(m_pPSO->GetShaderIdentifier("RayGen"), nullptr, 0)
         .AddMissRecord("PrimaryMiss", m_pPSO->GetShaderIdentifier("PrimaryMiss"))
@@ -306,6 +304,8 @@ PathTracerNode::PathTracerNode(render::RenderDevice& rd)
         .AddHitGroupRecord("PrimaryHitGroup", m_pPSO->GetShaderIdentifier("PrimaryHitGroup"))
         .AddHitGroupRecord("ShadowHitGroup", m_pPSO->GetShaderIdentifier("ShadowHitGroup"))
         .Build();
+
+    m_SBTBuildCount = m_pPSO->BuildCount();
 }
 
 void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)
@@ -313,8 +313,9 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
     using namespace render;
 
     auto& rm = m_RenderDevice.GetResourceManager();
+    auto& sr = rm.GetSceneResource();
 
-    auto pTLAS = rm.GetSceneResource().GetTLAS();
+    auto pTLAS = sr.GetTLAS();
     if (!pTLAS || !pTLAS->IsBuilt())
     {
         g_FrameData.pColor = rm.GetFlatBlackTexture();
@@ -356,7 +357,10 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
         (sceneDirtyMask & PATH_TRACER_PRIMARY_MEDIUM_DIRTY_MASK) != 0 ||
         bMaterialSlabsRebuilt;
 
-    if (bCameraChanged || bSceneChanged || bLightSelectionChanged)
+    // samples made by the shaders of an earlier build must not mix with new ones
+    const bool bPipelineRebuilt = m_SBTBuildCount != m_pPSO->BuildCount();
+
+    if (bCameraChanged || bSceneChanged || bLightSelectionChanged || bPipelineRebuilt)
     {
         if (!CheckAutomationSceneReset())
         {
@@ -425,10 +429,10 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
 
         context.SetRenderPipeline(m_pPrimaryMediumQueryPSO.get());
         context.TransitionBufferToWrite(m_pPrimaryRayMediumSeed, ePipelineStage::ComputeShader);
-        context.SetComputeDynamicUniformBuffer("g_PrimaryMediumQueryParams", queryParams);
-        context.SetAccelerationStructure("g_Scene", *pTLAS);
-        context.StageDescriptor("g_MaterialSlabs", m_pMaterialSlabs);
-        context.SetComputeShaderResource("g_PrimaryRayMediumSeedOut", m_pPrimaryRayMediumSeed);
+        context.SetComputeConstants(sizeof(queryParams), &queryParams);
+        context.StageDescriptor("ID_Scene", sr.GetSceneGlobals());
+        context.StageDescriptor("ID_MaterialSlabs", m_pMaterialSlabs);
+        context.StageDescriptor("ID_PrimaryRayMediumSeedOut", m_pPrimaryRayMediumSeed);
         context.Dispatch(1, 1, 1);
         context.TransitionBufferToRead(m_pPrimaryRayMediumSeed, ePipelineStage::RayTracingShader);
 
@@ -437,57 +441,50 @@ void PathTracerNode::Apply(render::CommandContext& context, const SceneRenderVie
     }
 
     context.SetRenderPipeline(m_pPSO.get());
-    context.SetComputeDynamicUniformBuffer("PathSceneBounds", m_SceneBounds);
 
     context.TransitionTextureToWrite(m_pAccumulation, ePipelineStage::RayTracingShader);
     context.TransitionTextureToWrite(m_pRadiance, ePipelineStage::RayTracingShader);
+
+    const auto pEnvironmentMap = m_pEnvironmentMap ? m_pEnvironmentMap : rm.GetFlatBlackTexture();
+    context.TransitionTextureToRead(pEnvironmentMap, ePipelineStage::RayTracingShader);
 
     u32 samplesThisFrame = m_SamplesPerFrame;
     if (m_bOverrideTargetSamples && m_bDumpRequested.load(std::memory_order_acquire))
         samplesThisFrame = std::min(samplesThisFrame, m_DumpTargetSamples - m_AccumulatedSampleCount);
 
-    struct PathTracerPushConstants
+    const PathTracerConstants constants =
     {
-        u32 accumulatedSampleCount;
-        u32 samplesPerFrame;
-        u32 bResetAccumulation;
-        u32 maxDepth;
-        float3 environmentRadiance;
-        u32    bUseEnvironmentMap;
-        u32    bUseEnvironmentSampling;
-        u32    environmentDistributionWidth;
-        u32    environmentDistributionHeight;
-        u32    sobolSeed;
-    } constants =
-    {
-        m_AccumulatedSampleCount,
-        samplesThisFrame,
-        m_AccumulatedSampleCount == 0 ? 1u : 0u,
-        m_MaxDepth,
-        m_EnvironmentRadiance,
-        m_bUseEnvironmentMap && m_pEnvironmentMap ? 1u : 0u,
-        m_bUseEnvironmentSampling && m_pEnvironmentDistribution ? 1u : 0u,
-        m_EnvironmentDistributionWidth,
-        m_EnvironmentDistributionHeight,
-        m_SobolSeed
+        .accumulatedSampleCount        = m_AccumulatedSampleCount,
+        .samplesPerFrame               = samplesThisFrame,
+        .bResetAccumulation            = m_AccumulatedSampleCount == 0 ? 1u : 0u,
+        .maxDepth                      = m_MaxDepth,
+        .environmentRadiance           = m_EnvironmentRadiance,
+        .bUseEnvironmentMap            = m_bUseEnvironmentMap && m_pEnvironmentMap ? 1u : 0u,
+        .bUseEnvironmentSampling       = m_bUseEnvironmentSampling && m_pEnvironmentDistribution ? 1u : 0u,
+        .environmentDistributionWidth  = m_EnvironmentDistributionWidth,
+        .environmentDistributionHeight = m_EnvironmentDistributionHeight,
+        .sobolSeed                     = m_SobolSeed,
+        .sceneBoundsCenter             = float3(m_SceneBounds),
+        .sceneBoundsRadius             = m_SceneBounds.w,
     };
-    static_assert(sizeof(PathTracerPushConstants) == 48);
 
     context.SetComputeConstants(sizeof(constants), &constants);
-    context.SetAccelerationStructure("g_Scene", *pTLAS);
-    context.SetComputeShaderResource("g_PrimaryRayMediumSeed", m_pPrimaryRayMediumSeed);
-    context.StageDescriptor("g_Accumulation", m_pAccumulation);
-    context.StageDescriptor("g_Radiance", m_pRadiance);
+    context.StageDescriptor("ID_Scene", sr.GetSceneGlobals());
+    context.StageDescriptor("ID_PrimaryRayMediumSeed", m_pPrimaryRayMediumSeed);
+    context.StageDescriptor("ID_Accumulation", m_pAccumulation);
+    context.StageDescriptor("ID_Radiance", m_pRadiance);
 #if PT_VALIDATION
     BindValidationResources(context);
 #endif // PT_VALIDATION
-    context.StageDescriptor("g_EnvironmentMap", m_pEnvironmentMap ? m_pEnvironmentMap : rm.GetFlatBlackTexture(), g_FrameData.pLinearClamp);
-    context.StageDescriptor("g_EnvironmentDistribution", m_pEnvironmentDistribution);
-    context.StageDescriptor("g_LightSelectionCDF", m_pLightSelectionCDF);
+    context.StageDescriptor("ID_EnvironmentMap", pEnvironmentMap);
+    context.StageDescriptor("ID_EnvironmentDistribution", m_pEnvironmentDistribution);
+    context.StageDescriptor("ID_LightSelectionCDF", m_pLightSelectionCDF);
 
-    context.StageDescriptor("g_MaterialSlabs", m_pMaterialSlabs);
+    context.StageDescriptor("ID_MaterialSlabs", m_pMaterialSlabs);
     if (m_AccumulatedSampleCount == 0)
         BeginRenderTiming();
+    if (m_SBTBuildCount != m_pPSO->BuildCount())
+        BuildShaderBindingTable();
     context.DispatchRays(*m_pSBT, m_pRadiance->Width(), m_pRadiance->Height());
 
 #if PT_VALIDATION

@@ -2,7 +2,7 @@
 
 #include "Primitives.h"
 #include "MathTypes.h"
-#include "ShaderTypes.h"
+#include "ShaderShared/Material.h"
 
 #include <string>
 

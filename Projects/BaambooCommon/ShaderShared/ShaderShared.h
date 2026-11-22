@@ -1,0 +1,15 @@
+#pragma once
+// Every shared GPU struct, for code that needs most of them (renderer precompiled headers, scene views).
+#include "Mesh.h"
+#include "Camera.h"
+#include "Material.h"
+#include "Medium.h"
+#include "PathTracer.h"
+#include "Light.h"
+#include "Cloud.h"
+#include "Atmosphere.h"
+#include "VoxelTerrain.h"
+#include "PostProcess.h"
+#include "Culling.h"
+#include "DebugDraw.h"
+#include "Scene.h"

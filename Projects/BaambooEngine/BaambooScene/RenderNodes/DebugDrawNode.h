@@ -1,6 +1,8 @@
 #pragma once
 #include "RenderCommon/RenderNode.h"
 
+namespace baamboo::shader { class PipelineFactory; }
+
 namespace baamboo
 {
 
@@ -9,7 +11,7 @@ class DebugDrawNode : public render::RenderNode
 {
 using Super = render::RenderNode;
 public:
-	DebugDrawNode(render::RenderDevice& rd);
+	DebugDrawNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory);
 	virtual ~DebugDrawNode() = default;
 
 	virtual void Apply(render::CommandContext& context, const SceneRenderView& renderView) override;
@@ -23,7 +25,7 @@ private:
 	void ApplyClusterWireframe(render::CommandContext& context, const SceneRenderView& renderView);
 	void ApplyLightWireframe(render::CommandContext& context, const SceneRenderView& renderView);
 	void ApplyDebugLines(render::CommandContext& context, const SceneRenderView& renderView);
-	bool EnsureDebugLineBuffer(u32 vertexCount);
+	void UploadDebugLines(render::CommandContext& context, const SceneRenderView& renderView);
 
 private:
 	Arc< render::Texture >      m_pColorRef;

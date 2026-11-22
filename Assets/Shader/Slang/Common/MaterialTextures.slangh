@@ -1,0 +1,76 @@
+#pragma once
+#include "ShaderShared/Material.h"
+#include "Common/Binding.slangh"
+
+// materialTextures = GetResource(scene.buffers.materialTextures); textureID is a heap index on both backends
+bool FindMaterialTexture(StructuredBuffer< MaterialTextureData > materialTextures, MaterialData material, uint semantic, out MaterialTextureData binding)
+{
+    binding = {};
+
+    if (material.textureCount == 0u)
+        return false;
+
+    [loop]
+    for (uint bindingIndex = 0u; bindingIndex < material.textureCount; ++bindingIndex)
+    {
+        const MaterialTextureData candidate = materialTextures[material.textureOffset + bindingIndex];
+        if (candidate.semantic == semantic && candidate.textureID != kInvalidIndex)
+        {
+            binding = candidate;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+float SelectMaterialTextureScalar(float4 value, uint channel)
+{
+    if (channel == eMaterialTextureChannel_G)
+        return value.g;
+    if (channel == eMaterialTextureChannel_B)
+        return value.b;
+    if (channel == eMaterialTextureChannel_A)
+        return value.a;
+    return value.r;
+}
+
+float4 DecodeMaterialTextureSample(float4 value, uint channel)
+{
+    if (channel == eMaterialTextureChannel_RGB || channel == eMaterialTextureChannel_RGBA)
+        return value;
+
+    return SelectMaterialTextureScalar(value, channel).xxxx;
+}
+
+bool SampleMaterialTextureLevel(StructuredBuffer< MaterialTextureData > materialTextures, MaterialData material, uint semantic, float2 uv, out float4 value, out uint channel)
+{
+    MaterialTextureData binding;
+    if (!FindMaterialTexture(materialTextures, material, semantic, binding))
+    {
+        value   = float4(0.0);
+        channel = eMaterialTextureChannel_R;
+        return false;
+    }
+
+    Texture2D< float4 > textureMap = GetResource(binding.textureID);
+    value   = DecodeMaterialTextureSample(textureMap.SampleLevel(g_TrilinearWrapSampler, uv, 0), binding.channel);
+    channel = binding.channel;
+    return true;
+}
+
+bool SampleMaterialTextureGrad(StructuredBuffer< MaterialTextureData > materialTextures, MaterialData material, uint semantic, float2 uv, float2 ddxUV, float2 ddyUV, out float4 value, out uint channel)
+{
+    MaterialTextureData binding;
+    if (!FindMaterialTexture(materialTextures, material, semantic, binding))
+    {
+        value   = float4(0.0);
+        channel = eMaterialTextureChannel_R;
+        return false;
+    }
+
+    Texture2D< float4 > textureMap = GetResource(binding.textureID);
+    value   = DecodeMaterialTextureSample(textureMap.SampleGrad(g_AnisotropicWrapSampler, uv, ddxUV, ddyUV), binding.channel);
+    channel = binding.channel;
+    return true;
+}

@@ -4,10 +4,8 @@
 #include "RenderDevice/VkFrameManager.h"
 #include "RenderDevice/VkResourceManager.h"
 #include "RenderDevice/VkCommandContext.h"
-#include "RenderDevice/VkDescriptorSet.h"
 
 #include "RenderResource/VkTexture.h"
-#include "RenderResource/VkSceneResource.h"
 
 #include "SceneRenderView.h"
 #include "Utils/Math.hpp"
@@ -56,9 +54,7 @@ Arc< render::CommandContext > VkRenderer::BeginFrame()
 	if (!context.rhiCommandContext)
 		return nullptr;
 
-	auto& sr = static_cast<VkSceneResource&>(m_pRenderDevice->GetResourceManager().GetSceneResource());
-	sr.SetCurrentContextIndex(context.contextIndex);
-
+	m_pRenderDevice->ProcessDeferredReleases();
 	return context.rhiCommandContext;
 }
 
@@ -84,6 +80,7 @@ void VkRenderer::EndFrame(Arc< render::CommandContext >&& context, Arc< render::
 	rhiContext->Close();
 
 	m_pFrameManager->EndFrame(std::move(rhiContext));
+	m_pRenderDevice->AdvanceFrameNumber();
 }
 
 void VkRenderer::NewFrame()

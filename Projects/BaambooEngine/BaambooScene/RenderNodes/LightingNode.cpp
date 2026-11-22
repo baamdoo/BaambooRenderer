@@ -1,10 +1,13 @@
 #include "BaambooPch.h"
-#include "ShaderTypes.h"
+#include "ShaderShared/Light.h"
+#include "ShaderShared/VoxelTerrain.h"
 #include "LightingNode.h"
 
 #include "RenderCommon/RenderDevice.h"
+#include "RenderCommon/SceneResource.h"
 #include "RenderCommon/CommandContext.h"
 #include "BaambooScene/Scene.h"
+#include "PipelineFactory.h"
 
 namespace baamboo
 {
@@ -23,7 +26,7 @@ u32 ceilDiv(u32 a, u32 b)
 // =========================================================================
 // ClusterBuildNode
 // =========================================================================
-ClusterBuildNode::ClusterBuildNode(render::RenderDevice& rd)
+ClusterBuildNode::ClusterBuildNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory)
 	: Super(rd, "ClusterBuildPass")
 {
 	using namespace render;
@@ -38,13 +41,7 @@ ClusterBuildNode::ClusterBuildNode(render::RenderDevice& rd)
 	m_NumTilesX = ceilDiv(rd.WindowWidth(),  CLUSTER_TILE_SIZE_PX);
 	m_NumTilesY = ceilDiv(rd.WindowHeight(), CLUSTER_TILE_SIZE_PX);
 
-	m_pClusterBuildPSO = ComputePipeline::Create(m_RenderDevice, "ClusterBuildPSO");
-	m_pClusterBuildPSO->SetComputeShader(
-		Shader::Create(m_RenderDevice, "ClusterBuildCS",
-			{
-				.stage    = eShaderStage::Compute,
-				.filename = "ClusterBuildCS"
-			})).Build();
+	m_pClusterBuildPSO = pipelineFactory.CreateAndBuildComputePipeline("ClusterBuildPSO", { .source = "ClusterBuildCS.slang" });
 }
 
 void ClusterBuildNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)
@@ -61,21 +58,14 @@ void ClusterBuildNode::Apply(render::CommandContext& context, const SceneRenderV
 
 	context.TransitionBufferToWrite(m_pClusterAABBBuffer, ePipelineStage::ComputeShader);
 
-	struct
-	{
-		u32 tileSize;
-		u32 numTilesX;
-		u32 numTilesY;
-		u32 numSlices;
-	} constants = {
-		.tileSize  = CLUSTER_TILE_SIZE_PX,
+	const ClusterGridConstants constants = {
 		.numTilesX = m_NumTilesX,
 		.numTilesY = m_NumTilesY,
-		.numSlices = CLUSTER_SLICES_Z,
 	};
 	context.SetComputeConstants(sizeof(constants), &constants);
 
-	context.StageDescriptor("g_ClusterBuffer", m_pClusterAABBBuffer);
+	context.StageDescriptor("ID_Scene", m_RenderDevice.GetResourceManager().GetSceneResource().GetSceneGlobals());
+	context.StageDescriptor("ID_ClusterBuffer", m_pClusterAABBBuffer);
 
 	context.Dispatch3D< 4, 4, 4 >(m_NumTilesX, m_NumTilesY, CLUSTER_SLICES_Z);
 
@@ -95,7 +85,7 @@ void ClusterBuildNode::Resize(u32 width, u32 height, u32 depth)
 // =========================================================================
 // LightCullingNode
 // =========================================================================
-LightCullingNode::LightCullingNode(render::RenderDevice& rd)
+LightCullingNode::LightCullingNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory)
 	: Super(rd, "LightCullingPass")
 {
 	using namespace render;
@@ -117,29 +107,9 @@ LightCullingNode::LightCullingNode(render::RenderDevice& rd)
 	m_NumTilesX = ceilDiv(rd.WindowWidth(),  CLUSTER_TILE_SIZE_PX);
 	m_NumTilesY = ceilDiv(rd.WindowHeight(), CLUSTER_TILE_SIZE_PX);
 
-	m_pCountPSO = ComputePipeline::Create(m_RenderDevice, "LightCullingCountPSO");
-	m_pCountPSO->SetComputeShader(
-		Shader::Create(m_RenderDevice, "LightCullingCountCS",
-			{
-				.stage    = eShaderStage::Compute,
-				.filename = "LightCullingCountCS"
-			})).Build();
-
-	m_pScanPSO = ComputePipeline::Create(m_RenderDevice, "LightCullingScanPSO");
-	m_pScanPSO->SetComputeShader(
-		Shader::Create(m_RenderDevice, "LightCullingScanCS",
-			{
-				.stage    = eShaderStage::Compute,
-				.filename = "LightCullingScanCS"
-			})).Build();
-
-	m_pWritePSO = ComputePipeline::Create(m_RenderDevice, "LightCullingWritePSO");
-	m_pWritePSO->SetComputeShader(
-		Shader::Create(m_RenderDevice, "LightCullingWriteCS",
-			{
-				.stage    = eShaderStage::Compute,
-				.filename = "LightCullingWriteCS"
-			})).Build();
+	m_pCountPSO = pipelineFactory.CreateAndBuildComputePipeline("LightCullingCountPSO", { .source = "LightCullingCS.slang", .entryPoint = "CountLights" });
+	m_pScanPSO  = pipelineFactory.CreateAndBuildComputePipeline("LightCullingScanPSO", { .source = "LightCullingCS.slang", .entryPoint = "ScanLightGrid" });
+	m_pWritePSO = pipelineFactory.CreateAndBuildComputePipeline("LightCullingWritePSO", { .source = "LightCullingCS.slang", .entryPoint = "WriteLightList" });
 }
 
 void LightCullingNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)
@@ -150,17 +120,11 @@ void LightCullingNode::Apply(render::CommandContext& context, const SceneRenderV
 	assert(g_FrameData.pClusterAABBBuffer && "LightCullingNode requires ClusterBuildNode to run first");
 	auto pClusterAABB = g_FrameData.pClusterAABBBuffer.lock();
 
-	struct
-	{
-		u32 tileSize;
-		u32 numTilesX;
-		u32 numTilesY;
-		u32 numSlices;
-	} cullConstants = {
-		.tileSize  = CLUSTER_TILE_SIZE_PX,
+	const auto& pSceneGlobals = m_RenderDevice.GetResourceManager().GetSceneResource().GetSceneGlobals();
+
+	const ClusterGridConstants constants = {
 		.numTilesX = m_NumTilesX,
 		.numTilesY = m_NumTilesY,
-		.numSlices = CLUSTER_SLICES_Z,
 	};
 
 	// === Pass 1: Count ===
@@ -168,35 +132,30 @@ void LightCullingNode::Apply(render::CommandContext& context, const SceneRenderV
 	context.TransitionBufferToRead (pClusterAABB,         ePipelineStage::ComputeShader);
 	context.TransitionBufferToWrite(m_pLightGridBuffer,   ePipelineStage::ComputeShader);
 
-	context.SetComputeConstants(sizeof(cullConstants), &cullConstants);
-	context.StageDescriptor("g_ClusterBuffer",   pClusterAABB);
-	context.StageDescriptor("g_LightGridBuffer", m_pLightGridBuffer);
+	context.SetComputeConstants(sizeof(constants), &constants);
+	context.StageDescriptor("ID_Scene",           pSceneGlobals);
+	context.StageDescriptor("ID_ClusterBuffer",   pClusterAABB);
+	context.StageDescriptor("ID_LightGridBuffer", m_pLightGridBuffer);
 	context.Dispatch3D< 4, 4, 4 >(m_NumTilesX, m_NumTilesY, CLUSTER_SLICES_Z);
 
 	// === Pass 2: Scan (prefix-sum) ===
+	context.SetRenderPipeline(m_pScanPSO.get());
 	context.UAVBarrier(m_pLightGridBuffer);
 
-	context.SetRenderPipeline(m_pScanPSO.get());
-
-	struct
-	{
-		u32 numClusters;
-	} scanConstants = {
-		.numClusters = m_NumTilesX * m_NumTilesY * CLUSTER_SLICES_Z,
-	};
-	context.SetComputeConstants(sizeof(scanConstants), &scanConstants);
-	context.StageDescriptor("g_LightGridBuffer", m_pLightGridBuffer);
+	context.SetComputeConstants(sizeof(constants), &constants);
+	context.StageDescriptor("ID_LightGridBuffer", m_pLightGridBuffer);
 	context.Dispatch1D< 1 >(1);
 
 	// === Pass 3: Write ===
+	context.SetRenderPipeline(m_pWritePSO.get());
 	context.TransitionBufferToRead (m_pLightGridBuffer,     ePipelineStage::ComputeShader);
 	context.TransitionBufferToWrite(m_pLightListDataBuffer, ePipelineStage::ComputeShader);
 
-	context.SetRenderPipeline(m_pWritePSO.get());
-	context.SetComputeConstants(sizeof(cullConstants), &cullConstants);
-	context.StageDescriptor("g_ClusterBuffer",       pClusterAABB);
-	context.StageDescriptor("g_LightGridBuffer",     m_pLightGridBuffer);
-	context.StageDescriptor("g_LightListDataBuffer", m_pLightListDataBuffer);
+	context.SetComputeConstants(sizeof(constants), &constants);
+	context.StageDescriptor("ID_Scene",               pSceneGlobals);
+	context.StageDescriptor("ID_ClusterBuffer",       pClusterAABB);
+	context.StageDescriptor("ID_LightGridBuffer",     m_pLightGridBuffer);
+	context.StageDescriptor("ID_LightListDataBuffer", m_pLightListDataBuffer);
 	context.Dispatch3D< 4, 4, 4 >(m_NumTilesX, m_NumTilesY, CLUSTER_SLICES_Z);
 
 	context.TransitionBufferToRead(m_pLightListDataBuffer, ePipelineStage::ComputeShader);
@@ -216,7 +175,7 @@ void LightCullingNode::Resize(u32 width, u32 height, u32 depth)
 // =========================================================================
 // LightingNode
 // =========================================================================
-LightingNode::LightingNode(render::RenderDevice& rd)
+LightingNode::LightingNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory)
 	: Super(rd, "LightingPass")
 {
 	using namespace render;
@@ -256,29 +215,13 @@ LightingNode::LightingNode(render::RenderDevice& rd)
 			.bufferUsage        = eBufferUsage_Storage,
 		});
 
-	m_pLightingPSO = ComputePipeline::Create(m_RenderDevice, "LightingPSO");
-	m_pLightingPSO->SetComputeShader(
-		Shader::Create(m_RenderDevice, "DeferredPBRLightingCS",
-			{
-				.stage    = eShaderStage::Compute,
-				.filename = "DeferredPBRLightingCS"
-			})).Build();
+	m_pLightingPSO = pipelineFactory.CreateAndBuildComputePipeline("LightingPSO", { .source = "DeferredPBRLightingCS.slang" });
 }
 
 void LightingNode::Apply(render::CommandContext& context, const SceneRenderView& renderView)
 {
 	using namespace render;
 	auto& rm = m_RenderDevice.GetResourceManager();
-
-	context.SetRenderPipeline(m_pLightingPSO.get());
-
-	u32 debugView = renderView.debugFlags.surfaceDebugView;
-	context.SetComputeConstants(sizeof(u32), &debugView);
-
-	auto pVoxDescs = g_FrameData.pVoxelChunkDescs.lock();
-	if (pVoxDescs)
-		context.TransitionBufferToRead(pVoxDescs, ePipelineStage::ComputeShader);
-	context.StageDescriptor("g_VoxelChunkDescs", pVoxDescs ? pVoxDescs : m_pVoxelChunkDescFallback);
 
 	assert(g_FrameData.pDepth);
 	assert(
@@ -288,38 +231,31 @@ void LightingNode::Apply(render::CommandContext& context, const SceneRenderView&
 		g_FrameData.pCoreMaterial &&
 		"LightingNode requires the SurfaceResolve pass (VBuf + CoreCache) to run first"
 	);
+
+	auto pVoxDescs          = g_FrameData.pVoxelChunkDescs.lock();
+	auto pAerialPerspective = g_FrameData.pAerialPerspectiveLUT ? g_FrameData.pAerialPerspectiveLUT.lock() : rm.GetFlatBlackTexture3D();
+	auto pCloudScattering   = g_FrameData.pCloudScatteringLUT ? g_FrameData.pCloudScatteringLUT.lock() : rm.GetFlatBlackTexture();
+	auto pSkybox            = g_FrameData.pSkyboxLUT ? g_FrameData.pSkyboxLUT.lock() : rm.GetFlatBlackTextureCube();
+
+	auto pLightGridBuffer     = g_FrameData.pLightGridBuffer ? g_FrameData.pLightGridBuffer.lock() : nullptr;
+	auto pLightListDataBuffer = g_FrameData.pLightListDataBuffer ? g_FrameData.pLightListDataBuffer.lock() : nullptr;
+
+	context.SetRenderPipeline(m_pLightingPSO.get());
+
+	if (pVoxDescs)
+		context.TransitionBufferToRead(pVoxDescs, ePipelineStage::ComputeShader);
 	context.TransitionBarrier(g_FrameData.pDepth.lock(), eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(g_FrameData.pVBuf0.lock(), eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(g_FrameData.pVBuf1.lock(), eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(g_FrameData.pCoreNormal.lock(), eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(g_FrameData.pCoreMaterial.lock(), eTextureLayout::ShaderReadOnly);
-	context.TransitionBarrier(g_FrameData.pAerialPerspectiveLUT ?
-		g_FrameData.pAerialPerspectiveLUT.lock() : rm.GetFlatBlackTexture3D(), eTextureLayout::ShaderReadOnly);
-	context.TransitionBarrier(g_FrameData.pCloudScatteringLUT ?
-		g_FrameData.pCloudScatteringLUT.lock() : rm.GetFlatBlackTexture(), eTextureLayout::ShaderReadOnly);
-	context.TransitionBarrier(g_FrameData.pSkyboxLUT ?
-		g_FrameData.pSkyboxLUT.lock() : rm.GetFlatBlackTextureCube(), eTextureLayout::ShaderReadOnly);
+	context.TransitionBarrier(pAerialPerspective, eTextureLayout::ShaderReadOnly);
+	context.TransitionBarrier(pCloudScattering, eTextureLayout::ShaderReadOnly);
+	context.TransitionBarrier(pSkybox, eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(m_pLtcLut1, eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(m_pLtcLut2, eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(m_pSceneTexture, eTextureLayout::General);
 
-	context.StageDescriptor("g_DepthBuffer", g_FrameData.pDepth.lock(), g_FrameData.pPointClamp);
-	context.StageDescriptor("g_VBuf0", g_FrameData.pVBuf0.lock(), g_FrameData.pPointClampNearest);
-	context.StageDescriptor("g_VBuf1", g_FrameData.pVBuf1.lock(), g_FrameData.pPointClampNearest);
-	context.StageDescriptor("g_CoreNormal", g_FrameData.pCoreNormal.lock(), g_FrameData.pPointClamp);
-	context.StageDescriptor("g_CoreMaterial", g_FrameData.pCoreMaterial.lock(), g_FrameData.pPointClamp);
-	context.StageDescriptor("g_AerialPerspectiveLUT", g_FrameData.pAerialPerspectiveLUT ?
-		g_FrameData.pAerialPerspectiveLUT.lock() : rm.GetFlatBlackTexture3D(), g_FrameData.pLinearClamp);
-	context.StageDescriptor("g_CloudScatteringLUT", g_FrameData.pCloudScatteringLUT ?
-		g_FrameData.pCloudScatteringLUT.lock() : rm.GetFlatBlackTexture(), g_FrameData.pLinearClamp);
-	context.StageDescriptor("g_SkyboxLUT", g_FrameData.pSkyboxLUT ?
-		g_FrameData.pSkyboxLUT.lock() : rm.GetFlatBlackTextureCube(), g_FrameData.pLinearWrap);
-	context.StageDescriptor("g_LtcMatrixLUT",    m_pLtcLut1, g_FrameData.pLinearClamp);
-	context.StageDescriptor("g_LtcAmplitudeLUT", m_pLtcLut2, g_FrameData.pLinearClamp);
-	context.StageDescriptor("g_OutSceneTexture", m_pSceneTexture);
-
-	auto pLightGridBuffer     = g_FrameData.pLightGridBuffer ? g_FrameData.pLightGridBuffer.lock() : nullptr;
-	auto pLightListDataBuffer = g_FrameData.pLightListDataBuffer ? g_FrameData.pLightListDataBuffer.lock() : nullptr;
 	if (!pLightGridBuffer || !pLightListDataBuffer)
 	{
 		context.ClearBuffer(m_pFallbackLightGridBuffer, 0);
@@ -331,8 +267,26 @@ void LightingNode::Apply(render::CommandContext& context, const SceneRenderView&
 		pLightListDataBuffer = m_pFallbackLightListDataBuffer;
 	}
 
-	context.StageDescriptor("g_LightGridBuffer", pLightGridBuffer);
-	context.StageDescriptor("g_LightListDataBuffer", pLightListDataBuffer);
+	const DeferredLightingConstants constants = {
+		.debugView = renderView.debugFlags.surfaceDebugView,
+	};
+	context.SetComputeConstants(sizeof(constants), &constants);
+
+	context.StageDescriptor("ID_Scene", rm.GetSceneResource().GetSceneGlobals());
+	context.StageDescriptor("ID_DepthBuffer", g_FrameData.pDepth.lock(), g_FrameData.pPointClamp);
+	context.StageDescriptor("ID_VBuf0", g_FrameData.pVBuf0.lock(), g_FrameData.pPointClampNearest);
+	context.StageDescriptor("ID_VBuf1", g_FrameData.pVBuf1.lock(), g_FrameData.pPointClampNearest);
+	context.StageDescriptor("ID_CoreNormal", g_FrameData.pCoreNormal.lock(), g_FrameData.pPointClamp);
+	context.StageDescriptor("ID_CoreMaterial", g_FrameData.pCoreMaterial.lock(), g_FrameData.pPointClamp);
+	context.StageDescriptor("ID_AerialPerspectiveLUT", pAerialPerspective, g_FrameData.pLinearClamp);
+	context.StageDescriptor("ID_CloudScatteringLUT", pCloudScattering, g_FrameData.pLinearClamp);
+	context.StageDescriptor("ID_SkyboxLUT", pSkybox, g_FrameData.pLinearWrap);
+	context.StageDescriptor("ID_LtcMatrixLUT",    m_pLtcLut1, g_FrameData.pLinearClamp);
+	context.StageDescriptor("ID_LtcAmplitudeLUT", m_pLtcLut2, g_FrameData.pLinearClamp);
+	context.StageDescriptor("ID_LightGridBuffer", pLightGridBuffer);
+	context.StageDescriptor("ID_LightListDataBuffer", pLightListDataBuffer);
+	context.StageDescriptor("ID_VoxelChunkDescs", pVoxDescs ? pVoxDescs : m_pVoxelChunkDescFallback);
+	context.StageDescriptor("ID_OutSceneTexture", m_pSceneTexture);
 
 	context.Dispatch2D< 16, 16 >(m_pSceneTexture->Width(), m_pSceneTexture->Height());
 

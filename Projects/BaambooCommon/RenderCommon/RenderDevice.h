@@ -1,7 +1,11 @@
 #pragma once
 #include "RenderResources.h"
+#include "DeferredReleaseQueue.h"
 
-namespace render 
+#include <limits>
+#include <utility>
+
+namespace render
 {
 
 class RenderDevice
@@ -12,6 +16,11 @@ public:
     virtual ~RenderDevice() = default;
 
     virtual void Flush() = 0;
+
+    void DeferRelease(DeferredReleaseQueue::ReleaseFn&& fnRelease) { m_DeferredReleaseQueue.Retire(m_FrameNumber, std::move(fnRelease)); }
+    void ProcessDeferredReleases() { m_DeferredReleaseQueue.Reclaim(m_FrameNumber); }
+    void FlushDeferredReleases() { m_DeferredReleaseQueue.Reclaim(std::numeric_limits< u64 >::max()); }
+    void AdvanceFrameNumber() { ++m_FrameNumber; }
 
     // Resource creation
     virtual Arc< Buffer > CreateBuffer(const char* name, Buffer::CreationInfo&& desc) = 0;
@@ -33,11 +42,12 @@ public:
     virtual Box< ComputePipeline > CreateComputePipeline(const char* name) = 0;
     virtual Box< RaytracingPipeline > CreateRaytracingPipeline(const char* name) = 0;
 
-    virtual Box< render::SceneResource > CreateSceneResource() = 0;
-
     virtual ResourceManager& GetResourceManager() const = 0;
 
     virtual bool SaveTextureToEXR(const Arc< Texture >& pTexture, const char* path) = 0;
+
+    virtual u64 ValidationErrorCount() const { return 0; }
+    virtual bool IsValidationActive() const { return false; }
 
     inline u32 ContextIndex() const { return m_ContextIndex; }
     inline u32 NumContexts() const { return m_NumContexts; }
@@ -53,6 +63,9 @@ public:
 protected:
     u32 m_NumContexts  = 0;
     u32 m_ContextIndex = 0;
+
+    u64                  m_FrameNumber = 0; // number of the frame being recorded
+    DeferredReleaseQueue m_DeferredReleaseQueue;
 
     u32 m_WindowWidth  = 0;
     u32 m_WindowHeight = 0;

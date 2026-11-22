@@ -22,39 +22,6 @@ CommandSignatureDesc& CommandSignatureDesc::AddDraw()
 	return *this;
 }
 
-CommandSignatureDesc& CommandSignatureDesc::AddDrawIndexed()
-{
-	D3D12_INDIRECT_ARGUMENT_DESC& Desc = m_Parameters.emplace_back();
-	Desc.Type = D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED;
-
-	return *this;
-}
-
-CommandSignatureDesc& CommandSignatureDesc::AddVertexBufferView(UINT slot)
-{
-	D3D12_INDIRECT_ARGUMENT_DESC& Desc = m_Parameters.emplace_back();
-	Desc.Type = D3D12_INDIRECT_ARGUMENT_TYPE_VERTEX_BUFFER_VIEW;
-	Desc.VertexBuffer.Slot = slot;
-
-	return *this;
-}
-
-CommandSignatureDesc& CommandSignatureDesc::AddIndexBufferView()
-{
-	D3D12_INDIRECT_ARGUMENT_DESC& desc = m_Parameters.emplace_back();
-	desc.Type = D3D12_INDIRECT_ARGUMENT_TYPE_INDEX_BUFFER_VIEW;
-
-	return *this;
-}
-
-CommandSignatureDesc& CommandSignatureDesc::AddMeshletBufferView()
-{
-	D3D12_INDIRECT_ARGUMENT_DESC& desc = m_Parameters.emplace_back();
-	desc.Type = D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH_MESH;
-
-	return *this;
-}
-
 CommandSignatureDesc& CommandSignatureDesc::AddConstant(UINT rootIndex, UINT dstOffsetIn32BitValues, UINT num32BitValues)
 {
 	D3D12_INDIRECT_ARGUMENT_DESC& desc = m_Parameters.emplace_back();

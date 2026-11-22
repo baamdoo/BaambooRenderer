@@ -5,13 +5,15 @@
 #include "RenderCommon/RenderDevice.h"
 #include "RenderCommon/CommandContext.h"
 #include "RenderCommon/CpuProfiler.h"
+#include "RenderCommon/SceneResource.h"
 #include "BaambooScene/Scene.h"
+#include "PipelineFactory.h"
 
 namespace baamboo
 {
 
 
-GBufferNode::GBufferNode(render::RenderDevice& rd)
+GBufferNode::GBufferNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory)
 	: Super(rd, "GBufferPass")
 {
 	using namespace render;
@@ -55,26 +57,14 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 		                  .SetLoadAttachment(eAttachmentPoint::DepthStencil).Build();
 
 	// --- GBuffer PSO ---
-	m_pGBufferPSO = GraphicsPipeline::Create(rd, "GBufferPSO");
-	if (!rd.GetDeviceSettings().bMeshShader)
-	{
-		auto pVS = Shader::Create(rd, "GBufferVS", { .stage = eShaderStage::Vertex, .filename = "GBufferVS" });
-		auto pFS = Shader::Create(rd, "GBufferPS", { .stage = eShaderStage::Fragment, .filename = "GBufferPS" });
-
-		m_pGBufferPSO->SetShaders(pVS, pFS)
-			          .SetRenderTarget(m_pRenderTargetPhase1)
-			          .SetDepthWriteEnable(true, eCompareOp::Greater).Build();
-	}
-	else
-	{
-		auto pTS = Shader::Create(rd, "GBufferTS", { .stage = eShaderStage::Task, .filename = "GBufferTS" });
-		auto pMS = Shader::Create(rd, "GBufferMS", { .stage = eShaderStage::Mesh, .filename = "GBufferMS" });
-		auto pFS = Shader::Create(rd, "GBufferPS", { .stage = eShaderStage::Fragment, .filename = "GBufferPS" });
-
-		m_pGBufferPSO->SetMeshShaders(pMS, pFS, pTS)
-			          .SetRenderTarget(m_pRenderTargetPhase1)
-			          .SetDepthWriteEnable(true, eCompareOp::Greater).Build();
-	}
+	m_pGBufferPSO = pipelineFactory.CreateMeshPipeline("GBufferPSO",
+		{
+			.task  = { .source = "GBufferTS.slang" },
+			.mesh  = { .source = "GBufferMS.slang" },
+			.pixel = { .source = "GBufferPS.slang" },
+		});
+	m_pGBufferPSO->SetRenderTarget(m_pRenderTargetPhase1)
+		          .SetDepthWriteEnable(true, eCompareOp::Greater).Build();
 
 	auto MakeFallback = [&rd](const char* name, u64 elemSize) -> Arc< Buffer >
 	{
@@ -85,7 +75,7 @@ GBufferNode::GBufferNode(render::RenderDevice& rd)
 				.bufferUsage        = eBufferUsage_Storage,
 			});
 	};
-	m_pVoxelVertexFallback          = MakeFallback("GBufferPass::VoxelVertexFallback", sizeof(::Vertex));
+	m_pVoxelVertexFallback          = MakeFallback("GBufferPass::VoxelVertexFallback", sizeof(VoxelVertex));
 	m_pVoxelMeshletFallback         = MakeFallback("GBufferPass::VoxelMeshletFallback", sizeof(Meshlet));
 	m_pVoxelMeshletVertexFallback   = MakeFallback("GBufferPass::VoxelMeshletVertexFallback", sizeof(u32));
 	m_pVoxelMeshletTriangleFallback = MakeFallback("GBufferPass::VoxelMeshletTriangleFallback", sizeof(u32));
@@ -133,7 +123,7 @@ void GBufferNode::DrawGBufferImpl(render::CommandContext& context, Arc< render::
 	using namespace render;
 
 	BAAMBOO_GPU_SCOPE(context,
-		cullOutputs.phase == CullingNode::kPhase2Cull ? "GBuffer.Phase2" : "GBuffer.Phase1");
+		cullOutputs.phase == kCullPhase2 ? "GBuffer.Phase2" : "GBuffer.Phase1");
 
 	const bool bHasInstances = cullOutputs.numInstances > 0;
 
@@ -146,7 +136,7 @@ void GBufferNode::DrawGBufferImpl(render::CommandContext& context, Arc< render::
 
 	if (bHasInstances)
 	{
-		if (cullOutputs.phase == CullingNode::kPhase2Cull)
+		if (cullOutputs.phase == kCullPhase2)
 		{
 			context.TransitionTextureToRead(cullOutputs.pHiZ, ePipelineStage::TaskShader);
 		}
@@ -174,32 +164,28 @@ void GBufferNode::DrawGBufferImpl(render::CommandContext& context, Arc< render::
 	{
 		context.SetRenderPipeline(m_pGBufferPSO.get());
 
-		struct GBufferPushConstants
-		{
-			float viewportWidth;
-			float viewportHeight;
-			u32   phase;
-		} constants = {
-			.viewportWidth  = static_cast< float >(m_RenderDevice.WindowWidth()),
-			.viewportHeight = static_cast< float >(m_RenderDevice.WindowHeight()),
-			.phase          = cullOutputs.phase,
+		const GBufferConstants constants = {
+			.viewport = float2(static_cast< float >(m_RenderDevice.WindowWidth()), static_cast< float >(m_RenderDevice.WindowHeight())),
+			.phase    = cullOutputs.phase,
 		};
-		context.SetConstants(sizeof(constants), &constants, static_cast< eShaderStage >(eShaderStage::Task | eShaderStage::Mesh));
-		context.SetGraphicsShaderResource("g_DrawIDs", cullOutputs.pDrawIndex);
-		context.StageDescriptor("g_HiZTexture", cullOutputs.pHiZ, g_FrameData.pLinearClampMin);
-		context.StageDescriptor("g_MeshletVisibilityBuffer", cullOutputs.pMeshletVisibility);
+		context.SetGraphicsConstants(sizeof(constants), &constants);
+
+		context.StageDescriptor("ID_Scene", m_RenderDevice.GetResourceManager().GetSceneResource().GetSceneGlobals());
+		context.StageDescriptor("ID_DrawIDs", cullOutputs.pDrawIndex);
+		context.StageDescriptor("ID_HiZTexture", cullOutputs.pHiZ, g_FrameData.pLinearClampMin);
+		context.StageDescriptor("ID_MeshletVisibility", cullOutputs.pMeshletVisibility);
 #if PROFILING_LEVEL >= 1
 		if (cullOutputs.pMeshletStats)
-			context.StageDescriptor("g_MeshletStats", cullOutputs.pMeshletStats);
+			context.StageDescriptor("ID_MeshletStats", cullOutputs.pMeshletStats);
 #endif
 
-		context.StageDescriptor("g_VoxelVertices",         pVoxVerts    ? pVoxVerts    : m_pVoxelVertexFallback);
-		context.StageDescriptor("g_VoxelMeshlets",         pVoxMeshlets ? pVoxMeshlets : m_pVoxelMeshletFallback);
-		context.StageDescriptor("g_VoxelMeshletVertices",  pVoxMv       ? pVoxMv       : m_pVoxelMeshletVertexFallback);
-		context.StageDescriptor("g_VoxelMeshletTriangles", pVoxMt       ? pVoxMt       : m_pVoxelMeshletTriangleFallback);
+		context.StageDescriptor("ID_VoxelVertices",         pVoxVerts    ? pVoxVerts    : m_pVoxelVertexFallback);
+		context.StageDescriptor("ID_VoxelMeshlets",         pVoxMeshlets ? pVoxMeshlets : m_pVoxelMeshletFallback);
+		context.StageDescriptor("ID_VoxelMeshletVertices",  pVoxMv       ? pVoxMv       : m_pVoxelMeshletVertexFallback);
+		context.StageDescriptor("ID_VoxelMeshletTriangles", pVoxMt       ? pVoxMt       : m_pVoxelMeshletTriangleFallback);
 
-		context.StageDescriptor("g_VoxelChunkDescs", pVoxDescs ? pVoxDescs : m_pVoxelChunkDescFallback);
-		context.StageDescriptor("g_ErosionDetailMap", pErosion ? pErosion : m_pErosionDetailFallback, g_FrameData.pLinearClamp);
+		context.StageDescriptor("ID_VoxelChunkDescs", pVoxDescs ? pVoxDescs : m_pVoxelChunkDescFallback);
+		context.StageDescriptor("ID_ErosionDetailMap", pErosion ? pErosion : m_pErosionDetailFallback, g_FrameData.pLinearClamp);
 
 		context.DrawMeshTasksIndirectCount(
 			cullOutputs.pIndirectCommands,

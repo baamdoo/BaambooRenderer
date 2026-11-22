@@ -4,6 +4,14 @@
 #include "Applications/RayTracingApp.h"
 #include "Applications/TerrainApp.h"
 
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <Windows.h>
+
 #include <charconv>
 #include <algorithm>
 #include <iostream>
@@ -37,6 +45,9 @@ bool ParsePathTracerList(std::string_view value, bool bSeeds, std::vector<u32>& 
 
 int main(int argc, char** argv)
 {
+	// Process-wide DLL policy, set once by the host.
+	SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+
 	bool bDumpAOV             = false;
 	bool bExitAfterDump       = false;
 	bool bPathTracerRequested = false;
@@ -169,34 +180,32 @@ int main(int argc, char** argv)
 		try
 		{
 			app.Initialize(eRendererAPI::D3D12);
+			const i32 exitCode = app.Run();
+			return app.HasPathTracerAutomationFailed() ? 1 : exitCode;
 		}
 		catch (std::runtime_error& e)
 		{
 			std::cerr << e.what() << '\n';
 			return -1;
 		}
-
-		const i32 exitCode = app.Run();
-		return app.HasPathTracerAutomationFailed() ? 1 : exitCode;
 	}
 
 	eRendererAPI api = eRendererAPI::D3D12;
 	//eRendererAPI api = eRendererAPI::Vulkan;
 
-	//ExampleApp app = {};
+	ExampleApp app = {};
 	//BistroApp app = {};
 	//LightingApp app = {};
 	//RayTracingApp app = {};
-	TerrainApp app = {};
+	//TerrainApp app = {};
 	try
 	{
 		app.Initialize(api);
+		return app.Run(); // Shift+D (restart on D3D12) and scene reloads recompile shaders, so a compile error can throw here too
 	}
 	catch (std::runtime_error& e)
 	{
 		std::cerr << e.what() << '\n';
 		return -1;
 	}
-
-	return app.Run();
 }

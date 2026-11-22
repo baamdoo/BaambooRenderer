@@ -3,8 +3,6 @@
 namespace dx12
 {
 
-class CommandContext;
-
 class Dx12CommandQueue
 {
 public:

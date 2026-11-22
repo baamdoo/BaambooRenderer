@@ -19,8 +19,6 @@ public:
     void Resize(u32 width, u32 height, u32 depthOrArraySize = 1);
     virtual u32 MipLevels() const override { return m_ResourceDesc.MipLevels; }
 
-    void CreateShaderResourceView(const D3D12_SHADER_RESOURCE_VIEW_DESC& desc);
-
     bool IsSRVSupported() const { return IsFormatSupported(D3D12_FORMAT_SUPPORT1_SHADER_LOAD) || IsFormatSupported(D3D12_FORMAT_SUPPORT1_SHADER_SAMPLE); }
     bool IsRTVSupported() const { return IsFormatSupported(D3D12_FORMAT_SUPPORT1_RENDER_TARGET); }
     bool IsDSVSupported() const { return IsFormatSupported(D3D12_FORMAT_SUPPORT1_DEPTH_STENCIL); }
@@ -38,10 +36,9 @@ public:
 
     D3D12_CPU_DESCRIPTOR_HANDLE GetRenderTargetView() const { return m_RenderTargetView.GetCPUHandle(); }
     D3D12_CPU_DESCRIPTOR_HANDLE GetDepthStencilView() const { return m_DepthStencilView.GetCPUHandle(); }
-    D3D12_CPU_DESCRIPTOR_HANDLE GetShaderResourceView() const { return m_ShaderResourceView.GetCPUHandle(); }
     D3D12_CPU_DESCRIPTOR_HANDLE GetUnorderedAccessView(u32 mip) const { return m_UnorderedAccessView.GetCPUHandle(mip); }
-    u32 GetShaderResourceHandle(u32 offset = 0) const { return m_ShaderResourceView.Index(offset); }
-    u32 GetUnorderedAccessHandle(u32 offset = 0) const { return m_UnorderedAccessView.Index(offset); }
+    virtual u32 GetShaderResourceHandle(u32 offset = 0) const override { return offset < m_ShaderResourceView.GetDescriptorCount() ? m_ShaderResourceView.Index(offset) : kInvalidIndex; }
+    u32 GetUnorderedAccessHandle(u32 offset = 0) const { return offset < m_UnorderedAccessView.GetDescriptorCount() ? m_UnorderedAccessView.Index(offset) : kInvalidIndex; }
     D3D12_GPU_DESCRIPTOR_HANDLE GetUnorderedAccessGpuAddress(u32 mip) const { return m_UnorderedAccessView.GetGPUHandle(mip); }
 
 protected:

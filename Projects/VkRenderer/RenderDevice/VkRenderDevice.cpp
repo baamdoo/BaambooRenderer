@@ -4,19 +4,75 @@
 #include "VkCommandQueue.h"
 #include "VkCommandContext.h"
 #include "VkResourceManager.h"
-#include "VkDescriptorPool.h"
 #include "RenderResource/VkRenderTarget.h"
-#include "RenderResource/VkSceneResource.h"
+#include "RenderResource/VkSampler.h"
+#include "RenderResource/VkBuffer.h"
 
 namespace vk
 {
+
+static constexpr VkDescriptorType kHeapDescriptorTypes[] =
+{
+	VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+	VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+	VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+	VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+};
+
+struct StaticSamplerDesc
+{
+	const char*                   name;
+	render::Sampler::CreationInfo info;
+};
+
+static StaticSamplerDesc GetStaticSamplerDesc(render::eSamplerIndex index)
+{
+	using namespace render;
+	switch (index)
+	{
+	case eSamplerIndex::LinearClamp:
+		return { "LinearClamp", { .filter = eFilterMode::Linear, .mipmapMode = eMipmapMode::Nearest, .addressMode = eAddressMode::ClampEdge } };
+	case eSamplerIndex::LinearWrap:
+		return { "LinearWrap", { .filter = eFilterMode::Linear, .mipmapMode = eMipmapMode::Nearest, .addressMode = eAddressMode::Wrap } };
+	case eSamplerIndex::PointClamp:
+		return { "PointClamp", { .filter = eFilterMode::Point, .mipmapMode = eMipmapMode::Nearest, .addressMode = eAddressMode::ClampEdge } };
+	case eSamplerIndex::PointWrap:
+		return { "PointWrap", { .filter = eFilterMode::Point, .mipmapMode = eMipmapMode::Nearest, .addressMode = eAddressMode::Wrap } };
+	case eSamplerIndex::TrilinearWrap:
+		return { "TrilinearWrap", { .filter = eFilterMode::Linear, .mipmapMode = eMipmapMode::Linear, .addressMode = eAddressMode::Wrap } };
+	case eSamplerIndex::AnisotropicWrap:
+		return { "AnisotropicWrap", { .filter = eFilterMode::Anisotropic, .mipmapMode = eMipmapMode::Linear, .addressMode = eAddressMode::Wrap,
+			.maxAnisotropy = 16.0f } };
+	case eSamplerIndex::ShadowCmpLessEqual:
+		return { "ShadowCmpLessEqual", { .filter = eFilterMode::Linear, .mipmapMode = eMipmapMode::Nearest, .addressMode = eAddressMode::ClampBorder,
+			.compareOp = eCompareOp::LessEqual, .borderColor = eBorderColor::OpaqueWhite_Float } }; // depth 1 outside the map
+	case eSamplerIndex::PointClampMin:
+		return { "PointClampMin", { .filter = eFilterMode::Point, .mipmapMode = eMipmapMode::Nearest, .addressMode = eAddressMode::ClampEdge,
+			.reductionMode = eReductionMode::Min } };
+	case eSamplerIndex::LinearClampMin:
+		return { "LinearClampMin", { .filter = eFilterMode::Linear, .mipmapMode = eMipmapMode::Linear, .addressMode = eAddressMode::ClampEdge,
+			.reductionMode = eReductionMode::Min } };
+	default:
+		BB_ASSERT(false, "Unknown static sampler index %u.", static_cast< u32 >(index));
+		return {};
+	}
+}
+
+static std::atomic< u64 > s_ValidationErrorCount = 0;
 
 VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
 	VkDebugUtilsMessageSeverityFlagBitsEXT severity,
 	VkDebugUtilsMessageTypeFlagsEXT type,
 	const VkDebugUtilsMessengerCallbackDataEXT* callbackData, void* userData)
 {
-	UNUSED(severity); UNUSED(type); UNUSED(userData);
+	UNUSED(type); UNUSED(userData);
+
+	if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+	{
+		s_ValidationErrorCount.fetch_add(1, std::memory_order_relaxed);
+		fprintf(stderr, "Vulkan validation error: %s\n", callbackData->pMessage);
+		return VK_FALSE;
+	}
 
 	printf("Validation layer: %s\n", callbackData->pMessage);
 	return VK_FALSE;
@@ -24,6 +80,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
 
 VkRenderDevice::VkRenderDevice(const render::DeviceSettings& ds)
 	: Super(ds)
+	, m_ValidationErrorBase(s_ValidationErrorCount.load(std::memory_order_relaxed))
 {
 	BB_ASSERT(ds.bMeshShader,
 		"The Vulkan backend currently requires the mesh-shader path; a complete vertex fallback is not available.");
@@ -37,7 +94,6 @@ VkRenderDevice::VkRenderDevice(const render::DeviceSettings& ds)
 		.Build();
 
 	m_Capabilities.bValidation         = instanceBuilder.bValidationEnabled;
-	m_Capabilities.bValidationFeatures = instanceBuilder.bValidationFeaturesEnabled;
 	m_Capabilities.bDebugUtils         = instanceBuilder.bDebugUtilsEnabled;
 	m_Capabilities.bSurfaceMaintenance = instanceBuilder.bSurfaceMaintenanceEnabled;
 
@@ -55,7 +111,6 @@ VkRenderDevice::VkRenderDevice(const render::DeviceSettings& ds)
 
 	m_vkPhysicalDevice = deviceBuilder.physicalDevice;
 	m_PhysicalDeviceProperties = deviceBuilder.physicalDeviceProperties;
-	m_PhysicalDeviceMaintenance3Properties = deviceBuilder.physicalDeviceMaintenance3Properties;
 	m_PhysicalDeviceFeatures = deviceBuilder.enabledPhysicalDeviceFeatures;
 
 	m_Capabilities.bMeshShader           = deviceBuilder.bMeshShaderEnabled;
@@ -65,11 +120,6 @@ VkRenderDevice::VkRenderDevice(const render::DeviceSettings& ds)
 	m_Capabilities.graphicsTimestampValidBits = deviceBuilder.queueFamilyIndices.graphicsTimestampValidBits;
 	m_Capabilities.computeTimestampValidBits  = deviceBuilder.queueFamilyIndices.computeTimestampValidBits;
 	m_Settings.bMeshShader = m_Capabilities.bMeshShader;
-
-	m_Dispatch.cmdPushDescriptorSet = reinterpret_cast< PFN_vkCmdPushDescriptorSetKHR >(
-		vkGetDeviceProcAddr(m_vkDevice, "vkCmdPushDescriptorSetKHR"));
-	BB_ASSERT(m_Dispatch.cmdPushDescriptorSet != nullptr,
-		"Required Vulkan push-descriptor command is unavailable after device creation.");
 
 	if (m_Capabilities.bMeshShader)
 	{
@@ -113,25 +163,11 @@ VkRenderDevice::VkRenderDevice(const render::DeviceSettings& ds)
 	const VkResult allocatorResult = vmaCreateAllocator(&allocatorInfo, &m_vmaAllocator);
 	BB_ASSERT(allocatorResult == VK_SUCCESS, "Failed to create Vulkan memory allocator (%d).", static_cast<i32>(allocatorResult));
 
+	CreateDescriptorHeap();
+	CreateStaticSamplers();
+	CreateGlobalPipelineLayout();
+
 	m_pResourceManager = new VkResourceManager(*this);
-
-
-	// **
-	// Descriptor pool
-	// **
-	std::vector< VkDescriptorPoolSize > poolSizes = 
-	{
-		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 32 },
-		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32 },
-		{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 32 },
-	};
-	m_pGlobalDescriptorPool = new DescriptorPool(*this, std::move(poolSizes), 1024);
-
-	VkDescriptorSetLayoutCreateInfo emptyLayoutInfo = {};
-	emptyLayoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	emptyLayoutInfo.bindingCount = 0;
-	emptyLayoutInfo.pBindings    = nullptr;
-	VK_CHECK(vkCreateDescriptorSetLayout(m_vkDevice, &emptyLayoutInfo, nullptr, &m_vkEmptySetLayout));
 }
 
 VkRenderDevice::~VkRenderDevice()
@@ -141,8 +177,16 @@ VkRenderDevice::~VkRenderDevice()
 	RELEASE(m_pGraphicsQueue);
 
 	RELEASE(m_pResourceManager);
-	RELEASE(m_pGlobalDescriptorPool);
-	vkDestroyDescriptorSetLayout(m_vkDevice, m_vkEmptySetLayout, nullptr);
+	vkDestroyPipelineLayout(m_vkDevice, m_vkGlobalPipelineLayout, nullptr);
+
+	vkDestroyDescriptorPool(m_vkDevice, m_vkSamplerPool, nullptr); // frees m_vkSamplerSet
+	vkDestroyDescriptorSetLayout(m_vkDevice, m_vkSamplerSetLayout, nullptr);
+	m_pStaticSamplers = {};
+	FlushDeferredReleases();
+
+	BB_ASSERT(m_HeapSlotsInUse.none(), "%zu descriptor heap slots are still in use at device destruction.", m_HeapSlotsInUse.count());
+	vkDestroyDescriptorPool(m_vkDevice, m_vkHeapPool, nullptr); // frees m_vkHeapSet
+	vkDestroyDescriptorSetLayout(m_vkDevice, m_vkHeapSetLayout, nullptr);
 	if (m_vmaAllocator)
 		vmaDestroyAllocator(m_vmaAllocator);
 
@@ -157,12 +201,6 @@ VkRenderDevice::~VkRenderDevice()
 	}
 
 	vkDestroyInstance(m_vkInstance, nullptr);
-}
-
-u32 VkRenderDevice::NextFrame()
-{
-	m_ContextIndex = (m_ContextIndex + 1) % m_NumContexts;
-	return m_ContextIndex;
 }
 
 void VkRenderDevice::Flush()
@@ -245,18 +283,6 @@ Box< render::RaytracingPipeline > VkRenderDevice::CreateRaytracingPipeline(const
 	return {};
 }
 
-Box< render::SceneResource > VkRenderDevice::CreateSceneResource()
-{
-	return MakeBox< VkSceneResource >(*this);
-}
-
-VkDeviceSize VkRenderDevice::GetAlignedSize(VkDeviceSize size) const
-{
-	const VkDeviceSize alignment = m_PhysicalDeviceProperties.limits.minMemoryMapAlignment;
-	return (size + alignment - 1) & ~(alignment - 1);
-}
-
-
 u32 VkRenderDevice::TimestampValidBits(eCommandType cmdType) const
 {
 	switch (cmdType)
@@ -271,24 +297,6 @@ u32 VkRenderDevice::TimestampValidBits(eCommandType cmdType) const
 		BB_ASSERT(false, "Invalid Vulkan command type.");
 		return 0;
 	}
-}
-
-CommandQueue& VkRenderDevice::GetQueue(eCommandType cmdType) const
-{
-	switch (cmdType)
-	{
-	case eCommandType::Graphics:
-		return GraphicsQueue();
-	case eCommandType::Compute:
-		return ComputeQueue();
-	case eCommandType::Transfer:
-		return TransferQueue();
-
-	default:
-		assert(false && "Invalid Command Type!"); break;
-	}
-
-	return GraphicsQueue();
 }
 
 Arc< VkCommandContext > VkRenderDevice::BeginCommand(eCommandType cmdType, VkCommandBufferUsageFlags usage, bool bTransient)
@@ -336,9 +344,104 @@ bool VkRenderDevice::SaveTextureToEXR(const Arc< render::Texture >& pTexture, co
 	return false;
 }
 
-DescriptorSet& VkRenderDevice::AllocateDescriptorSet(VkDescriptorSetLayout vkSetLayout) const
+u64 VkRenderDevice::ValidationErrorCount() const
 {
-	return m_pGlobalDescriptorPool->AllocateSet(vkSetLayout);
+	return s_ValidationErrorCount.load(std::memory_order_relaxed) - m_ValidationErrorBase;
+}
+
+u32 VkRenderDevice::AllocateHeapSlot()
+{
+	const u32 slot = m_HeapSlots.allocate();
+	BB_ASSERT(slot < kHeapDescriptorCount, "The descriptor heap is full (%u slots).", kHeapDescriptorCount);
+	m_HeapSlotsInUse.set(slot);
+	return slot;
+}
+
+void VkRenderDevice::FreeHeapSlot(u32 slot)
+{
+	BB_ASSERT(slot < kHeapDescriptorCount && m_HeapSlotsInUse.test(slot),
+		"Descriptor heap slot %u is freed twice or was never allocated.", slot);
+
+	// frames in flight may still index this slot
+	DeferRelease([this, slot]
+	{
+		m_HeapSlotsInUse.reset(slot);
+		m_HeapSlots.release(slot);
+	});
+}
+
+void VkRenderDevice::DeferRelease(VkBuffer vkBuffer, VmaAllocation vmaAllocation)
+{
+	DeferRelease([this, vkBuffer, vmaAllocation] { vmaDestroyBuffer(m_vmaAllocator, vkBuffer, vmaAllocation); });
+}
+
+void VkRenderDevice::DeferRelease(VkImage vkImage, VmaAllocation vmaAllocation)
+{
+	DeferRelease([this, vkImage, vmaAllocation] { vmaDestroyImage(m_vmaAllocator, vkImage, vmaAllocation); });
+}
+
+void VkRenderDevice::DeferRelease(VkImageView vkImageView)
+{
+	DeferRelease([this, vkImageView] { vkDestroyImageView(m_vkDevice, vkImageView, nullptr); });
+}
+
+void VkRenderDevice::DeferRelease(VkFramebuffer vkFramebuffer)
+{
+	DeferRelease([this, vkFramebuffer] { vkDestroyFramebuffer(m_vkDevice, vkFramebuffer, nullptr); });
+}
+
+void VkRenderDevice::DeferRelease(VkRenderPass vkRenderPass)
+{
+	DeferRelease([this, vkRenderPass] { vkDestroyRenderPass(m_vkDevice, vkRenderPass, nullptr); });
+}
+
+void VkRenderDevice::DeferRelease(VkPipeline vkPipeline)
+{
+	DeferRelease([this, vkPipeline] { vkDestroyPipeline(m_vkDevice, vkPipeline, nullptr); });
+}
+
+void VkRenderDevice::DeferRelease(VkSampler vkSampler)
+{
+	DeferRelease([this, vkSampler] { vkDestroySampler(m_vkDevice, vkSampler, nullptr); });
+}
+
+void VkRenderDevice::WriteHeapImage(u32 slot, VkDescriptorType type, VkImageView vkView, VkImageLayout layout)
+{
+	BB_ASSERT(slot < kHeapDescriptorCount && m_HeapSlotsInUse.test(slot), "Descriptor heap slot %u is written but not allocated.", slot);
+
+	VkDescriptorImageInfo imageInfo = {};
+	imageInfo.imageView   = vkView;
+	imageInfo.imageLayout = layout;
+
+	VkWriteDescriptorSet write = {};
+	write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.dstSet          = m_vkHeapSet;
+	write.dstBinding      = kHeapBinding;
+	write.dstArrayElement = slot;
+	write.descriptorCount = 1;
+	write.descriptorType  = type;
+	write.pImageInfo      = &imageInfo;
+	vkUpdateDescriptorSets(m_vkDevice, 1, &write, 0, nullptr);
+}
+
+void VkRenderDevice::WriteHeapBuffer(u32 slot, VkDescriptorType type, VkBuffer vkBuffer)
+{
+	BB_ASSERT(slot < kHeapDescriptorCount && m_HeapSlotsInUse.test(slot), "Descriptor heap slot %u is written but not allocated.", slot);
+
+	VkDescriptorBufferInfo bufferInfo = {};
+	bufferInfo.buffer = vkBuffer;
+	bufferInfo.offset = 0;
+	bufferInfo.range  = VK_WHOLE_SIZE;
+
+	VkWriteDescriptorSet write = {};
+	write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.dstSet          = m_vkHeapSet;
+	write.dstBinding      = kHeapBinding;
+	write.dstArrayElement = slot;
+	write.descriptorCount = 1;
+	write.descriptorType  = type;
+	write.pBufferInfo     = &bufferInfo;
+	vkUpdateDescriptorSets(m_vkDevice, 1, &write, 0, nullptr);
 }
 
 void VkRenderDevice::SetVkObjectName(const std::string& name, u64 handle, VkObjectType type)
@@ -356,6 +459,137 @@ void VkRenderDevice::SetVkObjectName(const std::string& name, u64 handle, VkObje
 		BB_ASSERT(result == VK_SUCCESS, "Failed to set Vulkan object name (%d).", static_cast<i32>(result));
 	}
 #endif
+}
+
+// One set with one binding of kHeapDescriptorCount mutable descriptors: the ResourceDescriptorHeap.
+void VkRenderDevice::CreateDescriptorHeap()
+{
+	VkMutableDescriptorTypeListEXT typeList = {};
+	typeList.descriptorTypeCount = static_cast< u32 >(std::size(kHeapDescriptorTypes));
+	typeList.pDescriptorTypes    = kHeapDescriptorTypes;
+
+	VkMutableDescriptorTypeListEXT layoutTypeLists[kHeapBinding + 1];
+	std::fill(std::begin(layoutTypeLists), std::end(layoutTypeLists), typeList);
+
+	VkMutableDescriptorTypeCreateInfoEXT layoutMutableInfo = {};
+	layoutMutableInfo.sType                          = VK_STRUCTURE_TYPE_MUTABLE_DESCRIPTOR_TYPE_CREATE_INFO_EXT;
+	layoutMutableInfo.mutableDescriptorTypeListCount = static_cast< u32 >(std::size(layoutTypeLists));
+	layoutMutableInfo.pMutableDescriptorTypeLists    = layoutTypeLists;
+
+	constexpr VkDescriptorBindingFlags kHeapBindingFlags =
+		VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |            // slots no shader reads may stay unwritten
+		VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT |          // slots may be written after the set is bound
+		VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT; // slots in-flight work does not read may be written
+
+	VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsInfo = {};
+	bindingFlagsInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+	bindingFlagsInfo.pNext         = &layoutMutableInfo;
+	bindingFlagsInfo.bindingCount  = 1;
+	bindingFlagsInfo.pBindingFlags = &kHeapBindingFlags;
+
+	VkDescriptorSetLayoutBinding binding = {};
+	binding.binding         = kHeapBinding;
+	binding.descriptorType  = VK_DESCRIPTOR_TYPE_MUTABLE_EXT;
+	binding.descriptorCount = kHeapDescriptorCount;
+	binding.stageFlags      = VK_SHADER_STAGE_ALL;
+
+	VkDescriptorSetLayoutCreateInfo layoutInfo = {};
+	layoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfo.pNext        = &bindingFlagsInfo;
+	layoutInfo.flags        = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
+	layoutInfo.bindingCount = 1;
+	layoutInfo.pBindings    = &binding;
+	VK_CHECK(vkCreateDescriptorSetLayout(m_vkDevice, &layoutInfo, nullptr, &m_vkHeapSetLayout));
+
+	// The pool's list pairs with pPoolSizes[0].
+	VkMutableDescriptorTypeCreateInfoEXT poolMutableInfo = {};
+	poolMutableInfo.sType                          = VK_STRUCTURE_TYPE_MUTABLE_DESCRIPTOR_TYPE_CREATE_INFO_EXT;
+	poolMutableInfo.mutableDescriptorTypeListCount = 1;
+	poolMutableInfo.pMutableDescriptorTypeLists    = &typeList;
+
+	const VkDescriptorPoolSize poolSize = { VK_DESCRIPTOR_TYPE_MUTABLE_EXT, kHeapDescriptorCount };
+
+	VkDescriptorPoolCreateInfo poolInfo = {};
+	poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	poolInfo.pNext         = &poolMutableInfo;
+	poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+	poolInfo.maxSets       = 1;
+	poolInfo.poolSizeCount = 1;
+	poolInfo.pPoolSizes    = &poolSize;
+	VK_CHECK(vkCreateDescriptorPool(m_vkDevice, &poolInfo, nullptr, &m_vkHeapPool));
+
+	VkDescriptorSetAllocateInfo allocInfo = {};
+	allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocInfo.descriptorPool     = m_vkHeapPool;
+	allocInfo.descriptorSetCount = 1;
+	allocInfo.pSetLayouts        = &m_vkHeapSetLayout;
+	VK_CHECK(vkAllocateDescriptorSets(m_vkDevice, &allocInfo, &m_vkHeapSet));
+	SetVkObjectName("DescriptorHeap", (u64)m_vkHeapSet, VK_OBJECT_TYPE_DESCRIPTOR_SET);
+}
+
+// Immutable samplers live in the layout, so the set is never written.
+void VkRenderDevice::CreateStaticSamplers()
+{
+	constexpr u32 kSamplerCount = static_cast< u32 >(render::eSamplerIndex::MaxIndex);
+
+	VkSampler                    vkSamplers[kSamplerCount] = {};
+	VkDescriptorSetLayoutBinding bindings[kSamplerCount]   = {};
+	for (u32 i = 0; i < kSamplerCount; ++i)
+	{
+		StaticSamplerDesc desc = GetStaticSamplerDesc(static_cast< render::eSamplerIndex >(i));
+		m_pStaticSamplers[i] = VulkanSampler::Create(*this, desc.name, std::move(desc.info));
+		vkSamplers[i] = m_pStaticSamplers[i]->vkSampler();
+
+		bindings[i].binding            = i;
+		bindings[i].descriptorType     = VK_DESCRIPTOR_TYPE_SAMPLER;
+		bindings[i].descriptorCount    = 1;
+		bindings[i].stageFlags         = VK_SHADER_STAGE_ALL;
+		bindings[i].pImmutableSamplers = &vkSamplers[i];
+	}
+
+	VkDescriptorSetLayoutCreateInfo layoutInfo = {};
+	layoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfo.bindingCount = kSamplerCount;
+	layoutInfo.pBindings    = bindings;
+	VK_CHECK(vkCreateDescriptorSetLayout(m_vkDevice, &layoutInfo, nullptr, &m_vkSamplerSetLayout));
+
+	const VkDescriptorPoolSize poolSize = { VK_DESCRIPTOR_TYPE_SAMPLER, kSamplerCount };
+
+	VkDescriptorPoolCreateInfo poolInfo = {};
+	poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	poolInfo.maxSets       = 1;
+	poolInfo.poolSizeCount = 1;
+	poolInfo.pPoolSizes    = &poolSize;
+	VK_CHECK(vkCreateDescriptorPool(m_vkDevice, &poolInfo, nullptr, &m_vkSamplerPool));
+
+	VkDescriptorSetAllocateInfo allocInfo = {};
+	allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocInfo.descriptorPool     = m_vkSamplerPool;
+	allocInfo.descriptorSetCount = 1;
+	allocInfo.pSetLayouts        = &m_vkSamplerSetLayout;
+	VK_CHECK(vkAllocateDescriptorSets(m_vkDevice, &allocInfo, &m_vkSamplerSet));
+
+	SetVkObjectName("StaticSamplers", (u64)m_vkSamplerSet, VK_OBJECT_TYPE_DESCRIPTOR_SET);
+}
+
+// Every Slang pipeline uses this layout: the heap, the samplers, and one push range.
+void VkRenderDevice::CreateGlobalPipelineLayout()
+{
+	const VkDescriptorSetLayout vkSetLayouts[] = { m_vkHeapSetLayout, m_vkSamplerSetLayout };
+
+	VkPushConstantRange pushRange = {};
+	pushRange.stageFlags = VK_SHADER_STAGE_ALL;
+	pushRange.offset     = 0;
+	pushRange.size       = render::kSlangPushBlockBytes;
+
+	VkPipelineLayoutCreateInfo layoutInfo = {};
+	layoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	layoutInfo.setLayoutCount         = static_cast< u32 >(std::size(vkSetLayouts));
+	layoutInfo.pSetLayouts            = vkSetLayouts;
+	layoutInfo.pushConstantRangeCount = 1;
+	layoutInfo.pPushConstantRanges    = &pushRange;
+	VK_CHECK(vkCreatePipelineLayout(m_vkDevice, &layoutInfo, nullptr, &m_vkGlobalPipelineLayout));
+	SetVkObjectName("GlobalPipelineLayout", (u64)m_vkGlobalPipelineLayout, VK_OBJECT_TYPE_PIPELINE_LAYOUT);
 }
 
 } // namespace vk

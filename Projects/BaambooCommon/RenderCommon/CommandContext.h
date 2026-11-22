@@ -53,24 +53,6 @@ inline u32 GetGpuMarkerColor(const char* name)
     return 0xFF808080u; // gray
 }
 
-
-enum class eResourceState
-{
-    Common                  = 0,
-    VertexAndConstantBuffer = 1 << 0,
-    IndexBuffer             = 1 << 1,
-    RenderTarget            = 1 << 2,
-    UnorderedAccess         = 1 << 3,
-    DepthWrite              = 1 << 4,
-    DepthRead               = 1 << 5,
-    ShaderResource          = 1 << 6,
-    StreamOut               = 1 << 7,
-    IndirectArgument        = 1 << 8,
-    CopyDest                = 1 << 9,
-    CopySource              = 1 << 10,
-    Present                 = 1 << 11,
-};
-
 class CommandContext : public ArcBase
 {
 public:
@@ -111,29 +93,8 @@ public:
     virtual void SetRenderPipeline(GraphicsPipeline* pPipeline) = 0;
     virtual void SetRenderPipeline(render::RaytracingPipeline* pRenderPipeline) = 0;
 
-    virtual void SetConstants(u32 sizeInBytes, const void* pData, eShaderStage stage, u32 offsetInBytes = 0) = 0;
     virtual void SetComputeConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) = 0;
     virtual void SetGraphicsConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) = 0;
-
-    virtual void SetComputeDynamicUniformBuffer(const std::string& name, u32 size, const void* pData) = 0;
-    template< typename T >
-    void SetComputeDynamicUniformBuffer(const std::string& name, const T& data)
-    {
-        SetComputeDynamicUniformBuffer(name, sizeof(T), &data);
-    }
-    virtual void SetGraphicsDynamicUniformBuffer(const std::string& name, u32 size, const void* pData) = 0;
-    template< typename T >
-    void SetGraphicsDynamicUniformBuffer(const std::string& name, const T& data)
-    {
-        SetGraphicsDynamicUniformBuffer(name, sizeof(T), &data);
-    }
-    
-    virtual void SetComputeShaderResource(const std::string&, Arc< Buffer > buffer) = 0;
-    virtual void SetGraphicsShaderResource(const std::string&, Arc< Buffer > buffer) = 0;
-    virtual void SetComputeShaderResource(const std::string&, Arc< Texture > texture, Arc< Sampler > samplerInCharge = nullptr) = 0;
-    virtual void SetGraphicsShaderResource(const std::string&, Arc< Texture > texture, Arc< Sampler > samplerInCharge = nullptr) = 0;
-
-    virtual void SetAccelerationStructure(const std::string& name, TopLevelAccelerationStructure& tlas) = 0;
 
     virtual void StageDescriptor(const std::string&, Arc< Buffer > buffer, u32 offset = 0) = 0;
     virtual void StageDescriptor(const std::string&, Arc< Texture > texture, Arc< Sampler > samplerInCharge = nullptr, u32 offset = 0) = 0;
@@ -141,9 +102,6 @@ public:
 
     // === Draw Commands ===
     virtual void Draw(u32 vertexCount, u32 instanceCount = 1, u32 firstVertex = 0, u32 firstInstance = 0) = 0;
-    virtual void DrawIndexed(u32 indexCount, u32 instanceCount = 1, u32 firstIndex = 0, i32 vertexOffset = 0, u32 firstInstance = 0) = 0;
-    //virtual void DrawIndirect(Arc< Buffer > argumentBuffer, u32 argumentBufferOffset = 0) = 0;
-    //virtual void DrawIndexedIndirect(Arc< Buffer > argumentBuffer, u32 argumentBufferOffset = 0) = 0;
     virtual void DrawMeshTasksIndirect(const Arc< Buffer >& pArgumentBuffer, u64 offsetInBytes, u32 numDraws, u32 strideInBytes) = 0;
     virtual void DrawMeshTasksIndirectCount(const Arc< Buffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< Buffer >& pCountBuffer, u32 numDraws, u32 strideInBytes) = 0;
 

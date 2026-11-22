@@ -2,6 +2,7 @@
 #include "Transform.hpp"
 #include "Boundings.h"
 #include "ComponentTypes.h"
+#include "ShaderShared/Mesh.h"
 #include "AnimationTypes.h"
 #include "MaterialTypes.h"
 #include "VoxelTerrain/VoxelTerrainTypes.h"

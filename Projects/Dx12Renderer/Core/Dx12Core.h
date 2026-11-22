@@ -8,11 +8,9 @@
 //-------------------------------------------------------------------------
 #include <d3d12.h>
 #include <dxgi1_6.h>
-#include <d3d11on12.h>
 #include <d3dcompiler.h>
 #include <d3dx12.h>
 #include <DDSTextureLoader.h>
-#include <WICTextureLoader.h>
 
 
 //-------------------------------------------------------------------------
@@ -22,9 +20,6 @@
 #pragma comment(lib, "dxguid.lib")
 #pragma comment(lib, "D3D12.lib")
 #pragma comment(lib, "D3DCompiler.lib")
-#pragma comment(lib, "dxcompiler.lib")
-#pragma comment(lib, "d2d1.lib")
-#pragma comment(lib, "dwrite.lib")
 
 
 //-------------------------------------------------------------------------
@@ -62,16 +57,10 @@ inline void ThrowIfFailed(HRESULT hr)
 
 
 //-------------------------------------------------------------------------
-// Resource Paths
+// Filesystem
 //-------------------------------------------------------------------------
 #include <filesystem>
 namespace fs = std::filesystem;
-
-#define CSO_PATH GetCsoPath()
-inline fs::path GetCsoPath()
-{
-    return "Output/Shader/cso/";
-}
 
 
 //-------------------------------------------------------------------------
@@ -101,76 +90,13 @@ inline std::wstring ConvertToWString(const std::string& str)
     return converter.from_bytes(str);
 }
 
-#ifndef BAAMBOO_PIX_CAPTURE
-#define BAAMBOO_PIX_CAPTURE
-#endif
-
 
 //-------------------------------------------------------------------------
 // Predefined
 //-------------------------------------------------------------------------
 constexpr u32 kNumSampling = 1u;
-constexpr u32 kNumResourceDescriptorType = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER + 1;
 constexpr u32 kMaxNumDescriptorPerPool[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES] = { 1024, 32, 256, 8 };
 constexpr u32 kMaxGlobalDescriptors = 8192;
-constexpr u32 kMaxRootIndex = D3D12_MAX_ROOT_COST;
-constexpr u32 kMaxRootConstants = 35u;
-constexpr u32 kMaxDescriptorHeapIndices = 22u;
-constexpr u32 kMaxLocalRootConstants = kMaxRootConstants - kMaxDescriptorHeapIndices;
-constexpr u32 kMaxViews = (kMaxRootIndex - kMaxRootConstants) / 2;
-
-constexpr u32 kGlobalDescriptorSpace = 0u;
-constexpr u32 kCommandSignatureSpace  = 99u;
-constexpr u32 kRootConstantSpace     = 100u;
-constexpr u32 kMissArgumentSpace     = 200u;
-constexpr u32 kHitGroupArgumentSpace = 300u;
-
-enum class eSamplerIndex
-{
-	LinearClamp     = 0,
-	LinearWrap      = 1,
-	PointClamp      = 2,
-	PointWrap       = 3,
-	TrilinearWrap   = 4,
-	AnisotropicWrap = 5,
-
-	ShadowCmpLessEqual = 6,
-	PointClampMin      = 7,
-	LinearClampMin     = 8,
-
-	MaxIndex,
-};
-
-
-//-------------------------------------------------------------------------
-// Shader Types
-//-------------------------------------------------------------------------
-//#pragma pack(push, 4)
-struct IndirectDrawData
-{
-    u32 transformID;
-    u32 materialID;
-
-    D3D12_VERTEX_BUFFER_VIEW vbv;
-    D3D12_INDEX_BUFFER_VIEW  ibv;
-
-    D3D12_DRAW_INDEXED_ARGUMENTS draws;
-};
-
-struct IndirectDispatchMeshData
-{
-	u32 transformID;
-	u32 materialID;
-
-	u32 vOffset;
-	u32 mCount;
-	u32 mOffset;
-	u32 mvOffset;
-	u32 mtOffset;
-
-	D3D12_DISPATCH_MESH_ARGUMENTS dispatch;
-};
-//#pragma pack(pop)
 
 
 //-------------------------------------------------------------------------

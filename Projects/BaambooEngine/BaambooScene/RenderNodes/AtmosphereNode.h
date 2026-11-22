@@ -1,6 +1,8 @@
 #pragma once
 #include "RenderCommon/RenderNode.h"
 
+namespace baamboo::shader { class PipelineFactory; }
+
 namespace baamboo
 {
 
@@ -8,7 +10,7 @@ class AtmosphereNode : public render::RenderNode
 {
 using Super = render::RenderNode;
 public:
-	AtmosphereNode(render::RenderDevice& rd);
+	AtmosphereNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory);
 	virtual ~AtmosphereNode() = default;
 
 	virtual void Apply(render::CommandContext& context, const SceneRenderView& renderView) override;
@@ -29,7 +31,7 @@ private:
 	Box< render::ComputePipeline > m_pBakeSkyboxPSO;
 
 	u64  m_LastAtmosphereRevision = 0;
-	bool m_bStaticLutsInitialized = false;
+	u32  m_StaticLutBuildCount    = 0;
 };
 
 } // namespace baamboo

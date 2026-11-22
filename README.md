@@ -166,7 +166,7 @@ The diagrams below are exported from [Renderer_Architecture.html](Docs/Renderer_
 
 - Windows 10/11, Visual Studio 2022 or 2026 with **Desktop development with C++** (C++23)
 - Compatible CMake: **3.24+ for VS 2022** or **4.2+ for VS 2026**; the generator prefers CMake bundled with the selected Visual Studio installation
-- [Vulkan SDK](https://vulkan.lunarg.com/) — `VULKAN_SDK` must be set; the GLSL build currently targets `vulkan1.4`, while the backend requests Vulkan 1.3
+- [Vulkan SDK](https://vulkan.lunarg.com/) — `VULKAN_SDK` must be set (Vulkan headers and loader); the backend requests Vulkan 1.3
 - Mesh-shader support for the raster samples; D3D12/DXR 1.1 support for the path-tracing sample
 
 **Hardware coverage:** Tested only on **NVIDIA GeForce RTX 4080 and RTX 3070**. Other GPUs and drivers have not been validated. Performance and VRAM requirements depend on the scene and rendering settings.
@@ -178,7 +178,7 @@ GenerateProject.bat
 ```
 
 The generator selects Visual Studio 2026 when available, otherwise 2022.  
-Open the generated solution, build, and run the `Application` project. The active sample is selected in `Projects/Application/main.cpp`; the path tracer also accepts CLI scene and batch options. NuGet packages (D3D12 Agility SDK, DXC, DirectXTK12, DirectXTex, WinPixEventRuntime) are restored automatically on first build.
+Open the generated solution, build, and run the `Application` project. The active sample is selected in `Projects/Application/main.cpp`; the path tracer also accepts CLI scene and batch options. NuGet packages (D3D12 Agility SDK, DXC, DirectXTK12, DirectXTex, WinPixEventRuntime) are restored automatically on first build, and `GenerateProject.bat` downloads Slang into `External/`. Shaders in `Assets/Shader/Slang` have no build step: they compile at runtime, are cached in `Output/Shader/Cache`, and reload when saved.
 
 ## Third-Party
 
@@ -189,8 +189,9 @@ Open the generated solution, build, and run the `Application` project. The activ
 | Images & volumes | [stb](https://github.com/nothings/stb), [gli](https://github.com/g-truc/gli), [tinyexr](https://github.com/syoyo/tinyexr) and its [miniz](https://github.com/richgel999/miniz) dependency, [OpenVDB/NanoVDB](https://github.com/AcademySoftwareFoundation/openvdb) |
 | GPU memory | [D3D12MemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator), [VulkanMemoryAllocator](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator) |
 | GPU downsampling | [AMD FidelityFX SPD](https://github.com/GPUOpen-Effects/FidelityFX-SPD), used for Hi-Z generation |
-| D3D12 SDK & support | [Agility SDK](https://devblogs.microsoft.com/directx/directx12agility/), [DXC](https://github.com/microsoft/DirectXShaderCompiler), [DirectXTK12](https://github.com/microsoft/DirectXTK12), [DirectXTex](https://github.com/microsoft/DirectXTex), [WinPixEventRuntime](https://devblogs.microsoft.com/pix/download/) |
-| Vulkan SDK & shaders | [Vulkan SDK](https://vulkan.lunarg.com/), [glslang](https://github.com/KhronosGroup/glslang), [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) |
+| D3D12 SDK & support | [Agility SDK](https://devblogs.microsoft.com/directx/directx12agility/), [DirectXTK12](https://github.com/microsoft/DirectXTK12), [DirectXTex](https://github.com/microsoft/DirectXTex), [WinPixEventRuntime](https://devblogs.microsoft.com/pix/download/) |
+| Vulkan SDK | [Vulkan SDK](https://vulkan.lunarg.com/) |
+| Shaders | [Slang](https://github.com/shader-slang/slang), compiled at runtime to DXIL and SPIR-V; [DXC](https://github.com/microsoft/DirectXShaderCompiler) behind its DXIL target |
 | Build tools | [Premake5](https://premake.github.io/), [CMake](https://cmake.org/) |
 
 Additional checked-out dependencies: [taskflow](https://github.com/taskflow/taskflow), [nlohmann/json](https://github.com/nlohmann/json), and [pugixml](https://github.com/zeux/pugixml). These are currently available in the dependency tree without active engine consumers.

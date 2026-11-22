@@ -1,0 +1,180 @@
+#pragma once
+#include "ShaderShared/Atmosphere.h"
+#include "Common/Binding.slangh"
+#include "Common/Math.slangh"
+
+static const float  M_TO_KM                      = 0.001;            // m-km
+static const float  KM_TO_M                      = 1000.0;           // km-m
+static const float3 PLANET_CENTER                = float3(0.0);      // km
+static const float  AP_KM_PER_SLICE              = 4.0;              // km
+static const float  MIN_VIEW_HEIGHT_ABOVE_GROUND = 0.0005 * KM_TO_M; // m: clamps the camera height before the km conversion
+static const float  RAY_MARCHING_MAX_DISTANCE    = 1e5;
+
+// Reference: https://github.com/sebh/UnrealEngineSkyAtmosphere
+float GetAltitude(float3 position, float planetRadiusKm)
+{
+    return length(position) - planetRadiusKm;
+}
+
+float IsotropicPhase()
+{
+    return 1.0 / (4.0 * PI);
+}
+
+float RayleighPhase(float cosTheta)
+{
+    return 3.0 / (16.0 * PI) * (1.0 + cosTheta * cosTheta);
+}
+
+// Cornette-Shanks
+float MiePhase(float cosTheta, float g)
+{
+    const float g2    = g * g;
+    const float num   = 3.0 * (1.0 - g2) * (1.0 + cosTheta * cosTheta);
+    const float denom = 8.0 * PI * (2.0 + g2) * pow(1.0 + g2 - 2.0 * g * cosTheta, 1.5);
+    return num / denom;
+}
+
+float GetDensityAtHeight(float altitude, float H)
+{
+    return exp(-altitude / H);
+}
+
+float GetDensityOzoneAtHeight(float altitude, float ozoneCenterKm, float ozoneWidthKm)
+{
+    const float relativeAlt = abs(altitude - ozoneCenterKm) / (ozoneWidthKm * 0.5);
+    return max(0.0, 1.0 - relativeAlt);
+}
+
+// Unit-agnostic: height and both radii only need the same unit (the clouds pass meters)
+float3 SampleTransmittanceLUT(Texture2D< float3 > transmittanceLUT, float height, float cosTheta, float bottomRadius, float topRadius)
+{
+    const float H            = safeSqrt(topRadius * topRadius - bottomRadius * bottomRadius);
+    const float rho          = safeSqrt(height * height - bottomRadius * bottomRadius);
+    const float discriminant = height * height * (cosTheta * cosTheta - 1.0) + topRadius * topRadius;
+
+    const float d     = max(0.0, (-height * cosTheta + safeSqrt(discriminant)));
+    const float d_min = topRadius - height;
+    const float d_max = rho + H;
+
+    const float u = inverseLerp(d, d_min, d_max);
+    const float v = rho / H;
+
+    return transmittanceLUT.SampleLevel(g_LinearClampSampler, float2(u, v), 0).rgb;
+}
+
+// Sky-view LUT texel-center remap: the writer stretches, the reader unstretches
+float2 GetStretchedTextureUV(float2 uv, float2 resolution)
+{
+    return (uv - 0.5 / resolution) * resolution / (resolution - 1.0);
+}
+
+float2 GetUnstretchedTextureUV(float2 uv, float2 resolution)
+{
+    return (uv + 0.5 / resolution) * resolution / (resolution + 1.0);
+}
+
+//////////////////////////////////////////////////////////////////////////
+#include "Common/Color.slangh"
+
+float3 GetAtmosphereSunIlluminance(DirectionalLight light)
+{
+    float3 color = light.color;
+    if (light.temperatureK > 0.0)
+        color *= ColorTemperatureToRGB(light.temperatureK);
+
+    return light.illuminanceLux * color;
+}
+
+// Camera position (m) to the planet frame (km): the clamp runs in meters, before the conversion
+float3 GetViewPositionAbovePlanet(float3 cameraPositionM, float planetRadiusKm)
+{
+    const float3 cameraPos = float3(cameraPositionM.x, max(cameraPositionM.y, MIN_VIEW_HEIGHT_ABOVE_GROUND), cameraPositionM.z);
+    return cameraPos * M_TO_KM + float3(0.0, planetRadiusKm, 0.0);
+}
+
+struct AtmosphereMedium
+{
+    float3 rayleighScattering;
+    float  mieScattering;
+    float3 scattering;
+    float3 extinction;
+};
+
+AtmosphereMedium SampleAtmosphereMedium(AtmosphereData atmosphere, float altitude)
+{
+    const float rayleighDensity = GetDensityAtHeight(altitude, atmosphere.rayleighDensityKm);
+    const float mieDensity      = GetDensityAtHeight(altitude, atmosphere.mieDensityKm);
+    const float ozoneDensity    = GetDensityOzoneAtHeight(altitude, atmosphere.ozoneCenterKm, atmosphere.ozoneWidthKm);
+
+    AtmosphereMedium medium;
+    medium.rayleighScattering = atmosphere.rayleighScattering * rayleighDensity;
+    medium.mieScattering      = atmosphere.mieScattering * mieDensity;
+    medium.scattering         = medium.rayleighScattering + float3(medium.mieScattering);
+    medium.extinction         = medium.scattering + float3(atmosphere.mieAbsorption * mieDensity) + atmosphere.ozoneAbsorption * ozoneDensity;
+    return medium;
+}
+
+float3 SampleMultiScatteringLUT(Texture2D< float3 > multiScatteringLUT, float height, float cosSunZenith, float bottomRadius, float topRadius)
+{
+    const float2 uv = saturate(float2(cosSunZenith * 0.5 + 0.5, inverseLerp(height, bottomRadius, topRadius)));
+    return multiScatteringLUT.SampleLevel(g_LinearClampSampler, uv, 0).rgb;
+}
+
+// Part of the ray inside the atmosphere and closer than maxDistance; false when that part is empty
+bool GetAtmosphereRaySegment(AtmosphereData atmosphere, float3 rayOrigin, float3 rayDir, float maxDistance, out float rayStart, out float rayLength)
+{
+    const float2 atmosphereIntersection = RaySphereIntersection(rayOrigin, rayDir, PLANET_CENTER, atmosphere.atmosphereRadiusKm);
+
+    rayStart  = max(0.0, atmosphereIntersection.x);
+    rayLength = min(maxDistance, atmosphereIntersection.y) - rayStart;
+    return atmosphereIntersection.y >= 0.0 && rayLength > 0.0;
+}
+
+// xyz: in-scattered luminance, w: mean transmittance over the segment
+float4 IntegrateAtmosphereInScattering(
+    AtmosphereData atmosphere, Texture2D< float3 > transmittanceLUT, Texture2D< float3 > multiScatteringLUT,
+    float3 rayOrigin, float3 rayDir, float rayStart, float rayLength, uint numSteps)
+{
+    const float3 E      = GetAtmosphereSunIlluminance(atmosphere.light);
+    const float3 sunDir = -atmosphere.light.direction;
+
+    const float cosTheta      = dot(rayDir, sunDir);
+    const float phaseRayleigh = RayleighPhase(cosTheta);
+    const float phaseMie      = MiePhase(cosTheta, atmosphere.miePhaseG);
+
+    const float stepSize = rayLength / float(numSteps);
+
+    float3 L          = float3(0.0);
+    float3 throughput = float3(1.0);
+    for (uint i = 0u; i < numSteps; ++i)
+    {
+        const float  t   = rayStart + (float(i) + 0.5) * stepSize;
+        const float3 pos = rayOrigin + t * rayDir;
+
+        const float sampleHeight = length(pos);
+        if (sampleHeight < atmosphere.planetRadiusKm)
+            break;
+        if (sampleHeight > atmosphere.atmosphereRadiusKm)
+            continue;
+
+        const AtmosphereMedium medium = SampleAtmosphereMedium(atmosphere, sampleHeight - atmosphere.planetRadiusKm);
+
+        const float3 phasedScattering  = phaseRayleigh * medium.rayleighScattering + float3(phaseMie * medium.mieScattering);
+        const float3 stepTransmittance = exp(-medium.extinction * stepSize);
+
+        const float  cosSunZenith       = dot(pos / sampleHeight, sunDir);
+        const float3 transmittanceToSun = SampleTransmittanceLUT(transmittanceLUT, sampleHeight, cosSunZenith, atmosphere.planetRadiusKm, atmosphere.atmosphereRadiusKm);
+        const float3 multiScattering    = SampleMultiScatteringLUT(multiScatteringLUT, sampleHeight, cosSunZenith, atmosphere.planetRadiusKm, atmosphere.atmosphereRadiusKm);
+
+        const float planetShadow = RaySphereIntersection(pos, sunDir, PLANET_CENTER, atmosphere.planetRadiusKm).x < 0.0 ? 1.0 : 0.0;
+
+        // Frostbite's analytic step integral, S * (1 - T_step) / extinction, not S * stepSize
+        const float3 S    = (planetShadow * transmittanceToSun * phasedScattering + multiScattering * medium.scattering) * E;
+        const float3 Sint = (S - S * stepTransmittance) / max(medium.extinction, float3(1e-8));
+        L          += throughput * Sint;
+        throughput *= stepTransmittance;
+    }
+
+    return float4(L, dot(throughput, float3(1.0 / 3.0)));
+}

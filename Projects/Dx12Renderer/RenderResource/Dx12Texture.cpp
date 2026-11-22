@@ -1,7 +1,6 @@
 #include "RendererPch.h"
 #include "Dx12Texture.h"
 #include "RenderDevice/Dx12RenderDevice.h"
-#include "RenderDevice/Dx12ResourceManager.h"
 
 namespace dx12
 {
@@ -115,48 +114,6 @@ DXGI_FORMAT ConvertToViewFormat(DXGI_FORMAT resourceFormat, bool bIsSRV)
     }
 
     return format;
-}
-
-D3D12_RENDER_TARGET_VIEW_DESC GetRTVDesc(const D3D12_RESOURCE_DESC& resDesc, UINT mip, UINT arraySlice = 0)
-{
-    D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
-    rtvDesc.Format = resDesc.Format;
-
-    switch (resDesc.Dimension)
-    {
-    case D3D12_RESOURCE_DIMENSION_TEXTURE1D:
-        if (resDesc.DepthOrArraySize > 1)
-        {
-            rtvDesc.ViewDimension                  = D3D12_RTV_DIMENSION_TEXTURE1DARRAY;
-            rtvDesc.Texture1DArray.ArraySize       = resDesc.DepthOrArraySize;
-            rtvDesc.Texture1DArray.FirstArraySlice = arraySlice;
-            rtvDesc.Texture1DArray.MipSlice        = mip;
-        }
-        else
-        {
-            rtvDesc.ViewDimension      = D3D12_RTV_DIMENSION_TEXTURE1D;
-            rtvDesc.Texture1D.MipSlice = mip;
-        }
-        break;
-    case D3D12_RESOURCE_DIMENSION_TEXTURE2D:
-        if (resDesc.DepthOrArraySize > 1)
-        {
-            rtvDesc.ViewDimension                  = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
-            rtvDesc.Texture2DArray.ArraySize       = resDesc.DepthOrArraySize;
-            rtvDesc.Texture2DArray.FirstArraySlice = arraySlice;
-            rtvDesc.Texture2DArray.MipSlice        = mip;
-        }
-        else
-        {
-            rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
-            rtvDesc.Texture2D.MipSlice = mip;
-        }
-        break;
-    default:
-        throw std::exception("Invalid resource dimension.");
-    }
-
-    return rtvDesc;
 }
 
 D3D12_DEPTH_STENCIL_VIEW_DESC GetDSVDesc(const D3D12_RESOURCE_DESC& resDesc, UINT mip, UINT arraySlice = 0)
@@ -446,31 +403,18 @@ DXGI_FORMAT Dx12Texture::GetFormat(bool bSRV) const
     return IsTypelessFormat(m_Format) ? ConvertToViewFormat(m_Format, bSRV) : m_Format;
 }
 
-void Dx12Texture::CreateShaderResourceView(const D3D12_SHADER_RESOURCE_VIEW_DESC& desc)
-{
-    if (m_d3d12Resource)
-    {
-        auto  d3d12Device = m_RenderDevice.GetD3D12Device();
-        auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
-
-        m_ShaderResourceView = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-        d3d12Device->CreateShaderResourceView(m_d3d12Resource, &desc, m_ShaderResourceView.GetCPUHandle());
-    }
-}
-
 void Dx12Texture::CreateViews()
 {
     if (m_d3d12Resource)
     {
         auto  d3d12Device = m_RenderDevice.GetD3D12Device();
-        auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
 
         CD3DX12_RESOURCE_DESC desc(m_d3d12Resource->GetDesc());
 
         // Create RTV
         if ((desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET) != 0 && IsRTVSupported())
         {
-            m_RenderTargetView = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+            m_RenderTargetView = m_RenderDevice.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
             d3d12Device->CreateRenderTargetView(m_d3d12Resource, nullptr, m_RenderTargetView.GetCPUHandle());
         }
         // Create DSV
@@ -478,7 +422,7 @@ void Dx12Texture::CreateViews()
         {
             if (IsDSVSupported())
             {
-                m_DepthStencilView = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+                m_DepthStencilView = m_RenderDevice.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
                 d3d12Device->CreateDepthStencilView(m_d3d12Resource, nullptr, m_DepthStencilView.GetCPUHandle());
             }
             else if (IsTypelessFormat(m_Format))
@@ -486,7 +430,7 @@ void Dx12Texture::CreateViews()
                 auto dsvDesc   = GetDSVDesc(desc, 0);
                 dsvDesc.Format = ConvertToViewFormat(m_Format, false);
 
-                m_DepthStencilView = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+                m_DepthStencilView = m_RenderDevice.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
                 d3d12Device->CreateDepthStencilView(m_d3d12Resource, &dsvDesc, m_DepthStencilView.GetCPUHandle());
             }
         }
@@ -497,7 +441,7 @@ void Dx12Texture::CreateViews()
             {
                 auto srvDesc = GetSRVDesc(desc, m_CreationInfo.imageType, 0);
 
-                m_ShaderResourceView = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+                m_ShaderResourceView = m_RenderDevice.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
                 d3d12Device->CreateShaderResourceView(m_d3d12Resource, &srvDesc, m_ShaderResourceView.GetCPUHandle());
             }
             else if (IsTypelessFormat(m_Format))
@@ -505,7 +449,7 @@ void Dx12Texture::CreateViews()
                 auto srvDesc   = GetSRVDesc(desc, m_CreationInfo.imageType, 0);
                 srvDesc.Format = ConvertToViewFormat(m_Format, true);
 
-                m_ShaderResourceView = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+                m_ShaderResourceView = m_RenderDevice.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
                 d3d12Device->CreateShaderResourceView(m_d3d12Resource, &srvDesc, m_ShaderResourceView.GetCPUHandle());
             }
             else if (m_DepthStencilView.IsValid() && (m_CreationInfo.imageUsage & render::eTextureUsage_Sample))
@@ -513,7 +457,7 @@ void Dx12Texture::CreateViews()
                 auto srvDesc   = GetSRVDesc(desc, m_CreationInfo.imageType, 0);
                 srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
 
-                m_ShaderResourceView = rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+                m_ShaderResourceView = m_RenderDevice.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
                 d3d12Device->CreateShaderResourceView(m_d3d12Resource, &srvDesc, m_ShaderResourceView.GetCPUHandle());
             }
         }
@@ -521,7 +465,7 @@ void Dx12Texture::CreateViews()
         if ((desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS) != 0 && IsUAVSupported())
         {
             m_UnorderedAccessView =
-                rm.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, desc.MipLevels);
+                m_RenderDevice.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, desc.MipLevels);
             for (int i = 0; i < desc.MipLevels; ++i)
             {
                 auto uavDesc = GetUAVDesc(desc, m_CreationInfo.imageType, i);

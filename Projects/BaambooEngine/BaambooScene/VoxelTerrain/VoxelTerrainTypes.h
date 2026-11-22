@@ -2,7 +2,7 @@
 #include "MathTypes.h"
 #include "Primitives.h"
 #include "EngineTypes.h"
-#include "ShaderTypes.h"
+#include "ShaderShared/VoxelTerrain.h"
 
 namespace baamboo
 {
@@ -17,9 +17,6 @@ constexpr float kDefaultVoxelSizeMeter           = kDefaultVoxelChunkWorldSizeMe
 
 // Erosion detail slice pool
 constexpr u32 kMaxVoxelErosionSlices = 58u;
-
-// Absolute terrain floor plane (below it is always air)
-constexpr float kVoxelWorldFloorYMeter = 0.0f;
 
 // Per-LOD-level page pools: class == LOD level
 struct VoxelPageClass
@@ -44,9 +41,6 @@ constexpr u32 kVoxelPageClassCount = 8u;
 constexpr u32 MakeVoxelPageID(u32 classId, u32 idx) { return (classId << 24u) | idx; }
 constexpr u32 VoxelPageClassId(u32 pageID)          { return pageID >> 24u; }
 constexpr u32 VoxelPageIdx(u32 pageID)              { return pageID & 0x00FFFFFFu; }
-
-// Meshlet window: 21 tris * 3 = 63 verts fits the 64-vertex mesh-shader limit
-constexpr u32 kVoxelTrianglesPerMeshlet = 21u;
 
 // Vertex and meshlet-vertex slots per 1000 triangle slots of a page
 constexpr u32 kVoxelVertexCapPermille        = 650u;

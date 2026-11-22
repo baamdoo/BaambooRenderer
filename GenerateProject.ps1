@@ -42,6 +42,7 @@ try {
     $env:BAAMBOO_VS_INSTANCE = $selected.Installation
     Write-Host "Using $($selected.Generator): $($selected.Installation)"
     Write-Host "CMake: $cmake"
+    & (Join-Path $PSScriptRoot 'Premake/FetchSlang.ps1')
     Push-Location $PSScriptRoot
     try {
         $ErrorActionPreference = 'Continue'

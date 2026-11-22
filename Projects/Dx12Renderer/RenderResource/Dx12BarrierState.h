@@ -160,18 +160,6 @@ namespace BarrierStates
 		D3D12_BARRIER_ACCESS_UNORDERED_ACCESS
 	};
 
-	inline constexpr BarrierState VertexBuffer
-	{
-		D3D12_BARRIER_SYNC_VERTEX_SHADING,
-		D3D12_BARRIER_ACCESS_VERTEX_BUFFER
-	};
-
-	inline constexpr BarrierState IndexBuffer
-	{
-		D3D12_BARRIER_SYNC_INDEX_INPUT,
-		D3D12_BARRIER_ACCESS_INDEX_BUFFER
-	};
-
 	inline constexpr BarrierState ConstantBuffer
 	{
 		D3D12_BARRIER_SYNC_NON_PIXEL_SHADING,

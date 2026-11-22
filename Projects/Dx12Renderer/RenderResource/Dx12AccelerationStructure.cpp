@@ -37,6 +37,16 @@ static D3D12_RAYTRACING_GEOMETRY_FLAGS ConvertGeometryFlags(RenderFlags flags)
 	return d3d12Flags;
 }
 
+static D3D12_RAYTRACING_INSTANCE_FLAGS ConvertInstanceFlags(RenderFlags flags)
+{
+	D3D12_RAYTRACING_INSTANCE_FLAGS d3d12Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
+
+	if (flags & eASInstanceFlag_ForceNonOpaque)
+		d3d12Flags |= D3D12_RAYTRACING_INSTANCE_FLAG_FORCE_NON_OPAQUE;
+
+	return d3d12Flags;
+}
+
 
 //=========================================================================
 // BLAS
@@ -54,8 +64,8 @@ Dx12BottomLevelAS::Dx12BottomLevelAS(Dx12RenderDevice& rd, const char* name)
 
 Dx12BottomLevelAS::~Dx12BottomLevelAS()
 {
-	COM_RELEASE(m_d3d12ScratchBuffer);
-	COM_RELEASE(m_d3d12ResultBuffer);
+	m_RenderDevice.DeferRelease(m_d3d12ScratchBuffer);
+	m_RenderDevice.DeferRelease(m_d3d12ResultBuffer);
 }
 
 void Dx12BottomLevelAS::Prepare()
@@ -109,7 +119,7 @@ void Dx12BottomLevelAS::Prepare()
 
 	// Allocate result buffer
 	{
-		COM_RELEASE(m_d3d12ResultBuffer);
+		m_RenderDevice.DeferRelease(m_d3d12ResultBuffer);
 
 		auto heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
 		auto desc = CD3DX12_RESOURCE_DESC::Buffer(
@@ -127,7 +137,7 @@ void Dx12BottomLevelAS::Prepare()
 
 	// Allocate scratch buffer
 	{
-		COM_RELEASE(m_d3d12ScratchBuffer);
+		m_RenderDevice.DeferRelease(m_d3d12ScratchBuffer);
 
 		auto desc = CD3DX12_RESOURCE_DESC::Buffer(
 			prebuildInfo.ScratchDataSizeInBytes,
@@ -169,12 +179,12 @@ Dx12TopLevelAS::Dx12TopLevelAS(Dx12RenderDevice& rd, const char* name)
 
 Dx12TopLevelAS::~Dx12TopLevelAS()
 {
-	COM_RELEASE(m_d3d12InstanceDescBuffer);
-	COM_RELEASE(m_d3d12ScratchBuffer);
-	COM_RELEASE(m_d3d12ResultBuffer);
+	m_RenderDevice.DeferRelease(m_d3d12InstanceDescBuffer);
+	m_RenderDevice.DeferRelease(m_d3d12ScratchBuffer);
+	m_RenderDevice.DeferRelease(m_d3d12ResultBuffer);
 }
 
-void Dx12TopLevelAS::AllocateOrResizeBuffer(
+bool Dx12TopLevelAS::AllocateOrResizeBuffer(
 	ID3D12Resource*& pBuffer, u64 requiredSize,
 	D3D12_RESOURCE_STATES initialState, D3D12_HEAP_TYPE heapType,
 	D3D12_RESOURCE_FLAGS flags, const wchar_t* debugName)
@@ -183,9 +193,9 @@ void Dx12TopLevelAS::AllocateOrResizeBuffer(
 	{
 		auto existingSize = pBuffer->GetDesc().Width;
 		if (existingSize >= requiredSize)
-			return;
+			return false;
 
-		COM_RELEASE(pBuffer);
+		m_RenderDevice.DeferRelease(pBuffer);
 	}
 
 	auto desc        = CD3DX12_RESOURCE_DESC::Buffer(requiredSize, flags);
@@ -197,6 +207,7 @@ void Dx12TopLevelAS::AllocateOrResizeBuffer(
 		nullptr, IID_PPV_ARGS(&pBuffer)));
 
 	pBuffer->SetName(debugName);
+	return true;
 }
 
 void Dx12TopLevelAS::Prepare()
@@ -228,7 +239,7 @@ void Dx12TopLevelAS::Prepare()
 			d3d12Inst.InstanceID                          = inst.instanceID;
 			d3d12Inst.InstanceMask                        = inst.instanceMask;
 			d3d12Inst.InstanceContributionToHitGroupIndex = inst.instanceContributionToHitGroupIndex;
-			d3d12Inst.Flags                               = inst.flags;
+			d3d12Inst.Flags                               = ConvertInstanceFlags(inst.flags);
 			d3d12Inst.AccelerationStructure               = inst.pBLAS ? inst.pBLAS->GetGPUVirtualAddress() : 0;
 		}
 
@@ -251,12 +262,24 @@ void Dx12TopLevelAS::Prepare()
 	// Allocate / resize result buffer
 	{
 		auto wResultName = ConvertToWString(m_Name + "::Result");
-		AllocateOrResizeBuffer(
+		const bool bReallocated = AllocateOrResizeBuffer(
 			m_d3d12ResultBuffer, prebuildInfo.ResultDataMaxSizeInBytes,
 			D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, D3D12_HEAP_TYPE_DEFAULT,
 			D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, wResultName.c_str());
 
 		m_ResultBufferSize = prebuildInfo.ResultDataMaxSizeInBytes;
+
+		if (bReallocated)
+		{
+			// a new slot each time: frames in flight still trace the old buffer through the old one
+			m_SRVAllocation = m_RenderDevice.AllocateDescriptors(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1);
+
+			D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+			srvDesc.ViewDimension                            = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
+			srvDesc.Shader4ComponentMapping                  = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			srvDesc.RaytracingAccelerationStructure.Location = m_d3d12ResultBuffer->GetGPUVirtualAddress();
+			d3d12Device->CreateShaderResourceView(nullptr, &srvDesc, m_SRVAllocation.GetCPUHandle());
+		}
 	}
 
 	// Allocate / resize scratch buffer

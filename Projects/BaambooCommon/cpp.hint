@@ -1,0 +1,2 @@
+#define BAAMBOO_API __declspec(dllexport)
+#define BAAMBOO_API __declspec(dllimport)

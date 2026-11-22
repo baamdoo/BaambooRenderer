@@ -16,7 +16,7 @@ namespace baamboo
 namespace
 {
 #if PT_VALIDATION
-// One row per validation AOV: GPU debug name / PathTracerLIB.hlsl binding /
+// One row per validation AOV: GPU debug name / PathTracerLIB.slang push field /
 // EXR filename under engine_aov/. Creation, barriers, descriptor staging,
 // resize and dumping all iterate this table — add a row, get all five.
 struct ValidationAOVDesc
@@ -28,21 +28,21 @@ struct ValidationAOVDesc
 
 constexpr ValidationAOVDesc VALIDATION_AOVS[] =
 {
-    { "PathTracer::Albedo",                "g_Albedo",                "albedo.exr" },
-    { "PathTracer::Normal",                "g_Normal",                "normal.exr" },
-    { "PathTracer::Depth",                 "g_Depth",                 "depth.exr" },
-    { "PathTracer::GeometricNormal",       "g_GeometricNormal",       "geometric_normal.exr" },
-    { "PathTracer::MaterialParams",        "g_MaterialParams",        "material_params.exr" },
-    { "PathTracer::MaterialExtra",         "g_MaterialExtra",         "material_extra.exr" },
-    { "PathTracer::MaterialSpecularColor", "g_MaterialSpecularColor", "material_specular_color.exr" },
-    { "PathTracer::Emission",              "g_Emission",              "emission.exr" },
-    { "PathTracer::DiffuseRadiance",       "g_DiffuseRadiance",       "diffuse_radiance.exr" },
-    { "PathTracer::SpecularRadiance",      "g_SpecularRadiance",      "specular_radiance.exr" },
-    { "PathTracer::TransmissionRadiance",  "g_TransmissionRadiance",  "transmission_radiance.exr" },
-    { "PathTracer::SurfaceLobeMask",       "g_SurfaceLobeMask",       "surface_lobe_mask.exr" },
-    { "PathTracer::SurfaceLobeWeight",     "g_SurfaceLobeWeight",     "surface_lobe_weight.exr" },
-    { "PathTracer::SampledLobeFrequency",  "g_SampledLobeFrequency",  "sampled_lobe_frequency.exr" },
-    { "PathTracer::PrimaryId",             "g_PrimaryId",             "primary_id.exr" },
+    { "PathTracer::Albedo",                "ID_Albedo",                "albedo.exr" },
+    { "PathTracer::Normal",                "ID_Normal",                "normal.exr" },
+    { "PathTracer::Depth",                 "ID_Depth",                 "depth.exr" },
+    { "PathTracer::GeometricNormal",       "ID_GeometricNormal",       "geometric_normal.exr" },
+    { "PathTracer::MaterialParams",        "ID_MaterialParams",        "material_params.exr" },
+    { "PathTracer::MaterialExtra",         "ID_MaterialExtra",         "material_extra.exr" },
+    { "PathTracer::MaterialSpecularColor", "ID_MaterialSpecularColor", "material_specular_color.exr" },
+    { "PathTracer::Emission",              "ID_Emission",              "emission.exr" },
+    { "PathTracer::DiffuseRadiance",       "ID_DiffuseRadiance",       "diffuse_radiance.exr" },
+    { "PathTracer::SpecularRadiance",      "ID_SpecularRadiance",      "specular_radiance.exr" },
+    { "PathTracer::TransmissionRadiance",  "ID_TransmissionRadiance",  "transmission_radiance.exr" },
+    { "PathTracer::SurfaceLobeMask",       "ID_SurfaceLobeMask",       "surface_lobe_mask.exr" },
+    { "PathTracer::SurfaceLobeWeight",     "ID_SurfaceLobeWeight",     "surface_lobe_weight.exr" },
+    { "PathTracer::SampledLobeFrequency",  "ID_SampledLobeFrequency",  "sampled_lobe_frequency.exr" },
+    { "PathTracer::PrimaryId",             "ID_PrimaryId",             "primary_id.exr" },
 };
 
 static_assert(sizeof(VALIDATION_AOVS) / sizeof(VALIDATION_AOVS[0]) == PathTracerNode::VALIDATION_AOV_COUNT,
@@ -130,7 +130,7 @@ void PathTracerNode::BindValidationResources(render::CommandContext& context)
 
     for (u32 i = 0; i < VALIDATION_AOV_COUNT; ++i)
         context.StageDescriptor(VALIDATION_AOVS[i].shaderName, m_ValidationAOVs[i]);
-    context.StageDescriptor("g_PathValidationStats", m_pPathValidationStats);
+    context.StageDescriptor("ID_PathValidationStats", m_pPathValidationStats);
 }
 
 void PathTracerNode::ResizeValidationResources(u32 width, u32 height)

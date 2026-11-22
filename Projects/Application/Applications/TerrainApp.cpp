@@ -385,21 +385,21 @@ void TerrainApp::ConfigureRenderGraph()
 {
 	auto& device = *m_pRendererBackend->GetDevice();
 
-	m_pScene->AddRenderNode(MakeArc< AtmosphereNode >(device));
+	m_pScene->AddRenderNode(MakeArc< AtmosphereNode >(device, *m_pPipelineFactory));
 	{
-		auto pGBufferNode = MakeArc< GBufferNode >(device);
-		auto pCullingNode = MakeArc< CullingNode >(device);
-		auto pVoxelNode   = MakeArc< VoxelChunkRenderNode >(device);
+		auto pGBufferNode = MakeArc< GBufferNode >(device, *m_pPipelineFactory);
+		auto pCullingNode = MakeArc< CullingNode >(device, *m_pPipelineFactory);
+		auto pVoxelNode   = MakeArc< VoxelChunkRenderNode >(device, *m_pPipelineFactory);
 
 		pCullingNode->SetGBufferNode(pGBufferNode);
 		pCullingNode->SetVoxelNode(pVoxelNode);
 
 		m_pScene->AddRenderNode(pCullingNode);
 	}
-	m_pScene->AddRenderNode(MakeArc< SurfaceResolveNode >(device));
-	m_pScene->AddRenderNode(MakeArc< LightingNode >(device));
-	m_pScene->AddRenderNode(MakeArc< DebugDrawNode >(device));
-	m_pScene->AddRenderNode(MakeArc< PostProcessNode >(device));
+	m_pScene->AddRenderNode(MakeArc< SurfaceResolveNode >(device, *m_pPipelineFactory));
+	m_pScene->AddRenderNode(MakeArc< LightingNode >(device, *m_pPipelineFactory));
+	m_pScene->AddRenderNode(MakeArc< DebugDrawNode >(device, *m_pPipelineFactory));
+	m_pScene->AddRenderNode(MakeArc< PostProcessNode >(device, *m_pPipelineFactory));
 }
 
 void TerrainApp::ConfigureSceneObjects()

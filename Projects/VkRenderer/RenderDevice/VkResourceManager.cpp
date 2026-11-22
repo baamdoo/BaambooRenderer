@@ -3,8 +3,7 @@
 #include "VkCommandContext.h"
 
 #include "RenderResource/VkBuffer.h"
-#include "RenderResource/VkSceneResource.h"
-#include "RenderDevice/VkDescriptorPool.h"
+#include "RenderCommon/SceneResource.h"
 #include "Utils/Math.hpp"
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -40,7 +39,7 @@ VkResourceManager::VkResourceManager(VkRenderDevice& rd)
 
 	m_pBlackTextureCube = CreateFlatCubeTexture("DefaultTextureCube::Black", 0xFF000000u);
 
-	m_pSceneResource = new VkSceneResource(m_RenderDevice);
+	m_pSceneResource = new render::SceneResource(m_RenderDevice);
 }
 
 VkResourceManager::~VkResourceManager()
@@ -408,7 +407,7 @@ Arc< render::Texture > VkResourceManager::LoadTextureArray(const fs::path& dirpa
 	return pTextureArray;
 }
 
-void VkResourceManager::UploadData(Arc< VulkanBuffer > pBuffer, const void* pData, u64 sizeInBytes, VkPipelineStageFlags2 dstStageMask, u64 dstOffsetInBytes)
+void VkResourceManager::UploadData(const Arc< render::Buffer >& pBuffer, const void* pData, u64 sizeInBytes, render::ePipelineStage dstStage, u64 dstOffsetInBytes)
 {
 	if (m_pStagingBuffer->SizeInBytes() < sizeInBytes)
 	{
@@ -418,10 +417,18 @@ void VkResourceManager::UploadData(Arc< VulkanBuffer > pBuffer, const void* pDat
 	m_pStagingBuffer->FlushMappedRange(0, sizeInBytes);
 
 	auto pContext = m_RenderDevice.BeginCommand(eCommandType::Graphics, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, true);
-	pContext->CopyBuffer(pBuffer, m_pStagingBuffer, sizeInBytes, dstOffsetInBytes, 0);
-	pContext->TransitionBufferToRead(pBuffer, dstStageMask, dstOffsetInBytes, true);
+	pContext->CopyBuffer(StaticCast< VulkanBuffer >(pBuffer), m_pStagingBuffer, sizeInBytes, dstOffsetInBytes, 0);
+	if (dstStage != render::ePipelineStage::None)
+		pContext->TransitionBufferToRead(pBuffer, dstStage, dstOffsetInBytes, true);
 	pContext->Close();
 	m_RenderDevice.ExecuteCommand(pContext);
+}
+
+void VkResourceManager::BuildAccelerationStructures(std::span< render::BottomLevelAccelerationStructure* const > pendingBLAS, render::TopLevelAccelerationStructure* pTLAS)
+{
+	UNUSED(pendingBLAS);
+	UNUSED(pTLAS);
+	BB_ASSERT(false, "Vulkan acceleration structure builds are unavailable because Vulkan ray tracing is unsupported.");
 }
 
 void VkResourceManager::UploadData(Arc< VulkanTexture > pTexture, const void* pData, u64 sizeInBytes,

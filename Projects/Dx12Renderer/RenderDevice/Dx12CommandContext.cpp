@@ -12,8 +12,6 @@
 #include "RenderResource/Dx12Buffer.h"
 #include "RenderResource/Dx12Texture.h"
 #include "RenderResource/Dx12RenderTarget.h"
-#include "RenderResource/Dx12SceneResource.h"
-#include "RenderResource/Dx12RenderTarget.h"
 #include "RenderResource/Dx12ShaderBindingTable.h"
 #include "RenderResource/Dx12AccelerationStructure.h"
 #include "Utils/Math.hpp"
@@ -21,6 +19,14 @@
 namespace dx12
 {
 	
+static u32 PushOffsetOf(const render::Pipeline& pipeline, const std::string& name)
+{
+	const auto [offset, rootIndex] = pipeline.GetResourceBindingIndex(name);
+	BB_ASSERT(rootIndex != kInvalidIndex, "Invalid shader resource name %s", name.c_str());
+
+	return offset;
+}
+
 //-------------------------------------------------------------------------
 // Impl
 //-------------------------------------------------------------------------
@@ -76,55 +82,15 @@ public:
 
 	// ---- Bindings ----
 	void SetDescriptorHeaps(const std::vector< ID3D12DescriptorHeap* >& d3d12DescriptorHeaps);
+	void StageRootConstants(u32 srcSizeInBytes, const void* pSrcData, u32 dstOffsetInBytes = 0);
 
-	void SetGraphicsRootConstant(u32 rootIdx, u32 srcValue, u32 dstOffset = 0);
-	void SetGraphicsRootConstants(u32 srcSizeInBytes, const void* pSrcData, u32 dstOffsetInBytes = 0);
-	void SetComputeRootConstant(u32 rootIdx, u32 srcValue, u32 dstOffset = 0);
-	void SetComputeRootConstants(u32 srcSizeInBytes, const void* pSrcData, u32 dstOffsetInBytes = 0);
-
-	void SetGraphicsDynamicConstantBuffer(const std::string& name, size_t sizeInBytes, const void* pData);
-	template< typename T >
-	void SetGraphicsDynamicConstantBuffer(const std::string& name, const T& data)
-	{
-		SetGraphicsDynamicConstantBuffer(name, sizeof(T), &data);
-	}
-	void SetComputeDynamicConstantBuffer(const std::string& name, size_t sizeInBytes, const void* pData);
-	template< typename T >
-	void SetComputeDynamicConstantBuffer(const std::string& name, const T& data)
-	{
-		SetComputeDynamicConstantBuffer(name, sizeof(T), &data);
-	}
-
-	void SetGraphicsConstantBufferView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle);
-	void SetGraphicsShaderResourceView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle);
-	void SetComputeConstantBufferView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle);
-	void SetComputeShaderResourceView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle);
-	void SetComputeUnorderedAccessView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle);
-
-	void SetAccelerationStructureSRV(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS gpuAddress);
-
-	void StageDescriptor(
-		const std::string& name,
-		Arc< Dx12Buffer > pBuffer,
-		D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	void StageDescriptor(
-		const std::string& name,
-		Arc< Dx12Texture > pTexture,
-		D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	void StageDescriptorMip(
-		const std::string& name,
-		Arc< Dx12Texture > pTexture,
-		u32 mipLevel,
-		D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-
-	void StageDescriptor(const std::string& name, u32 heapIdx, D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	void StageDescriptors(
-		std::vector< std::pair< std::string, u32 > >&& srcHandles,
-		D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	void StageDescriptor(const std::string& name, Arc< Dx12Buffer > pBuffer);
+	void StageDescriptor(const std::string& name, Arc< Dx12Texture > pTexture);
+	void StageDescriptorMip(const std::string& name, Arc< Dx12Texture > pTexture, u32 mipLevel);
+	void StageDescriptor(const std::string& name, u32 heapIdx);
 
 	// ---- Draw / Dispatch ----
 	void Draw(u32 vertexCount, u32 instanceCount = 1, u32 startVertex = 0, u32 startInstance = 0);
-	void DrawIndexed(u32 indexCount, u32 instanceCount = 1, u32 startIndex = 0, u32 baseVertex = 0, u32 startInstance = 0);
 	void DrawIndirect(const Arc< Dx12Buffer >& pArgumentBuffer, u64 offsetInBytes, u32 numDraws);
 	void DrawIndirectWithCount(const Arc< Dx12Buffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< Dx12Buffer >& pCountBuffer, u32 numDraws);
 
@@ -147,6 +113,7 @@ private:
 	void AddBufferBarrier(const D3D12_BUFFER_BARRIER& barrier, bool bFlushImmediate);
 	void AddGlobalBarrier(const D3D12_GLOBAL_BARRIER& barrier, bool bFlushImmediate);
 	void FlushBarriers();
+	void SetRootConstants();
 
 	void BindDescriptorHeaps();
 
@@ -154,17 +121,10 @@ public:
 	D3D12_COMMAND_LIST_TYPE GetCommandListType() const { return m_Type; }
 	ID3D12GraphicsCommandList10* GetD3D12CommandList() const { return m_d3d12CommandList10; }
 
-	template< typename T >
-	constexpr T RoundUpAndDivide(T Value, size_t Alignment)
-	{
-		return (T)((Value + Alignment - 1) / Alignment);
-	}
-
 private:
 	Dx12RenderDevice& m_RenderDevice;
 	D3D12_COMMAND_LIST_TYPE m_Type = {};
 
-	Box< DynamicBufferAllocator > m_pConstantBufferPool;
 	Box< DynamicBufferAllocator > m_pStagingBufferPool;
 
 	ID3D12GraphicsCommandList10* m_d3d12CommandList10    = nullptr;
@@ -175,11 +135,11 @@ private:
 	Dx12GraphicsPipeline*   m_pGraphicsPipeline   = nullptr;
 	Dx12ComputePipeline*    m_pComputePipeline    = nullptr;
 	Dx12RaytracingPipeline* m_pRaytracingPipeline = nullptr;
+	render::Pipeline*       m_pBoundPipeline      = nullptr;
+
+	std::array< u32, render::kSlangPushBlockBytes / 4 > m_PushBlock = {};
 
 	D3D_PRIMITIVE_TOPOLOGY m_PrimitiveTopology = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
-
-	//Dx12DescriptorHeap*   m_pDescriptorHeaps[kNumResourceDescriptorType]               = {};
-	//ID3D12DescriptorHeap* m_CurrentDescriptorHeaps[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES] = {};
 
 	u32                   m_NumTextureBarriers = 0;
 	D3D12_TEXTURE_BARRIER m_TextureBarriers[kMaxNumPendingBarriers] = {};
@@ -206,8 +166,7 @@ Dx12CommandContext::Impl::Impl(Dx12RenderDevice& rd, const Dx12CommandQueue& cq,
 	ThrowIfFailed(d3d12Device->CreateCommandAllocator(m_Type, IID_PPV_ARGS(&m_d3d12CommandAllocator)));
 	ThrowIfFailed(d3d12Device->CreateCommandList1(0, m_Type, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&m_d3d12CommandList10)));
 
-	m_pConstantBufferPool = MakeBox< DynamicBufferAllocator >(m_RenderDevice);
-	m_pStagingBufferPool  = MakeBox< DynamicBufferAllocator >(m_RenderDevice, _MB(128));
+	m_pStagingBufferPool = MakeBox< DynamicBufferAllocator >(m_RenderDevice, _MB(128));
 
 	// **
 	// Set Gpu Timer (multi-scope profiler)
@@ -247,6 +206,7 @@ void Dx12CommandContext::Impl::Open()
 	m_pGraphicsPipeline   = nullptr;
 	m_pComputePipeline    = nullptr;
 	m_pRaytracingPipeline = nullptr;
+	m_pBoundPipeline      = nullptr;
 
 	m_pRootSignature    = nullptr;
 	m_PrimitiveTopology = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
@@ -256,14 +216,12 @@ void Dx12CommandContext::Impl::Open()
 
 	if (m_Type != D3D12_COMMAND_LIST_TYPE_COPY)
 	{
-		m_pConstantBufferPool->Reset();
 		m_pStagingBufferPool->Reset();
 
 		BindDescriptorHeaps();
 
-		auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
-		m_d3d12CommandList10->SetComputeRootSignature(rm.GetGlobalRootSignature()->GetD3D12RootSignature());
-		m_d3d12CommandList10->SetGraphicsRootSignature(rm.GetGlobalRootSignature()->GetD3D12RootSignature());
+		m_d3d12CommandList10->SetComputeRootSignature(m_RenderDevice.GetGlobalRootSignature()->GetD3D12RootSignature());
+		m_d3d12CommandList10->SetGraphicsRootSignature(m_RenderDevice.GetGlobalRootSignature()->GetD3D12RootSignature());
 
 		// Reads previous frame's resolved timestamps and opens the implicit "Frame" scope.
 		m_Timer.BeginFrame(m_d3d12CommandList10);
@@ -668,6 +626,8 @@ void Dx12CommandContext::Impl::ClearUnorderedAccess(const Arc< Dx12Texture >& pT
 // =========================================================================
 void Dx12CommandContext::Impl::SetRenderPipeline(Dx12GraphicsPipeline* pGraphicsPipeline)
 {
+	m_PushBlock.fill(0);
+	m_pBoundPipeline      = pGraphicsPipeline;
 	m_pComputePipeline    = nullptr;
 	m_pRaytracingPipeline = nullptr;
 	if (m_pGraphicsPipeline != pGraphicsPipeline)
@@ -695,6 +655,8 @@ void Dx12CommandContext::Impl::SetRenderPipeline(Dx12GraphicsPipeline* pGraphics
 
 void Dx12CommandContext::Impl::SetRenderPipeline(Dx12ComputePipeline* pComputePipeline)
 {
+	m_PushBlock.fill(0);
+	m_pBoundPipeline      = pComputePipeline;
 	m_pGraphicsPipeline   = nullptr;
 	m_pRaytracingPipeline = nullptr;
 	if (m_pComputePipeline != pComputePipeline)
@@ -715,6 +677,8 @@ void Dx12CommandContext::Impl::SetRenderPipeline(Dx12ComputePipeline* pComputePi
 
 void Dx12CommandContext::Impl::SetRenderPipeline(Dx12RaytracingPipeline* pRaytracingPipelineState)
 {
+	m_PushBlock.fill(0);
+	m_pBoundPipeline    = pRaytracingPipelineState;
 	m_pComputePipeline  = nullptr;
 	m_pGraphicsPipeline = nullptr;
 	if (m_pRaytracingPipeline != pRaytracingPipelineState)
@@ -828,256 +792,68 @@ void Dx12CommandContext::Impl::SetDescriptorHeaps(const std::vector< ID3D12Descr
 	m_d3d12CommandList10->SetDescriptorHeaps(static_cast<u32>(d3d12DescriptorHeaps.size()), d3d12DescriptorHeaps.data());
 }
 
-void Dx12CommandContext::Impl::SetGraphicsRootConstant(u32 rootIdx, u32 srcValue, u32 dstOffset)
+void Dx12CommandContext::Impl::StageRootConstants(u32 srcSizeInBytes, const void* pSrcData, u32 dstOffsetInBytes)
 {
-	m_d3d12CommandList10->SetGraphicsRoot32BitConstant(rootIdx, srcValue, dstOffset);
+	BB_ASSERT(srcSizeInBytes <= render::kSlangPushBlockBytes && dstOffsetInBytes <= render::kSlangPushBlockBytes - srcSizeInBytes,
+		"StageRootConstants: %u bytes at offset %u do not fit in the %u-byte push block.", srcSizeInBytes, dstOffsetInBytes, render::kSlangPushBlockBytes);
+
+	memcpy(reinterpret_cast< u8* >(m_PushBlock.data()) + dstOffsetInBytes, pSrcData, srcSizeInBytes);
 }
 
-void Dx12CommandContext::Impl::SetGraphicsRootConstants(u32 srcSizeInBytes, const void* pSrcData, u32 dstOffsetInBytes)
+void Dx12CommandContext::Impl::SetRootConstants()
 {
-	u32 size      = srcSizeInBytes / 4;
-	u32 dstOffset = dstOffsetInBytes / 4;
+	BB_ASSERT(m_pBoundPipeline, "SetRootConstants: no pipeline is bound.");
 
-	assert(m_pRootSignature);
-	const u32 rootIndex = m_pRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, kRootConstantSpace, 0);
-	assert(rootIndex != kInvalidIndex);
-	m_d3d12CommandList10->SetGraphicsRoot32BitConstants(rootIndex, size, pSrcData, dstOffset);
+	const u32 rootIndex =
+		m_pRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, render::kSlangPushSpace, render::kSlangPushRegister);
+	const u32 numValues = static_cast< u32 >(m_PushBlock.size());
+
+	if (IsGraphicsContext())
+		m_d3d12CommandList10->SetGraphicsRoot32BitConstants(rootIndex, numValues, m_PushBlock.data(), 0);
+	else
+		m_d3d12CommandList10->SetComputeRoot32BitConstants(rootIndex, numValues, m_PushBlock.data(), 0);
 }
 
-void Dx12CommandContext::Impl::SetComputeRootConstant(u32 rootIdx, u32 srcValue, u32 dstOffset)
-{
-	m_d3d12CommandList10->SetComputeRoot32BitConstant(rootIdx, srcValue, dstOffset);
-}
-
-void Dx12CommandContext::Impl::SetComputeRootConstants(u32 srcSizeInBytes, const void* pSrcData, u32 dstOffsetInBytes)
-{
-	u32 size      = srcSizeInBytes / 4;
-	u32 dstOffset = dstOffsetInBytes / 4;
-
-	assert(m_pRootSignature);
-	const u32 rootIndex = m_pRootSignature->GetRootIndex(D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS, kRootConstantSpace, 0);
-	assert(rootIndex != kInvalidIndex);
-	m_d3d12CommandList10->SetComputeRoot32BitConstants(rootIndex, size, pSrcData, dstOffset);
-}
-
-void Dx12CommandContext::Impl::SetGraphicsDynamicConstantBuffer(const std::string& name, size_t sizeInBytes, const void* pData)
-{
-	auto allocation = m_pConstantBufferPool->Allocate(sizeInBytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
-	memcpy(allocation.CPUHandle, pData, sizeInBytes);
-
-	auto [_, rootIndex] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
-	if (rootIndex == kInvalidIndex)
-	{
-		return;
-	}
-
-	m_d3d12CommandList10->SetGraphicsRootConstantBufferView(rootIndex, allocation.GPUHandle);
-}
-
-void Dx12CommandContext::Impl::SetComputeDynamicConstantBuffer(const std::string& name, size_t sizeInBytes, const void* pData)
-{
-	auto allocation = m_pConstantBufferPool->Allocate(sizeInBytes, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT);
-	memcpy(allocation.CPUHandle, pData, sizeInBytes);
-
-	if (m_pComputePipeline)
-	{
-		auto [_, rootIndex] = m_pComputePipeline->GetResourceBindingIndex(name);
-		if (rootIndex == kInvalidIndex)
-		{
-			return;
-		}
-
-		m_d3d12CommandList10->SetComputeRootConstantBufferView(rootIndex, allocation.GPUHandle);
-	}
-	else if (m_pRaytracingPipeline)
-	{
-		auto [_, rootIndex] = m_pRaytracingPipeline->GetResourceBindingIndex(name);
-		if (rootIndex == kInvalidIndex)
-		{
-			return;
-		}
-
-		m_d3d12CommandList10->SetComputeRootConstantBufferView(rootIndex, allocation.GPUHandle);
-	}
-}
-
-void Dx12CommandContext::Impl::SetGraphicsConstantBufferView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle)
-{
-	assert(IsGraphicsContext());
-
-	auto [_, rootIndex] = m_pComputePipeline->GetResourceBindingIndex(name);
-	if (rootIndex == kInvalidIndex)
-	{
-		return;
-	}
-
-	m_d3d12CommandList10->SetGraphicsRootConstantBufferView(rootIndex, gpuHandle);
-}
-
-void Dx12CommandContext::Impl::SetGraphicsShaderResourceView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle)
-{
-	auto [_, rootIndex] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
-	if (rootIndex == kInvalidIndex)
-	{
-		return;
-	}
-
-	m_d3d12CommandList10->SetGraphicsRootShaderResourceView(rootIndex, gpuHandle);
-}
-
-void Dx12CommandContext::Impl::SetComputeConstantBufferView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle)
-{
-	auto [_, rootIndex] = m_pComputePipeline->GetResourceBindingIndex(name);
-	if (rootIndex == kInvalidIndex)
-	{
-		return;
-	}
-
-	m_d3d12CommandList10->SetComputeRootConstantBufferView(rootIndex, gpuHandle);
-}
-
-void Dx12CommandContext::Impl::SetComputeShaderResourceView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle)
-{
-	u32 rootIndex = kInvalidIndex;
-	if (IsRaytracingContext())
-	{
-		auto [_, idx] = m_pRaytracingPipeline->GetResourceBindingIndex(name);
-		rootIndex = idx;
-	}
-	else if (IsComputeContext())
-	{
-		auto [_, idx] = m_pComputePipeline->GetResourceBindingIndex(name);
-		rootIndex = idx;
-	}
-
-	if (rootIndex == kInvalidIndex)
-	{
-		return;
-	}
-
-	m_d3d12CommandList10->SetComputeRootShaderResourceView(rootIndex, gpuHandle);
-}
-
-void Dx12CommandContext::Impl::SetComputeUnorderedAccessView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS gpuHandle)
-{
-	auto [_, rootIndex] = m_pComputePipeline->GetResourceBindingIndex(name);
-	if (rootIndex == kInvalidIndex)
-	{
-		return;
-	}
-
-	m_d3d12CommandList10->SetComputeRootUnorderedAccessView(rootIndex, gpuHandle);
-}
-
-void Dx12CommandContext::Impl::SetAccelerationStructureSRV(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS gpuAddress)
-{
-	u32 rootIndex = kInvalidIndex;
-
-	if (IsRaytracingContext())
-	{
-		auto [_, idx] = m_pRaytracingPipeline->GetResourceBindingIndex(name);
-		rootIndex = idx;
-	}
-	else if (IsComputeContext())
-	{
-		auto [_, idx] = m_pComputePipeline->GetResourceBindingIndex(name);
-		rootIndex = idx;
-	}
-
-	if (rootIndex == kInvalidIndex)
-	{
-		return;
-	}
-
-	m_d3d12CommandList10->SetComputeRootShaderResourceView(rootIndex, gpuAddress);
-}
-
-void Dx12CommandContext::Impl::StageDescriptor(
-	const std::string& name,
-	Arc< Dx12Buffer > pBuffer,
-	D3D12_DESCRIPTOR_HEAP_TYPE heapType)
+void Dx12CommandContext::Impl::StageDescriptor(const std::string& name, Arc< Dx12Buffer > pBuffer)
 {
 	const auto& state = pBuffer->GetCurrentState();
 	bool bIsUAV = state.GetSubresourceState().Access & D3D12_BARRIER_ACCESS_UNORDERED_ACCESS;
 
 	if (bIsUAV)
-		StageDescriptor(name, pBuffer->GetUnorderedAccessHandle(), heapType);
+		StageDescriptor(name, pBuffer->GetUnorderedAccessHandle());
 	else
-		StageDescriptor(name, pBuffer->GetShaderResourceHandle(), heapType);
+		StageDescriptor(name, pBuffer->GetShaderResourceHandle());
 }
 
-void Dx12CommandContext::Impl::StageDescriptor(
-	const std::string& name,
-	Arc< Dx12Texture > pTexture,
-	D3D12_DESCRIPTOR_HEAP_TYPE heapType)
+void Dx12CommandContext::Impl::StageDescriptor(const std::string& name, Arc< Dx12Texture > pTexture)
 {
 	const auto& state = pTexture->GetCurrentState();
 	bool bIsUAV = 
-		(IsComputeContext() || IsRaytracingContext()) && state.GetSubresourceState() == BarrierStates::UnorderedAccess;
+		(IsComputeContext() || IsRaytracingContext()) && state.GetSubresourceState().Layout == D3D12_BARRIER_LAYOUT_UNORDERED_ACCESS;
 
 	if (bIsUAV)
 	{
-		StageDescriptor(name, pTexture->GetUnorderedAccessHandle(), heapType);
+		StageDescriptor(name, pTexture->GetUnorderedAccessHandle());
 	}
 	else
 	{
-		StageDescriptor(name, pTexture->GetShaderResourceHandle(), heapType);
+		BB_ASSERT(state.GetSubresourceState().Layout == D3D12_BARRIER_LAYOUT_SHADER_RESOURCE,
+			"StageDescriptor('%s'): texture is in neither a shader-resource layout nor the UAV state.", name.c_str());
+		StageDescriptor(name, pTexture->GetShaderResourceHandle());
 	}
 }
 
-void Dx12CommandContext::Impl::StageDescriptorMip(
-	const std::string& name,
-	Arc< Dx12Texture > pTexture,
-	u32 mipLevel,
-	D3D12_DESCRIPTOR_HEAP_TYPE heapType)
+void Dx12CommandContext::Impl::StageDescriptorMip(const std::string& name, Arc< Dx12Texture > pTexture, u32 mipLevel)
 {
-	StageDescriptor(name, pTexture->GetUnorderedAccessHandle(mipLevel), heapType);
+	StageDescriptor(name, pTexture->GetUnorderedAccessHandle(mipLevel));
 }
 
-void Dx12CommandContext::Impl::StageDescriptor(const std::string& name, u32 heapIdx, D3D12_DESCRIPTOR_HEAP_TYPE heapType)
+void Dx12CommandContext::Impl::StageDescriptor(const std::string& name, u32 heapIdx)
 {
-	if (IsGraphicsContext())
-	{
-		auto [offset, rootIndex] = m_pGraphicsPipeline->GetResourceBindingIndex(name);
-		if (rootIndex == kInvalidIndex)
-		{
-			return;
-		}
-
-		SetGraphicsRootConstant(rootIndex, heapIdx);
-	}
-	else if (IsComputeContext())
-	{
-		auto [offset, rootIndex] = m_pComputePipeline->GetResourceBindingIndex(name);
-		if (rootIndex == kInvalidIndex)
-		{
-			return;
-		}
-
-		SetComputeRootConstant(rootIndex, heapIdx);
-	}
-	else if (IsRaytracingContext())
-	{
-		auto [offset, rootIndex] = m_pRaytracingPipeline->GetResourceBindingIndex(name);
-		if (rootIndex == kInvalidIndex)
-		{
-			return;
-		}
-
-		SetComputeRootConstant(rootIndex, heapIdx);
-	}
+	BB_ASSERT(m_pBoundPipeline, "StageDescriptor('%s'): no pipeline is bound.", name.c_str());
+	BB_ASSERT(IsValidIndex(heapIdx), "StageDescriptor('%s'): the resource has no slot for this view.", name.c_str());
+	StageRootConstants(sizeof(u32), &heapIdx, PushOffsetOf(*m_pBoundPipeline, name));
 }
-
-void Dx12CommandContext::Impl::StageDescriptors(
-	std::vector< std::pair< std::string, u32 > >&& srcHandles,
-	D3D12_DESCRIPTOR_HEAP_TYPE heapType)
-{
-	for (const auto& [name, srcHandle] : srcHandles)
-	{
-		StageDescriptor(name, srcHandle, heapType);
-	}
-}
-
 
 // =========================================================================
 // Impl - Draw / Dispatch
@@ -1085,24 +861,18 @@ void Dx12CommandContext::Impl::StageDescriptors(
 void Dx12CommandContext::Impl::Draw(u32 vertexCount, u32 instanceCount, u32 startVertex, u32 startInstance)
 {
 	FlushBarriers();
+	SetRootConstants();
 
 	m_d3d12CommandList10->DrawInstanced(vertexCount, instanceCount, startVertex, startInstance);
-}
-
-void Dx12CommandContext::Impl::DrawIndexed(u32 indexCount, u32 instanceCount, u32 startIndex, u32 baseVertex, u32 startInstance)
-{
-	FlushBarriers();
-
-	m_d3d12CommandList10->DrawIndexedInstanced(indexCount, instanceCount, startIndex, (i32)baseVertex, startInstance);
 }
 
 void Dx12CommandContext::Impl::DrawIndirect(const Arc< Dx12Buffer >& pArgumentBuffer, u64 offsetInBytes, u32 numDraws)
 {
 	FlushBarriers();
+	SetRootConstants();
 
-	auto& sr = static_cast<Dx12SceneResource&>(m_RenderDevice.GetResourceManager().GetSceneResource());
 	m_d3d12CommandList10->ExecuteIndirect(
-		sr.GetSceneD3D12CommandSignature(),
+		m_RenderDevice.GetMeshDispatchD3D12CommandSignature(),
 		numDraws,
 		pArgumentBuffer->GetD3D12Resource(),
 		offsetInBytes,
@@ -1114,10 +884,10 @@ void Dx12CommandContext::Impl::DrawIndirect(const Arc< Dx12Buffer >& pArgumentBu
 void Dx12CommandContext::Impl::DrawIndirectWithCount(const Arc< Dx12Buffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< Dx12Buffer >& pCountBuffer, u32 numDraws)
 {
 	FlushBarriers();
+	SetRootConstants();
 
-	auto& sr = static_cast<Dx12SceneResource&>(m_RenderDevice.GetResourceManager().GetSceneResource());
 	m_d3d12CommandList10->ExecuteIndirect(
-		sr.GetSceneD3D12CommandSignature(),
+		m_RenderDevice.GetMeshDispatchD3D12CommandSignature(),
 		numDraws,
 		pArgumentBuffer->GetD3D12Resource(),
 		offsetInBytes,
@@ -1129,6 +899,7 @@ void Dx12CommandContext::Impl::DrawIndirectWithCount(const Arc< Dx12Buffer >& pA
 void Dx12CommandContext::Impl::Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ)
 {
 	FlushBarriers();
+	SetRootConstants();
 
 	m_d3d12CommandList10->Dispatch(numGroupsX, numGroupsY, numGroupsZ);
 }
@@ -1136,10 +907,10 @@ void Dx12CommandContext::Impl::Dispatch(u32 numGroupsX, u32 numGroupsY, u32 numG
 void Dx12CommandContext::Impl::DispatchIndirect(const Arc< Dx12Buffer >& pArgumentBuffer, u64 offsetInBytes)
 {
 	FlushBarriers();
+	SetRootConstants();
 
-	auto& rm = static_cast< Dx12ResourceManager& >(m_RenderDevice.GetResourceManager());
 	m_d3d12CommandList10->ExecuteIndirect(
-		rm.GetDispatchD3D12CommandSignature(),
+		m_RenderDevice.GetDispatchD3D12CommandSignature(),
 		1,
 		pArgumentBuffer->GetD3D12Resource(),
 		offsetInBytes,
@@ -1151,6 +922,7 @@ void Dx12CommandContext::Impl::DispatchIndirect(const Arc< Dx12Buffer >& pArgume
 void Dx12CommandContext::Impl::DispatchRays(Dx12ShaderBindingTable& sbt, u32 numGroupsX, u32 numGroupsY, u32 numGroupsZ)
 {
 	FlushBarriers();
+	SetRootConstants();
 
 	const auto& desc = sbt.GetDispatchRaysDesc(numGroupsX, numGroupsY, numGroupsZ);
 	m_d3d12CommandList10->DispatchRays(&desc);
@@ -1158,11 +930,8 @@ void Dx12CommandContext::Impl::DispatchRays(Dx12ShaderBindingTable& sbt, u32 num
 
 void Dx12CommandContext::Impl::BindDescriptorHeaps()
 {
-	auto& rm = static_cast<Dx12ResourceManager&>(m_RenderDevice.GetResourceManager());
-	ID3D12DescriptorHeap* descriptorHeap = rm.GetGlobalDescriptorHeap()->GetD3D12DescriptorHeap();
-	ID3D12DescriptorHeap* descriptorHeaps[kNumResourceDescriptorType] = { descriptorHeap, nullptr };
-
-	m_d3d12CommandList10->SetDescriptorHeaps(1, descriptorHeaps);
+	ID3D12DescriptorHeap* descriptorHeap = m_RenderDevice.GetGlobalDescriptorHeap()->GetD3D12DescriptorHeap();
+	m_d3d12CommandList10->SetDescriptorHeaps(1, &descriptorHeap);
 }
 
 double Dx12CommandContext::Impl::GetLastFrameElapsedTime() const
@@ -1500,109 +1269,14 @@ void Dx12CommandContext::SetRenderPipeline(render::RaytracingPipeline* pRenderPi
 	m_Impl->SetRenderPipeline(rhiRenderPipeline);
 }
 
-void Dx12CommandContext::SetConstants(u32 sizeInBytes, const void* pData, render::eShaderStage stage, u32 offsetInBytes)
-{
-	if (stage & render::eShaderStage::Compute)
-		m_Impl->SetComputeRootConstants(sizeInBytes, pData, offsetInBytes);
-	else
-		m_Impl->SetGraphicsRootConstants(sizeInBytes, pData, offsetInBytes);
-}
-
 void Dx12CommandContext::SetComputeConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes)
 {
-	m_Impl->SetComputeRootConstants(sizeInBytes, pData, offsetInBytes);
+	m_Impl->StageRootConstants(sizeInBytes, pData, offsetInBytes);
 }
 
 void Dx12CommandContext::SetGraphicsConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes)
 {
-	m_Impl->SetGraphicsRootConstants(sizeInBytes, pData, offsetInBytes);
-}
-
-void Dx12CommandContext::SetComputeDynamicUniformBuffer(const std::string& name, u32 sizeInBytes, const void* pData)
-{
-	m_Impl->SetComputeDynamicConstantBuffer(name, sizeInBytes, pData);
-}
-
-void Dx12CommandContext::SetGraphicsDynamicUniformBuffer(const std::string& name, u32 sizeInBytes, const void* pData)
-{
-	m_Impl->SetGraphicsDynamicConstantBuffer(name, sizeInBytes, pData);
-}
-
-void Dx12CommandContext::SetComputeShaderResource(const std::string& name, Arc< render::Buffer > pBuffer)
-{
-	auto rhiBuffer = StaticCast<Dx12Buffer>(pBuffer);
-	assert(rhiBuffer);
-
-	const auto& state = rhiBuffer->GetCurrentState();
-	bool bIsUAV = state.GetSubresourceState().Access & D3D12_BARRIER_ACCESS_UNORDERED_ACCESS;
-
-	if (bIsUAV)
-		m_Impl->SetComputeUnorderedAccessView(name, rhiBuffer->GpuAddress());
-	else
-		m_Impl->SetComputeShaderResourceView(name, rhiBuffer->GpuAddress());
-}
-
-void Dx12CommandContext::SetComputeShaderResource(const std::string& name, Arc< render::Texture > pTexture, Arc< render::Sampler > pSamplerInCharge)
-{
-	UNUSED(pSamplerInCharge);
-
-	auto rhiTexture = StaticCast<Dx12Texture>(pTexture);
-	assert(rhiTexture);
-
-	const auto& state = rhiTexture->GetCurrentState();
-	bool bIsUAV = state.GetSubresourceState() == BarrierStates::NonPixelShaderResource;
-
-	if (bIsUAV)
-		m_Impl->SetComputeUnorderedAccessView(name, rhiTexture->GpuAddress());
-	else
-		m_Impl->SetComputeShaderResourceView(name, rhiTexture->GpuAddress());
-}
-
-void Dx12CommandContext::SetGraphicsShaderResource(const std::string& name, Arc< render::Texture > pTexture, Arc< render::Sampler > pSamplerInCharge)
-{
-	UNUSED(pSamplerInCharge);
-
-	auto rhiTexture = StaticCast<Dx12Texture>(pTexture);
-	assert(rhiTexture);
-
-	m_Impl->SetGraphicsShaderResourceView(name, rhiTexture->GpuAddress());
-}
-
-void Dx12CommandContext::SetGraphicsShaderResource(const std::string& name, Arc< render::Buffer > pBuffer)
-{
-	auto rhiBuffer = StaticCast<Dx12Buffer>(pBuffer);
-	assert(rhiBuffer);
-
-	if (rhiBuffer->GetType() == eBufferType::Structured)
-		m_Impl->SetGraphicsShaderResourceView(name, StaticCast<Dx12StructuredBuffer>(rhiBuffer)->GpuAddress());
-	else
-		m_Impl->SetGraphicsConstantBufferView(name, rhiBuffer->GpuAddress());
-}
-
-void Dx12CommandContext::SetComputeConstantBufferView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS srv)
-{
-	m_Impl->SetComputeConstantBufferView(name, srv);
-}
-
-void Dx12CommandContext::SetGraphicsConstantBufferView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS srv)
-{
-	m_Impl->SetGraphicsConstantBufferView(name, srv);
-}
-
-void Dx12CommandContext::SetComputeShaderResourceView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS srv)
-{
-	m_Impl->SetComputeShaderResourceView(name, srv);
-}
-
-void Dx12CommandContext::SetGraphicsShaderResourceView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS srv)
-{
-	m_Impl->SetGraphicsShaderResourceView(name, srv);
-}
-
-void Dx12CommandContext::SetAccelerationStructure(const std::string& name, render::TopLevelAccelerationStructure& tlas)
-{
-	auto& dx12TLAS = static_cast<Dx12TopLevelAS&>(tlas);
-	m_Impl->SetAccelerationStructureSRV(name, dx12TLAS.GetGPUVirtualAddress());
+	m_Impl->StageRootConstants(sizeInBytes, pData, offsetInBytes);
 }
 
 void Dx12CommandContext::StageDescriptor(const std::string& name, Arc< render::Buffer > pBuffer, u32 offset)
@@ -1641,11 +1315,6 @@ void Dx12CommandContext::StageDescriptorMip(const std::string& name, Arc< render
 		m_Impl->StageDescriptorMip(name, rhiTexture, mipLevel);
 }
 
-void Dx12CommandContext::StageDescriptors(std::vector< std::pair< std::string, u32 > >&& srcHandles, D3D12_DESCRIPTOR_HEAP_TYPE heapType)
-{
-	m_Impl->StageDescriptors(std::move(srcHandles), heapType);
-}
-
 void Dx12CommandContext::SetDescriptorHeaps(const std::vector< ID3D12DescriptorHeap* >& d3d12DescriptorHeaps)
 {
 	m_Impl->SetDescriptorHeaps(d3d12DescriptorHeaps);
@@ -1669,11 +1338,6 @@ void Dx12CommandContext::BeginRenderPass(Arc< render::RenderTarget > pRenderTarg
 void Dx12CommandContext::Draw(u32 vertexCount, u32 instanceCount, u32 firstVertex, u32 firstInstance)
 {
 	m_Impl->Draw(vertexCount, instanceCount, firstVertex, firstInstance);
-}
-
-void Dx12CommandContext::DrawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex, i32 vertexOffset, u32 firstInstance)
-{
-	m_Impl->DrawIndexed(indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
 }
 
 void Dx12CommandContext::DrawMeshTasksIndirect(const Arc< render::Buffer >& pArgumentBuffer, u64 offsetInBytes, u32 numDraws, u32 strideInBytes)

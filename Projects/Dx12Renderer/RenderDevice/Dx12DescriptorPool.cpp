@@ -79,22 +79,27 @@ void DescriptorPool::Free(DescriptorAllocation& allocation)
     // std::lock_guard<std::mutex> lock(m_Mutex);
 
     u32 offset = static_cast<u32>((allocation.GetCPUHandle().ptr - m_BaseCPUHandle.ptr) / m_DescriptorSize);
-    m_AvailableDescriptors.push_back({ offset, allocation.GetDescriptorCount() });
+    u32 count  = allocation.GetDescriptorCount();
 
-    // Merge adjacent free blocks
-    std::sort(m_AvailableDescriptors.begin(), m_AvailableDescriptors.end());
-    for (auto it = m_AvailableDescriptors.begin(); it != m_AvailableDescriptors.end() - 1;)
+    m_RenderDevice.DeferRelease([this, offset, count]
     {
-        if (it->first + static_cast<i32>(it->second) == (it + 1)->first)
+        m_AvailableDescriptors.push_back({ offset, count });
+
+        // Merge adjacent free blocks
+        std::sort(m_AvailableDescriptors.begin(), m_AvailableDescriptors.end());
+        for (auto it = m_AvailableDescriptors.begin(); it != m_AvailableDescriptors.end() - 1;)
         {
-            it->second += (it + 1)->second;
-            m_AvailableDescriptors.erase(it + 1);
+            if (it->first + static_cast<i32>(it->second) == (it + 1)->first)
+            {
+                it->second += (it + 1)->second;
+                m_AvailableDescriptors.erase(it + 1);
+            }
+            else
+            {
+                ++it;
+            }
         }
-        else
-        {
-            ++it;
-        }
-    }
+    });
 }
 
 }

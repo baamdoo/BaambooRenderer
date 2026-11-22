@@ -7,9 +7,7 @@ namespace dx12
 constexpr u32 kMaxNumPendingBarriers = 16;
 
 class Dx12Resource;
-class Dx12Buffer;
 class Dx12Texture;
-class Dx12RenderTarget;
 
 class Dx12CommandContext : public render::CommandContext
 {
@@ -57,31 +55,12 @@ public:
 	virtual void SetRenderPipeline(render::RaytracingPipeline* pRenderPipeline) override;
 
 	// ---- Bindings ----
-	virtual void SetConstants(u32 sizeInBytes, const void* pData, render::eShaderStage stage, u32 offsetInBytes = 0) override;
 	virtual void SetComputeConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) override;
 	virtual void SetGraphicsConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) override;
-
-	virtual void SetComputeDynamicUniformBuffer(const std::string& name, u32 sizeInBytes, const void* pData) override;
-	virtual void SetGraphicsDynamicUniformBuffer(const std::string& name, u32 sizeInBytes, const void* pData) override;
-
-	virtual void SetComputeShaderResource(const std::string& name, Arc< render::Texture > pTexture, Arc< render::Sampler > pSamplerInCharge) override;
-	virtual void SetGraphicsShaderResource(const std::string& name, Arc< render::Texture > pTexture, Arc< render::Sampler > pSamplerInCharge) override;
-	virtual void SetComputeShaderResource(const std::string& name, Arc< render::Buffer > pBuffer) override;
-	virtual void SetGraphicsShaderResource(const std::string& name, Arc< render::Buffer > pBuffer) override;
-
-	void SetComputeConstantBufferView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS srv);
-	void SetGraphicsConstantBufferView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS srv);
-	void SetComputeShaderResourceView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS srv);
-	void SetGraphicsShaderResourceView(const std::string& name, D3D12_GPU_VIRTUAL_ADDRESS srv);
-
-	virtual void SetAccelerationStructure(const std::string& name, render::TopLevelAccelerationStructure& tlas) override;
 
 	virtual void StageDescriptor(const std::string& name, Arc< render::Buffer > pBuffer, u32 offset = 0) override;
 	virtual void StageDescriptor(const std::string& name, Arc< render::Texture > pTexture, Arc< render::Sampler > pSamplerInCharge, u32 offset = 0) override;
 	virtual void StageDescriptorMip(const std::string& name, Arc< render::Texture > pTexture, u32 mipLevel, Arc< render::Sampler > samplerInCharge = nullptr) override;
-	void StageDescriptors(
-		std::vector< std::pair< std::string, u32 > > && srcHandles,
-		D3D12_DESCRIPTOR_HEAP_TYPE heapType = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
 	void SetDescriptorHeaps(const std::vector< ID3D12DescriptorHeap* >& d3d12DescriptorHeaps);
 
@@ -92,7 +71,6 @@ public:
 
 	// ---- Draw / Dispatch ----
 	virtual void Draw(u32 vertexCount, u32 instanceCount = 1, u32 firstVertex = 0, u32 firstInstance = 0) override;
-	virtual void DrawIndexed(u32 indexCount, u32 instanceCount = 1, u32 firstIndex = 0, i32 vertexOffset = 0, u32 firstInstance = 0) override;
 	virtual void DrawMeshTasksIndirect(const Arc< render::Buffer >& pArgumentBuffer, u64 offsetInBytes, u32 numDraws, u32 strideInBytes) override;
 	virtual void DrawMeshTasksIndirectCount(const Arc< render::Buffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< render::Buffer >& pCountBuffer, u32 numDraws, u32 strideInBytes) override;
 

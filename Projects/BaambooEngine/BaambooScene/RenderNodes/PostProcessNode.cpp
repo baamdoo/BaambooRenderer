@@ -3,11 +3,12 @@
 #include "RenderCommon/RenderDevice.h"
 #include "RenderCommon/CommandContext.h"
 #include "BaambooScene/Scene.h"
+#include "PipelineFactory.h"
 
 namespace baamboo
 {
 
-PostProcessNode::PostProcessNode(render::RenderDevice& rd)
+PostProcessNode::PostProcessNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory)
 	: Super(rd, "PostProcessPass")
 {
 	using namespace render;
@@ -33,23 +34,8 @@ PostProcessNode::PostProcessNode(render::RenderDevice& rd)
 					.imageUsage = eTextureUsage_Sample | eTextureUsage_Storage | eTextureUsage_TransferSource
 				});
 
-		m_TAA.pTemporalAntiAliasingPSO = ComputePipeline::Create(m_RenderDevice, "TemporalAntiAliasingPSO");
-		m_TAA.pTemporalAntiAliasingPSO->SetComputeShader(
-			Shader::Create(m_RenderDevice, "TemporalAntiAliasingCS",
-			{
-				.stage    = eShaderStage::Compute,
-				.filename = "TemporalAntiAliasingCS"
-			}
-		)).Build();
-
-		m_TAA.pSharpenPSO = ComputePipeline::Create(m_RenderDevice, "SharpenPipelinePSO");
-		m_TAA.pSharpenPSO->SetComputeShader(
-			Shader::Create(m_RenderDevice, "SharpenCS",
-			{ 
-				.stage    = eShaderStage::Compute,
-				.filename = "SharpenCS" 
-			}
-		)).Build();
+		m_TAA.pTemporalAntiAliasingPSO = pipelineFactory.CreateAndBuildComputePipeline("TemporalAntiAliasingPSO", { .source = "TemporalAntiAliasingCS.slang" });
+		m_TAA.pSharpenPSO              = pipelineFactory.CreateAndBuildComputePipeline("SharpenPipelinePSO", { .source = "SharpenCS.slang" });
 	}
 	{
 		for (u32 i = 0; i < kBloomMipCount; ++i)
@@ -77,23 +63,8 @@ PostProcessNode::PostProcessNode(render::RenderDevice& rd)
 					});
 		}
 
-		m_Bloom.pDownsamplePSO = ComputePipeline::Create(m_RenderDevice, "BloomDownsamplePSO");
-		m_Bloom.pDownsamplePSO->SetComputeShader(
-			Shader::Create(m_RenderDevice, "BloomDownsampleCS",
-			{
-				.stage    = eShaderStage::Compute,
-				.filename = "BloomDownsampleCS"
-			}
-		)).Build();
-
-		m_Bloom.pUpsamplePSO = ComputePipeline::Create(m_RenderDevice, "BloomUpsamplePSO");
-		m_Bloom.pUpsamplePSO->SetComputeShader(
-			Shader::Create(m_RenderDevice, "BloomUpsampleCS",
-			{
-				.stage    = eShaderStage::Compute,
-				.filename = "BloomUpsampleCS"
-			}
-		)).Build();
+		m_Bloom.pDownsamplePSO = pipelineFactory.CreateAndBuildComputePipeline("BloomDownsamplePSO", { .source = "BloomDownsampleCS.slang" });
+		m_Bloom.pUpsamplePSO   = pipelineFactory.CreateAndBuildComputePipeline("BloomUpsamplePSO", { .source = "BloomUpsampleCS.slang" });
 	}
 	{
 		m_ToneMapping.pResolvedTexture =
@@ -106,14 +77,7 @@ PostProcessNode::PostProcessNode(render::RenderDevice& rd)
 					.imageUsage = eTextureUsage_Storage | eTextureUsage_TransferSource | eTextureUsage_ColorAttachment
 				});
 
-		m_ToneMapping.pToneMappingPSO = ComputePipeline::Create(m_RenderDevice, "ToneMappingPSO");
-		m_ToneMapping.pToneMappingPSO->SetComputeShader(
-			Shader::Create(m_RenderDevice, "ToneMappingCS",
-				{
-					.stage    = eShaderStage::Compute,
-					.filename = "ToneMappingCS" 
-				}
-			)).Build();
+		m_ToneMapping.pToneMappingPSO = pipelineFactory.CreateAndBuildComputePipeline("ToneMappingPSO", { .source = "ToneMappingCS.slang" });
 	}
 }
 
@@ -175,13 +139,10 @@ void PostProcessNode::ApplyBloom(render::CommandContext& context, const SceneRen
 		context.TransitionBarrier(pSrc, eTextureLayout::ShaderReadOnly);
 		context.TransitionBarrier(pDst, eTextureLayout::General);
 
-		struct
-		{
-			u32 bFirstDownsample;
-		} constant = { i == 0 ? 1u : 0u };
-		context.SetComputeConstants(sizeof(constant), &constant);
-		context.StageDescriptor("g_SrcTexture", pSrc, g_FrameData.pLinearClamp);
-		context.StageDescriptor("g_OutputImage", pDst);
+		const BloomDownsampleConstants constants = { .bFirstDownsample = i == 0 ? 1u : 0u };
+		context.SetComputeConstants(sizeof(constants), &constants);
+		context.StageDescriptor("ID_SrcTexture", pSrc, g_FrameData.pLinearClamp);
+		context.StageDescriptor("ID_OutputImage", pDst);
 
 		context.Dispatch2D< 16, 16 >(pDst->Width(), pDst->Height());
 	}
@@ -201,14 +162,11 @@ void PostProcessNode::ApplyBloom(render::CommandContext& context, const SceneRen
 		context.TransitionBarrier(pSrcHigh, eTextureLayout::ShaderReadOnly);
 		context.TransitionBarrier(pDst, eTextureLayout::General);
 
-		struct
-		{
-			float filterRadius;
-		} constant = { 1.0f };
-		context.SetComputeConstants(sizeof(constant), &constant);
-		context.StageDescriptor("g_SrcLowTexture", pSrcLow, g_FrameData.pLinearClamp);
-		context.StageDescriptor("g_SrcHighTexture", pSrcHigh, g_FrameData.pLinearClamp);
-		context.StageDescriptor("g_OutputImage", pDst);
+		const BloomUpsampleConstants constants = { .filterRadius = 1.0f };
+		context.SetComputeConstants(sizeof(constants), &constants);
+		context.StageDescriptor("ID_SrcLowTexture", pSrcLow, g_FrameData.pLinearClamp);
+		context.StageDescriptor("ID_SrcHighTexture", pSrcHigh, g_FrameData.pLinearClamp);
+		context.StageDescriptor("ID_OutputImage", pDst);
 
 		context.Dispatch2D< 16, 16 >(pDst->Width(), pDst->Height());
 	}
@@ -240,16 +198,16 @@ void PostProcessNode::ApplyAntiAliasing(render::CommandContext& context, const S
 			context.TransitionBarrier(rm.GetFlatBlackTexture(), eTextureLayout::ShaderReadOnly);
 		context.TransitionBarrier(m_TAA.pAntiAliasedTexture, eTextureLayout::General);
 
-		struct
+		const TemporalAntiAliasingConstants constants =
 		{
-			float  blendFactor;
-			u32    isFirstFrame;
-		} constant = { bFirstApply ? 1.0f : renderView.postProcess.aa.blendFactor, bFirstApply };
-		context.SetComputeConstants(sizeof(constant), &constant);
-		context.StageDescriptor("g_SceneTexture", pColor, g_FrameData.pLinearClamp);
-		context.StageDescriptor("g_VelocityTexture", pVelocity, g_FrameData.pLinearClamp);
-		context.StageDescriptor("g_HistoryTexture", bFirstApply ? rm.GetFlatBlackTexture() : m_TAA.pHistoryTexture, g_FrameData.pLinearClamp);
-		context.StageDescriptor("g_OutputImage", m_TAA.pAntiAliasedTexture);
+			.blendFactor = bFirstApply ? 1.0f : renderView.postProcess.aa.blendFactor,
+			.bFirstFrame = bFirstApply ? 1u : 0u
+		};
+		context.SetComputeConstants(sizeof(constants), &constants);
+		context.StageDescriptor("ID_SceneTexture", pColor, g_FrameData.pLinearClamp);
+		context.StageDescriptor("ID_VelocityTexture", pVelocity, g_FrameData.pLinearClamp);
+		context.StageDescriptor("ID_HistoryTexture", bFirstApply ? rm.GetFlatBlackTexture() : m_TAA.pHistoryTexture, g_FrameData.pLinearClamp);
+		context.StageDescriptor("ID_OutputImage", m_TAA.pAntiAliasedTexture);
 
 		context.Dispatch2D< 16, 16 >(m_TAA.pAntiAliasedTexture->Width(), m_TAA.pAntiAliasedTexture->Height());
 
@@ -261,13 +219,10 @@ void PostProcessNode::ApplyAntiAliasing(render::CommandContext& context, const S
 		context.TransitionBarrier(m_TAA.pAntiAliasedTexture, eTextureLayout::ShaderReadOnly);
 		context.TransitionBarrier(pColor, eTextureLayout::General);
 
-		struct
-		{
-			float sharpness;
-		} constant = { renderView.postProcess.aa.sharpness };
-		context.SetComputeConstants(sizeof(constant), &constant);
-		context.StageDescriptor("g_AntiAliasedTexture", m_TAA.pAntiAliasedTexture, g_FrameData.pLinearClamp);
-		context.StageDescriptor("g_OutputImage", pColor);
+		const SharpenConstants constants = { .sharpness = renderView.postProcess.aa.sharpness };
+		context.SetComputeConstants(sizeof(constants), &constants);
+		context.StageDescriptor("ID_AntiAliasedTexture", m_TAA.pAntiAliasedTexture, g_FrameData.pLinearClamp);
+		context.StageDescriptor("ID_OutputImage", pColor);
 
 		context.Dispatch2D< 16, 16 >(pColor->Width(), pColor->Height());
 	}
@@ -298,19 +253,17 @@ void PostProcessNode::ApplyToneMapping(render::CommandContext& context, const Sc
 	context.TransitionBarrier(pBloom, eTextureLayout::ShaderReadOnly);
 	context.TransitionBarrier(m_ToneMapping.pResolvedTexture, eTextureLayout::General);
 
-	// Tone mapping push constants
-	struct
+	const ToneMappingConstants constants =
 	{
-		u32   tonemapOp; // 0: None, 1: Reinhard, 2: ACES, 3: Uncharted2, 4: Uchimura
-		float ev100;
-		float gamma;
-		float bloomStrength;
-	} constant = { (u32)renderView.postProcess.tonemap.op, renderView.postProcess.tonemap.ev100, renderView.postProcess.tonemap.gamma,
-	               bBloom ? renderView.postProcess.bloom.intensity : 0.0f };
-	context.SetComputeConstants(sizeof(constant), &constant);
-	context.StageDescriptor("g_SceneTexture", g_FrameData.pColor.lock(), g_FrameData.pLinearClamp);
-	context.StageDescriptor("g_OutputImage", m_ToneMapping.pResolvedTexture);
-	context.StageDescriptor("g_BloomTexture", pBloom, g_FrameData.pLinearClamp);
+		.tonemapOp     = (u32)renderView.postProcess.tonemap.op,
+		.ev100         = renderView.postProcess.tonemap.ev100,
+		.gamma         = renderView.postProcess.tonemap.gamma,
+		.bloomStrength = bBloom ? renderView.postProcess.bloom.intensity : 0.0f
+	};
+	context.SetComputeConstants(sizeof(constants), &constants);
+	context.StageDescriptor("ID_SceneTexture", g_FrameData.pColor.lock(), g_FrameData.pLinearClamp);
+	context.StageDescriptor("ID_OutputImage", m_ToneMapping.pResolvedTexture);
+	context.StageDescriptor("ID_BloomTexture", pBloom, g_FrameData.pLinearClamp);
 
 	context.Dispatch2D< 16, 16 >(m_ToneMapping.pResolvedTexture->Width(), m_ToneMapping.pResolvedTexture->Height());
 

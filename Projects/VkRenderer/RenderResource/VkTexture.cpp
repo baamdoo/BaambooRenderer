@@ -1,8 +1,5 @@
 #include "RendererPch.h"
 #include "VkTexture.h"
-#include "VkBuffer.h"
-#include "VkSampler.h"
-#include "RenderDevice/VkCommandContext.h"
 
 #include "Utils/Math.hpp"
 #include <gli/format.hpp>
@@ -98,12 +95,6 @@ void VulkanTexture::CreateImageAndView(const CreationInfo& info)
 	auto viewInfo = GetViewDesc(m_Desc);
 	m_AspectFlags = viewInfo.subresourceRange.aspectMask;
 	VK_CHECK(vkCreateImageView(m_RenderDevice.vkDevice(), &viewInfo, nullptr, &m_vkImageView));
-
-	if (m_Desc.flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT)
-	{
-		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
-		VK_CHECK(vkCreateImageView(m_RenderDevice.vkDevice(), &viewInfo, nullptr, &m_vkImageUAV));
-	}
 }
 
 VkImageViewCreateInfo VulkanTexture::GetViewDesc(const VkImageCreateInfo& imageInfo)
@@ -181,54 +172,32 @@ VkImageViewCreateInfo VulkanTexture::GetViewDesc(const VkImageCreateInfo& imageI
 	return imageViewInfo;
 }
 
-void VulkanTexture::CreatePerMipViews()
+void VulkanTexture::CreateShaderViews()
 {
-	using namespace render;
+	if (m_Desc.usage & VK_IMAGE_USAGE_SAMPLED_BIT)
+	{
+		m_SrvSlot = m_RenderDevice.AllocateHeapSlot();
+		m_RenderDevice.WriteHeapImage(m_SrvSlot, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, m_vkImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	}
 
-	bool bHasStorage = (m_Desc.usage & VK_IMAGE_USAGE_STORAGE_BIT) != 0;
-	if (!bHasStorage || m_Desc.mipLevels <= 1)
+	if ((m_Desc.usage & VK_IMAGE_USAGE_STORAGE_BIT) == 0)
 		return;
 
+	VkImageViewCreateInfo viewInfo = GetViewDesc(m_Desc);
+	if (viewInfo.viewType == VK_IMAGE_VIEW_TYPE_CUBE)
+		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+	viewInfo.subresourceRange.levelCount = 1;
+
 	m_vkPerMipViews.resize(m_Desc.mipLevels, VK_NULL_HANDLE);
+	m_UavSlots.resize(m_Desc.mipLevels, kInvalidIndex);
 	for (u32 mip = 0; mip < m_Desc.mipLevels; ++mip)
 	{
-		VkImageViewCreateInfo viewInfo{};
-		viewInfo.sType      = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-		viewInfo.image      = m_vkImage;
-		viewInfo.viewType   = VK_IMAGE_VIEW_TYPE_2D;
-		viewInfo.format     = m_Desc.format;
-		viewInfo.components = { VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A };
-		viewInfo.subresourceRange.aspectMask     = m_AspectFlags;
-		viewInfo.subresourceRange.baseMipLevel   = mip;
-		viewInfo.subresourceRange.levelCount     = 1;
-		viewInfo.subresourceRange.baseArrayLayer = 0;
-		viewInfo.subresourceRange.layerCount     = 1;
-
+		viewInfo.subresourceRange.baseMipLevel = mip;
 		VK_CHECK(vkCreateImageView(m_RenderDevice.vkDevice(), &viewInfo, nullptr, &m_vkPerMipViews[mip]));
+
+		m_UavSlots[mip] = m_RenderDevice.AllocateHeapSlot();
+		m_RenderDevice.WriteHeapImage(m_UavSlots[mip], VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, m_vkPerMipViews[mip], VK_IMAGE_LAYOUT_GENERAL);
 	}
-}
-
-VkImageView VulkanTexture::vkMipView(u32 mipLevel) const
-{
-	if (mipLevel < m_vkPerMipViews.size())
-		return m_vkPerMipViews[mipLevel];
-	return m_vkImageView;
-}
-
-VkImageView VulkanTexture::vkView() const
-{
-	auto layout = GetState().GetSubresourceState().layout;
-	if (m_vkImageUAV && layout == VK_IMAGE_LAYOUT_GENERAL)
-	{
-		return m_vkImageUAV;
-	}
-
-	if (m_vkImageSRV && layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
-	{
-		return m_vkImageSRV;
-	}
-
-	return m_vkImageView;
 }
 
 VkClearValue VulkanTexture::ClearValue() const
@@ -286,7 +255,7 @@ VulkanTexture::VulkanTexture(VkRenderDevice& rd, const char* name, CreationInfo&
 	, VulkanResource(rd, name)
 {
 	CreateImageAndView(m_CreationInfo);
-	CreatePerMipViews();
+	CreateShaderViews();
 	SetDeviceObjectName((u64)m_vkImage, VK_OBJECT_TYPE_IMAGE);
 }
 
@@ -297,25 +266,27 @@ VulkanTexture::~VulkanTexture()
 
 void VulkanTexture::DestroyImageAndViews()
 {
+	for (u32 slot : m_UavSlots)
+		m_RenderDevice.FreeHeapSlot(slot);
+	m_UavSlots.clear();
+
+	if (IsValidIndex(m_SrvSlot))
+		m_RenderDevice.FreeHeapSlot(m_SrvSlot);
+	m_SrvSlot = kInvalidIndex;
+
 	for (auto view : m_vkPerMipViews)
 		if (view)
-			vkDestroyImageView(m_RenderDevice.vkDevice(), view, nullptr);
+			m_RenderDevice.DeferRelease(view);
 	m_vkPerMipViews.clear();
 
 	if (m_vkImageView)
-		vkDestroyImageView(m_RenderDevice.vkDevice(), m_vkImageView, nullptr);
-	if (m_vkImageSRV)
-		vkDestroyImageView(m_RenderDevice.vkDevice(), m_vkImageSRV, nullptr);
-	if (m_vkImageUAV)
-		vkDestroyImageView(m_RenderDevice.vkDevice(), m_vkImageUAV, nullptr);
+		m_RenderDevice.DeferRelease(m_vkImageView);
 
 	if (m_vmaAllocation)
-		vmaDestroyImage(m_RenderDevice.vmaAllocator(), m_vkImage, m_vmaAllocation);
+		m_RenderDevice.DeferRelease(m_vkImage, m_vmaAllocation);
 
 	m_vkImage        = VK_NULL_HANDLE;
 	m_vkImageView    = VK_NULL_HANDLE;
-	m_vkImageSRV     = VK_NULL_HANDLE;
-	m_vkImageUAV     = VK_NULL_HANDLE;
 	m_vmaAllocation = VK_NULL_HANDLE;
 	m_AllocationInfo = {};
 }
@@ -340,7 +311,7 @@ void VulkanTexture::Resize(u32 width, u32 height, u32 depth)
 	DestroyImageAndViews();
 	m_CreationInfo.resolution = { width, height, depth };
 	CreateImageAndView(m_CreationInfo);
-	CreatePerMipViews();
+	CreateShaderViews();
 
 	SetDeviceObjectName((u64)m_vkImage, VK_OBJECT_TYPE_IMAGE);
 	SetState({ 0, 0, m_Desc.initialLayout });
@@ -359,6 +330,7 @@ void VulkanTexture::SetResource(VkImage vkImage, VkImageView vkImageView, VkImag
 
 	m_CreationInfo.resolution = { createInfo.extent.width, createInfo.extent.height, createInfo.extent.depth };
 
+	CreateShaderViews();
 	SetDeviceObjectName((u64)m_vkImage, VK_OBJECT_TYPE_IMAGE);
 }
 

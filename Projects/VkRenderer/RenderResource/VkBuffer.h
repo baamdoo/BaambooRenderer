@@ -19,7 +19,7 @@ public:
     [[nodiscard]]
     inline VkBuffer vkBuffer() const { return m_vkBuffer; }
     [[nodiscard]]
-    inline VkDeviceAddress DeviceAddress() const { return m_DeviceAddress; }
+    virtual u64 GetGPUVirtualAddress() const override { return m_DeviceAddress; }
     [[nodiscard]]
     virtual void* MappedMemory() const override { return m_AllocationInfo.pMappedData; }
     virtual void FlushMappedRange(u64 offsetInBytes, u64 sizeInBytes) const override;
@@ -28,27 +28,13 @@ public:
     [[nodiscard]]
     inline u64 SizeInBytes() const { return m_CreationInfo.count * m_CreationInfo.elementSizeInBytes; }
 
+    [[nodiscard]]
+    virtual u32 GetShaderResourceHandle(u32 offset = 0) const override { return offset == 0 ? m_StorageSlot : kInvalidIndex; }
+
 protected:
     VkBuffer        m_vkBuffer      = VK_NULL_HANDLE;
     VkDeviceAddress m_DeviceAddress = 0;
-};
-
-class VulkanIndexBuffer : public VulkanBuffer 
-{
-using Super = VulkanBuffer;
-public:
-    static Arc< VulkanIndexBuffer > Create(VkRenderDevice& rd, const char* name, u32 numIndices, VkIndexType type);
-
-    VulkanIndexBuffer(VkRenderDevice& rd, const char* name, u32 numIndices, VkIndexType type);
-
-    u32 GetIndexCount() const { return m_IndexCount; }
-    u32 GetIndexSize() const { return m_IndexType == VK_INDEX_TYPE_UINT8_KHR ? 1 : m_IndexType == VK_INDEX_TYPE_UINT16 ? 2 : 4; }
-    VkIndexType GetIndexType() const { return m_IndexType; }
-
-private:
-    u32 m_IndexCount = 0;
-
-    VkIndexType m_IndexType;
+    u32             m_StorageSlot   = kInvalidIndex;
 };
 
 class VulkanUniformBuffer : public VulkanBuffer 
@@ -58,15 +44,6 @@ public:
     static Arc< VulkanUniformBuffer > Create(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags2 usage = 0);
 
     VulkanUniformBuffer(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags2 additionalUsage);
-};
-
-class VulkanStorageBuffer : public VulkanBuffer
-{
-using Super = VulkanBuffer;
-public:
-    static Arc< VulkanStorageBuffer > Create(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags2 usage = 0);
-
-    VulkanStorageBuffer(VkRenderDevice& rd, const char* name, u64 sizeInBytes, VkBufferUsageFlags2 additionalUsage);
 };
 
 }

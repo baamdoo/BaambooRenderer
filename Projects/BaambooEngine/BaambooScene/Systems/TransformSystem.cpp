@@ -48,6 +48,7 @@ std::vector< u64 > TransformSystem::UpdateRenderData(const float3& cameraPos)
     UNUSED(cameraPos);
 
     std::vector< u64 > markedEntities;
+    m_bStructureChanged = false;
     if (m_DirtyEntities.empty() && m_ExpiredEntities.empty())
     {
         return markedEntities;
@@ -86,7 +87,10 @@ std::vector< u64 > TransformSystem::UpdateRenderData(const float3& cameraPos)
         UpdateWorldTransform(entity);
 
         u64 id = entt::to_integral(entity);
-        TransformRenderView& view = m_RenderData[id];
+        auto [iter, bInserted] = m_RenderData.try_emplace(id);
+        m_bStructureChanged |= bInserted;
+
+        TransformRenderView& view = iter->second;
         view.id            = id;
         view.mWorld        = WorldMatrix(transformComponent.world);
         view.mWorldInverse = glm::inverse(view.mWorld);
@@ -115,7 +119,8 @@ void TransformSystem::CollectRenderData(SceneRenderView& outView) const
 
 void TransformSystem::RemoveRenderData(u64 entityId)
 {
-    m_RenderData.erase(entityId);
+    if (m_RenderData.erase(entityId) > 0)
+        m_bStructureChanged = true;
 }
 
 void TransformSystem::MarkDirty(entt::entity entity)

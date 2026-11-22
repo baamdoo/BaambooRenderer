@@ -8,7 +8,6 @@
 #include "RenderDevice/Dx12ResourceManager.h"
 #include "RenderModule/Dx12ImGuiModule.h"
 #include "RenderResource/Dx12Texture.h"
-#include "RenderResource/Dx12SceneResource.h"
 #include "SceneRenderView.h"
 
 #include <shlobj.h>
@@ -56,12 +55,12 @@ Renderer::Renderer(baamboo::Window* pWindow, const render::DeviceSettings& ds, I
 	{
 		// Check to see if a copy of WinPixGpuCapturer.dll has already been injected into the application.
 		// This may happen if the application is launched through the PIX UI. 
-		if (GetModuleHandle(L"WinPixGpuCapturer.dll") == 0)
+		// Skip it under RenderDoc too: both capturers hooking DXGI crashes in Present.
+		if (GetModuleHandle(L"WinPixGpuCapturer.dll") == 0 && GetModuleHandle(L"renderdoc.dll") == 0)
 		{
 			LoadLibrary(pixPath.c_str());
 		}
 	}
-	//system("PAUSE");
 
 	m_pRenderDevice = new Dx12RenderDevice(ds, false);
 	m_pSwapChain    = new Dx12SwapChain(*m_pRenderDevice, *pWindow);
@@ -88,9 +87,7 @@ void Renderer::NewFrame()
 
 Arc< render::CommandContext > Renderer::BeginFrame()
 {
-	auto& sr = static_cast<Dx12SceneResource&>(m_pRenderDevice->GetResourceManager().GetSceneResource());
-	sr.SetCurrentContextIndex(m_pRenderDevice->ContextIndex());
-
+	m_pRenderDevice->ProcessDeferredReleases();
 	return m_pRenderDevice->GraphicsQueue().Allocate();
 }
 
@@ -123,6 +120,7 @@ void Renderer::EndFrame(Arc< render::CommandContext >&& pContext, Arc< render::T
 
 	auto fenceValue = cmdQueue.ExecuteCommandList(rhiContext);
 	m_FrameFenceValue[contextIndex] = fenceValue;
+	m_pRenderDevice->AdvanceFrameNumber();
 
 	auto hr = m_pSwapChain->Present();
 	if (DXGI_ERROR_DEVICE_REMOVED == hr)

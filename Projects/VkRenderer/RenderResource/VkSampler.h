@@ -9,13 +9,6 @@ class VulkanSampler : public render::Sampler, public VulkanResource< VulkanSampl
 public:
     static Arc< VulkanSampler > Create(VkRenderDevice& rd, const char* name, CreationInfo&& info);
 
-    static Arc< VulkanSampler > CreateLinearRepeat(VkRenderDevice& device, const char* name = "LinearRepeat");
-    static Arc< VulkanSampler > CreateLinearClamp(VkRenderDevice& device, const char* name = "LinearClamp");
-    static Arc< VulkanSampler > CreatePointRepeat(VkRenderDevice& device, const char* name = "PointRepeat");
-    static Arc< VulkanSampler > CreatePointClamp(VkRenderDevice& device, const char* name = "PointClamp");
-    static Arc< VulkanSampler > CreateLinearClampCmp(VkRenderDevice& device, const char* name = "Shadow");
-    static Arc< VulkanSampler > CreatePointClampMin(VkRenderDevice& device, const char* name = "PointClampMin");
-
     VulkanSampler(VkRenderDevice& rd, const char* name, CreationInfo&& info);
     virtual ~VulkanSampler();
 

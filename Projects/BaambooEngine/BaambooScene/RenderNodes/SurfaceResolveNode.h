@@ -1,6 +1,8 @@
 #pragma once
 #include "RenderCommon/RenderNode.h"
 
+namespace baamboo::shader { class PipelineFactory; }
+
 namespace baamboo
 {
 
@@ -9,7 +11,7 @@ class SurfaceResolveNode : public render::RenderNode
 {
 using Super = render::RenderNode;
 public:
-	SurfaceResolveNode(render::RenderDevice& rd);
+	SurfaceResolveNode(render::RenderDevice& rd, shader::PipelineFactory& pipelineFactory);
 	virtual ~SurfaceResolveNode() = default;
 
 	virtual void Apply(render::CommandContext& context, const SceneRenderView& renderView) override;

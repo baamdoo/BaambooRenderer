@@ -246,16 +246,16 @@ void BistroApp::DrawUI()
 
 void BistroApp::ConfigureRenderGraph()
 {
-	m_pScene->AddRenderNode(MakeArc< StaticSkyboxNode >(*m_pRendererBackend->GetDevice()));
+	m_pScene->AddRenderNode(MakeArc< StaticSkyboxNode >(*m_pRendererBackend->GetDevice(), *m_pPipelineFactory));
 	{
-		auto pGBufferNode = MakeArc< GBufferNode >(*m_pRendererBackend->GetDevice());
-		auto pCullingNode = MakeArc< CullingNode >(*m_pRendererBackend->GetDevice());
+		auto pGBufferNode = MakeArc< GBufferNode >(*m_pRendererBackend->GetDevice(), *m_pPipelineFactory);
+		auto pCullingNode = MakeArc< CullingNode >(*m_pRendererBackend->GetDevice(), *m_pPipelineFactory);
 		pCullingNode->SetGBufferNode(pGBufferNode);
 		m_pScene->AddRenderNode(pCullingNode);
 	}
-	m_pScene->AddRenderNode(MakeArc< SurfaceResolveNode >(*m_pRendererBackend->GetDevice()));
-	m_pScene->AddRenderNode(MakeArc< LightingNode >(*m_pRendererBackend->GetDevice()));
-	m_pScene->AddRenderNode(MakeArc< PostProcessNode >(*m_pRendererBackend->GetDevice()));
+	m_pScene->AddRenderNode(MakeArc< SurfaceResolveNode >(*m_pRendererBackend->GetDevice(), *m_pPipelineFactory));
+	m_pScene->AddRenderNode(MakeArc< LightingNode >(*m_pRendererBackend->GetDevice(), *m_pPipelineFactory));
+	m_pScene->AddRenderNode(MakeArc< PostProcessNode >(*m_pRendererBackend->GetDevice(), *m_pPipelineFactory));
 }
 
 void BistroApp::ConfigureSceneObjects()

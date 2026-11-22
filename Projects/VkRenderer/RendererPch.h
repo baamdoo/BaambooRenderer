@@ -20,5 +20,5 @@
 //-------------------------------------------------------------------------
 #include "Defines.h"
 #include "Pointer.hpp"
-#include "ShaderTypes.h"
+#include "ShaderShared/ShaderShared.h"
 #include "Core/VkCore.h"

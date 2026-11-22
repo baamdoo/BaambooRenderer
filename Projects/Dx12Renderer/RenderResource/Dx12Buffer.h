@@ -7,8 +7,6 @@ namespace dx12
 enum class eBufferType
 {
     None,
-    Vertex,
-    Index,
     Constant,
     Structured,
     Typed,
@@ -27,10 +25,8 @@ public:
 
     virtual void Resize(u64 sizeInBytes, bool bReset = false) override;
 
-    eBufferType GetType() const { return m_Type; }
     virtual u64 SizeInBytes() const { return m_BufferSize; }
-    inline u32 GetBufferCount() const { return m_Count; }
-    inline u64 GetElementSize() const { return m_ElementSize; }
+    virtual u64 GetGPUVirtualAddress() const override { return GpuAddress(); }
 
 	[[nodiscard]]
     inline bool IsMapped() const { return m_pSystemMemory != nullptr; }
@@ -39,17 +35,8 @@ public:
     virtual void FlushMappedRange(u64, u64) const override {}
     virtual void InvalidateMappedRange(u64, u64) const override {}
 
-    [[nodiscard]]
-    D3D12_CPU_DESCRIPTOR_HANDLE GetShaderResourceViewCPU() const { return m_SRVAllocation.GetCPUHandle(); }
-    [[nodiscard]]
-    D3D12_CPU_DESCRIPTOR_HANDLE GetUnorderedAccessViewCPU() const { return m_UAVAllocation.GetCPUHandle(); }
-
-    [[nodiscard]]
-    D3D12_GPU_DESCRIPTOR_HANDLE GetShaderResourceViewGPU() const { return m_SRVAllocation.GetGPUHandle(); }
-    [[nodiscard]]
-    D3D12_GPU_DESCRIPTOR_HANDLE GetUnorderedAccessViewGPU() const { return m_UAVAllocation.GetGPUHandle(); }
-    u32 GetShaderResourceHandle(u32 offset = 0) const { return m_SRVAllocation.Index(offset); }
-    u32 GetUnorderedAccessHandle(u32 offset = 0) const { return m_UAVAllocation.Index(offset); }
+    virtual u32 GetShaderResourceHandle(u32 offset = 0) const override { return offset < m_SRVAllocation.GetDescriptorCount() ? m_SRVAllocation.Index(offset) : kInvalidIndex; }
+    u32 GetUnorderedAccessHandle(u32 offset = 0) const { return offset < m_UAVAllocation.GetDescriptorCount() ? m_UAVAllocation.Index(offset) : kInvalidIndex; }
 
 protected:
     virtual void CreateViews();
@@ -67,38 +54,6 @@ protected:
     DescriptorAllocation m_UAVAllocation = {};
 };
 
-class Dx12VertexBuffer final : public Dx12Buffer
-{
-using Super = Dx12Buffer;
-public:
-    static Arc< Dx12VertexBuffer > Create(Dx12RenderDevice& rd, const char* name, u32 numVertices);
-
-    Dx12VertexBuffer(Dx12RenderDevice& rd, const char* name, u32 numVertices);
-    virtual ~Dx12VertexBuffer() = default;
-
-    [[nodiscard]]
-    const D3D12_VERTEX_BUFFER_VIEW& GetBufferView() const { return m_d3d12BufferView; }
-
-private:
-    D3D12_VERTEX_BUFFER_VIEW m_d3d12BufferView;
-};
-
-class Dx12IndexBuffer final : public Dx12Buffer
-{
-using Super = Dx12Buffer;
-public:
-    static Arc< Dx12IndexBuffer > Create(Dx12RenderDevice& rd, const char* name, u32 numIndices);
-
-    Dx12IndexBuffer(Dx12RenderDevice& rd, const char* name, u32 numIndices);
-    virtual ~Dx12IndexBuffer() = default;
-
-    [[nodiscard]]
-    const D3D12_INDEX_BUFFER_VIEW& GetBufferView() const { return m_d3d12BufferView; }
-
-private:
-    D3D12_INDEX_BUFFER_VIEW m_d3d12BufferView;
-};
-
 class Dx12ConstantBuffer : public Dx12Buffer
 {
 using Super = Dx12Buffer;
@@ -109,24 +64,12 @@ public:
     virtual ~Dx12ConstantBuffer();
 
     void Reset();
-    void Upload(const void* pData, u64 sizeInBytes, u64 offsetInBytes = 0u);
 
     [[nodiscard]]
     D3D12_CPU_DESCRIPTOR_HANDLE GetConstantBufferViewCPU() const { return m_CBVAllocation.GetCPUHandle(); }
 
 private:
     DescriptorAllocation m_CBVAllocation = {};
-};
-
-class Dx12StructuredBuffer : public Dx12Buffer
-{
-using Super = Dx12Buffer;
-public:
-    static Arc< Dx12StructuredBuffer > Create(Dx12RenderDevice& rd, const char* name, u64 elementSizeInBytes, u32 numElements, RenderFlags additionalUsage = 0);
-
-    Dx12StructuredBuffer(Dx12RenderDevice& rd, const char* name, u64 elementSizeInBytes, u32 numElements, RenderFlags additionalUsage = 0);
-    virtual ~Dx12StructuredBuffer();
-
 };
 
 }

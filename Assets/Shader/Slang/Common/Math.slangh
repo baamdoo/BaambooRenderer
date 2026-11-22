@@ -1,0 +1,126 @@
+#pragma once
+
+static const float FLT_MAX          = 3.402823466e+38;
+static const float PI               = 3.14159265359;
+static const float EPSILON_MIN      = 1e-6;
+static const float MAX_VIEWDISTANCE = 1e2; // km
+
+// Scale-invariant degeneracy thresholds
+static const float DEGENERATE_SIN2 = 1e-8;  // sin^2 of the angle between two vectors (triangle edges, tangent vs normal)
+static const float DEGENERATE_LEN2 = 1e-12; // squared length of a vector that is unit-length by construction
+
+float3 modulo(float3 x, float y)
+{
+    return x - y * floor(x / y);
+}
+
+uint floorLog2(uint value)
+{
+    return value == 0u ? 0u : uint(firstbithigh(value));
+}
+
+float inverseLerp(float v, float minValue, float maxValue)
+{
+    return (v - minValue) / (maxValue - minValue);
+}
+
+float remap(float v, float inMin, float inMax, float outMin, float outMax)
+{
+    const float t = inverseLerp(v, inMin, inMax);
+    return lerp(outMin, outMax, t);
+}
+
+float safeRemap(float value, float oldMin, float oldMax, float newMin, float newMax)
+{
+    return clamp((value - oldMin) / (oldMax - oldMin), 0.0, 1.0) * (newMax - newMin) + newMin;
+}
+
+float safeSqrt(float a)
+{
+    return sqrt(max(a, 0.0));
+}
+
+// Reference: https://github.com/EpicGames/UnrealEngine/blob/release/Engine/Shaders/Private/FastMath.ush
+float acosFast4(float inX)
+{
+    const float x1 = abs(inX);
+    const float x2 = x1 * x1;
+    const float x3 = x2 * x1;
+
+    float s = -0.2121144 * x1 + 1.5707288;
+    s = 0.0742610 * x2 + s;
+    s = -0.0187293 * x3 + s;
+    s = sqrt(1.0 - x1) * s;
+
+    return inX >= 0.0 ? s : PI - s;
+}
+
+float atan2Fast(float y, float x)
+{
+    float t0 = max(abs(x), abs(y));
+    float t1 = min(abs(x), abs(y));
+    float t3 = t1 / t0;
+    float t4 = t3 * t3;
+
+    // Same polynomial as atanFastPos
+    t0 = +0.0872929;
+    t0 = t0 * t4 - 0.301895;
+    t0 = t0 * t4 + 1.0;
+    t3 = t0 * t3;
+
+    t3 = abs(y) > abs(x) ? (0.5 * PI) - t3 : t3;
+    t3 = x < 0.0 ? PI - t3 : t3;
+    t3 = y < 0.0 ? -t3 : t3;
+
+    return t3;
+}
+
+// uv has y down; reverse-Z puts the sky at depth 0, where w reaches 0 and the result is a far point along the view ray
+float3 ReconstructWorldPos(float2 uv, float depth, float4x4 mViewProjInv)
+{
+    const float4 posCS = float4(uv.x * 2.0 - 1.0, uv.y * -2.0 + 1.0, depth, 1.0);
+    const float4 posWS = mul(mViewProjInv, posCS);
+    if (abs(posWS.w) < EPSILON_MIN)
+        return posWS.xyz * MAX_VIEWDISTANCE;
+
+    return posWS.xyz / posWS.w;
+}
+
+// Ray parameters of both hits, or (-1, -1) on a miss
+float2 RaySphereIntersection(float3 rayOrigin, float3 rayDir, float3 sphereCenter, float sphereRadius)
+{
+    const float3 centerToOrigin = rayOrigin - sphereCenter;
+
+    const float a = dot(rayDir, rayDir);
+    const float b = 2.0 * dot(centerToOrigin, rayDir);
+    const float c = dot(centerToOrigin, centerToOrigin) - sphereRadius * sphereRadius;
+    const float discriminant = b * b - 4.0 * a * c;
+
+    if (discriminant < 0.0)
+        return float2(-1.0, -1.0);
+
+    const float root0 = (-b - sqrt(discriminant)) / (2.0 * a);
+    const float root1 = (-b + sqrt(discriminant)) / (2.0 * a);
+    return float2(root0, root1);
+}
+
+bool RaySphereIntersection(float3 rayOrigin, float3 rayDir, float3 sphereCenter, float sphereRadius, out float2 roots)
+{
+    const float3 centerToOrigin = rayOrigin - sphereCenter;
+
+    const float a = dot(rayDir, rayDir);
+    const float b = 2.0 * dot(centerToOrigin, rayDir);
+    const float c = dot(centerToOrigin, centerToOrigin) - sphereRadius * sphereRadius;
+    const float discriminant = b * b - 4.0 * a * c;
+
+    if (discriminant < 0.0)
+    {
+        roots = float2(-FLT_MAX, -FLT_MAX);
+        return false;
+    }
+
+    const float root0 = (-b - sqrt(discriminant)) / (2.0 * a);
+    const float root1 = (-b + sqrt(discriminant)) / (2.0 * a);
+    roots = float2(root0, root1);
+    return true;
+}

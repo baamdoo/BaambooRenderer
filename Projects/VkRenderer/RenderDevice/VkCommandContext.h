@@ -6,13 +6,6 @@
 namespace vk
 {
 
-class RenderTarget;
-class DescriptorPool;
-class GraphicsPipeline;
-class ComputePipeline;
-class DescriptorInfo;
-class DynamicBufferAllocator;
-class StaticBufferAllocator;
 class VulkanBuffer;
 
 constexpr u32 kMaxNumPendingBarriers = 16;
@@ -97,27 +90,12 @@ public:
 	virtual void SetRenderPipeline(render::GraphicsPipeline* pPipeline) override;
 	virtual void SetRenderPipeline(render::RaytracingPipeline* pRenderPipeline) override;
 
-	virtual void SetConstants(u32 sizeInBytes, const void* pData, render::eShaderStage stage, u32 offsetInBytes = 0) override;
 	virtual void SetComputeConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) override;
 	virtual void SetGraphicsConstants(u32 sizeInBytes, const void* pData, u32 offsetInBytes = 0) override;
-
-	virtual void SetComputeDynamicUniformBuffer(const std::string& name, u32 sizeInBytes, const void* pData) override;
-	virtual void SetGraphicsDynamicUniformBuffer(const std::string& name, u32 sizeInBytes, const void* pData) override;
-
-	virtual void SetComputeShaderResource(const std::string& name, Arc< render::Texture > texture, Arc< render::Sampler > samplerInCharge) override;
-	virtual void SetGraphicsShaderResource(const std::string& name, Arc< render::Texture > texture, Arc< render::Sampler > samplerInCharge) override;
-	virtual void SetComputeShaderResource(const std::string& name, Arc< render::Buffer > buffer) override;
-	virtual void SetGraphicsShaderResource(const std::string& name, Arc< render::Buffer > buffer) override;
-
-	virtual void SetAccelerationStructure(const std::string& name, render::TopLevelAccelerationStructure& tlas) override;
 
 	virtual void StageDescriptor(const std::string& name, Arc< render::Buffer > buffer, u32 offset = 0) override;
 	virtual void StageDescriptor(const std::string& name, Arc< render::Texture > texture, Arc< render::Sampler > samplerInCharge, u32 offset = 0) override;
 	virtual void StageDescriptorMip(const std::string& name, Arc< render::Texture > texture, u32 mipLevel, Arc< render::Sampler > samplerInCharge = nullptr) override;
-
-	void PushDescriptor(u32 set, u32 binding, const VkDescriptorImageInfo& imageInfo, VkDescriptorType descriptorType);
-	void PushDescriptor(u32 set, u32 binding, const VkDescriptorBufferInfo& bufferInfo, VkDescriptorType descriptorType);
-
 
 	virtual void BeginRenderPass(Arc< render::RenderTarget > renderTarget) override;
 	virtual void EndRenderPass() override;
@@ -129,7 +107,6 @@ public:
 	void EndRendering();
 
 	virtual void Draw(u32 vertexCount, u32 instanceCount = 1, u32 firstVertex = 0, u32 firstInstance = 0) override;
-	virtual void DrawIndexed(u32 indexCount, u32 instanceCount = 1, u32 firstIndex = 0, i32 vertexOffset = 0, u32 firstInstance = 0) override;
 	virtual void DrawMeshTasksIndirect(const Arc< render::Buffer >& pArgumentBuffer, u64 offsetInBytes, u32 numDraws, u32 strideInBytes) override;
 	virtual void DrawMeshTasksIndirectCount(const Arc< render::Buffer >& pArgumentBuffer, u64 offsetInBytes, const Arc< render::Buffer >& pCountBuffer, u32 numDraws, u32 strideInBytes) override;
 
@@ -138,18 +115,12 @@ public:
 	virtual void DispatchRays(render::ShaderBindingTable& sbt, u32 width, u32 height, u32 depth = 1) override;
 
 	bool IsReady() const;
-	bool IsFenceComplete(VkFence vkFence) const;
-	void WaitForFence(VkFence vkFence) const;
 	void Flush() const;
-	void FlushBarriers() const;
 
 	eCommandType GetCommandType() const;
 
 	bool IsTransient() const;
 	void SetTransient(bool bTransient);
-
-	bool IsGraphicsContext() const;
-	bool IsComputeContext() const;
 
 	VkCommandBuffer vkCommandBuffer() const;
 
@@ -157,11 +128,6 @@ public:
 	VkFence vkRenderCompleteFence() const;
 	VkSemaphore vkRenderCompleteSemaphore() const;
 	VkSemaphore vkPresentCompleteSemaphore() const;
-
-	VkPipelineLayout vkGraphicsPipelineLayout() const;
-	VkPipelineLayout vkComputePipelineLayout() const;
-	VkPipeline vkGraphicsPipeline() const;
-	VkPipeline vkComputePipeline() const;
 
 	virtual void BeginGpuMarker(const char* name, bool bWithStats = false) override;
 	virtual void EndGpuMarker() override;
